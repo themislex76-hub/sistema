@@ -965,6 +965,24 @@ async function loadAvisosBoletin(){
 function avisosNuevosCount(){ return AVISOS_BOLETIN.filter(a=>a.estado==='nuevo').length; }
 function avisosDeExpediente(id){ return AVISOS_BOLETIN.filter(a=>a.expediente_id===id); }
 
+// Casos ya en juicio sin ninguna revisión de boletín registrada en los
+// últimos DIAS_SIN_REVISION días (o nunca) — no es una revisión automática,
+// solo un recordatorio de que toca ir a checar manualmente.
+const DIAS_SIN_REVISION_BOLETIN = 3;
+function boletinRecordatorios(){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const out = [];
+  visibleCases().forEach(k=>{
+    if(caseStage(k) !== 'juicio' || estaConcluido(k)) return;
+    const avisos = avisosDeExpediente(k.id);
+    let ultima = null;
+    avisos.forEach(a=>{ const d = new Date(a.creado_en); if(!ultima || d>ultima) ultima = d; });
+    const dias = ultima ? Math.floor((hoy - ultima) / 86400000) : null;
+    if(dias === null || dias >= DIAS_SIN_REVISION_BOLETIN) out.push({k, dias});
+  });
+  return out.sort((a,b)=> (b.dias==null?9999:b.dias) - (a.dias==null?9999:a.dias));
+}
+
 async function loadUsuariosAdmin(){
   try{
     const d = await api('GET', 'usuarios_list.php');
@@ -2088,6 +2106,20 @@ function agendaHTML(){
     <div class="panel-head"><h3>&#128276; Avisos de boletines por revisar</h3><span class="count">${avisosNuevos.length}</span></div>
     <div class="panel-body" style="padding:16px 20px;">${avisosNuevos.map(avisoCard).join("")}</div>
   </div>` : ""}
+  ${(()=>{ const rec = boletinRecordatorios(); return rec.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>&#128465; Pendientes de revisar boletín</h3><span class="count">${rec.length}</span></div>
+    <div class="panel-body">
+      ${rec.map(r=>`
+        <div class="alert-row">
+          <div class="alert-info" data-id="${r.k.id}" data-tab="boletin" style="cursor:pointer;">
+            <div class="name">${escapeHTML(r.k.actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(r.k.demandado,30))}</div>
+            <div class="meta">${r.dias==null? 'Nunca se ha registrado una revisión de boletín' : `Sin revisión registrada hace ${r.dias} día(s)`} &middot; ${escapeHTML(assignedLawyer(r.k))}</div>
+          </div>
+          <button class="btn secondary" data-id="${r.k.id}" data-tab="boletin" style="flex-shrink:0; font-size:11px; padding:6px 10px;">Registrar revisión</button>
+        </div>`).join("")}
+    </div>
+  </div>` : ""; })()}
   ${vencidas.length? `
   <div class="panel">
     <div class="panel-head"><h3>&#9888; Vencidas / requieren atención inmediata</h3><span class="count">${vencidas.length}</span></div>
@@ -2236,7 +2268,7 @@ function bindViewBody(){
     el.addEventListener('click', ()=>{
       const id = parseInt(el.dataset.id);
       const k = findCase(id);
-      if(k) openModal(k);
+      if(k) openModal(k, el.dataset.tab);
     });
   });
   document.querySelectorAll('.chip[data-s]').forEach(el=>{
@@ -2387,8 +2419,8 @@ function bindViewBody(){
 // ---------------------------------------------------------------
 // Modal de expediente (uso interno)
 // ---------------------------------------------------------------
-function openModal(k){
-  ACTIVE_CASE = k; MODAL_TAB = "resumen";
+function openModal(k, tab){
+  ACTIVE_CASE = k; MODAL_TAB = tab || "resumen";
   renderModal();
   document.getElementById('modalOverlay').classList.add('show');
 }
