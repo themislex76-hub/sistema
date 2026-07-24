@@ -935,6 +935,15 @@ function extractMonto(text){
 // ---------------------------------------------------------------
 let EQUIPO = [];
 let USUARIOS_ADMIN = []; // detalle completo (correo, activo, etc.) — solo lo usa la vista "Equipo" del Administrador
+let AVISOS_BOLETIN = [];
+
+const FUENTE_BOLETIN_LABEL = {
+  cdmx_local: 'Tribunales Laborales locales — CDMX',
+  edomex_local: 'Tribunales Laborales locales — Estado de México',
+  federal_laboral: 'Tribunales Laborales Federales',
+  federal_amparo: 'Tribunal Colegiado / Juzgado de Distrito (amparo)',
+  otro: 'Otra fuente',
+};
 
 async function refreshBootstrap(){
   const data = await api('GET', 'expedientes_bootstrap.php');
@@ -943,7 +952,18 @@ async function refreshBootstrap(){
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadUsuariosAdmin();
   }
+  await loadAvisosBoletin();
 }
+
+async function loadAvisosBoletin(){
+  try{
+    const d = await api('GET', 'avisos_list.php');
+    AVISOS_BOLETIN = d.avisos;
+  }catch(e){ AVISOS_BOLETIN = []; }
+}
+
+function avisosNuevosCount(){ return AVISOS_BOLETIN.filter(a=>a.estado==='nuevo').length; }
+function avisosDeExpediente(id){ return AVISOS_BOLETIN.filter(a=>a.expediente_id===id); }
 
 async function loadUsuariosAdmin(){
   try{
@@ -1131,7 +1151,7 @@ function shellHTML(){
         <button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
-        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general</button>
+        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${avisosNuevosCount()>0?`<span class="nav-badge">${avisosNuevosCount()}</span>`:""}</button>
         <div class="section-label">Referencia</div>
         <button data-v="manual" class="${VIEW==='manual'?'active':''}"><span class="ico">&#128218;</span> Manual de uso</button>
         <button data-v="cliente_preview" class="${VIEW==='cliente_preview'?'active':''}"><span class="ico">${ICONS.cliente}</span> Vista de portal cliente</button>
@@ -2044,7 +2064,30 @@ function agendaHTML(){
     </div>`;
   };
 
+  const avisosNuevos = AVISOS_BOLETIN.filter(a=>a.estado==='nuevo');
+  const avisoCard = (a)=>`
+    <div class="aviso-card" data-aviso-id="${a.id}">
+      <div class="aviso-head">
+        <div data-id="${a.expediente_id}" style="cursor:pointer;">
+          <div class="aviso-caso">${escapeHTML(a.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(a.expediente_demandado||'—',30))} ${a.expediente_exp? `&middot; Exp. ${escapeHTML(a.expediente_exp)}`:''}</div>
+          <div class="aviso-fuente">${escapeHTML(FUENTE_BOLETIN_LABEL[a.fuente]||a.fuente)} ${a.origen==='manual'?'&middot; revisión registrada a mano':'&middot; encontrado automáticamente'}</div>
+        </div>
+        <span class="badge warn" style="flex-shrink:0;">nuevo</span>
+      </div>
+      <div class="aviso-resumen">${escapeHTML(a.resumen)}</div>
+      <div class="aviso-meta">${a.fecha_publicacion? 'Fecha del boletín: '+fmtDate(a.fecha_publicacion)+' &middot; ':''}Registrado por ${escapeHTML(a.creado_por_nombre||'—')} el ${new Date(a.creado_en).toLocaleDateString('es-MX')}${a.url_verificacion? ` &middot; <a href="${escapeHTML(a.url_verificacion)}" target="_blank" rel="noopener">ver fuente</a>`:''}</div>
+      <div class="aviso-actions">
+        <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
+        <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+      </div>
+    </div>`;
+
   return `
+  ${avisosNuevos.length? `
+  <div class="panel">
+    <div class="panel-head"><h3>&#128276; Avisos de boletines por revisar</h3><span class="count">${avisosNuevos.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${avisosNuevos.map(avisoCard).join("")}</div>
+  </div>` : ""}
   ${vencidas.length? `
   <div class="panel">
     <div class="panel-head"><h3>&#9888; Vencidas / requieren atención inmediata</h3><span class="count">${vencidas.length}</span></div>
@@ -2232,6 +2275,18 @@ function bindViewBody(){
       if(k) openClientPreviewModal(k);
     });
   });
+  document.querySelectorAll('#viewBody [data-aviso-mark]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const id = parseInt(btn.dataset.avisoMark);
+      const estado = btn.dataset.estado;
+      try{
+        await api('POST', 'avisos_mark.php', {id, estado});
+        await loadAvisosBoletin();
+        render();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); }
+    });
+  });
   document.querySelectorAll('.agenda-complete').forEach(btn=>{
     btn.addEventListener('click', async (ev)=>{
       ev.stopPropagation();
@@ -2361,6 +2416,7 @@ function renderModal(){
       <button data-t="prescripcion" class="${MODAL_TAB==='prescripcion'?'active':''}">Prescripción</button>
       <button data-t="calculo" class="${MODAL_TAB==='calculo'?'active':''}">Cálculo de liquidación</button>
       ${tieneConvenio(k) ? `<button data-t="cobros" class="${MODAL_TAB==='cobros'?'active':''}">Cobros</button>` : ""}
+      ${caseStage(k)==='juicio' ? `<button data-t="boletin" class="${MODAL_TAB==='boletin'?'active':''}">Boletín ${avisosDeExpediente(k.id).filter(a=>a.estado==='nuevo').length>0?`<span class="nav-badge">${avisosDeExpediente(k.id).filter(a=>a.estado==='nuevo').length}</span>`:""}</button>` : ""}
       <button data-t="amparo" class="${MODAL_TAB==='amparo'?'active':''}">Amparo</button>
       <button data-t="pendientes" class="${MODAL_TAB==='pendientes'?'active':''}">Pendientes</button>
       <button data-t="demanda" class="${MODAL_TAB==='demanda'?'active':''}">Generar demanda</button>
@@ -2517,6 +2573,40 @@ function modalTabContent(k,p,meta){
     </div>
     <button class="btn secondary" id="addPagoBtn" style="margin-top:6px;">+ Agregar fecha de pago</button>
     <div style="margin-top:18px;"><button class="btn" id="savePagosBtn">Guardar cobros</button></div>
+    `;
+  }
+  if(MODAL_TAB==='boletin'){
+    const avisos = avisosDeExpediente(k.id);
+    return `
+    <div class="notice" style="margin-bottom:16px;">Los boletines/listas de acuerdos de los tribunales no se pueden monitorear de forma automática por ahora (CAPTCHA o falta de búsqueda por nombre en la fuente oficial). Registra aquí cada vez que revises el boletín correspondiente a este asunto — así queda un historial y no se te pasa por alto.</div>
+    <div class="grid2" style="margin-bottom:6px;">
+      <div class="field"><label>Fuente revisada</label>
+        <select id="avisoFuente" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+          ${Object.keys(FUENTE_BOLETIN_LABEL).map(f=>`<option value="${f}">${escapeHTML(FUENTE_BOLETIN_LABEL[f])}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label>Fecha del boletín revisado</label><input type="date" id="avisoFecha" value="${dateToISO(new Date())}"></div>
+    </div>
+    <div class="field" style="margin-top:6px;"><label>¿Qué encontraste? (o "sin novedades" si no había nada nuevo)</label><textarea id="avisoResumen" placeholder="Ej. Se dictó auto admitiendo pruebas; próxima audiencia el..."></textarea></div>
+    <div class="field" style="margin-top:6px;"><label>Enlace de verificación (opcional)</label><input type="text" id="avisoUrl" placeholder="https://..."></div>
+    <div style="margin-top:12px;"><button class="btn" id="addAvisoBtn">Registrar revisión</button></div>
+    <div class="divider"></div>
+    <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Historial de revisiones (${avisos.length})</div>
+    ${avisos.length ? avisos.map(a=>`
+      <div class="aviso-card" style="${a.estado!=='nuevo'?'opacity:.75;':''}">
+        <div class="aviso-head">
+          <div>
+            <div class="aviso-fuente">${escapeHTML(FUENTE_BOLETIN_LABEL[a.fuente]||a.fuente)}</div>
+          </div>
+          <span class="badge ${a.estado==='nuevo'?'warn':a.estado==='descartado'?'closed':'ok'}">${a.estado}</span>
+        </div>
+        <div class="aviso-resumen">${escapeHTML(a.resumen)}</div>
+        <div class="aviso-meta">${a.fecha_publicacion? 'Fecha del boletín: '+fmtDate(a.fecha_publicacion)+' &middot; ':''}Registrado por ${escapeHTML(a.creado_por_nombre||'—')} el ${new Date(a.creado_en).toLocaleDateString('es-MX')}${a.url_verificacion? ` &middot; <a href="${escapeHTML(a.url_verificacion)}" target="_blank" rel="noopener">ver fuente</a>`:''}</div>
+        ${a.estado==='nuevo' ? `<div class="aviso-actions">
+          <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
+          <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+        </div>` : ''}
+      </div>`).join("") : '<div class="empty">Sin revisiones registradas todavía.</div>'}
     `;
   }
   if(MODAL_TAB==='amparo'){
@@ -2933,6 +3023,37 @@ function bindModalTabEvents(){
       }catch(err){ alert('No se pudo guardar: ' + err.message); }
     });
   }
+  const addAvisoBtn = document.getElementById('addAvisoBtn');
+  if(addAvisoBtn){
+    addAvisoBtn.addEventListener('click', async ()=>{
+      const resumen = document.getElementById('avisoResumen').value.trim();
+      if(!resumen){ alert('Escribe qué encontraste (o "sin novedades").'); return; }
+      addAvisoBtn.disabled = true;
+      try{
+        await api('POST', 'avisos_create.php', {
+          expediente_id: ACTIVE_CASE.id,
+          fuente: document.getElementById('avisoFuente').value,
+          fecha_publicacion: document.getElementById('avisoFecha').value,
+          resumen,
+          url_verificacion: document.getElementById('avisoUrl').value.trim(),
+        });
+        await loadAvisosBoletin();
+        ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+        renderModal();
+      }catch(err){ alert('No se pudo registrar: ' + err.message); }
+      finally{ addAvisoBtn.disabled = false; }
+    });
+  }
+  document.querySelectorAll('#modalBody [data-aviso-mark]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      try{
+        await api('POST', 'avisos_mark.php', {id: parseInt(btn.dataset.avisoMark), estado: btn.dataset.estado});
+        await loadAvisosBoletin();
+        ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+        renderModal();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); }
+    });
+  });
   const codigoBox = document.getElementById('codigoAccesoBox');
   if(codigoBox){
     api('GET', 'expedientes_access_code.php?id=' + ACTIVE_CASE.id)

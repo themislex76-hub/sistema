@@ -224,4 +224,30 @@ CREATE TABLE configuracion (
   actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ----------------------------------------------------------------------------
+-- avisos_boletin: hallazgos de boletines/listas de acuerdos por expediente.
+-- 'origen' distingue lo que capturó una fuente automática (cuando exista) de
+-- lo que un abogado registró a mano tras revisar un boletín que no se puede
+-- monitorear de forma automática (CAPTCHA, sin búsqueda por nombre, etc.).
+-- ----------------------------------------------------------------------------
+CREATE TABLE avisos_boletin (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  expediente_id INT UNSIGNED NOT NULL,
+  fuente ENUM('cdmx_local','edomex_local','federal_laboral','federal_amparo','otro') NOT NULL DEFAULT 'otro',
+  origen ENUM('automatico','manual') NOT NULL DEFAULT 'manual',
+  fecha_publicacion DATE NULL,
+  resumen TEXT NOT NULL,
+  url_verificacion VARCHAR(500) NULL,
+  estado ENUM('nuevo','revisado','descartado') NOT NULL DEFAULT 'nuevo',
+  creado_por INT UNSIGNED NULL,
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  revisado_por INT UNSIGNED NULL,
+  revisado_en DATETIME NULL,
+  KEY idx_avisos_expediente (expediente_id),
+  KEY idx_avisos_estado (estado),
+  CONSTRAINT fk_avisos_expediente FOREIGN KEY (expediente_id) REFERENCES expedientes(id) ON DELETE CASCADE,
+  CONSTRAINT fk_avisos_creado_por FOREIGN KEY (creado_por) REFERENCES usuarios(id) ON DELETE SET NULL,
+  CONSTRAINT fk_avisos_revisado_por FOREIGN KEY (revisado_por) REFERENCES usuarios(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
