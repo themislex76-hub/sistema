@@ -1,0 +1,49 @@
+<?php
+declare(strict_types=1);
+
+// Carga el expediente y verifica que el usuario actual pueda verlo/editarlo
+// (admin: cualquiera; abogado: solo el suyo). Se usa en TODOS los endpoints
+// de escritura para que la autorización real viva en el servidor.
+function guard_expediente_access(PDO $pdo, array $user, int $id): array
+{
+    $stmt = $pdo->prepare('SELECT * FROM expedientes WHERE id = :id');
+    $stmt->execute([':id' => $id]);
+    $row = $stmt->fetch();
+    if (!$row) fail('Expediente no encontrado.', 404);
+    if ($user['rol'] !== 'administrador' && (int)$row['abogado_id'] !== (int)$user['id']) {
+        fail('No tienes acceso a este expediente.', 403);
+    }
+    return $row;
+}
+
+const EDITABLE_CAMPOS = [
+    'actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
+    'fecha_ingreso','fecha_baja','salario_mensual','salario_diario','sdi','instancia','junta',
+    'tribunal','exp','status','quien_despidio','puesto_despidio','hora_despido','testigos',
+    'dom_testigos','ultima_nota','indemnizacion_90','prima_antiguedad','vacaciones_dias',
+    'vacaciones_monto','prima_vacacional','aguinaldo_dias','aguinaldo_monto',
+];
+
+const ETAPA_KEYS = [
+    'conciliacion_solicitada','constancia_no_conciliacion','demanda_presentada','demanda_admitida',
+    'emplazamiento','contestacion_recibida','objeciones_replica','contrarreplica',
+    'manifestaciones_3dias','audiencia_preliminar','audiencia_juicio','sentencia','amparo_directo',
+];
+
+// Columnas DECIMAL de MySQL: PDO siempre las entrega como string (para no
+// perder precisión), pero el frontend hace aritmética/.toFixed() esperando
+// números reales. Hay que convertirlas antes de mandarlas como JSON.
+const CAMPOS_NUMERICOS_EXPEDIENTE = [
+    'salario_mensual','salario_diario','sdi','antiguedad_anios',
+    'indemnizacion_90','indemnizacion_60','prima_antiguedad','vacaciones_dias','vacaciones_monto',
+    'prima_vacacional','aguinaldo_dias','aguinaldo_monto','total_90','total_60','honorario_90','honorario_60',
+    'convenio_monto',
+];
+
+function cast_numeric_fields(array $row): array
+{
+    foreach (CAMPOS_NUMERICOS_EXPEDIENTE as $k) {
+        if (array_key_exists($k, $row) && $row[$k] !== null) $row[$k] = (float)$row[$k];
+    }
+    return $row;
+}
