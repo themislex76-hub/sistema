@@ -1,4 +1,5 @@
 api/db_credentials.php
 data/plantilla_demanda.docx
 data/documentos/
+data/plantillas/
 .DS_Store

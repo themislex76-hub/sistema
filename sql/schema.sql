@@ -284,4 +284,20 @@ CREATE TABLE expediente_documentos (
   CONSTRAINT fk_documentos_subido_por FOREIGN KEY (subido_por) REFERENCES usuarios(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ----------------------------------------------------------------------------
+-- plantillas_docx: biblioteca de plantillas de escritos adicionales a la
+-- demanda (que sigue viviendo aparte, en data/plantilla_demanda.docx —
+-- ver api/plantilla.php). Los archivos de estas viven en disco, en
+-- data/plantillas/, protegidos por el mismo .htaccess de data/.
+-- ----------------------------------------------------------------------------
+CREATE TABLE plantillas_docx (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  nombre VARCHAR(150) NOT NULL,
+  descripcion VARCHAR(255) NULL,
+  nombre_disco VARCHAR(100) NOT NULL,
+  creado_por INT UNSIGNED NULL,
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_plantillas_creado_por FOREIGN KEY (creado_por) REFERENCES usuarios(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

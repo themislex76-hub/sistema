@@ -538,11 +538,14 @@ async function resetPlantillaDocx(){
   try{ await api('POST', 'plantilla.php', {action:'reset'}); }catch(e){}
 }
 
-function generarDemandaDocx(k, onDone, onError){
+// Genera y descarga un .docx a partir de cualquier plantilla (en base64) con
+// los mismos {{tags}} que usa la demanda — motor compartido por
+// generarDemandaDocx() y por la biblioteca de plantillas de escritos.
+function generarDocxDesdePlantilla(k, plantillaB64, nombreBase, onDone, onError){
   ensureJSZip(async ()=>{
     try{
       const tags = mergeTags(k);
-      const bytes = base64ToUint8Array(PLANTILLA_DOCX_B64);
+      const bytes = base64ToUint8Array(plantillaB64);
       const zip = await JSZip.loadAsync(bytes);
       let xml = await zip.file('word/document.xml').async('string');
       Object.keys(tags).forEach(key=>{
@@ -550,7 +553,7 @@ function generarDemandaDocx(k, onDone, onError){
       });
       zip.file('word/document.xml', xml);
       const out = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
-      const nombre = 'Demanda - ' + (k.actor||'expediente').replace(/[\\/:*?"<>|]/g,'') + '.docx';
+      const nombre = nombreBase + ' - ' + (k.actor||'expediente').replace(/[\\/:*?"<>|]/g,'') + '.docx';
       const url = URL.createObjectURL(out);
       const a = document.createElement('a');
       a.href = url; a.download = nombre;
@@ -563,6 +566,10 @@ function generarDemandaDocx(k, onDone, onError){
       else alert('No se pudo generar el documento: ' + e.message);
     }
   });
+}
+
+function generarDemandaDocx(k, onDone, onError){
+  generarDocxDesdePlantilla(k, PLANTILLA_DOCX_B64, 'Demanda', onDone, onError);
 }
 
 // Vista previa de texto plano (rápida, sin depender de JSZip) para mostrar
@@ -709,7 +716,7 @@ function manualHTML(){
     <p><strong><span class="tag">Cobros</span></strong> — solo aparece si el asunto tiene un convenio. Aquí ves el monto total y una lista de pagos, cada uno con su fecha programada, monto, casilla de "Cobrado" y fecha de cobro real. Puedes agregar más fechas de pago con <span class="tag">+ Agregar fecha de pago</span>.</p>
     <p><strong><span class="tag">Amparo</span></strong> — marca si el asunto tiene o podría tener amparo, la fecha de notificación de la sentencia, y el sistema te calcula el vencimiento de los 15 días hábiles automáticamente.</p>
     <p><strong><span class="tag">Pendientes</span></strong> — para cualquier término que no sea una etapa fija: objeciones, un desahogo con plazo de días, una audiencia con fecha ya señalada. Cada uno puede ser "por días" (capturas fecha de inicio + número de días + si son hábiles o naturales, y el sistema calcula el vencimiento) o "fecha fija".</p>
-    <p><strong><span class="tag">Generar demanda</span></strong> — descarga la demanda en Word (sección 9).</p>
+    <p><strong><span class="tag">Generar escrito</span></strong> — descarga en Word la demanda o cualquier otra plantilla que hayas subido (sección 9).</p>
     <p><strong><span class="tag">Hechos del despido</span></strong> — giro de la empresa, hora del despido, quién despidió y su puesto, testigos y sus domicilios, domicilio del demandado.</p>
     <p><strong><span class="tag">Gestión interna</span></strong> — registrar convenio/pago (sección 7), reasignar el socio responsable, escribir notas internas, marcar "cobro pendiente", y marcar el asunto como <strong>Concluido</strong>.</p>
     <p><strong><span class="tag">Historial de cambios</span></strong> — solo la ve el Administrador. Lista cada cambio hecho al expediente: quién, qué campo, el valor antes y después, y cuándo.</p>
@@ -778,11 +785,12 @@ function manualHTML(){
     </ol>
   `));
 
-  secciones.push(manualStep(++n, 'Generar la demanda en Word', `
+  secciones.push(manualStep(++n, 'Generar un escrito en Word', `
     <ol>
-      <li>Abre el expediente y ve a <span class="tag">Generar demanda</span>.</li>
-      <li>Si falta algún dato importante (nombre, domicilio, salario, fechas), el sistema te lo dice antes de generarla, para que lo completes en "Editar datos" si quieres.</li>
-      <li>Dale <span class="tag">Generar demanda en Word (.docx)</span>.</li>
+      <li>Abre el expediente y ve a <span class="tag">Generar escrito</span>.</li>
+      <li>Si falta algún dato importante (nombre, domicilio, salario, fechas), el sistema te lo dice antes de generarlo, para que lo completes en "Editar datos" si quieres.</li>
+      <li>Elige qué plantilla usar — la demanda, o cualquier otra que un Administrador haya subido (contestación, promoción, etc.).</li>
+      <li>Dale <span class="tag">Generar documento en Word (.docx)</span>.</li>
       <li>Se descarga un archivo de Word real (no una imagen ni un PDF), con el membrete del despacho y todos los datos del expediente ya llenados en el lugar correcto.</li>
       <li>Ábrelo en Word como cualquier documento — puedes editarlo libremente antes de presentarlo.</li>
     </ol>
@@ -806,7 +814,7 @@ function manualHTML(){
 
   secciones.push(manualStep(++n, 'Solo para el Administrador', `
     <p><strong><span class="tag">Equipo</span></strong> — agregar socios nuevos, renombrarlos, restablecer contraseñas, y ver el respaldo completo de toda la información (descargar y restaurar).</p>
-    <p><strong><span class="tag">Formato de demanda</span></strong> — descargar la plantilla de Word actual, editarla como cualquier documento, y volver a subirla para que el sistema la use en todas las demandas nuevas.</p>
+    <p><strong><span class="tag">Formato de demanda</span></strong> — descargar la plantilla de Word actual, editarla como cualquier documento, y volver a subirla para que el sistema la use en todas las demandas nuevas. Ahí mismo, más abajo, puedes subir cuantas plantillas adicionales quieras (contestación, promoción, oficio...) para usarlas desde "Generar escrito" en cualquier expediente.</p>
     <p><strong><span class="tag">Días inhábiles</span></strong> — el calendario que el sistema usa para calcular automáticamente los vencimientos de términos (etapas del expediente, amparo, pendientes). Ya viene con los descansos obligatorios de ley; agrega ahí los recesos propios de cada tribunal en cuanto los confirmes.</p>
     <p><strong>Historial de cambios</strong> — dentro de cada expediente, pestaña visible solo para ti: quién cambió qué, cuándo, y qué decía antes.</p>
     <div class="tip">Como Administrador ves todos los expedientes de todo el equipo. Cada socio asignado solo ve los suyos.</div>
@@ -956,6 +964,14 @@ const AMBITO_INHABIL_LABEL = {
 };
 
 let DOCUMENTOS_ACTIVOS = []; // documentos del expediente actualmente abierto en el modal
+let PLANTILLAS_LIB = []; // biblioteca de plantillas .docx adicionales a la demanda
+
+async function loadPlantillasLib(){
+  try{
+    const d = await api('GET', 'plantillas_list.php');
+    PLANTILLAS_LIB = d.plantillas;
+  }catch(e){ PLANTILLAS_LIB = []; }
+}
 
 const CATEGORIA_DOCUMENTO_LABEL = {
   demanda: 'Demanda',
@@ -1024,6 +1040,7 @@ async function refreshBootstrap(){
   }
   await loadAvisosBoletin();
   await loadDiasInhabiles();
+  await loadPlantillasLib();
 }
 
 async function loadDiasInhabiles(){
@@ -1281,7 +1298,7 @@ function topBarHTML(){
     exito:["Tasa de éxito", "Qué tan seguido se resuelven los asuntos a favor del trabajador"],
     manual:["Manual de uso", "Guía paso a paso del sistema"],
     agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
-    formato_demanda:["Formato de demanda", "Plantilla editable para generar demandas por combinación de correspondencia"],
+    formato_demanda:["Formato de demanda", "Plantilla de demanda y biblioteca de otras plantillas de escritos"],
     cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
     equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
     dias_inhabiles:["Días inhábiles", "Calendario usado para calcular automáticamente los vencimientos de términos en todo el sistema"]
@@ -2286,6 +2303,38 @@ function formatoDemandaHTML(){
   </div>
   <div id="plantillaStatus" style="font-size:12px; color:var(--gray);">${esOriginal ? 'Estado actual: usando la plantilla original del despacho.' : 'Estado actual: usando una plantilla personalizada, subida por el Administrador.'}</div>
   ${!esOriginal ? `<button class="btn secondary" id="resetPlantillaBtn" style="margin-top:10px;">Restaurar plantilla original del despacho</button>` : ''}
+
+  <div class="divider"></div>
+  <div style="font-family:var(--serif); font-size:17px; font-weight:700; color:var(--ink); margin-bottom:8px;">Otras plantillas de escritos</div>
+  <div class="notice" style="margin-bottom:16px;">Además de la demanda, puedes subir tantas plantillas .docx como necesites (contestación, promoción, oficio, lo que uses seguido). Funcionan igual: mismos campos entre llaves dobles, se autocompletan con los datos del expediente. Cada una aparece como opción al generar un escrito desde la ficha de cualquier asunto.</div>
+  <div class="grid2" style="margin-bottom:6px;">
+    <div class="field"><label>Nombre de la plantilla</label><input type="text" id="nuevaPlantillaNombre" placeholder="Ej. Contestación de demanda"></div>
+    <div class="field"><label>Descripción (opcional)</label><input type="text" id="nuevaPlantillaDescripcion" placeholder="Para qué se usa"></div>
+  </div>
+  <label class="btn secondary" style="cursor:pointer; display:inline-block;">Elegir archivo .docx
+    <input type="file" id="nuevaPlantillaInput" accept=".docx" style="display:none;">
+  </label>
+  <span id="nuevaPlantillaNombreArchivo" style="font-size:12px; color:var(--gray); margin-left:8px;"></span>
+  <div style="margin-top:10px;"><button class="btn" id="agregarPlantillaBtn">Agregar plantilla</button> <span id="nuevaPlantillaStatus" style="font-size:12px; color:var(--gray); margin-left:8px;"></span></div>
+
+  <div class="panel" style="margin-top:16px;">
+    <div class="panel-head"><h3>Plantillas subidas</h3><span class="count">${PLANTILLAS_LIB.length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Nombre</th><th>Descripción</th><th>Subida por</th><th>Fecha</th><th></th></tr></thead><tbody>
+        ${PLANTILLAS_LIB.map(p=>`
+          <tr>
+            <td>${escapeHTML(p.nombre)}</td>
+            <td>${escapeHTML(p.descripcion||'—')}</td>
+            <td>${escapeHTML(p.creado_por_nombre||'—')}</td>
+            <td style="font-size:11.5px;">${new Date(p.creado_en).toLocaleDateString('es-MX')}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn secondary" data-descargar-plantilla="${p.id}" data-nombre-plantilla="${escapeHTML(p.nombre)}" style="padding:5px 10px; font-size:11px;">Descargar</button>
+              <button class="btn secondary" data-delete-plantilla="${p.id}" style="padding:5px 10px; font-size:11px;">Eliminar</button>
+            </td>
+          </tr>`).join("") || `<tr><td colspan="5" class="empty">Sin plantillas adicionales todavía.</td></tr>`}
+      </tbody></table>
+    </div>
+  </div>
   `;
 }
 
@@ -2412,6 +2461,69 @@ function bindViewBody(){
       renderViewBody();
     });
   }
+  const nuevaPlantillaInput = document.getElementById('nuevaPlantillaInput');
+  if(nuevaPlantillaInput){
+    nuevaPlantillaInput.addEventListener('change', ()=>{
+      const nombreEl = document.getElementById('nuevaPlantillaNombreArchivo');
+      if(nombreEl) nombreEl.textContent = nuevaPlantillaInput.files[0] ? nuevaPlantillaInput.files[0].name : '';
+    });
+  }
+  const agregarPlantillaBtn = document.getElementById('agregarPlantillaBtn');
+  if(agregarPlantillaBtn){
+    agregarPlantillaBtn.addEventListener('click', ()=>{
+      const nombre = document.getElementById('nuevaPlantillaNombre').value.trim();
+      const descripcion = document.getElementById('nuevaPlantillaDescripcion').value.trim();
+      const input = document.getElementById('nuevaPlantillaInput');
+      const status = document.getElementById('nuevaPlantillaStatus');
+      const file = input.files[0];
+      if(!nombre){ if(status) status.textContent = 'Escribe un nombre para la plantilla.'; return; }
+      if(!file){ if(status) status.textContent = 'Elige un archivo .docx.'; return; }
+      agregarPlantillaBtn.disabled = true;
+      if(status) status.textContent = 'Subiendo...';
+      const reader = new FileReader();
+      reader.onload = async ()=>{
+        try{
+          const b64 = reader.result.split(',')[1];
+          await api('POST', 'plantillas_create.php', {nombre, descripcion, base64: b64});
+          await loadPlantillasLib();
+          renderViewBody();
+        }catch(err){
+          if(status) status.textContent = 'Error: ' + err.message;
+          agregarPlantillaBtn.disabled = false;
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+  document.querySelectorAll('[data-descargar-plantilla]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = parseInt(btn.dataset.descargarPlantilla);
+      btn.disabled = true;
+      try{
+        const d = await api('GET', 'plantillas_get.php?id=' + id);
+        const bytes = base64ToUint8Array(d.base64);
+        const blob = new Blob([bytes], {type:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = (btn.dataset.nombrePlantilla || d.nombre) + '.docx';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(()=> URL.revokeObjectURL(url), 5000);
+      }catch(err){ alert('No se pudo descargar: ' + err.message); }
+      finally{ btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-delete-plantilla]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = parseInt(btn.dataset.deletePlantilla);
+      const p = PLANTILLAS_LIB.find(x=>x.id===id);
+      if(!confirm('¿Eliminar la plantilla "'+(p?p.nombre:'')+'"? Esta acción no se puede deshacer.')) return;
+      try{
+        await api('POST', 'plantillas_delete.php', {id});
+        await loadPlantillasLib();
+        renderViewBody();
+      }catch(err){ alert('No se pudo eliminar: ' + err.message); }
+    });
+  });
   const nuevoBtn = document.getElementById('nuevoExpedienteBtn');
   if(nuevoBtn){
     nuevoBtn.addEventListener('click', async ()=>{
@@ -2649,7 +2761,7 @@ function renderModal(){
       ${caseStage(k)==='juicio' ? `<button data-t="boletin" class="${MODAL_TAB==='boletin'?'active':''}">Boletín ${avisosDeExpediente(k.id).filter(a=>a.estado==='nuevo').length>0?`<span class="nav-badge">${avisosDeExpediente(k.id).filter(a=>a.estado==='nuevo').length}</span>`:""}</button>` : ""}
       <button data-t="amparo" class="${MODAL_TAB==='amparo'?'active':''}">Amparo</button>
       <button data-t="pendientes" class="${MODAL_TAB==='pendientes'?'active':''}">Pendientes</button>
-      <button data-t="demanda" class="${MODAL_TAB==='demanda'?'active':''}">Generar demanda</button>
+      <button data-t="demanda" class="${MODAL_TAB==='demanda'?'active':''}">Generar escrito</button>
       <button data-t="hechos" class="${MODAL_TAB==='hechos'?'active':''}">Hechos del despido</button>
       <button data-t="interno" class="${MODAL_TAB==='interno'?'active':''}">Gestión interna</button>
       ${CURRENT_USER.role==='Administrador' ? `<button data-t="historial" class="${MODAL_TAB==='historial'?'active':''}">Historial de cambios</button>` : ""}
@@ -2922,9 +3034,15 @@ function modalTabContent(k,p,meta){
     const faltantes = ['actor','demandado','giro_empresa','dom_demandado','puesto','fecha_ingreso','fecha_baja','salario_mensual','salario_diario']
       .filter(f=> k[f]===null || k[f]===undefined || k[f]==='');
     return `
-    ${faltantes.length ? `<div class="legal-box" style="border-left-color:var(--amber); margin-bottom:14px;"><strong>Faltan datos para una demanda completa:</strong> ${faltantes.map(f=>{const d=EDITABLE_FIELDS.find(x=>x.key===f); return escapeHTML(d?d.label:f);}).join(', ')}. Complétalos en "Editar datos" para un mejor resultado; mientras tanto se dejarán líneas en blanco.</div>` : ''}
-    <div class="notice" style="margin-bottom:14px;">Genera el documento Word (.docx) real, con el formato original del despacho, combinando la plantilla (editable por el Administrador en "Formato de demanda") con los datos de este expediente.</div>
-    <button class="btn" id="genDemandaBtn">Generar demanda en Word (.docx)</button>
+    ${faltantes.length ? `<div class="legal-box" style="border-left-color:var(--amber); margin-bottom:14px;"><strong>Faltan datos para un escrito completo:</strong> ${faltantes.map(f=>{const d=EDITABLE_FIELDS.find(x=>x.key===f); return escapeHTML(d?d.label:f);}).join(', ')}. Complétalos en "Editar datos" para un mejor resultado; mientras tanto se dejarán líneas en blanco.</div>` : ''}
+    <div class="notice" style="margin-bottom:14px;">Genera el documento Word (.docx) real, con el formato original del despacho, combinando la plantilla que elijas con los datos de este expediente. Administra las plantillas disponibles en "Formato de demanda" (menú, solo Administrador).</div>
+    <div class="field" style="margin-bottom:14px; max-width:360px;"><label>Plantilla a usar</label>
+      <select id="escritoPlantillaSelect" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+        <option value="demanda">Demanda (plantilla del despacho)</option>
+        ${PLANTILLAS_LIB.map(p=>`<option value="${p.id}">${escapeHTML(p.nombre)}</option>`).join("")}
+      </select>
+    </div>
+    <button class="btn" id="genDemandaBtn">Generar documento en Word (.docx)</button>
     <span id="genDemandaStatus" style="margin-left:10px; font-size:12px; color:var(--gray);"></span>
     `;
   }
@@ -3113,14 +3231,22 @@ function bindModalTabEvents(){
   }
   const genDemandaBtn = document.getElementById('genDemandaBtn');
   if(genDemandaBtn){
-    genDemandaBtn.addEventListener('click', ()=>{
+    genDemandaBtn.addEventListener('click', async ()=>{
       const status = document.getElementById('genDemandaStatus');
+      const select = document.getElementById('escritoPlantillaSelect');
+      const elegido = select ? select.value : 'demanda';
       genDemandaBtn.disabled = true;
       if(status) status.textContent = 'Generando...';
-      generarDemandaDocx(ACTIVE_CASE,
-        ()=>{ genDemandaBtn.disabled = false; if(status) status.textContent = 'Listo ✓ revisa tus descargas.'; },
-        (err)=>{ genDemandaBtn.disabled = false; if(status) status.textContent = 'Error: ' + err.message; }
-      );
+      const onDone = ()=>{ genDemandaBtn.disabled = false; if(status) status.textContent = 'Listo ✓ revisa tus descargas.'; };
+      const onError = (err)=>{ genDemandaBtn.disabled = false; if(status) status.textContent = 'Error: ' + err.message; };
+      if(elegido === 'demanda'){
+        generarDemandaDocx(ACTIVE_CASE, onDone, onError);
+      } else {
+        try{
+          const p = await api('GET', 'plantillas_get.php?id=' + elegido);
+          generarDocxDesdePlantilla(ACTIVE_CASE, p.base64, p.nombre, onDone, onError);
+        }catch(err){ onError(err); }
+      }
     });
   }
   const agregarNotaBtn = document.getElementById('agregarNotaBtn');
