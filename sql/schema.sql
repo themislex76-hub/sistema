@@ -264,4 +264,24 @@ CREATE TABLE dias_inhabiles (
   UNIQUE KEY uq_dias_inhabiles (fecha, ambito)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ----------------------------------------------------------------------------
+-- expediente_documentos: gestión documental por expediente. Los archivos en
+-- sí viven en disco (data/documentos/{expediente_id}/), protegidos por el
+-- .htaccess "Require all denied" de data/ — esta tabla solo guarda metadatos.
+-- ----------------------------------------------------------------------------
+CREATE TABLE expediente_documentos (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  expediente_id INT UNSIGNED NOT NULL,
+  nombre_archivo VARCHAR(255) NOT NULL,
+  nombre_disco VARCHAR(100) NOT NULL,
+  tipo_mime VARCHAR(100) NULL,
+  tamano_bytes INT UNSIGNED NULL,
+  categoria ENUM('demanda','contestacion','pruebas','actas','convenio','otro') NOT NULL DEFAULT 'otro',
+  subido_por INT UNSIGNED NULL,
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_documentos_expediente (expediente_id),
+  CONSTRAINT fk_documentos_expediente FOREIGN KEY (expediente_id) REFERENCES expedientes(id) ON DELETE CASCADE,
+  CONSTRAINT fk_documentos_subido_por FOREIGN KEY (subido_por) REFERENCES usuarios(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

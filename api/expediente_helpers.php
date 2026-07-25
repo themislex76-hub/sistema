@@ -47,3 +47,19 @@ function cast_numeric_fields(array $row): array
     }
     return $row;
 }
+
+// ----------------------------------------------------------------------------
+// Gestión documental por expediente. Los archivos viven en disco, fuera del
+// alcance HTTP directo (data/.htaccess tiene "Require all denied"); solo se
+// sirven a través de documentos_descargar.php, que valida sesión y permisos.
+// ----------------------------------------------------------------------------
+const CATEGORIA_DOCUMENTO_KEYS = ['demanda', 'contestacion', 'pruebas', 'actas', 'convenio', 'otro'];
+
+const EXTENSION_DOCUMENTO_PERMITIDA = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
+
+function documentos_dir(int $expedienteId): string
+{
+    $dir = __DIR__ . '/../data/documentos/' . $expedienteId;
+    if (!is_dir($dir)) mkdir($dir, 0755, true);
+    return $dir;
+}

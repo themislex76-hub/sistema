@@ -702,6 +702,7 @@ function manualHTML(){
     <p>Al abrir cualquier expediente, arriba ves su nombre, contra quién demanda, el número de expediente, y una fila de pestañas. Aquí está cada una a detalle:</p>
     <p><strong><span class="tag">Informe del juicio</span></strong> — lo primero que ves. Arriba, en un recuadro, dice en qué etapa está el asunto ahora mismo y desde cuándo. Si hay una audiencia o un pago agendados, salen destacados justo debajo. Si el asunto lleva 30+ días sin movimiento, o parece atorado, también te avisa aquí. Más abajo están los datos generales (puesto, salario, instancia, teléfono, correo) y la bitácora de notas con fecha, con un cuadro de texto para agregar una nueva.</p>
     <p><strong><span class="tag">Editar datos</span></strong> — todos los campos del expediente en modo edición: nombre del actor, CURP, teléfono, correo, demandado, giro, domicilio, puesto, fechas, salarios, instancia, quién despidió, testigos, y los montos de la liquidación (indemnización, prima de antigüedad, vacaciones, prima vacacional, aguinaldo). Escribe el dato y dale <span class="tag">Guardar datos del expediente</span> al final. Cada cambio que hagas aquí queda registrado con tu nombre y la fecha en el Historial (lo ve solo el Administrador).</p>
+    <p><strong><span class="tag">Documentos</span></strong> — sube y organiza los archivos de este asunto (demanda, contestación, pruebas, actas de audiencia...) por categoría. Acepta PDF, Word, Excel e imágenes, hasta 20 MB por archivo. Cualquiera con acceso a este expediente puede descargarlos o eliminarlos.</p>
     <p><strong><span class="tag">Etapas del juicio</span></strong> — el checklist completo del procedimiento (lo explico a detalle en la sección 6).</p>
     <p><strong><span class="tag">Prescripción</span></strong> — te dice si ya tienen la constancia de no conciliación, desde cuándo corre el plazo, cuántos días de suspensión hubo por la conciliación, y la fecha límite calculada para presentar la demanda, con los días que faltan.</p>
     <p><strong><span class="tag">Cálculo de liquidación</span></strong> — el desglose completo: indemnización de 90 días, prima de antigüedad, vacaciones, prima vacacional, aguinaldo, y si el asunto ya está en juicio, también salarios caídos e intereses. Al final hay un recuadro oscuro con el total general, y un botón <span class="tag">Extraer cálculo (PDF con desglose)</span> para imprimirlo o guardarlo como PDF — listo para presentarlo como propuesta, sin honorarios del despacho incluidos.</p>
@@ -953,6 +954,52 @@ const AMBITO_INHABIL_LABEL = {
   edomex: 'Tribunales locales — Estado de México',
   todos: 'Todos los ámbitos',
 };
+
+let DOCUMENTOS_ACTIVOS = []; // documentos del expediente actualmente abierto en el modal
+
+const CATEGORIA_DOCUMENTO_LABEL = {
+  demanda: 'Demanda',
+  contestacion: 'Contestación',
+  pruebas: 'Pruebas',
+  actas: 'Actas de audiencia',
+  convenio: 'Convenio',
+  otro: 'Otro',
+};
+
+async function loadDocumentos(expedienteId){
+  try{
+    const d = await api('GET', 'documentos_list.php?expediente_id=' + expedienteId);
+    DOCUMENTOS_ACTIVOS = d.documentos;
+  }catch(e){ DOCUMENTOS_ACTIVOS = []; }
+}
+
+function fmtBytes(n){
+  if(n===null || n===undefined) return "—";
+  if(n < 1024) return n + " B";
+  if(n < 1024*1024) return (n/1024).toFixed(1) + " KB";
+  return (n/(1024*1024)).toFixed(1) + " MB";
+}
+
+async function subirDocumento(expedienteId, file, categoria){
+  const fd = new FormData();
+  fd.append('expediente_id', String(expedienteId));
+  fd.append('categoria', categoria);
+  fd.append('archivo', file);
+  const opts = {method:'POST', body: fd, credentials:'same-origin', headers:{}};
+  if(CSRF_TOKEN) opts.headers['X-CSRF-Token'] = CSRF_TOKEN;
+  let res, json;
+  try{
+    res = await fetch(API_BASE + 'documentos_upload.php', opts);
+    json = await res.json();
+  }catch(e){
+    throw new Error('No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.');
+  }
+  if(!json || json.ok !== true){
+    const msg = (json && json.error) ? json.error : ('Error del servidor ('+res.status+').');
+    throw new Error(msg);
+  }
+  return json.data;
+}
 
 const FUENTE_BOLETIN_LABEL = {
   cdmx_local: 'Tribunales Laborales locales — CDMX',
@@ -2511,8 +2558,9 @@ function bindViewBody(){
 // ---------------------------------------------------------------
 // Modal de expediente (uso interno)
 // ---------------------------------------------------------------
-function openModal(k, tab){
+async function openModal(k, tab){
   ACTIVE_CASE = k; MODAL_TAB = tab || "resumen";
+  if(MODAL_TAB === 'documentos') await loadDocumentos(k.id);
   renderModal();
   document.getElementById('modalOverlay').classList.add('show');
 }
@@ -2536,6 +2584,7 @@ function renderModal(){
     <div class="modal-tabs">
       <button data-t="resumen" class="${MODAL_TAB==='resumen'?'active':''}">Informe del juicio</button>
       <button data-t="editar" class="${MODAL_TAB==='editar'?'active':''}">Editar datos</button>
+      <button data-t="documentos" class="${MODAL_TAB==='documentos'?'active':''}">Documentos</button>
       <button data-t="etapas" class="${MODAL_TAB==='etapas'?'active':''}">Etapas del juicio</button>
       <button data-t="prescripcion" class="${MODAL_TAB==='prescripcion'?'active':''}">Prescripción</button>
       <button data-t="calculo" class="${MODAL_TAB==='calculo'?'active':''}">Cálculo de liquidación</button>
@@ -2553,7 +2602,11 @@ function renderModal(){
   document.getElementById('modalClose').addEventListener('click', closeModal);
   overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
   document.querySelectorAll('.modal-tabs button').forEach(b=>{
-    b.addEventListener('click', ()=>{ MODAL_TAB = b.dataset.t; renderModal(); });
+    b.addEventListener('click', async ()=>{
+      MODAL_TAB = b.dataset.t;
+      if(MODAL_TAB === 'documentos') await loadDocumentos(ACTIVE_CASE.id);
+      renderModal();
+    });
   });
   bindModalTabEvents();
 }
@@ -2746,7 +2799,7 @@ function modalTabContent(k,p,meta){
       </div>
     </div>
     <div class="field" style="margin-top:14px;"><label>Notas sobre el amparo</label><textarea id="amparoNotas" placeholder="Acto reclamado, Tribunal Colegiado, número de expediente...">${escapeHTML(meta.amparo_notas||'')}</textarea></div>
-    <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo solo descarta sábados y domingos; verifica el calendario oficial de días inhábiles del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales.</div>
+    <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo descarta sábados, domingos y los días inhábiles capturados en "Días inhábiles"; aun así, verifica el calendario oficial del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales.</div>
     <div style="margin-top:14px;"><button class="btn" id="saveAmparoBtn">Guardar datos de amparo</button></div>
     `;
   }
@@ -2766,6 +2819,36 @@ function modalTabContent(k,p,meta){
         </div>`).join("")}
     </div>
     <div style="margin-top:18px;"><button class="btn" id="saveCamposBtn">Guardar datos del expediente</button></div>
+    `;
+  }
+  if(MODAL_TAB==='documentos'){
+    return `
+    <div class="notice" style="margin-bottom:16px;">Sube aquí los documentos de este asunto (demanda, contestación, pruebas, actas de audiencia...). Formatos permitidos: PDF, Word, Excel e imágenes (JPG/PNG), hasta 20 MB por archivo.</div>
+    <div class="grid2" style="margin-bottom:6px;">
+      <div class="field"><label>Categoría</label>
+        <select id="documentoCategoria" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+          ${Object.keys(CATEGORIA_DOCUMENTO_LABEL).map(c=>`<option value="${c}">${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[c])}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label>Archivo</label><input type="file" id="documentoArchivo" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"></div>
+    </div>
+    <div style="margin-top:8px;"><button class="btn" id="subirDocumentoBtn">Subir documento</button> <span id="documentoStatus" style="font-size:12px; color:var(--gray); margin-left:8px;"></span></div>
+    <div class="divider"></div>
+    <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Documentos subidos (${DOCUMENTOS_ACTIVOS.length})</div>
+    ${DOCUMENTOS_ACTIVOS.length ? `<table><thead><tr><th>Archivo</th><th>Categoría</th><th>Tamaño</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead><tbody>
+      ${DOCUMENTOS_ACTIVOS.map(d=>`
+        <tr>
+          <td>${escapeHTML(d.nombre_archivo)}</td>
+          <td>${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[d.categoria] || d.categoria)}</td>
+          <td>${fmtBytes(d.tamano_bytes)}</td>
+          <td>${escapeHTML(d.subido_por_nombre || '—')}</td>
+          <td style="font-size:11.5px;">${new Date(d.creado_en).toLocaleDateString('es-MX')}</td>
+          <td style="white-space:nowrap;">
+            <a class="btn secondary" href="${API_BASE}documentos_descargar.php?id=${d.id}" style="padding:5px 10px; font-size:11px; text-decoration:none; display:inline-block;">Descargar</a>
+            <button class="btn secondary" data-delete-documento="${d.id}" style="padding:5px 10px; font-size:11px;">Eliminar</button>
+          </td>
+        </tr>`).join("")}
+    </tbody></table>` : '<div class="empty">Sin documentos subidos todavía.</div>'}
     `;
   }
   if(MODAL_TAB==='historial'){
@@ -2933,6 +3016,39 @@ function readPendientesFromDOM(){
 }
 
 function bindModalTabEvents(){
+  const subirDocumentoBtn = document.getElementById('subirDocumentoBtn');
+  if(subirDocumentoBtn){
+    subirDocumentoBtn.addEventListener('click', async ()=>{
+      const input = document.getElementById('documentoArchivo');
+      const categoria = document.getElementById('documentoCategoria').value;
+      const status = document.getElementById('documentoStatus');
+      const file = input.files[0];
+      if(!file){ if(status) status.textContent = 'Elige un archivo primero.'; return; }
+      subirDocumentoBtn.disabled = true;
+      if(status) status.textContent = 'Subiendo...';
+      try{
+        await subirDocumento(ACTIVE_CASE.id, file, categoria);
+        await loadDocumentos(ACTIVE_CASE.id);
+        renderModal();
+      }catch(err){
+        if(status) status.textContent = 'Error: ' + err.message;
+      } finally {
+        subirDocumentoBtn.disabled = false;
+      }
+    });
+  }
+  document.querySelectorAll('[data-delete-documento]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = parseInt(btn.dataset.deleteDocumento);
+      const d = DOCUMENTOS_ACTIVOS.find(x=>x.id===id);
+      if(!confirm('¿Eliminar el documento "'+(d?d.nombre_archivo:'')+'"? Esta acción no se puede deshacer.')) return;
+      try{
+        await api('POST', 'documentos_delete.php', {id});
+        await loadDocumentos(ACTIVE_CASE.id);
+        renderModal();
+      }catch(err){ alert('No se pudo eliminar: ' + err.message); }
+    });
+  });
   const exportarCalculoBtn = document.getElementById('exportarCalculoBtn');
   if(exportarCalculoBtn){
     exportarCalculoBtn.addEventListener('click', ()=> abrirCalculoPDF(ACTIVE_CASE));
