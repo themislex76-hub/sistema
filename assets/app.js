@@ -41,7 +41,7 @@ async function api(method, path, body){
   return json.data;
 }
 
-function mapRol(rolDb){ return rolDb === 'administrador' ? 'Administrador' : 'Abogado/a asignado/a'; }
+function mapRol(rolDb){ return rolDb === 'administrador' ? 'Administrador' : 'Socio/a'; }
 
 let CURRENT_USER = null;
 let VIEW = "tablero";
@@ -114,6 +114,7 @@ function fmtDate(s){
   return d.toLocaleDateString('es-MX', {day:'2-digit', month:'short', year:'numeric'});
 }
 function addDaysDate(d, n){ const r = new Date(d); r.setDate(r.getDate()+n); return r; }
+function isoDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function addMonthsDate(d, n){
   const r = new Date(d);
   const day = r.getDate();
@@ -123,6 +124,11 @@ function addMonthsDate(d, n){
   return r;
 }
 function isWeekend(d){ const wd = d.getDay(); return wd===0 || wd===6; }
+// Días inhábiles adicionales a sábado/domingo (descansos obligatorios Art. 74
+// LFT + los que cada tribunal declare), cargados desde el servidor — ver
+// pantalla "Días inhábiles" (Administrador) y api/dias_inhabiles_*.php.
+let DIAS_INHABILES_SET = new Set();
+function isDiaInhabil(d){ return DIAS_INHABILES_SET.has(isoDate(d)); }
 function fmtMoney(n){
   if(n===null || n===undefined || isNaN(n)) return "—";
   return "$" + Number(n).toLocaleString('es-MX', {minimumFractionDigits:2, maximumFractionDigits:2});
@@ -214,7 +220,7 @@ function computePrescripcion(kase){
 function addBusinessDays(start, n){
   let d = new Date(start), count = 0;
   while(count < n){
-    if(!isWeekend(d)) count++;
+    if(!isWeekend(d) && !isDiaInhabil(d)) count++;
     if(count < n) d = addDaysDate(d,1);
   }
   return d;
@@ -222,8 +228,10 @@ function addBusinessDays(start, n){
 
 // Amparo directo laboral — Art. 17, párrafo primero, de la Ley de Amparo: 15 días
 // hábiles, contados a partir del día siguiente a que surta efectos la notificación
-// de la sentencia/laudo definitivo (Art. 22 Ley de Amparo). No incorpora el
-// calendario oficial de días inhábiles del Tribunal Colegiado, solo fines de semana.
+// de la sentencia/laudo definitivo (Art. 22 Ley de Amparo). addBusinessDays ya
+// descuenta también los días inhábiles capturados en "Días inhábiles" — aun así,
+// verifica el vencimiento con el calendario oficial del Tribunal Colegiado antes
+// de un plazo crítico.
 function computeAmparoDeadline(meta){
   const fn = parseDate(meta.amparo_fecha_notif);
   if(!fn) return null;
@@ -685,7 +693,7 @@ function manualHTML(){
       <li>Arriba hay una fila de "chips" (botones redondos): Todos, Activos, Concluidos, Con alerta, y luego uno por cada estatus que tengas capturado (Pagado, Federal, etc.). Dale clic al que quieras usar como filtro.</li>
       <li>A la derecha del todo está <span class="tag">+ Nuevo expediente</span> (lo explico en la sección 5).</li>
       <li>Arriba de todo, en la barra superior, está el buscador — escribe el nombre del actor, del demandado, el número de expediente, o el puesto, y la tabla se filtra sola mientras escribes.</li>
-      <li>La tabla tiene columnas: Actor, Demandado, Expediente, Instancia, Abogado, Estatus, Activo/Concluido, y Alerta/Amparo. Si no caben todas en tu pantalla, la tabla tiene scroll horizontal — desliza con el mouse o el trackpad hacia la derecha.</li>
+      <li>La tabla tiene columnas: Actor, Demandado, Expediente, Instancia, Socio, Estatus, Activo/Concluido, y Alerta/Amparo. Si no caben todas en tu pantalla, la tabla tiene scroll horizontal — desliza con el mouse o el trackpad hacia la derecha.</li>
       <li>Dale clic a cualquier fila para abrir ese expediente.</li>
     </ol>
   `));
@@ -702,7 +710,7 @@ function manualHTML(){
     <p><strong><span class="tag">Pendientes</span></strong> — para cualquier término que no sea una etapa fija: objeciones, un desahogo con plazo de días, una audiencia con fecha ya señalada. Cada uno puede ser "por días" (capturas fecha de inicio + número de días + si son hábiles o naturales, y el sistema calcula el vencimiento) o "fecha fija".</p>
     <p><strong><span class="tag">Generar demanda</span></strong> — descarga la demanda en Word (sección 9).</p>
     <p><strong><span class="tag">Hechos del despido</span></strong> — giro de la empresa, hora del despido, quién despidió y su puesto, testigos y sus domicilios, domicilio del demandado.</p>
-    <p><strong><span class="tag">Gestión interna</span></strong> — registrar convenio/pago (sección 7), reasignar el abogado responsable, escribir notas internas, marcar "cobro pendiente", y marcar el asunto como <strong>Concluido</strong>.</p>
+    <p><strong><span class="tag">Gestión interna</span></strong> — registrar convenio/pago (sección 7), reasignar el socio responsable, escribir notas internas, marcar "cobro pendiente", y marcar el asunto como <strong>Concluido</strong>.</p>
     <p><strong><span class="tag">Historial de cambios</span></strong> — solo la ve el Administrador. Lista cada cambio hecho al expediente: quién, qué campo, el valor antes y después, y cuándo.</p>
   `));
 
@@ -789,21 +797,22 @@ function manualHTML(){
   `));
 
   secciones.push(manualStep(++n, 'Reporte ejecutivo, Ingresos, Empresas demandadas y Tasa de éxito', `
-    <p><strong>Reporte ejecutivo (PDF)</strong> — botón arriba del Tablero. Genera un documento con el resumen general de tus asuntos, lo cobrado en el mes, el desglose por abogado, tu tasa de éxito, y las empresas que más te demandan seguido. Útil para imprimir cada mes o mandarlo a quien lo pida.</p>
-    <p><strong><span class="tag">Ingresos por periodo</span></strong> — elige el periodo (este mes, mes anterior, este año, todo el histórico, o uno personalizado con fecha desde/hasta) y ves el total cobrado, cuántos pagos fueron, y el desglose por abogado. Si eres Administrador, puedes filtrar por un abogado específico con el menú que aparece arriba a la derecha.</p>
+    <p><strong>Reporte ejecutivo (PDF)</strong> — botón arriba del Tablero. Genera un documento con el resumen general de tus asuntos, lo cobrado en el mes, el desglose por socio, tu tasa de éxito, y las empresas que más te demandan seguido. Útil para imprimir cada mes o mandarlo a quien lo pida.</p>
+    <p><strong><span class="tag">Ingresos por periodo</span></strong> — elige el periodo (este mes, mes anterior, este año, todo el histórico, o uno personalizado con fecha desde/hasta) y ves el total cobrado, cuántos pagos fueron, y el desglose por socio. Si eres Administrador, puedes filtrar por un socio específico con el menú que aparece arriba a la derecha.</p>
     <p><strong><span class="tag">Empresas demandadas</span></strong> — agrupa tus asuntos por la empresa demandada, para que veas cuáles se repiten, cuánto han pagado en convenio, y el promedio. Dale clic a cualquier fila para ver esos asuntos en Expedientes.</p>
     <p><strong><span class="tag">Tasa de éxito</span></strong> — de todos los asuntos ya concluidos (convenio pagado, sentencia con resultado capturado, o cliente desistió), qué porcentaje se resolvió a favor. Solo cuenta lo que ya está resuelto — un asunto todavía en trámite no afecta esta cifra.</p>
   `));
 
   secciones.push(manualStep(++n, 'Solo para el Administrador', `
-    <p><strong><span class="tag">Equipo</span></strong> — agregar abogados nuevos, renombrarlos, restablecer contraseñas, y ver el respaldo completo de toda la información (descargar y restaurar).</p>
+    <p><strong><span class="tag">Equipo</span></strong> — agregar socios nuevos, renombrarlos, restablecer contraseñas, y ver el respaldo completo de toda la información (descargar y restaurar).</p>
     <p><strong><span class="tag">Formato de demanda</span></strong> — descargar la plantilla de Word actual, editarla como cualquier documento, y volver a subirla para que el sistema la use en todas las demandas nuevas.</p>
+    <p><strong><span class="tag">Días inhábiles</span></strong> — el calendario que el sistema usa para calcular automáticamente los vencimientos de términos (etapas del expediente, amparo, pendientes). Ya viene con los descansos obligatorios de ley; agrega ahí los recesos propios de cada tribunal en cuanto los confirmes.</p>
     <p><strong>Historial de cambios</strong> — dentro de cada expediente, pestaña visible solo para ti: quién cambió qué, cuándo, y qué decía antes.</p>
-    <div class="tip">Como Administrador ves todos los expedientes de todo el equipo. Cada abogado asignado solo ve los suyos.</div>
+    <div class="tip">Como Administrador ves todos los expedientes de todo el equipo. Cada socio asignado solo ve los suyos.</div>
   `));
 
   secciones.push(manualStep(++n, 'Preguntas frecuentes', `
-    <p><strong>¿Por qué no veo todos los expedientes, solo algunos?</strong><br>Porque cada abogado asignado ve únicamente los asuntos que tiene a su cargo. Solo el Administrador ve todo. Si crees que falta algo, pídele al Administrador que revise a quién está asignado ese expediente.</p>
+    <p><strong>¿Por qué no veo todos los expedientes, solo algunos?</strong><br>Porque cada socio asignado ve únicamente los asuntos que tiene a su cargo. Solo el Administrador ve todo. Si crees que falta algo, pídele al Administrador que revise a quién está asignado ese expediente.</p>
     <p><strong>¿Puedo deshacer un cambio?</strong><br>No hay un botón de "deshacer", pero el Administrador puede ver el historial completo de cambios de cada expediente en la pestaña "Historial de cambios".</p>
     <p><strong>¿Qué pasa si cierro el sistema sin guardar?</strong><br>Se pierde lo que no hayas guardado con el botón correspondiente. Guarda seguido, sobre todo después de capturar varios campos.</p>
     <p><strong>¿Los cálculos son definitivos?</strong><br>No — son de apoyo. Siempre hay que verificarlos contra el criterio real del Tribunal antes de presentarlos.</p>
@@ -936,6 +945,14 @@ function extractMonto(text){
 let EQUIPO = [];
 let USUARIOS_ADMIN = []; // detalle completo (correo, activo, etc.) — solo lo usa la vista "Equipo" del Administrador
 let AVISOS_BOLETIN = [];
+let DIAS_INHABILES = []; // {id, fecha, descripcion, ambito} — ver pantalla "Días inhábiles"
+
+const AMBITO_INHABIL_LABEL = {
+  federal: 'Federal (Art. 74 LFT)',
+  cdmx: 'Tribunales locales — CDMX',
+  edomex: 'Tribunales locales — Estado de México',
+  todos: 'Todos los ámbitos',
+};
 
 const FUENTE_BOLETIN_LABEL = {
   cdmx_local: 'Tribunales Laborales locales — CDMX',
@@ -953,6 +970,15 @@ async function refreshBootstrap(){
     await loadUsuariosAdmin();
   }
   await loadAvisosBoletin();
+  await loadDiasInhabiles();
+}
+
+async function loadDiasInhabiles(){
+  try{
+    const d = await api('GET', 'dias_inhabiles_list.php');
+    DIAS_INHABILES = d.dias;
+    DIAS_INHABILES_SET = new Set(d.dias.map(x=>x.fecha));
+  }catch(e){ DIAS_INHABILES = []; DIAS_INHABILES_SET = new Set(); }
 }
 
 async function loadAvisosBoletin(){
@@ -1175,6 +1201,7 @@ function shellHTML(){
         <button data-v="cliente_preview" class="${VIEW==='cliente_preview'?'active':''}"><span class="ico">${ICONS.cliente}</span> Vista de portal cliente</button>
         ${isAdmin ? `<button data-v="equipo" class="${VIEW==='equipo'?'active':''}"><span class="ico">${ICONS.equipo}</span> Equipo</button>` : ""}
         ${isAdmin ? `<button data-v="formato_demanda" class="${VIEW==='formato_demanda'?'active':''}"><span class="ico">&#128221;</span> Formato de demanda</button>` : ""}
+        ${isAdmin ? `<button data-v="dias_inhabiles" class="${VIEW==='dias_inhabiles'?'active':''}"><span class="ico">&#128198;</span> Días inhábiles</button>` : ""}
       </div>
       <div class="sidebar-foot">
         <div class="user-pill"><div class="dot"></div><span>${escapeHTML(CURRENT_USER.name)}</span></div>
@@ -1203,7 +1230,8 @@ function topBarHTML(){
     agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
     formato_demanda:["Formato de demanda", "Plantilla editable para generar demandas por combinación de correspondencia"],
     cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
-    equipo:["Equipo del despacho", "Abogados asignados y asuntos a cargo"]
+    equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
+    dias_inhabiles:["Días inhábiles", "Calendario usado para calcular automáticamente los vencimientos de términos en todo el sistema"]
   };
   const [t,s] = titles[VIEW] || ["",""];
   return `
@@ -1268,7 +1296,8 @@ function highlightNav(){
     manual:"Manual de uso",
     agenda:"Agenda general",
     formato_demanda:"Formato de demanda",
-    cliente_preview:"Vista previa del portal de cliente", equipo:"Equipo del despacho"
+    cliente_preview:"Vista previa del portal de cliente", equipo:"Equipo del despacho",
+    dias_inhabiles:"Días inhábiles"
   }[VIEW];
 }
 
@@ -1290,6 +1319,7 @@ function renderViewBody(){
   else if(VIEW==='formato_demanda') el.innerHTML = formatoDemandaHTML();
   else if(VIEW==='cliente_preview') el.innerHTML = clientePreviewHTML();
   else if(VIEW==='equipo') el.innerHTML = equipoHTML();
+  else if(VIEW==='dias_inhabiles') el.innerHTML = diasInhabilesHTML();
   bindViewBody();
 }
 
@@ -1478,7 +1508,7 @@ function expedientesHTML(){
     <div class="panel-head"><h3>Listado de asuntos</h3><span class="count">${list.length} de ${visibleCases().length}</span></div>
     <div class="panel-body" style="padding:0; overflow-x:auto;">
       <table style="min-width:1000px;">
-        <thead><tr><th>Actor</th><th>Demandado</th><th>Expediente</th><th>Instancia</th><th>Abogado</th><th>Estatus</th><th>Activo</th><th>Alerta / Amparo</th></tr></thead>
+        <thead><tr><th>Actor</th><th>Demandado</th><th>Expediente</th><th>Instancia</th><th>Socio</th><th>Estatus</th><th>Activo</th><th>Alerta / Amparo</th></tr></thead>
         <tbody>
           ${list.map(k=>{
             const p = computePrescripcion(k);
@@ -1861,9 +1891,9 @@ function ingresosHTML(){
     </div>
     ${isAdmin ? `
     <div class="field" style="margin:0; min-width:220px;">
-      <label>Abogado</label>
+      <label>Socio</label>
       <select id="ingresosAbogadoSelect" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:12.5px;">
-        <option value="todos" ${INGRESOS_ABOGADO==='todos'?'selected':''}>Todos los abogados</option>
+        <option value="todos" ${INGRESOS_ABOGADO==='todos'?'selected':''}>Todos los socios</option>
         ${EQUIPO.map(u=>`<option value="${escapeHTML(u.name)}" ${INGRESOS_ABOGADO===u.name?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
       </select>
     </div>` : ''}
@@ -1883,9 +1913,9 @@ function ingresosHTML(){
   ${sinMontoCount ? `<div class="notice" style="margin-bottom:16px;">${sinMontoCount} pago(s) cobrado(s) en este periodo no tienen un monto capturado y no se incluyen en el total. Captúralos en la pestaña "Cobros" de cada expediente para que el resumen sea exacto.</div>` : ''}
 
   <div class="panel">
-    <div class="panel-head"><h3>Cobrado por abogado en el periodo</h3><span class="count">${fmtDate(rango.desde)} – ${fmtDate(rango.hasta)}</span></div>
+    <div class="panel-head"><h3>Cobrado por socio en el periodo</h3><span class="count">${fmtDate(rango.desde)} – ${fmtDate(rango.hasta)}</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Abogado</th><th>Pagos cobrados</th><th>Total cobrado</th><th>% del total del periodo</th></tr></thead>
+      <table><thead><tr><th>Socio</th><th>Pagos cobrados</th><th>Total cobrado</th><th>% del total del periodo</th></tr></thead>
       <tbody>${(()=>{
         const porAbogado = {};
         enPeriodo.forEach(p=>{
@@ -1908,7 +1938,7 @@ function ingresosHTML(){
   <div class="panel">
     <div class="panel-head"><h3>Detalle de pagos cobrados en el periodo</h3><span class="count">${enPeriodo.length}</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Fecha de cobro</th><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Abogado</th></tr></thead>
+      <table><thead><tr><th>Fecha de cobro</th><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Socio</th></tr></thead>
       <tbody>${enPeriodo.map(p=>`
         <tr data-id="${p.k.id}">
           <td>${fmtDate(p.fecha)}</td>
@@ -1950,7 +1980,7 @@ function cobrosHTML(){
   <div class="panel">
     <div class="panel-head"><h3>Pendientes de cobro</h3><span class="count">${pendientes.length}</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Fechas mencionadas</th><th>Abogado</th></tr></thead>
+      <table><thead><tr><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Fechas mencionadas</th><th>Socio</th></tr></thead>
       <tbody>${pendientes.map(k=>{ const m = montoConvenio(k); return `
         <tr data-id="${k.id}">
           <td>${escapeHTML(k.actor)}</td>
@@ -1965,7 +1995,7 @@ function cobrosHTML(){
   <div class="panel">
     <div class="panel-head"><h3>Convenios pagados</h3><span class="count">${pagados.length}</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Abogado</th></tr></thead>
+      <table><thead><tr><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Socio</th></tr></thead>
       <tbody>${pagados.map(k=>{ const m = montoConvenio(k); return `
         <tr data-id="${k.id}">
           <td>${escapeHTML(k.actor)}</td>
@@ -2183,20 +2213,55 @@ function equipoHTML(){
   }).join("");
   return `
   <div class="panel">
-    <div class="panel-head"><h3>Abogados del equipo</h3><span class="count">${USUARIOS_ADMIN.length}</span></div>
+    <div class="panel-head"><h3>Socios del equipo</h3><span class="count">${USUARIOS_ADMIN.length}</span></div>
     <div class="panel-body" style="padding:0;">
       <table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol</th><th>Carga de trabajo</th><th></th></tr></thead><tbody>${rows}</tbody></table>
     </div>
   </div>
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
-    <button class="btn" id="addLawyerBtn2">+ Agregar abogado</button>
-    <div class="notice" style="margin-top:14px;">Cada asunto puede reasignarse a un abogado del equipo desde su ficha (pestaña "Gestión interna"). Solo el usuario Administrador ve la totalidad de la cartera; cada abogado asignado ve únicamente los asuntos que tiene a su cargo. Al crear un abogado o restablecer su contraseña, el sistema genera una contraseña temporal — compártesela por un medio seguro (no por este sistema); se le pedirá cambiarla en su primer ingreso. "Desactivar" le quita el acceso de inmediato sin borrar su historial.</div>
+    <button class="btn" id="addLawyerBtn2">+ Agregar socio</button>
+    <div class="notice" style="margin-top:14px;">Cada asunto puede reasignarse a un socio del equipo desde su ficha (pestaña "Gestión interna"). Solo el usuario Administrador ve la totalidad de la cartera; cada socio asignado ve únicamente los asuntos que tiene a su cargo. Al crear un socio o restablecer su contraseña, el sistema genera una contraseña temporal — compártesela por un medio seguro (no por este sistema); se le pedirá cambiarla en su primer ingreso. "Desactivar" le quita el acceso de inmediato sin borrar su historial.</div>
   </div></div>
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Respaldo de toda la información</div>
     <div class="notice" style="margin-bottom:14px;">Toda la información (etapas, notas, convenios, pagos, historial) vive ahora en la base de datos MySQL de tu hosting — el respaldo más confiable es el de cPanel (phpMyAdmin &rarr; Exportar, o la herramienta de "Copias de seguridad" de cPanel). Este botón descarga además un respaldo en JSON como referencia rápida.</div>
     <button class="btn secondary" id="descargarRespaldoBtn">Descargar respaldo (.json)</button>
   </div></div>`;
+}
+
+function diasInhabilesHTML(){
+  const rows = DIAS_INHABILES.map(d=>`
+    <tr data-diainhabil-row="${d.id}">
+      <td>${fmtDate(d.fecha)}</td>
+      <td>${escapeHTML(d.descripcion)}</td>
+      <td>${escapeHTML(AMBITO_INHABIL_LABEL[d.ambito] || d.ambito)}</td>
+      <td><button class="btn secondary" data-delete-diainhabil="${d.id}" style="padding:5px 10px; font-size:11px;">Quitar</button></td>
+    </tr>`).join("");
+  return `
+  <div class="notice" style="margin-bottom:18px;">Este calendario se suma a sábados y domingos en <strong>todos</strong> los cómputos automáticos de plazos del sistema (etapas del expediente, amparo, y la pestaña "Pendientes"). Ya viene precargado con los descansos obligatorios de ley (Art. 74 LFT) para 2026 y 2027. Los recesos propios de cada tribunal (Semana Santa, fin de año, "puentes" locales) <strong>no vienen incluidos</strong> porque varían por tribunal y año — agrégalos aquí en cuanto los confirmes con el calendario oficial de cada uno. Ante un vencimiento crítico, verifica siempre con el tribunal.</div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:10px;">Agregar día inhábil</div>
+    <form id="addDiaInhabilForm" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+      <div class="field" style="margin:0;"><label>Fecha</label><input type="date" id="diaInhabilFecha" required></div>
+      <div class="field" style="margin:0; flex:1; min-width:220px;"><label>Descripción</label><input type="text" id="diaInhabilDescripcion" placeholder="Ej. Receso de Semana Santa, Tribunal Laboral CDMX" required></div>
+      <div class="field" style="margin:0;"><label>Ámbito</label>
+        <select id="diaInhabilAmbito" style="padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+          <option value="todos">Todos los ámbitos</option>
+          <option value="federal">Federal (Art. 74 LFT)</option>
+          <option value="cdmx">Tribunales locales — CDMX</option>
+          <option value="edomex">Tribunales locales — Estado de México</option>
+        </select>
+      </div>
+      <button type="submit" class="btn">Agregar</button>
+    </form>
+  </div></div>
+  <div class="panel">
+    <div class="panel-head"><h3>Calendario de días inhábiles</h3><span class="count">${DIAS_INHABILES.length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Fecha</th><th>Descripción</th><th>Ámbito</th><th></th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" class="empty">Sin días inhábiles registrados.</td></tr>'}</tbody></table>
+    </div>
+  </div>`;
 }
 
 function clientePreviewHTML(){
@@ -2403,7 +2468,7 @@ function bindViewBody(){
   if(descargarRespaldoBtn) descargarRespaldoBtn.addEventListener('click', exportarRespaldo);
   const addBtn = document.getElementById('addLawyerBtn2');
   if(addBtn) addBtn.addEventListener('click', async ()=>{
-    const name = prompt("Nombre completo del abogado/a a agregar:");
+    const name = prompt("Nombre completo del socio/a a agregar:");
     if(!name || !name.trim()) return;
     const email = prompt("Correo electrónico de "+name.trim()+" (será su usuario para entrar):");
     if(!email || !email.trim()) return;
@@ -2413,6 +2478,33 @@ function bindViewBody(){
       await refreshBootstrap();
       renderViewBody();
     }catch(err){ alert('No se pudo crear la cuenta: ' + err.message); }
+  });
+  const addDiaInhabilForm = document.getElementById('addDiaInhabilForm');
+  if(addDiaInhabilForm){
+    addDiaInhabilForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const fecha = document.getElementById('diaInhabilFecha').value;
+      const descripcion = document.getElementById('diaInhabilDescripcion').value.trim();
+      const ambito = document.getElementById('diaInhabilAmbito').value;
+      if(!fecha || !descripcion) return;
+      try{
+        await api('POST', 'dias_inhabiles_create.php', {fecha, descripcion, ambito});
+        await loadDiasInhabiles();
+        renderViewBody();
+      }catch(err){ alert('No se pudo agregar: ' + err.message); }
+    });
+  }
+  document.querySelectorAll('[data-delete-diainhabil]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = parseInt(btn.dataset.deleteDiainhabil);
+      const d = DIAS_INHABILES.find(x=>x.id===id);
+      if(!confirm('¿Quitar "'+(d?d.descripcion:'')+'" ('+fmtDate(d?d.fecha:'')+') del calendario de días inhábiles?')) return;
+      try{
+        await api('POST', 'dias_inhabiles_delete.php', {id});
+        await loadDiasInhabiles();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); }
+    });
   });
 }
 
@@ -2491,7 +2583,7 @@ function modalTabContent(k,p,meta){
     <div class="divider"></div>
     <div class="grid2">
       <div class="field"><label>Puesto</label><div class="v">${escapeHTML(k.puesto||'—')}</div></div>
-      <div class="field"><label>Abogado asignado</label><div class="v">${escapeHTML(assignedLawyer(k))}</div></div>
+      <div class="field"><label>Socio asignado</label><div class="v">${escapeHTML(assignedLawyer(k))}</div></div>
       <div class="field"><label>Estatus (importado)</label><div class="v">${escapeHTML(k.status||'—')}</div></div>
       <div class="field"><label>Instancia</label><div class="v">${escapeHTML(k.junta || k.instancia || '—')}</div></div>
       <div class="field"><label>Fecha de ingreso</label><div class="v">${fmtDate(k.fecha_ingreso)}</div></div>
@@ -2721,7 +2813,7 @@ function modalTabContent(k,p,meta){
       <div style="margin-top:10px;"><button class="btn" id="saveConvenioManualBtn">Guardar convenio/pago</button> <span id="avisoClienteConvenio"></span></div>
     </div>
     <div class="field" style="margin-bottom:14px;">
-      <label>Abogado asignado</label>
+      <label>Socio asignado</label>
       <select id="lawyerSelect" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
         <option value="" ${!k.abogado_id?'selected':''}>Sin asignar</option>
         ${EQUIPO.map(u=>`<option value="${u.id}" ${k.abogado_id===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}

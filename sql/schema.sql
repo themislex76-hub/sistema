@@ -250,4 +250,18 @@ CREATE TABLE avisos_boletin (
   CONSTRAINT fk_avisos_revisado_por FOREIGN KEY (revisado_por) REFERENCES usuarios(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ----------------------------------------------------------------------------
+-- dias_inhabiles: calendario editable de días inhábiles adicionales a
+-- sábados/domingos (descansos obligatorios Art. 74 LFT + los que declare cada
+-- tribunal), usado por el cómputo de términos en todo el sistema.
+-- ----------------------------------------------------------------------------
+CREATE TABLE dias_inhabiles (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  fecha DATE NOT NULL,
+  descripcion VARCHAR(190) NOT NULL,
+  ambito ENUM('federal','cdmx','edomex','todos') NOT NULL DEFAULT 'todos',
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_dias_inhabiles (fecha, ambito)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
