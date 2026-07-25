@@ -702,7 +702,7 @@ function manualHTML(){
     <p>Al abrir cualquier expediente, arriba ves su nombre, contra quién demanda, el número de expediente, y una fila de pestañas. Aquí está cada una a detalle:</p>
     <p><strong><span class="tag">Informe del juicio</span></strong> — lo primero que ves. Arriba, en un recuadro, dice en qué etapa está el asunto ahora mismo y desde cuándo. Si hay una audiencia o un pago agendados, salen destacados justo debajo. Si el asunto lleva 30+ días sin movimiento, o parece atorado, también te avisa aquí. Más abajo están los datos generales (puesto, salario, instancia, teléfono, correo) y la bitácora de notas con fecha, con un cuadro de texto para agregar una nueva.</p>
     <p><strong><span class="tag">Editar datos</span></strong> — todos los campos del expediente en modo edición: nombre del actor, CURP, teléfono, correo, demandado, giro, domicilio, puesto, fechas, salarios, instancia, quién despidió, testigos, y los montos de la liquidación (indemnización, prima de antigüedad, vacaciones, prima vacacional, aguinaldo). Escribe el dato y dale <span class="tag">Guardar datos del expediente</span> al final. Cada cambio que hagas aquí queda registrado con tu nombre y la fecha en el Historial (lo ve solo el Administrador).</p>
-    <p><strong><span class="tag">Documentos</span></strong> — sube y organiza los archivos de este asunto (demanda, contestación, pruebas, actas de audiencia...) por categoría. Acepta PDF, Word, Excel e imágenes, hasta 20 MB por archivo. Cualquiera con acceso a este expediente puede descargarlos o eliminarlos.</p>
+    <p><strong><span class="tag">Documentos</span></strong> — sube y organiza los archivos de este asunto (demanda, contestación, pruebas, actas de audiencia...) por categoría. Acepta PDF, Word, Excel e imágenes, hasta 20 MB por archivo. Los PDF e imágenes tienen botón <span class="tag">Ver</span> para abrirlos directo en una pestaña nueva sin descargarlos; Word y Excel solo se pueden descargar. Cualquiera con acceso a este expediente puede descargarlos o eliminarlos.</p>
     <p><strong><span class="tag">Etapas del juicio</span></strong> — el checklist completo del procedimiento (lo explico a detalle en la sección 6).</p>
     <p><strong><span class="tag">Prescripción</span></strong> — te dice si ya tienen la constancia de no conciliación, desde cuándo corre el plazo, cuántos días de suspensión hubo por la conciliación, y la fecha límite calculada para presentar la demanda, con los días que faltan.</p>
     <p><strong><span class="tag">Cálculo de liquidación</span></strong> — el desglose completo: indemnización de 90 días, prima de antigüedad, vacaciones, prima vacacional, aguinaldo, y si el asunto ya está en juicio, también salarios caídos e intereses. Al final hay un recuadro oscuro con el total general, y un botón <span class="tag">Extraer cálculo (PDF con desglose)</span> para imprimirlo o guardarlo como PDF — listo para presentarlo como propuesta, sin honorarios del despacho incluidos.</p>
@@ -971,6 +971,12 @@ async function loadDocumentos(expedienteId){
     const d = await api('GET', 'documentos_list.php?expediente_id=' + expedienteId);
     DOCUMENTOS_ACTIVOS = d.documentos;
   }catch(e){ DOCUMENTOS_ACTIVOS = []; }
+}
+
+const EXTENSIONES_VISUALIZABLES = ['pdf','jpg','jpeg','png'];
+function esVisualizableInline(nombreArchivo){
+  const ext = (nombreArchivo||'').split('.').pop().toLowerCase();
+  return EXTENSIONES_VISUALIZABLES.includes(ext);
 }
 
 function fmtBytes(n){
@@ -2895,6 +2901,7 @@ function modalTabContent(k,p,meta){
           <td>${escapeHTML(d.subido_por_nombre || '—')}</td>
           <td style="font-size:11.5px;">${new Date(d.creado_en).toLocaleDateString('es-MX')}</td>
           <td style="white-space:nowrap;">
+            ${esVisualizableInline(d.nombre_archivo) ? `<a class="btn secondary" href="${API_BASE}documentos_descargar.php?id=${d.id}&inline=1" target="_blank" rel="noopener" style="padding:5px 10px; font-size:11px; text-decoration:none; display:inline-block;">Ver</a>` : ""}
             <a class="btn secondary" href="${API_BASE}documentos_descargar.php?id=${d.id}" style="padding:5px 10px; font-size:11px; text-decoration:none; display:inline-block;">Descargar</a>
             <button class="btn secondary" data-delete-documento="${d.id}" style="padding:5px 10px; font-size:11px;">Eliminar</button>
           </td>

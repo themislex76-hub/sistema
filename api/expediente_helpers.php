@@ -57,6 +57,10 @@ const CATEGORIA_DOCUMENTO_KEYS = ['demanda', 'contestacion', 'pruebas', 'actas',
 
 const EXTENSION_DOCUMENTO_PERMITIDA = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
 
+// Tipos que el navegador puede mostrar solo, sin descargar (PDF e imágenes).
+// Word/Excel no se pueden visualizar así — siempre se descargan.
+const EXTENSION_VISUALIZABLE_INLINE = ['pdf', 'jpg', 'jpeg', 'png'];
+
 function documentos_dir(int $expedienteId): string
 {
     $dir = __DIR__ . '/../data/documentos/' . $expedienteId;

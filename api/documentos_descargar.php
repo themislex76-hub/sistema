@@ -20,9 +20,13 @@ guard_expediente_access($pdo, $user, (int)$doc['expediente_id']);
 $ruta = documentos_dir((int)$doc['expediente_id']) . '/' . $doc['nombre_disco'];
 if (!is_file($ruta)) fail('El archivo ya no está disponible en el servidor.', 404);
 
+$ext = strtolower(pathinfo($doc['nombre_archivo'], PATHINFO_EXTENSION));
+$pideVer = ($_GET['inline'] ?? '') === '1';
+$disposition = ($pideVer && in_array($ext, EXTENSION_VISUALIZABLE_INLINE, true)) ? 'inline' : 'attachment';
+
 header('Content-Type: ' . ($doc['tipo_mime'] ?: 'application/octet-stream'));
 header('Content-Length: ' . filesize($ruta));
-header('Content-Disposition: attachment; filename="' . rawurlencode($doc['nombre_archivo']) . '"');
+header('Content-Disposition: ' . $disposition . '; filename="' . rawurlencode($doc['nombre_archivo']) . '"');
 header('X-Content-Type-Options: nosniff');
 header('Cache-Control: private, no-store');
 readfile($ruta);
