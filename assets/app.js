@@ -2135,10 +2135,28 @@ const AGENDA_TIPO = {
   audiencia:{label:'Audiencia', color:'#3c5a86'}
 };
 
+let AGENDA_SOCIO = 'todos';
+
 function agendaHTML(){
-  const all = buildAgendaEntries();
+  const isAdmin = CURRENT_USER.role === 'Administrador';
+  let all = buildAgendaEntries();
   const today = new Date(); today.setHours(0,0,0,0);
   const todayISO = dateToISO(today);
+
+  // Resumen por socio (solo Administrador) — cuenta pendientes/vencidos de
+  // cada socio sin filtrar todavía, para poder elegir a quién ver de un vistazo.
+  const resumenPorSocio = {};
+  if(isAdmin){
+    all.forEach(e=>{
+      const n = assignedLawyer(e.k);
+      if(!resumenPorSocio[n]) resumenPorSocio[n] = {vencidas:0, proximas:0};
+      if(e.fecha < todayISO) resumenPorSocio[n].vencidas++; else resumenPorSocio[n].proximas++;
+    });
+  }
+
+  if(isAdmin && AGENDA_SOCIO !== 'todos'){
+    all = all.filter(e=> assignedLawyer(e.k) === AGENDA_SOCIO);
+  }
   const vencidas = all.filter(e=>e.fecha < todayISO);
   const proximas = all.filter(e=>e.fecha >= todayISO);
 
@@ -2159,7 +2177,12 @@ function agendaHTML(){
     </div>`;
   };
 
-  const avisosNuevos = AVISOS_BOLETIN.filter(a=>a.estado==='nuevo');
+  let avisosNuevos = AVISOS_BOLETIN.filter(a=>a.estado==='nuevo');
+  let recordatoriosBoletin = boletinRecordatorios();
+  if(isAdmin && AGENDA_SOCIO !== 'todos'){
+    avisosNuevos = avisosNuevos.filter(a=>{ const k = findCase(a.expediente_id); return k && assignedLawyer(k) === AGENDA_SOCIO; });
+    recordatoriosBoletin = recordatoriosBoletin.filter(r=> assignedLawyer(r.k) === AGENDA_SOCIO);
+  }
   const avisoCard = (a)=>`
     <div class="aviso-card" data-aviso-id="${a.id}">
       <div class="aviso-head">
@@ -2178,12 +2201,33 @@ function agendaHTML(){
     </div>`;
 
   return `
+  ${isAdmin ? `
+  <div class="panel">
+    <div class="panel-head"><h3>Pendientes por socio</h3><span class="count">${Object.keys(resumenPorSocio).length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Socio</th><th>Vencidas</th><th>Próximas</th><th></th></tr></thead><tbody>
+        <tr data-agenda-socio="todos" style="cursor:pointer; ${AGENDA_SOCIO==='todos'?'background:var(--parchment);':''}">
+          <td><strong>Todos</strong></td>
+          <td>${Object.values(resumenPorSocio).reduce((a,b)=>a+b.vencidas,0)}</td>
+          <td>${Object.values(resumenPorSocio).reduce((a,b)=>a+b.proximas,0)}</td>
+          <td></td>
+        </tr>
+        ${Object.keys(resumenPorSocio).sort((a,b)=>resumenPorSocio[b].vencidas-resumenPorSocio[a].vencidas).map(n=>`
+        <tr data-agenda-socio="${escapeHTML(n)}" style="cursor:pointer; ${AGENDA_SOCIO===n?'background:var(--parchment);':''}">
+          <td>${escapeHTML(n)}</td>
+          <td style="color:${resumenPorSocio[n].vencidas>0?'var(--red)':'inherit'}; font-weight:${resumenPorSocio[n].vencidas>0?'700':'400'};">${resumenPorSocio[n].vencidas}</td>
+          <td>${resumenPorSocio[n].proximas}</td>
+          <td><button class="btn secondary" data-agenda-socio="${escapeHTML(n)}" style="padding:5px 10px; font-size:11px;">Ver</button></td>
+        </tr>`).join("")}
+      </tbody></table>
+    </div>
+  </div>` : ""}
   ${avisosNuevos.length? `
   <div class="panel">
     <div class="panel-head"><h3>&#128276; Avisos de boletines por revisar</h3><span class="count">${avisosNuevos.length}</span></div>
     <div class="panel-body" style="padding:16px 20px;">${avisosNuevos.map(avisoCard).join("")}</div>
   </div>` : ""}
-  ${(()=>{ const rec = boletinRecordatorios(); return rec.length ? `
+  ${(()=>{ const rec = recordatoriosBoletin; return rec.length ? `
   <div class="panel">
     <div class="panel-head"><h3>&#128465; Pendientes de revisar boletín</h3><span class="count">${rec.length}</span></div>
     <div class="panel-body">
@@ -2197,6 +2241,7 @@ function agendaHTML(){
         </div>`).join("")}
     </div>
   </div>` : ""; })()}
+  ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
   ${vencidas.length? `
   <div class="panel">
     <div class="panel-head"><h3>&#9888; Vencidas / requieren atención inmediata</h3><span class="count">${vencidas.length}</span></div>
@@ -2396,6 +2441,12 @@ function bindViewBody(){
       renderViewBody();
     });
   }
+  document.querySelectorAll('[data-agenda-socio]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      AGENDA_SOCIO = el.dataset.agendaSocio;
+      renderViewBody();
+    });
+  });
   const aplicarPeriodoBtn = document.getElementById('aplicarPeriodoBtn');
   if(aplicarPeriodoBtn){
     aplicarPeriodoBtn.addEventListener('click', ()=>{
