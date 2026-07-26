@@ -333,3 +333,8 @@ tbody tr:hover{background:var(--parchment);}
   .stat-grid{grid-template-columns:1fr !important;}
   .gate-card{padding:30px 22px;}
 }
+@media (max-width:600px){
+  .alert-row{flex-wrap:wrap; row-gap:8px;}
+  .alert-row .alert-info{flex-basis:100%; order:2;}
+  .alert-row > button, .alert-row .agenda-complete{order:3; margin-left:auto;}
+}
