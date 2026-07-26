@@ -1,0 +1,5 @@
+# Fuerza HTTPS en todo el sistema. DonWeb no ofrece este forzado para
+# subdominios desde su panel, así que se hace aquí directamente.
+RewriteEngine On
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
