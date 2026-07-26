@@ -783,6 +783,7 @@ function manualHTML(){
       <li>Cada fila trae un botón (varía según el tipo: "Marcar cobrado", "Marcar demanda presentada", "Revisar etapas", etc.) para resolverlo directo desde ahí, sin tener que buscar el expediente.</li>
       <li>Dale clic al nombre del actor en cualquier fila para abrir ese expediente completo.</li>
     </ol>
+    <p><strong><span class="tag">Google Calendar</span></strong> — arriba de todo hay un botón para conectar tu cuenta de Google. Una vez conectada, el botón "Sincronizar ahora" manda tus audiencias, pagos, vencimientos de prescripción y de amparo a tu Google Calendar como eventos de todo el día, con recordatorios. Es de un solo sentido: lo que edites directo en Google Calendar no se refleja de vuelta en el sistema — la fecha correcta siempre la manda el sistema. Los "Pendientes" personalizados no se sincronizan.</p>
   `));
 
   secciones.push(manualStep(++n, 'Generar un escrito en Word', `
@@ -973,6 +974,71 @@ async function loadPlantillasLib(){
   }catch(e){ PLANTILLAS_LIB = []; }
 }
 
+// ---------------------------------------------------------------
+// Sincronización de un solo sentido con Google Calendar: audiencias, pagos,
+// prescripción y amparo se empujan como eventos de todo el día al calendario
+// de Google del socio conectado. Nunca al revés — un cambio hecho directo en
+// Google Calendar no se refleja aquí. Ver api/google_*.php.
+// ---------------------------------------------------------------
+let GOOGLE_STATUS = {conectado:false, email:null};
+const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo'];
+
+async function loadGoogleStatus(){
+  try{ GOOGLE_STATUS = await api('GET', 'google_status.php'); }
+  catch(e){ GOOGLE_STATUS = {conectado:false, email:null}; }
+}
+
+async function googleEventId(usuarioId, e){
+  const key = usuarioId + '|' + e.tipo + '|' + e.k.id + '|' + (e.actionIdx!=null ? e.actionIdx : '0');
+  const bytes = new TextEncoder().encode(key);
+  const hashBuf = await crypto.subtle.digest('SHA-256', bytes);
+  const hex = Array.from(new Uint8Array(hashBuf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  return 'ela' + hex.slice(0, 40);
+}
+
+async function sincronizarGoogleCalendar(onProgress){
+  const tok = await api('GET', 'google_access_token.php');
+  const accessToken = tok.access_token;
+  const entries = buildAgendaEntries().filter(e => GOOGLE_TIPOS_SINCRONIZABLES.includes(e.tipo));
+  const headers = {'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json'};
+  const base = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+  const idsActuales = [];
+  let fallos = 0;
+
+  for(const e of entries){
+    const id = await googleEventId(CURRENT_USER.id, e);
+    idsActuales.push(id);
+    const body = {
+      summary: `[${AGENDA_TIPO[e.tipo].label}] ${e.k.actor} vs ${truncate(e.k.demandado,40)}`,
+      description: e.label + '\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.',
+      start: {date: e.fecha},
+      end: {date: e.fecha},
+    };
+    try{
+      let res = await fetch(base, {
+        method:'POST', headers, body: JSON.stringify(Object.assign({id}, body))
+      });
+      if(res.status === 409){
+        res = await fetch(base + '/' + id, {method:'PATCH', headers, body: JSON.stringify(body)});
+      }
+      if(!res.ok) fallos++;
+    }catch(err){ fallos++; }
+    if(onProgress) onProgress(idsActuales.length, entries.length);
+  }
+
+  // Borra del calendario lo que ya no aplica (pago cobrado, prescripción
+  // resuelta, etc.) comparando contra lo que se sincronizó la vez anterior.
+  let previos = [];
+  try{ const st = await api('GET', 'google_sync_state.php'); previos = st.evento_ids; }catch(e){}
+  const obsoletos = previos.filter(id => !idsActuales.includes(id));
+  for(const id of obsoletos){
+    try{ await fetch(base + '/' + id, {method:'DELETE', headers}); }catch(e){}
+  }
+
+  await api('POST', 'google_sync_state.php', {evento_ids: idsActuales});
+  return {sincronizados: entries.length, borrados: obsoletos.length, fallos};
+}
+
 const CATEGORIA_DOCUMENTO_LABEL = {
   demanda: 'Demanda',
   contestacion: 'Contestación',
@@ -1041,6 +1107,7 @@ async function refreshBootstrap(){
   await loadAvisosBoletin();
   await loadDiasInhabiles();
   await loadPlantillasLib();
+  await loadGoogleStatus();
 }
 
 async function loadDiasInhabiles(){
@@ -2224,6 +2291,20 @@ function agendaHTML(){
     </div>`;
 
   return `
+  <div class="panel">
+    <div class="panel-head"><h3>Google Calendar</h3></div>
+    <div class="panel-body" style="padding:16px 20px;">
+      ${GOOGLE_STATUS.conectado ? `
+        <div style="font-size:13px; color:var(--ink); margin-bottom:10px;">Conectado como <strong>${escapeHTML(GOOGLE_STATUS.email||'')}</strong>. Audiencias, pagos, prescripción y amparo se envían a tu calendario de Google — los cambios solo van del sistema hacia Google, no al revés.</div>
+        <button class="btn" id="googleSyncBtn">Sincronizar ahora</button>
+        <button class="btn secondary" id="googleDisconnectBtn" style="margin-left:8px;">Desconectar</button>
+        <span id="googleSyncStatus" style="margin-left:10px; font-size:12px; color:var(--gray);"></span>
+      ` : `
+        <div class="notice" style="margin-bottom:12px;">Conecta tu cuenta de Google para que tus audiencias, pagos, vencimientos de prescripción y de amparo aparezcan solos en tu Google Calendar (recordatorios incluidos). Es de un solo sentido: lo que edites directo en Google Calendar no se refleja aquí.</div>
+        <button class="btn" id="googleConnectBtn">Conectar con Google Calendar</button>
+      `}
+    </div>
+  </div>
   ${isAdmin ? `
   <div class="panel">
     <div class="panel-head"><h3>Pendientes por socio</h3><span class="count">${Object.keys(resumenPorSocio).length}</span></div>
@@ -2565,6 +2646,47 @@ function bindViewBody(){
       renderViewBody();
     });
   });
+  const googleConnectBtn = document.getElementById('googleConnectBtn');
+  if(googleConnectBtn){
+    googleConnectBtn.addEventListener('click', ()=>{
+      window.location.href = API_BASE + 'google_oauth_start.php';
+    });
+  }
+  const googleDisconnectBtn = document.getElementById('googleDisconnectBtn');
+  if(googleDisconnectBtn){
+    googleDisconnectBtn.addEventListener('click', async ()=>{
+      if(!confirm('¿Desconectar tu cuenta de Google Calendar? Se borrarán los eventos que el sistema ya había creado ahí.')) return;
+      try{
+        const tok = await api('GET', 'google_access_token.php').catch(()=>null);
+        if(tok){
+          const st = await api('GET', 'google_sync_state.php').catch(()=>({evento_ids:[]}));
+          const headers = {'Authorization':'Bearer '+tok.access_token};
+          for(const id of (st.evento_ids||[])){
+            try{ await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events/'+id, {method:'DELETE', headers}); }catch(e){}
+          }
+        }
+      }catch(e){}
+      await api('POST', 'google_disconnect.php');
+      await loadGoogleStatus();
+      renderViewBody();
+    });
+  }
+  const googleSyncBtn = document.getElementById('googleSyncBtn');
+  if(googleSyncBtn){
+    googleSyncBtn.addEventListener('click', async ()=>{
+      const status = document.getElementById('googleSyncStatus');
+      googleSyncBtn.disabled = true;
+      if(status) status.textContent = 'Sincronizando...';
+      try{
+        const r = await sincronizarGoogleCalendar((n,total)=>{ if(status) status.textContent = `Sincronizando ${n}/${total}...`; });
+        if(status) status.textContent = `Listo ✓ ${r.sincronizados} evento(s) actualizados${r.borrados?`, ${r.borrados} quitado(s)`:''}${r.fallos?`, ${r.fallos} con error`:''}.`;
+      }catch(err){
+        if(status) status.textContent = 'Error: ' + err.message;
+      } finally {
+        googleSyncBtn.disabled = false;
+      }
+    });
+  }
   const aplicarPeriodoBtn = document.getElementById('aplicarPeriodoBtn');
   if(aplicarPeriodoBtn){
     aplicarPeriodoBtn.addEventListener('click', ()=>{
@@ -3736,6 +3858,14 @@ async function init(){
     }
   }catch(e){ /* no hay sesión activa: se queda en la pantalla de acceso */ }
   render();
+
+  const googleParam = new URLSearchParams(location.search).get('google');
+  if(googleParam){
+    history.replaceState(null, '', location.pathname);
+    if(googleParam === 'ok') alert('Tu cuenta de Google Calendar quedó conectada.');
+    else if(googleParam === 'error_denegado') alert('Cancelaste el acceso a Google Calendar — no se conectó nada.');
+    else alert('No se pudo conectar con Google Calendar. Intenta de nuevo.');
+  }
 }
 init();
 

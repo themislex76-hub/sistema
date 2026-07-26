@@ -25,6 +25,9 @@ CREATE TABLE usuarios (
   activo TINYINT(1) NOT NULL DEFAULT 1,
   intentos_fallidos TINYINT UNSIGNED NOT NULL DEFAULT 0,
   bloqueado_hasta DATETIME NULL DEFAULT NULL,
+  google_refresh_token TEXT NULL,
+  google_calendar_email VARCHAR(190) NULL,
+  google_conectado_en DATETIME NULL,
   creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_usuarios_email (email)
