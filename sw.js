@@ -1,8 +1,8 @@
-const CACHE_NAME = 'ela-shell-v1';
+const CACHE_NAME = 'ela-shell-v2';
 const SHELL_FILES = [
   '/sistema/',
-  '/sistema/assets/style.css',
-  '/sistema/assets/app.js',
+  '/sistema/assets/style.css?v=2',
+  '/sistema/assets/app.js?v=2',
   '/sistema/manifest.json',
   '/sistema/assets/icons/icon-192.png',
   '/sistema/assets/icons/icon-512.png',
@@ -33,7 +33,7 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.includes('/api/')) return; // nunca cachear datos del despacho
 
   event.respondWith(
-    fetch(event.request)
+    fetch(event.request, { cache: 'no-store' })
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
