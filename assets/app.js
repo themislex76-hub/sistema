@@ -1039,6 +1039,14 @@ async function sincronizarGoogleCalendar(onProgress){
   return {sincronizados: entries.length, borrados: obsoletos.length, fallos};
 }
 
+// Sincroniza en segundo plano, sin interrumpir ni avisar, justo después de
+// guardar algo que puede mover una fecha de audiencia/pago/prescripción/
+// amparo. Si el socio no ha conectado Google Calendar, no hace nada.
+function syncGoogleIfConnected(){
+  if(!GOOGLE_STATUS.conectado) return;
+  sincronizarGoogleCalendar().catch(()=>{});
+}
+
 const CATEGORIA_DOCUMENTO_LABEL = {
   demanda: 'Demanda',
   contestacion: 'Contestación',
@@ -2755,6 +2763,7 @@ function bindViewBody(){
           return;
         }
         await refreshBootstrap();
+        syncGoogleIfConnected();
         renderViewBody();
       }catch(err){ alert('No se pudo actualizar: ' + err.message); }
     });
@@ -3402,6 +3411,7 @@ function bindModalTabEvents(){
         saveConvenioManualBtn.textContent = "Guardado ✓ — ya está en Cobros y en la Agenda";
         setTimeout(()=>{ if(saveConvenioManualBtn) saveConvenioManualBtn.textContent = "Guardar convenio/pago"; }, 2200);
         await refreshBootstrap();
+        syncGoogleIfConnected();
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         const avisoSpanConv = document.getElementById('avisoClienteConvenio');
         if(avisoSpanConv){
@@ -3429,6 +3439,7 @@ function bindModalTabEvents(){
         saveCamposBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(saveCamposBtn) saveCamposBtn.textContent = "Guardar datos del expediente"; }, 1600);
         await refreshBootstrap();
+        syncGoogleIfConnected();
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         renderModal();
         renderViewBody();
@@ -3457,6 +3468,7 @@ function bindModalTabEvents(){
         saveEtapasBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(saveEtapasBtn) saveEtapasBtn.textContent = "Guardar etapas"; }, 1600);
         await refreshBootstrap();
+        syncGoogleIfConnected();
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         const avisoSpan = document.getElementById('avisoClienteEtapas');
         if(avisoSpan){
@@ -3544,6 +3556,7 @@ function bindModalTabEvents(){
         savePagosBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(savePagosBtn) savePagosBtn.textContent = "Guardar cobros"; }, 1600);
         await refreshBootstrap();
+        syncGoogleIfConnected();
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         renderModal();
         renderViewBody();
@@ -3563,6 +3576,7 @@ function bindModalTabEvents(){
         saveAmparoBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(saveAmparoBtn) saveAmparoBtn.textContent = "Guardar datos de amparo"; }, 1600);
         await refreshBootstrap();
+        syncGoogleIfConnected();
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         renderModal();
         renderViewBody();
