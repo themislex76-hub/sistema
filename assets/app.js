@@ -830,6 +830,13 @@ function manualHTML(){
     <p><strong>¿Qué hago si un dato se ve mal (por ejemplo un cálculo con un número absurdo)?</strong><br>Revisa el salario diario integrado en "Editar datos" — es la causa más común. Si sigue viéndose mal, avísale al Administrador.</p>
   `));
 
+  secciones.push(manualStep(++n, 'Instalar el sistema en tu celular', `
+    <p>El sistema se puede "instalar" como si fuera una app, sin pasar por ninguna tienda de aplicaciones — queda un ícono en tu pantalla de inicio y se abre a pantalla completa.</p>
+    <p><strong>Android (Chrome):</strong> entra a la página normalmente. Te va a salir un aviso abajo que dice "Instalar app" o "Añadir a pantalla de inicio" — confírmalo. Si no sale solo, ve al menú (⋮ arriba a la derecha de Chrome) → "Instalar app".</p>
+    <p><strong>iPhone (Safari):</strong> entra a la página, toca el ícono de compartir (el cuadrito con la flecha hacia arriba, abajo de la pantalla) → "Añadir a pantalla de inicio".</p>
+    <p>Después de instalarlo sigues entrando con tu mismo usuario y contraseña de siempre — no es una cuenta aparte, es el mismo sistema con un acceso más rápido.</p>
+  `));
+
   return `
   <div class="notice" style="margin-bottom:18px;">Guía paso a paso del sistema, pestaña por pestaña y botón por botón. Dale clic a cualquier sección para abrirla — puedes tener varias abiertas a la vez.</div>
   ${secciones.join("")}

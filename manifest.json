@@ -1,0 +1,16 @@
+{
+  "name": "Expertos Laborales — Gestión de Litigios",
+  "short_name": "Exp. Laborales",
+  "description": "Sistema de gestión de litigios laborales de Expertos Laborales Abogados.",
+  "start_url": "/sistema/",
+  "scope": "/sistema/",
+  "display": "standalone",
+  "background_color": "#16233d",
+  "theme_color": "#16233d",
+  "lang": "es-MX",
+  "icons": [
+    { "src": "assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

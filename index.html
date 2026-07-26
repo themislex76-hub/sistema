@@ -5,9 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Expertos Laborales Abogados — Gestión de Litigios Laborales</title>
 <link rel="stylesheet" href="assets/style.css">
+
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#16233d">
+<link rel="icon" href="assets/icons/icon-192.png">
+
+<!-- iOS no lee manifest.json completo: necesita estas etiquetas aparte -->
+<link rel="apple-touch-icon" href="assets/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Exp. Laborales">
 </head>
 <body>
 <div id="root"></div>
 <script src="assets/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+</script>
 </body>
 </html>
