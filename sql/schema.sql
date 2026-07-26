@@ -85,6 +85,16 @@ CREATE TABLE expedientes (
   testigos TEXT NULL,
   dom_testigos TEXT NULL,
 
+  -- Datos manuales para el cálculo de liquidación que NO se pueden derivar
+  -- de fecha/salario (ver computeLiquidacion() en assets/app.js): aguinaldo
+  -- pactado por contrato si es mayor al mínimo de 15 días, salarios ya
+  -- trabajados y no pagados (Art. 82), y vacaciones de años anteriores que
+  -- el cliente reclama (topadas al máximo no prescrito, Art. 516).
+  aguinaldo_dias_pactados DECIMAL(6,2) NULL,
+  dias_salarios_devengados SMALLINT UNSIGNED NULL,
+  fecha_desde_salarios_devengados DATE NULL,
+  dias_vacaciones_anteriores_reclamados SMALLINT UNSIGNED NULL,
+
   -- Antes vivían en meta (gestión interna / amparo / convenio manual):
   notas_internas TEXT NULL,
   cobro_pendiente TINYINT(1) NOT NULL DEFAULT 0,

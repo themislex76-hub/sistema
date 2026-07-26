@@ -80,6 +80,10 @@ const EDITABLE_FIELDS = [
   {key:'testigos', label:'Nombre de los testigos'},
   {key:'dom_testigos', label:'Domicilios de los testigos'},
   {key:'ultima_nota', label:'Última actuación / nota'},
+  {key:'aguinaldo_dias_pactados', label:'Aguinaldo — días pactados (solo si es mayor al mínimo de 15)', type:'number'},
+  {key:'dias_salarios_devengados', label:'Salarios devengados pendientes — días sin pagar', type:'number'},
+  {key:'fecha_desde_salarios_devengados', label:'Salarios devengados — desde qué fecha', type:'date'},
+  {key:'dias_vacaciones_anteriores_reclamados', label:'Vacaciones de periodos anteriores — días que reclama (ver el máximo no prescrito en "Cálculo de liquidación")', type:'number'},
 ];
 // La indemnización constitucional, la prima de antigüedad, las vacaciones
 // proporcionales, la prima vacacional y el aguinaldo proporcional YA NO se
@@ -218,6 +222,19 @@ function vacDaysLFT(y){
   if(y<=0) return 0;
   return y<=5 ? 10+2*y : 20+2*Math.ceil((y-5)/5);
 }
+// Días de vacaciones de años anteriores que TODAVÍA no prescriben: cada
+// periodo anual prescribe 18 meses después de su aniversario (Art. 516 LFT,
+// criterio de la Segunda Sala SCJN 2a./J. 1/97 — el año del 516 corre al
+// vencer los 6 meses del 81, contados desde cada aniversario).
+function maxVacNoPrescritoLFT(ing, baj){
+  const cy = completedYearsLFT(ing, baj);
+  let tot = 0, per = [];
+  for(let i=cy; i>=1; i--){
+    const A = new Date(ing.getFullYear()+i, ing.getMonth(), ing.getDate());
+    if(baj < addMonthsDate(A, 18)){ tot += vacDaysLFT(i); per.push(i); } else break;
+  }
+  return {tot, per};
+}
 
 function computeLiquidacion(kase){
   const ing = parseDate(kase.fecha_ingreso);
@@ -230,11 +247,26 @@ function computeLiquidacion(kase){
   const aniosDec = antigDias / 365;
   const cy = completedYearsLFT(ing, baj);
 
-  // Aguinaldo proporcional — mínimo de ley, 15 días (art. 87).
+  // Salarios devengados pendientes de pago (art. 82): días ya trabajados
+  // que no se pagaron antes de la baja. Es un dato que solo el despacho
+  // conoce (no se puede derivar de fecha/salario), así que se captura en
+  // "Editar datos"; si tiene más de un año de antigüedad, se avisa que
+  // parte podría estar prescrita (Art. 516).
+  const diasDevengados = kase.dias_salarios_devengados > 0 ? kase.dias_salarios_devengados : 0;
+  const salariosDevengadosMonto = diasDevengados * sd;
+  let devengadosPosibleprescripcion = false;
+  if(diasDevengados > 0 && kase.fecha_desde_salarios_devengados){
+    const desde = parseDate(kase.fecha_desde_salarios_devengados);
+    if(desde && daysBetween(desde, baj) > 365) devengadosPosibleprescripcion = true;
+  }
+
+  // Aguinaldo proporcional (art. 87) — mínimo de ley 15 días, o los días
+  // pactados si el despacho capturó un contrato con un aguinaldo mayor.
+  const aguinaldoDiasBase = kase.aguinaldo_dias_pactados > 0 ? kase.aguinaldo_dias_pactados : 15;
   const yearStart = new Date(baj.getFullYear(), 0, 1);
   const aguStart = ing > yearStart ? ing : yearStart;
   const aguDias = daysBetween(aguStart, baj) + 1;
-  const aguinaldoDias = 15 * (aguDias/365);
+  const aguinaldoDias = aguinaldoDiasBase * (aguDias/365);
   const aguinaldoMonto = aguinaldoDias * sd;
 
   // Vacaciones proporcionales del periodo en curso (arts. 76 y 79) — siempre
@@ -242,10 +274,20 @@ function computeLiquidacion(kase){
   const anniv = lastAnniversaryLFT(ing, baj);
   const diasCurso = daysBetween(anniv, baj);
   const vacEnt = vacDaysLFT(cy+1);
-  const vacacionesDias = vacEnt * (diasCurso/365);
+  const vacacionesDiasProp = vacEnt * (diasCurso/365);
+
+  // Vacaciones de periodos anteriores no disfrutadas, hasta el máximo no
+  // prescrito (ver maxVacNoPrescritoLFT arriba).
+  const vacNoPrescrito = maxVacNoPrescritoLFT(ing, baj);
+  const vacAntPedidos = kase.dias_vacaciones_anteriores_reclamados > 0 ? kase.dias_vacaciones_anteriores_reclamados : 0;
+  const vacAntDias = Math.min(vacAntPedidos, vacNoPrescrito.tot);
+  const vacAntExcedePrescripcion = vacAntPedidos > vacNoPrescrito.tot;
+
+  const vacacionesDias = vacacionesDiasProp + vacAntDias;
   const vacacionesMonto = vacacionesDias * sd;
 
-  // Prima vacacional — mínimo de ley, 25% sobre las vacaciones (art. 80).
+  // Prima vacacional — mínimo de ley, 25% sobre el total de vacaciones
+  // cubiertas (proporcionales + de años anteriores) (art. 80).
   const primaVacacionalMonto = vacacionesMonto * 0.25;
 
   // Prima de antigüedad — 12 días por año, con base topada a 2x el salario
@@ -261,12 +303,14 @@ function computeLiquidacion(kase){
   // (arts. 48 y 50, fracc. II).
   const indemnizacion90 = 90 * sdi;
 
-  const totalFiniquito = aguinaldoMonto + vacacionesMonto + primaVacacionalMonto + primaAntiguedad;
+  const totalFiniquito = salariosDevengadosMonto + aguinaldoMonto + vacacionesMonto + primaVacacionalMonto + primaAntiguedad;
   const total90 = totalFiniquito + indemnizacion90;
 
   return {
     antigDias, aniosDec, cy,
-    aguinaldoDias, aguinaldoMonto,
+    diasDevengados, salariosDevengadosMonto, devengadosPosibleprescripcion,
+    aguinaldoDiasBase, aguinaldoDias, aguinaldoMonto,
+    vacacionesDiasProp, vacAntDias, vacAntPedidos, vacAntExcedePrescripcion, vacNoPrescrito,
     vacacionesDias, vacacionesMonto,
     primaVacacionalMonto,
     primaAntiguedad, primaTopada, topePrima,
@@ -1925,11 +1969,16 @@ function abrirCalculoPDF(k){
   filas += `<div class="csection">INDEMNIZACIÓN CONSTITUCIONAL — ART. 48 Y 50 LFT</div>`;
   filas += conceptoRow('Indemnización constitucional (90 días — 3 meses de salario)', 'Art. 48 y 50, fracc. II, LFT', liq.indemnizacion90);
 
+  if(liq.diasDevengados > 0){
+    filas += `<div class="csection">SALARIOS DEVENGADOS PENDIENTES DE PAGO</div>`;
+    filas += conceptoRow('Salarios devengados pendientes (' + liq.diasDevengados + ' día(s))', 'Art. 82 LFT' + (liq.devengadosPosibleprescripcion? ' — parte podría estar prescrita, Art. 516':''), liq.salariosDevengadosMonto);
+  }
+
   filas += `<div class="csection">PRESTACIONES PROPORCIONALES</div>`;
   filas += conceptoRow('Prima de antigüedad (12 días × ' + liq.aniosDec.toFixed(2) + ' años' + (liq.primaTopada? ', topada a 2× salario mínimo':'') + ')', 'Art. 162 LFT', liq.primaAntiguedad);
-  filas += conceptoRow('Vacaciones proporcionales (' + liq.vacacionesDias.toFixed(2) + ' días)', 'Art. 76-79 LFT', liq.vacacionesMonto);
+  filas += conceptoRow('Vacaciones (' + liq.vacacionesDiasProp.toFixed(2) + ' días del periodo en curso' + (liq.vacAntDias>0? ' + '+liq.vacAntDias+' de periodos anteriores':'') + ')', 'Art. 76-79 LFT' + (liq.vacAntDias>0? ' y 516':''), liq.vacacionesMonto);
   filas += conceptoRow('Prima vacacional (25% sobre vacaciones)', 'Art. 80 LFT', liq.primaVacacionalMonto);
-  filas += conceptoRow('Aguinaldo proporcional (' + liq.aguinaldoDias.toFixed(2) + ' días)', 'Art. 87 LFT', liq.aguinaldoMonto);
+  filas += conceptoRow('Aguinaldo proporcional (' + liq.aguinaldoDias.toFixed(2) + ' días' + (liq.aguinaldoDiasBase!==15? ', '+liq.aguinaldoDiasBase+' días pactados':'') + ')', 'Art. 87 LFT', liq.aguinaldoMonto);
 
   if(sc){
     filas += `<div class="csection">SALARIOS CAÍDOS E INTERESES — ART. 48 LFT${!sc.sdiReal? ' (aprox., sin salario integrado capturado)':''}${sc.sdiSospechoso? ' (aprox., dato de salario integrado inconsistente)':''}</div>`;
@@ -3051,11 +3100,19 @@ function modalTabContent(k,p,meta){
     ${liq.sdiSospechoso ? `<div class="notice" style="border-left:3px solid var(--red); background:var(--red-bg); color:var(--red);"><strong>&#9888; El "salario diario integrado" capturado (${fmtMoney(k.sdi)}) es muy distinto al salario diario (${fmtMoney(k.salario_diario)})</strong> — parece un dato mal capturado, así que este cálculo usó el salario diario simple en su lugar. Verifícalo en "Editar datos".</div>` : ''}
     ${conceptoRow('Indemnización constitucional (90 días — 3 meses de salario)', 'Art. 48 y 50, fracc. II, LFT', liq.indemnizacion90)}
 
+    ${liq.diasDevengados > 0 ? `
+    <div class="csection">Salarios devengados pendientes de pago</div>
+    ${liq.devengadosPosibleprescripcion ? `<div class="notice" style="border-left:3px solid var(--amber); background:var(--amber-bg);">Parte de estos salarios devengados podría estar prescrita: el Art. 516 LFT solo permite reclamar el último año.</div>` : ''}
+    ${conceptoRow('Salarios devengados pendientes (' + liq.diasDevengados + ' día(s))', 'Art. 82 LFT', liq.salariosDevengadosMonto)}
+    ` : ''}
+
     <div class="csection">Prestaciones proporcionales</div>
     ${conceptoRow('Prima de antigüedad (12 días × ' + liq.aniosDec.toFixed(2) + ' años' + (liq.primaTopada? ', topada a 2× salario mínimo = '+fmtMoney(liq.topePrima):'') + ')', 'Art. 162 LFT', liq.primaAntiguedad)}
-    ${conceptoRow('Vacaciones proporcionales (' + liq.vacacionesDias.toFixed(2) + ' días)', 'Art. 76-79 LFT', liq.vacacionesMonto)}
+    ${liq.vacAntExcedePrescripcion ? `<div class="notice" style="border-left:3px solid var(--amber); background:var(--amber-bg);">Se reclaman ${liq.vacAntPedidos} días de vacaciones de periodos anteriores, pero solo ${liq.vacNoPrescrito.tot} no están prescritos (Art. 516 LFT, criterio SCJN 2a./J. 1/97) — se calculan ${liq.vacNoPrescrito.tot}.</div>` : ''}
+    ${conceptoRow('Vacaciones (' + liq.vacacionesDiasProp.toFixed(2) + ' días del periodo en curso' + (liq.vacAntDias>0? ' + '+liq.vacAntDias+' de periodos anteriores':'') + ')', 'Art. 76-79 LFT' + (liq.vacAntDias>0? ' y 516 (criterio SCJN 2a./J. 1/97)':''), liq.vacacionesMonto)}
+    <div class="hint" style="font-size:11px; color:var(--gray); margin:-6px 0 10px;">Máximo de días de periodos anteriores que aún no prescriben: <strong>${liq.vacNoPrescrito.tot}</strong>${liq.vacNoPrescrito.per.length? ' (año(s) '+liq.vacNoPrescrito.per.join(', ')+')' : ''}. Captura cuántos reclama en "Editar datos" si aplica.</div>
     ${conceptoRow('Prima vacacional (25% sobre vacaciones)', 'Art. 80 LFT', liq.primaVacacionalMonto)}
-    ${conceptoRow('Aguinaldo proporcional (' + liq.aguinaldoDias.toFixed(2) + ' días)', 'Art. 87 LFT', liq.aguinaldoMonto)}
+    ${conceptoRow('Aguinaldo proporcional (' + liq.aguinaldoDias.toFixed(2) + ' días' + (liq.aguinaldoDiasBase!==15? ', '+liq.aguinaldoDiasBase+' días pactados':'') + ')', 'Art. 87 LFT', liq.aguinaldoMonto)}
 
     ${sc ? `
     <div class="csection">Salarios caídos e intereses — Art. 48 LFT (demanda ya presentada)</div>
@@ -3068,7 +3125,7 @@ function modalTabContent(k,p,meta){
 
     <div class="divider"></div>
     <div style="background:var(--ink); border-radius:10px; padding:18px 22px;">
-      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--brass-light);">Total del cálculo${sc?' (indemnización + salarios caídos + intereses)':''}</div>
+      <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--brass-light);">Total del cálculo${sc?' (incluye salarios caídos + intereses)':''}</div>
       <div style="font-family:var(--serif); font-size:22px; font-weight:700; color:#fff;">${fmtMoney(totalGeneral90)}</div>
     </div>
     <div style="margin-top:16px;"><button class="btn secondary" id="exportarCalculoBtn">Extraer cálculo (PDF con desglose)</button></div>

@@ -21,11 +21,15 @@ function guard_expediente_access(PDO $pdo, array $user, int $id): array
 // capturan a mano: el frontend los calcula (ver computeLiquidacion() en
 // app.js) a partir de fecha_ingreso, fecha_baja, salario_diario/sdi y el
 // salario mínimo vigente (tabla configuracion, clave salario_minimo_diario).
+// Los 4 campos siguientes SÍ se siguen capturando a mano porque no se
+// pueden derivar solo de esos datos (aguinaldo pactado por contrato,
+// salarios devengados pendientes, vacaciones de años anteriores).
 const EDITABLE_CAMPOS = [
     'actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
     'fecha_ingreso','fecha_baja','salario_mensual','salario_diario','sdi','instancia','junta',
     'tribunal','exp','status','quien_despidio','puesto_despidio','hora_despido','testigos',
-    'dom_testigos','ultima_nota',
+    'dom_testigos','ultima_nota','aguinaldo_dias_pactados','dias_salarios_devengados',
+    'fecha_desde_salarios_devengados','dias_vacaciones_anteriores_reclamados',
 ];
 
 const ETAPA_KEYS = [
@@ -41,7 +45,7 @@ const CAMPOS_NUMERICOS_EXPEDIENTE = [
     'salario_mensual','salario_diario','sdi','antiguedad_anios',
     'indemnizacion_90','indemnizacion_60','prima_antiguedad','vacaciones_dias','vacaciones_monto',
     'prima_vacacional','aguinaldo_dias','aguinaldo_monto','total_90','total_60','honorario_90','honorario_60',
-    'convenio_monto',
+    'convenio_monto','aguinaldo_dias_pactados','dias_salarios_devengados','dias_vacaciones_anteriores_reclamados',
 ];
 
 function cast_numeric_fields(array $row): array
