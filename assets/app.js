@@ -1305,8 +1305,21 @@ function assignedLawyer(kase){
 function visibleCases(){
   // El servidor ya entrega solo los expedientes visibles para el usuario
   // actual (Administrador ve todos, abogado solo los suyos) — ver
-  // api/expedientes_bootstrap.php. Aquí ya no hace falta filtrar de nuevo.
-  return CASES_DATA;
+  // api/expedientes_bootstrap.php. Aquí se aplica además la casilla de
+  // búsqueda del topbar (siempre visible, en cualquier pantalla) — antes
+  // solo se aplicaba dentro de "Expedientes", así que buscar algo en
+  // Tablero, Alertas, Cobros, etc. no tenía ningún efecto.
+  let list = CASES_DATA;
+  if(SEARCH_TERM.trim()){
+    const q = SEARCH_TERM.toLowerCase();
+    list = list.filter(k =>
+      (k.actor||"").toLowerCase().includes(q) ||
+      (k.demandado||"").toLowerCase().includes(q) ||
+      (k.exp||"").toLowerCase().includes(q) ||
+      (k.puesto||"").toLowerCase().includes(q)
+    );
+  }
+  return list;
 }
 function filteredCases(){
   let list = visibleCases();
@@ -1320,15 +1333,6 @@ function filteredCases(){
     } else {
       list = list.filter(k => (k.status||"").toLowerCase() === FILTER_STATUS);
     }
-  }
-  if(SEARCH_TERM.trim()){
-    const q = SEARCH_TERM.toLowerCase();
-    list = list.filter(k =>
-      (k.actor||"").toLowerCase().includes(q) ||
-      (k.demandado||"").toLowerCase().includes(q) ||
-      (k.exp||"").toLowerCase().includes(q) ||
-      (k.puesto||"").toLowerCase().includes(q)
-    );
   }
   return list;
 }
