@@ -80,14 +80,12 @@ const EDITABLE_FIELDS = [
   {key:'testigos', label:'Nombre de los testigos'},
   {key:'dom_testigos', label:'Domicilios de los testigos'},
   {key:'ultima_nota', label:'Última actuación / nota'},
-  {key:'indemnizacion_90', label:'Indemnización constitucional (90 días)', type:'number'},
-  {key:'prima_antiguedad', label:'Prima de antigüedad', type:'number'},
-  {key:'vacaciones_dias', label:'Vacaciones — días proporcionales', type:'number'},
-  {key:'vacaciones_monto', label:'Vacaciones — monto', type:'number'},
-  {key:'prima_vacacional', label:'Prima vacacional', type:'number'},
-  {key:'aguinaldo_dias', label:'Aguinaldo — días proporcionales', type:'number'},
-  {key:'aguinaldo_monto', label:'Aguinaldo — monto', type:'number'},
 ];
+// La indemnización constitucional, la prima de antigüedad, las vacaciones
+// proporcionales, la prima vacacional y el aguinaldo proporcional YA NO se
+// capturan a mano aquí: el sistema los calcula solos a partir de fecha de
+// ingreso, fecha de baja, salario y el salario mínimo vigente — ver
+// computeLiquidacion() y la pestaña "Cálculo de liquidación".
 
 function allCases(){ return CASES_DATA; }
 
@@ -147,15 +145,14 @@ function daysBetween(a,b){ return Math.round((b-a)/86400000); }
 // meses de salario. Solo aplica cuando ya hay demanda presentada (etapa
 // "juicio"), pues antes no existe controversia judicial que los genere.
 // ---------------------------------------------------------------
-function computeSalariosCaidos(kase){
-  if(caseStage(kase) !== 'juicio') return null;
-  const fb = parseDate(kase.fecha_baja);
-  // Si no hay salario diario integrado capturado, se usa el salario diario
-  // simple como aproximación. Además, se valida que el integrado capturado
-  // sea razonable frente al salario diario (normalmente 1.0x-1.3x por las
-  // partes proporcionales de aguinaldo y prima vacacional); si está muy
-  // fuera de ese rango es señal de un dato mal capturado en la base, y se
-  // usa el salario diario simple en su lugar para no arrastrar el error.
+// Resuelve qué salario diario integrado usar para cualquier cálculo basado
+// en SDI (salarios caídos, indemnización constitucional): si no hay uno
+// capturado, se usa el salario diario simple como aproximación; si el
+// capturado es muy distinto al salario diario (fuera de 0.95x-1.5x, rango
+// razonable considerando las partes proporcionales de aguinaldo y prima
+// vacacional), se trata como un dato mal capturado y también se usa el
+// salario diario simple, para no arrastrar el error a ningún cálculo.
+function resolveSdi(kase){
   const sdiReal = kase.sdi != null;
   let sdiUsado = sdiReal ? kase.sdi : kase.salario_diario;
   let sdiSospechoso = false;
@@ -166,6 +163,13 @@ function computeSalariosCaidos(kase){
       sdiUsado = kase.salario_diario;
     }
   }
+  return {sdiUsado, sdiReal, sdiSospechoso};
+}
+
+function computeSalariosCaidos(kase){
+  if(caseStage(kase) !== 'juicio') return null;
+  const fb = parseDate(kase.fecha_baja);
+  const {sdiUsado, sdiReal, sdiSospechoso} = resolveSdi(kase);
   if(!fb || sdiUsado==null) return null;
   const meta = getMeta(kase.id);
   const start = addDaysDate(fb, 1);
@@ -186,6 +190,89 @@ function computeSalariosCaidos(kase){
   }
   return {diasCaidos, salariosCaidos, capDate, refDate, excedioTope, mesesIntereses, baseIntereses, intereses,
     sdiReal, sdiUsado, sdiSospechoso, total: salariosCaidos + intereses};
+}
+
+// ---------------------------------------------------------------
+// Cálculo de liquidación (indemnización constitucional + prestaciones
+// proporcionales) — antes estos montos se capturaban a mano en "Editar
+// datos"; ahora se calculan siempre a partir de fecha de ingreso, fecha de
+// baja y salario, con las mismas fórmulas que la calculadora pública del
+// despacho, para que nadie tenga que hacer la aritmética y el resultado sea
+// consistente en todo el sistema. Todos los asuntos de este despacho son de
+// despido (nunca renuncia), así que la prima de antigüedad siempre procede,
+// sin el requisito de 15 años de servicio que aplicaría en una renuncia.
+// ---------------------------------------------------------------
+function completedYearsLFT(ing, baj){
+  let y = baj.getFullYear() - ing.getFullYear();
+  const a = new Date(baj.getFullYear(), ing.getMonth(), ing.getDate());
+  if(baj < a) y--;
+  return Math.max(0, y);
+}
+function lastAnniversaryLFT(ing, baj){
+  const cy = completedYearsLFT(ing, baj);
+  return new Date(ing.getFullYear()+cy, ing.getMonth(), ing.getDate());
+}
+// Tabla de vacaciones del art. 76 LFT (reforma DOF 27-12-2022): 12, 14, 16,
+// 18, 20 días y +2 por cada quinquenio adicional a partir del 6° año.
+function vacDaysLFT(y){
+  if(y<=0) return 0;
+  return y<=5 ? 10+2*y : 20+2*Math.ceil((y-5)/5);
+}
+
+function computeLiquidacion(kase){
+  const ing = parseDate(kase.fecha_ingreso);
+  const baj = parseDate(kase.fecha_baja);
+  const sd = kase.salario_diario;
+  if(!ing || !baj || !sd || baj < ing) return null;
+
+  const {sdiUsado: sdi, sdiReal, sdiSospechoso} = resolveSdi(kase);
+  const antigDias = daysBetween(ing, baj) + 1;
+  const aniosDec = antigDias / 365;
+  const cy = completedYearsLFT(ing, baj);
+
+  // Aguinaldo proporcional — mínimo de ley, 15 días (art. 87).
+  const yearStart = new Date(baj.getFullYear(), 0, 1);
+  const aguStart = ing > yearStart ? ing : yearStart;
+  const aguDias = daysBetween(aguStart, baj) + 1;
+  const aguinaldoDias = 15 * (aguDias/365);
+  const aguinaldoMonto = aguinaldoDias * sd;
+
+  // Vacaciones proporcionales del periodo en curso (arts. 76 y 79) — siempre
+  // exigibles a la baja, sin importar el motivo de la separación.
+  const anniv = lastAnniversaryLFT(ing, baj);
+  const diasCurso = daysBetween(anniv, baj);
+  const vacEnt = vacDaysLFT(cy+1);
+  const vacacionesDias = vacEnt * (diasCurso/365);
+  const vacacionesMonto = vacacionesDias * sd;
+
+  // Prima vacacional — mínimo de ley, 25% sobre las vacaciones (art. 80).
+  const primaVacacionalMonto = vacacionesMonto * 0.25;
+
+  // Prima de antigüedad — 12 días por año, con base topada a 2x el salario
+  // mínimo diario vigente (art. 162). Siempre procede: en este despacho el
+  // motivo de la separación siempre es el despido, nunca la renuncia (que
+  // exigiría 15+ años de servicio).
+  const topePrima = 2 * SALARIO_MINIMO_DIARIO;
+  const primaTopada = sd > topePrima;
+  const basePrima = Math.min(sd, topePrima);
+  const primaAntiguedad = 12 * aniosDec * basePrima;
+
+  // Indemnización constitucional — 90 días de salario diario integrado
+  // (arts. 48 y 50, fracc. II).
+  const indemnizacion90 = 90 * sdi;
+
+  const totalFiniquito = aguinaldoMonto + vacacionesMonto + primaVacacionalMonto + primaAntiguedad;
+  const total90 = totalFiniquito + indemnizacion90;
+
+  return {
+    antigDias, aniosDec, cy,
+    aguinaldoDias, aguinaldoMonto,
+    vacacionesDias, vacacionesMonto,
+    primaVacacionalMonto,
+    primaAntiguedad, primaTopada, topePrima,
+    indemnizacion90, sdiUsado: sdi, sdiReal, sdiSospechoso,
+    totalFiniquito, total90,
+  };
 }
 
 function computePrescripcion(kase){
@@ -1111,6 +1198,7 @@ async function refreshBootstrap(){
     await loadUsuariosAdmin();
   }
   await loadDiasInhabiles();
+  await loadConfiguracion();
   await loadPlantillasLib();
   await loadGoogleStatus();
 }
@@ -1121,6 +1209,22 @@ async function loadDiasInhabiles(){
     DIAS_INHABILES = d.dias;
     DIAS_INHABILES_SET = new Set(d.dias.map(x=>x.fecha));
   }catch(e){ DIAS_INHABILES = []; DIAS_INHABILES_SET = new Set(); }
+}
+
+// Salario mínimo diario vigente, usado para topar la prima de antigüedad
+// (art. 162 LFT: tope de 2x salario mínimo). Se guarda en la tabla
+// "configuracion" y lo edita el Administrador en "Equipo" — así no hay que
+// tocar el código cada vez que la CONASAMI publica un nuevo salario mínimo.
+let SALARIO_MINIMO_DIARIO = 315.04; // valor de respaldo (zona general, 2026) si aún no se ha guardado ninguno
+async function loadConfiguracion(){
+  try{
+    const d = await api('GET', 'configuracion_get.php');
+    const v = parseFloat(d.configuracion && d.configuracion.salario_minimo_diario);
+    if(!isNaN(v) && v > 0) SALARIO_MINIMO_DIARIO = v;
+  }catch(e){ /* se conserva el valor de respaldo */ }
+}
+async function saveConfiguracion(clave, valor){
+  await api('POST', 'configuracion_set.php', {clave, valor: String(valor)});
 }
 
 async function loadUsuariosAdmin(){
@@ -1808,19 +1912,24 @@ function abrirReporteEjecutivoPDF(){
 }
 
 function abrirCalculoPDF(k){
+  const liq = computeLiquidacion(k);
+  if(!liq){
+    alert('Falta fecha de ingreso, fecha de baja o salario diario para poder calcular la liquidación. Captúralos en "Editar datos".');
+    return;
+  }
   const sc = computeSalariosCaidos(k);
   const hoy = fmtDate(dateToISO(new Date()));
-  const totalGeneral90 = (k.total_90||0) + (sc? sc.total : 0);
+  const totalGeneral90 = liq.total90 + (sc? sc.total : 0);
 
   let filas = '';
   filas += `<div class="csection">INDEMNIZACIÓN CONSTITUCIONAL — ART. 48 Y 50 LFT</div>`;
-  filas += conceptoRow('Indemnización constitucional (90 días — 3 meses de salario)', 'Art. 48 y 50, fracc. II, LFT', k.indemnizacion_90);
+  filas += conceptoRow('Indemnización constitucional (90 días — 3 meses de salario)', 'Art. 48 y 50, fracc. II, LFT', liq.indemnizacion90);
 
   filas += `<div class="csection">PRESTACIONES PROPORCIONALES</div>`;
-  filas += conceptoRow('Prima de antigüedad (12 días por año de servicios)', 'Art. 162 LFT', k.prima_antiguedad);
-  filas += conceptoRow('Vacaciones proporcionales' + (k.vacaciones_dias!=null? ' ('+k.vacaciones_dias+' días)':''), 'Art. 76-78 LFT', k.vacaciones_monto);
-  filas += conceptoRow('Prima vacacional (25% sobre vacaciones)', 'Art. 80 LFT', k.prima_vacacional);
-  filas += conceptoRow('Aguinaldo proporcional' + (k.aguinaldo_dias!=null? ' ('+k.aguinaldo_dias.toFixed(2)+' días)':''), 'Art. 87 LFT', k.aguinaldo_monto);
+  filas += conceptoRow('Prima de antigüedad (12 días × ' + liq.aniosDec.toFixed(2) + ' años' + (liq.primaTopada? ', topada a 2× salario mínimo':'') + ')', 'Art. 162 LFT', liq.primaAntiguedad);
+  filas += conceptoRow('Vacaciones proporcionales (' + liq.vacacionesDias.toFixed(2) + ' días)', 'Art. 76-79 LFT', liq.vacacionesMonto);
+  filas += conceptoRow('Prima vacacional (25% sobre vacaciones)', 'Art. 80 LFT', liq.primaVacacionalMonto);
+  filas += conceptoRow('Aguinaldo proporcional (' + liq.aguinaldoDias.toFixed(2) + ' días)', 'Art. 87 LFT', liq.aguinaldoMonto);
 
   if(sc){
     filas += `<div class="csection">SALARIOS CAÍDOS E INTERESES — ART. 48 LFT${!sc.sdiReal? ' (aprox., sin salario integrado capturado)':''}${sc.sdiSospechoso? ' (aprox., dato de salario integrado inconsistente)':''}</div>`;
@@ -2386,6 +2495,14 @@ function equipoHTML(){
     <div class="notice" style="margin-top:14px;">Cada asunto puede reasignarse a un socio del equipo desde su ficha (pestaña "Gestión interna"). Solo el usuario Administrador ve la totalidad de la cartera; cada socio asignado ve únicamente los asuntos que tiene a su cargo. Al crear un socio o restablecer su contraseña, el sistema genera una contraseña temporal — compártesela por un medio seguro (no por este sistema); se le pedirá cambiarla en su primer ingreso. "Desactivar" le quita el acceso de inmediato sin borrar su historial.</div>
   </div></div>
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Parámetros del cálculo de liquidación</div>
+    <div class="notice" style="margin-bottom:14px;">La prima de antigüedad (Art. 162 LFT) se topa a 2 veces el salario mínimo diario vigente. La CONASAMI publica un nuevo salario mínimo cada 1° de enero — actualízalo aquí cuando eso pase; el sistema recalcula todo solo, sin necesidad de tocar código.</div>
+    <form id="salarioMinimoForm" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field" style="margin:0;"><label>Salario mínimo diario (zona general)</label><input type="text" id="salarioMinimoInput" value="${SALARIO_MINIMO_DIARIO.toFixed(2)}" style="max-width:160px;"></div>
+      <button type="submit" class="btn">Guardar</button>
+    </form>
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Respaldo de toda la información</div>
     <div class="notice" style="margin-bottom:14px;">Toda la información (etapas, notas, convenios, pagos, historial) vive ahora en la base de datos MySQL de tu hosting — el respaldo más confiable es el de cPanel (phpMyAdmin &rarr; Exportar, o la herramienta de "Copias de seguridad" de cPanel). Este botón descarga además un respaldo en JSON como referencia rápida.</div>
     <button class="btn secondary" id="descargarRespaldoBtn">Descargar respaldo (.json)</button>
@@ -2741,6 +2858,20 @@ function bindViewBody(){
       renderViewBody();
     }catch(err){ alert('No se pudo crear la cuenta: ' + err.message); }
   });
+  const salarioMinimoForm = document.getElementById('salarioMinimoForm');
+  if(salarioMinimoForm){
+    salarioMinimoForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const v = parseFloat(document.getElementById('salarioMinimoInput').value);
+      if(isNaN(v) || v <= 0){ alert('Captura un salario mínimo diario válido.'); return; }
+      try{
+        await saveConfiguracion('salario_minimo_diario', v.toFixed(2));
+        SALARIO_MINIMO_DIARIO = v;
+        alert('Salario mínimo actualizado. La prima de antigüedad de todos los asuntos se recalculará con este valor.');
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+    });
+  }
   const addDiaInhabilForm = document.getElementById('addDiaInhabilForm');
   if(addDiaInhabilForm){
     addDiaInhabilForm.addEventListener('submit', async (e)=>{
@@ -2832,6 +2963,7 @@ function modalTabContent(k,p,meta){
     const est = estancadoInfo(k);
     const det = juicioDetenido(k);
     const pAlerta = isPrescripcionRelevant(k) ? computePrescripcion(k) : null;
+    const liqResumen = computeLiquidacion(k);
     return `
     <div class="legal-box" style="margin-bottom:16px;">
       <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--brass); margin-bottom:4px;">Situación actual del asunto</div>
@@ -2855,7 +2987,7 @@ function modalTabContent(k,p,meta){
       <div class="field"><label>Instancia</label><div class="v">${escapeHTML(k.junta || k.instancia || '—')}</div></div>
       <div class="field"><label>Fecha de ingreso</label><div class="v">${fmtDate(k.fecha_ingreso)}</div></div>
       <div class="field"><label>Fecha de baja</label><div class="v">${fmtDate(k.fecha_baja)}</div></div>
-      <div class="field"><label>Antigüedad</label><div class="v">${k.antiguedad_anios!=null? k.antiguedad_anios.toFixed(2)+' años':'—'}</div></div>
+      <div class="field"><label>Antigüedad</label><div class="v">${liqResumen? liqResumen.aniosDec.toFixed(2)+' años':'—'}</div></div>
       <div class="field"><label>Salario diario</label><div class="v">${fmtMoney(k.salario_diario)}</div></div>
       <div class="field"><label>Teléfono</label><div class="v">${escapeHTML(k.telefono||'—')}</div></div>
       <div class="field"><label>Correo</label><div class="v">${escapeHTML(k.correo||'—')}</div></div>
@@ -2901,29 +3033,33 @@ function modalTabContent(k,p,meta){
     `;
   }
   if(MODAL_TAB==='calculo'){
+    const liq = computeLiquidacion(k);
+    if(!liq){
+      return `<div class="empty">Falta fecha de ingreso, fecha de baja o salario diario para poder calcular la liquidación. Captúralos en "Editar datos".</div>`;
+    }
     const sc = computeSalariosCaidos(k);
-    const totalGeneral90 = (k.total_90||0) + (sc? sc.total : 0);
+    const totalGeneral90 = liq.total90 + (sc? sc.total : 0);
     return `
-    <div class="notice" style="margin-bottom:14px;">Este cálculo está pensado para imprimirse y presentarse como propuesta ante el Centro de Conciliación o el Tribunal — por eso no incluye honorarios del despacho, solo las prestaciones que corresponden a la parte actora.</div>
+    <div class="notice" style="margin-bottom:14px;">Este cálculo está pensado para imprimirse y presentarse como propuesta ante el Centro de Conciliación o el Tribunal — por eso no incluye honorarios del despacho, solo las prestaciones que corresponden a la parte actora. Los montos se calculan automáticamente a partir de fecha de ingreso, fecha de baja, salario y el salario mínimo vigente (ver "Equipo" para actualizarlo cada año).</div>
     <div class="grid2" style="margin-bottom:6px;">
       <div class="field"><label>Salario mensual</label><div class="v">${fmtMoney(k.salario_mensual)}</div></div>
-      <div class="field"><label>Salario diario integrado</label><div class="v">${k.sdi!=null? fmtMoney(k.sdi) : (k.salario_diario!=null? fmtMoney(k.salario_diario)+' (sin integrado capturado)' : '—')}</div></div>
+      <div class="field"><label>Salario diario integrado</label><div class="v">${liq.sdiReal? fmtMoney(liq.sdiUsado) : fmtMoney(liq.sdiUsado)+' (sin integrado capturado; se usó el salario diario)'}</div></div>
     </div>
 
     <div class="csection">Indemnización constitucional — Art. 48 y 50 LFT</div>
-    ${conceptoRow('Indemnización constitucional (90 días — 3 meses de salario)', 'Art. 48 y 50, fracc. II, LFT', k.indemnizacion_90)}
+    ${!liq.sdiReal ? `<div class="notice" style="border-left:3px solid var(--amber); background:var(--amber-bg);">No hay "salario diario integrado" capturado — este cálculo usa el salario diario simple (${fmtMoney(k.salario_diario)}) como aproximación. Captúralo en "Editar datos" para un resultado más exacto.</div>` : ''}
+    ${liq.sdiSospechoso ? `<div class="notice" style="border-left:3px solid var(--red); background:var(--red-bg); color:var(--red);"><strong>&#9888; El "salario diario integrado" capturado (${fmtMoney(k.sdi)}) es muy distinto al salario diario (${fmtMoney(k.salario_diario)})</strong> — parece un dato mal capturado, así que este cálculo usó el salario diario simple en su lugar. Verifícalo en "Editar datos".</div>` : ''}
+    ${conceptoRow('Indemnización constitucional (90 días — 3 meses de salario)', 'Art. 48 y 50, fracc. II, LFT', liq.indemnizacion90)}
 
     <div class="csection">Prestaciones proporcionales</div>
-    ${conceptoRow('Prima de antigüedad (12 días por año de servicios)', 'Art. 162 LFT', k.prima_antiguedad)}
-    ${conceptoRow('Vacaciones proporcionales' + (k.vacaciones_dias!=null? ' ('+k.vacaciones_dias+' días)':''), 'Art. 76-78 LFT', k.vacaciones_monto)}
-    ${conceptoRow('Prima vacacional (25% sobre vacaciones)', 'Art. 80 LFT', k.prima_vacacional)}
-    ${conceptoRow('Aguinaldo proporcional' + (k.aguinaldo_dias!=null? ' ('+k.aguinaldo_dias.toFixed(2)+' días)':''), 'Art. 87 LFT', k.aguinaldo_monto)}
+    ${conceptoRow('Prima de antigüedad (12 días × ' + liq.aniosDec.toFixed(2) + ' años' + (liq.primaTopada? ', topada a 2× salario mínimo = '+fmtMoney(liq.topePrima):'') + ')', 'Art. 162 LFT', liq.primaAntiguedad)}
+    ${conceptoRow('Vacaciones proporcionales (' + liq.vacacionesDias.toFixed(2) + ' días)', 'Art. 76-79 LFT', liq.vacacionesMonto)}
+    ${conceptoRow('Prima vacacional (25% sobre vacaciones)', 'Art. 80 LFT', liq.primaVacacionalMonto)}
+    ${conceptoRow('Aguinaldo proporcional (' + liq.aguinaldoDias.toFixed(2) + ' días)', 'Art. 87 LFT', liq.aguinaldoMonto)}
 
     ${sc ? `
     <div class="csection">Salarios caídos e intereses — Art. 48 LFT (demanda ya presentada)</div>
     <div class="legal-box" style="margin-bottom:14px;">Si no se acredita la causa del despido, se pagan los salarios vencidos desde el día siguiente al despido hasta por un tope de 12 meses. Si al cumplirse ese plazo el juicio sigue sin concluir, se generan además intereses del 2% mensual capitalizable sobre el importe de 15 meses de salario.</div>
-    ${!sc.sdiReal ? `<div class="notice" style="border-left:3px solid var(--amber); background:var(--amber-bg);">No hay "salario diario integrado" capturado — este cálculo usa el salario diario simple (${fmtMoney(k.salario_diario)}) como aproximación. Captúralo en "Editar datos" para un resultado más exacto.</div>` : ''}
-    ${sc.sdiSospechoso ? `<div class="notice" style="border-left:3px solid var(--red); background:var(--red-bg); color:var(--red);"><strong>&#9888; El "salario diario integrado" capturado (${fmtMoney(k.sdi)}) es muy distinto al salario diario (${fmtMoney(k.salario_diario)})</strong> — parece un dato mal capturado, así que este cálculo usó el salario diario simple en su lugar. Los totales de indemnización de arriba, en cambio, vienen de la base original y sí pueden estar afectados por ese dato — verifícalo en "Editar datos".</div>` : ''}
     ${conceptoRow('Salarios caídos (' + sc.diasCaidos + ' días desde el despido' + (sc.excedioTope?', tope de 12 meses alcanzado':'') + ')', 'Art. 48 LFT, párr. 2', sc.salariosCaidos)}
     ${sc.excedioTope ? conceptoRow('Intereses (2% mensual capitalizable, ' + sc.mesesIntereses + ' mes(es) sobre 15 meses de salario)', 'Art. 48 LFT, párr. 3', sc.intereses) : `<div class="field" style="margin-top:6px;"><label>Intereses</label><div class="v">No aplican todavía (no se ha superado el tope de 12 meses; vence el ${fmtDate(dateToISO(sc.capDate))})</div></div>`}
     ${conceptoRow('Total salarios caídos + intereses', 'Art. 48 LFT', sc.total, true)}

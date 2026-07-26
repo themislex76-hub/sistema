@@ -16,12 +16,16 @@ function guard_expediente_access(PDO $pdo, array $user, int $id): array
     return $row;
 }
 
+// La indemnización constitucional, la prima de antigüedad, las vacaciones
+// proporcionales, la prima vacacional y el aguinaldo proporcional YA NO se
+// capturan a mano: el frontend los calcula (ver computeLiquidacion() en
+// app.js) a partir de fecha_ingreso, fecha_baja, salario_diario/sdi y el
+// salario mínimo vigente (tabla configuracion, clave salario_minimo_diario).
 const EDITABLE_CAMPOS = [
     'actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
     'fecha_ingreso','fecha_baja','salario_mensual','salario_diario','sdi','instancia','junta',
     'tribunal','exp','status','quien_despidio','puesto_despidio','hora_despido','testigos',
-    'dom_testigos','ultima_nota','indemnizacion_90','prima_antiguedad','vacaciones_dias',
-    'vacaciones_monto','prima_vacacional','aguinaldo_dias','aguinaldo_monto',
+    'dom_testigos','ultima_nota',
 ];
 
 const ETAPA_KEYS = [
