@@ -1483,23 +1483,29 @@ function shellHTML(){
   `;
 }
 
+// Título y subtítulo de cada vista — única fuente de verdad, usada tanto por
+// topBarHTML() (primer render) como por highlightNav() (cuando se cambia de
+// vista sin recargar todo el shell). Antes highlightNav() traía su propia
+// lista duplicada que solo cubría el título — el subtítulo se quedaba
+// pegado en el de la vista anterior cada vez que cambiabas de pantalla.
+const VIEW_TITLES = {
+  tablero:["Tablero general", "Panorama de todos los asuntos activos y alertas críticas"],
+  expedientes:["Expedientes", "Consulta, filtra y administra cada asunto"],
+  alertas:["Alertas de prescripción", "Cómputo conforme al Art. 518 de la Ley Federal del Trabajo"],
+  cobros:["Cobros de convenios", "Seguimiento de pagos pactados en convenios de conciliación"],
+  ingresos:["Ingresos por periodo", "Cuánto se ha cobrado, agrupado por el periodo que elijas"],
+  demandados:["Empresas demandadas", "Qué demandados se repiten, cuánto han pagado y qué tanto negocian"],
+  exito:["Tasa de éxito", "Qué tan seguido se resuelven los asuntos a favor del trabajador"],
+  manual:["Manual de uso", "Guía paso a paso del sistema"],
+  agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
+  formato_demanda:["Formato de demanda", "Plantilla de demanda y biblioteca de otras plantillas de escritos"],
+  cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
+  equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
+  dias_inhabiles:["Días inhábiles", "Calendario usado para calcular automáticamente los vencimientos de términos en todo el sistema"]
+};
+
 function topBarHTML(){
-  const titles = {
-    tablero:["Tablero general", "Panorama de todos los asuntos activos y alertas críticas"],
-    expedientes:["Expedientes", "Consulta, filtra y administra cada asunto"],
-    alertas:["Alertas de prescripción", "Cómputo conforme al Art. 518 de la Ley Federal del Trabajo"],
-    cobros:["Cobros de convenios", "Seguimiento de pagos pactados en convenios de conciliación"],
-    ingresos:["Ingresos por periodo", "Cuánto se ha cobrado, agrupado por el periodo que elijas"],
-    demandados:["Empresas demandadas", "Qué demandados se repiten, cuánto han pagado y qué tanto negocian"],
-    exito:["Tasa de éxito", "Qué tan seguido se resuelven los asuntos a favor del trabajador"],
-    manual:["Manual de uso", "Guía paso a paso del sistema"],
-    agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
-    formato_demanda:["Formato de demanda", "Plantilla de demanda y biblioteca de otras plantillas de escritos"],
-    cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
-    equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
-    dias_inhabiles:["Días inhábiles", "Calendario usado para calcular automáticamente los vencimientos de términos en todo el sistema"]
-  };
-  const [t,s] = titles[VIEW] || ["",""];
+  const [t,s] = VIEW_TITLES[VIEW] || ["",""];
   return `
   <div class="topbar">
     <button class="mobile-menu-btn" id="mobileMenuBtn">&#9776;</button>
@@ -1553,18 +1559,11 @@ function highlightNav(){
   document.querySelectorAll('.nav button[data-v]').forEach(b=>{
     b.classList.toggle('active', b.dataset.v === VIEW);
   });
-  document.querySelector('.topbar h2').textContent = {
-    tablero:"Tablero general", expedientes:"Expedientes", alertas:"Alertas de prescripción",
-    cobros:"Cobros de convenios",
-    ingresos:"Ingresos por periodo",
-    demandados:"Empresas demandadas",
-    exito:"Tasa de éxito",
-    manual:"Manual de uso",
-    agenda:"Agenda general",
-    formato_demanda:"Formato de demanda",
-    cliente_preview:"Vista previa del portal de cliente", equipo:"Equipo del despacho",
-    dias_inhabiles:"Días inhábiles"
-  }[VIEW];
+  const [t,s] = VIEW_TITLES[VIEW] || ["",""];
+  const h2 = document.querySelector('.topbar h2');
+  const sub = document.querySelector('.topbar .sub');
+  if(h2) h2.textContent = t;
+  if(sub) sub.textContent = s;
 }
 
 // ---------------------------------------------------------------
