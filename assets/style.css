@@ -56,7 +56,7 @@ body{
 }
 .brand p{margin:0; font-size:11px; color:var(--brass-light); letter-spacing:.6px; text-transform:uppercase;}
 
-.nav{padding:14px 12px; flex:1;}
+.nav{padding:14px 12px; flex:1; overflow-y:auto; min-height:0;}
 .nav button{
   width:100%; text-align:left; background:none; border:none; color:#c9cede;
   padding:10px 12px; border-radius:8px; font-size:13.5px; font-family:var(--sans);
