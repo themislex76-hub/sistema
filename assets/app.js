@@ -55,6 +55,28 @@ let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de
 // Campos que puede llenar/editar el abogado asignado. Cubre lo necesario
 // para el seguimiento del asunto y para generar la demanda por combinación
 // de correspondencia.
+// Lista cerrada de estatus del expediente — reemplaza el campo de texto libre
+// para que no queden variantes distintas del mismo estatus (errores de dedo,
+// mayúsculas/minúsculas, etc.). Orden alfabético.
+const STATUS_OPCIONES = [
+  'Conciliación CDMX',
+  'Conciliación Edomex',
+  'Conciliación Federal CDMX',
+  'Conciliación Federal Edomex',
+  'Confirmar Federal',
+  'Confirmar solicitud CDMX',
+  'Constancia presentar demanda',
+  'Convenio',
+  'El cliente ya no quiso continuar',
+  'En espera de fecha',
+  'Pagado',
+  'Presentar nuevamente la solicitud',
+  'Tribunal CDMX',
+  'Tribunal Edomex',
+  'Tribunal Federal CDMX',
+  'Tribunal Federal Edomex',
+];
+
 const EDITABLE_FIELDS = [
   {key:'actor', label:'Nombre del actor (trabajador)'},
   {key:'curp', label:'CURP del actor'},
@@ -73,7 +95,7 @@ const EDITABLE_FIELDS = [
   {key:'junta', label:'Tribunal / Junta competente'},
   {key:'tribunal', label:'Tribunal (si ya está radicado)'},
   {key:'exp', label:'Número de expediente o registro'},
-  {key:'status', label:'Estatus (texto libre, como en la base original)'},
+  {key:'status', label:'Estatus', type:'select', options:STATUS_OPCIONES},
   {key:'quien_despidio', label:'Nombre de quien despidió'},
   {key:'puesto_despidio', label:'Puesto de quien despidió'},
   {key:'hora_despido', label:'Hora del despido'},
@@ -383,7 +405,8 @@ const ETAPAS_DEF = [
   {key:'conciliacion_solicitada', label:'Solicitud de conciliación presentada', fundamento:'Art. 684-B LFT'},
   {key:'constancia_no_conciliacion', label:'Constancia de no conciliación recibida', fundamento:'Arts. 684-C y 521-III LFT', plazoDesdeEtapa:'conciliacion_solicitada', plazoDias:45, plazoTipo:'naturales', plazoLabel:'La conciliación dura hasta 45 días naturales (Art. 684-C LFT)'},
   {key:'demanda_presentada', label:'Demanda presentada ante el Tribunal', fundamento:'Art. 871 LFT', plazoLabel:'Debe presentarse antes de que venza la prescripción (Art. 518 LFT — ver pestaña Prescripción)'},
-  {key:'demanda_admitida', label:'Demanda admitida', fundamento:'Art. 873 LFT', plazoDesdeEtapa:'demanda_presentada', plazoDias:3, plazoTipo:'habiles', plazoLabel:'El Tribunal admite dentro de los 3 días siguientes a que se le turne (Art. 873 LFT)'},
+  {key:'prevencion', label:'Prevención (el Tribunal previno por defectos u omisiones en la demanda)', fundamento:'Art. 873 LFT', plazoDesdeEtapa:'demanda_presentada', plazoDias:3, plazoTipo:'habiles', plazoLabel:'Solo aplica si el Tribunal previno la demanda; el actor debe desahogarla dentro de los 3 días siguientes a la notificación (Art. 873 LFT). Si no hubo prevención, deja esta etapa en blanco y continúa con "Demanda admitida".'},
+  {key:'demanda_admitida', label:'Demanda admitida', fundamento:'Art. 873 LFT', plazoDesdeEtapa:'demanda_presentada', plazoDias:3, plazoTipo:'habiles', plazoLabel:'El Tribunal admite dentro de los 3 días siguientes a que se le turne, o a que se desahogue la prevención si la hubo (Art. 873 LFT)'},
   {key:'emplazamiento', label:'Emplazamiento a la demandada realizado', fundamento:'Art. 873-A LFT', plazoDesdeEtapa:'demanda_admitida', plazoDias:5, plazoTipo:'habiles', plazoLabel:'El Tribunal emplaza dentro de los 5 días siguientes a la admisión (Art. 873-A LFT)'},
   {key:'contestacion_recibida', label:'Contestación de demanda recibida', fundamento:'Art. 873-A LFT', plazoDesdeEtapa:'emplazamiento', plazoDias:15, plazoTipo:'habiles', plazoLabel:'La demandada contesta dentro de los 15 días siguientes al emplazamiento (Art. 873-A LFT)'},
   {key:'objeciones_replica', label:'Objeciones y réplica del actor presentadas', fundamento:'Art. 873-B LFT', plazoDesdeEtapa:'contestacion_recibida', plazoDias:8, plazoTipo:'habiles', plazoLabel:'El actor objeta pruebas y formula réplica dentro de los 8 días siguientes al traslado de la contestación (Art. 873-B LFT)'},
@@ -750,8 +773,11 @@ function caseStage(kase){
   // La bitácora manual de etapas (registrada por el abogado) tiene prioridad
   // sobre el estatus importado de la hoja de cálculo, por ser más reciente.
   if(meta.etapas.demanda_presentada && meta.etapas.demanda_presentada.fecha) return "juicio";
-  if(tieneConvenio(kase)) return "convenio"; // convenio pactado, a la espera de cobro
-  if(s.includes("juicio en tribunal")) return "juicio"; // demanda ya presentada: Art. 521-I, prescripción interrumpida
+  if(tieneConvenio(kase) || s === "convenio") return "convenio"; // convenio pactado, a la espera de cobro
+  // "Tribunal CDMX/Edomex/Federal CDMX/Federal Edomex" (lista estandarizada) y el
+  // texto legado "Juicio en Tribunal" indican lo mismo: demanda ya presentada,
+  // Art. 521-I, prescripción interrumpida.
+  if(s.includes("juicio en tribunal") || /^tribunal /.test(s)) return "juicio";
   if(s.includes("constancia presentar demanda")) return "constancia_demanda"; // ventana crítica: hay que demandar
   return "activo"; // conciliación en trámite u otra etapa previa a demanda
 }
@@ -867,9 +893,10 @@ function manualHTML(){
   secciones.push(manualStep(++n, 'Marcar avances en "Etapas del juicio", paso a paso', `
     <ol>
       <li>Abre el expediente y ve a la pestaña <span class="tag">Etapas del juicio</span>.</li>
-      <li>Vas a ver una lista de 13 etapas en orden: solicitud de conciliación, constancia de no conciliación, demanda presentada, demanda admitida, emplazamiento, contestación recibida, objeciones y réplica, contrarréplica, manifestaciones de 3 días, audiencia preliminar, audiencia de juicio, sentencia, y amparo directo.</li>
+      <li>Vas a ver una lista de 14 etapas en orden: solicitud de conciliación, constancia de no conciliación, demanda presentada, prevención, demanda admitida, emplazamiento, contestación recibida, objeciones y réplica, contrarréplica, manifestaciones de 3 días, audiencia preliminar, audiencia de juicio, sentencia, y amparo directo.</li>
       <li>Cada una tiene: una casilla para marcarla como cumplida, y un campo de fecha.</li>
       <li>Cuando esa etapa ya ocurrió: marca la casilla y pon la fecha en que pasó.</li>
+      <li><strong>"Prevención"</strong> solo aplica si el Tribunal la notifica por defectos u omisiones en la demanda — si no hubo prevención, déjala en blanco y marca directo "Demanda admitida".</li>
       <li><strong>Para las dos audiencias</strong> (preliminar y de juicio) vas a ver un campo extra, "Fecha agendada" — úsalo para poner la fecha en que está programada la audiencia, <em>aunque todavía no se celebre</em>. Eso hace que le aparezca automáticamente al cliente en su portal como "próxima audiencia", y a ti en la Agenda.</li>
       <li><strong>Para "Sentencia"</strong> vas a ver un menú desplegable de "Resultado": Favorable, Parcialmente favorable, o Desfavorable. Selecciónalo cuando ya sepas el resultado — esto alimenta la Tasa de éxito del despacho (sección 13).</li>
       <li>Cuando termines, dale <span class="tag">Guardar etapas</span> al final.</li>
@@ -1102,6 +1129,8 @@ const AMBITO_INHABIL_LABEL = {
 };
 
 let DOCUMENTOS_ACTIVOS = []; // documentos del expediente actualmente abierto en el modal
+let CAMARA_STREAM = null; // MediaStream activo del visor de cámara (pestaña Documentos), o null si está cerrado
+let FOTOS_CAPTURADAS = []; // {blob, url, width, height} tomadas con la cámara, pendientes de armar el PDF
 let PLANTILLAS_LIB = []; // biblioteca de plantillas .docx adicionales a la demanda
 
 async function loadPlantillasLib(){
@@ -1232,6 +1261,83 @@ async function subirDocumento(expedienteId, file, categoria){
     throw new Error(msg);
   }
   return json.data;
+}
+
+// ---------------------------------------------------------------
+// Cámara del celular (pestaña Documentos): visor en vivo para tomar varias
+// fotos (actas, pruebas, identificaciones...) y armar un solo PDF que se
+// sube automáticamente al expediente, sin pasar por la galería del teléfono.
+// ---------------------------------------------------------------
+function detenerCamara(){
+  if(CAMARA_STREAM){
+    CAMARA_STREAM.getTracks().forEach(t=>t.stop());
+    CAMARA_STREAM = null;
+  }
+}
+function limpiarFotosCapturadas(){
+  FOTOS_CAPTURADAS.forEach(f=>URL.revokeObjectURL(f.url));
+  FOTOS_CAPTURADAS = [];
+}
+
+// Arma un PDF válido (una foto JPEG por página, a tamaño completo) sin
+// depender de ninguna librería externa — cada imagen se incrusta tal cual
+// (/Filter /DCTDecode) y el tamaño de página se deriva de sus píxeles
+// asumiendo 150 dpi, para que el PDF resultante tenga un tamaño físico
+// razonable en vez del típico "página" de metros de ancho.
+function buildPdfFromJpegs(images){
+  const DPI = 150;
+  const enc = new TextEncoder();
+  const chunks = [];
+  let offset = 0;
+  const offsets = {};
+  function write(data){
+    const bytes = typeof data === 'string' ? enc.encode(data) : data;
+    chunks.push(bytes);
+    offset += bytes.length;
+  }
+  let nextNum = 1;
+  const catalogNum = nextNum++;
+  const pagesNum = nextNum++;
+  const entries = images.map(img => ({img, pageNum: nextNum++, contentNum: nextNum++, imageNum: nextNum++}));
+
+  write('%PDF-1.4\n');
+
+  entries.forEach(e=>{
+    const {img, contentNum, imageNum} = e;
+    offsets[imageNum] = offset;
+    write(`${imageNum} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${img.width} /Height ${img.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${img.bytes.length} >>\nstream\n`);
+    write(img.bytes);
+    write('\nendstream\nendobj\n');
+
+    const pageW = (img.width / DPI * 72).toFixed(2);
+    const pageH = (img.height / DPI * 72).toFixed(2);
+    const content = `q\n${pageW} 0 0 ${pageH} 0 0 cm\n/Im${imageNum} Do\nQ`;
+    offsets[contentNum] = offset;
+    write(`${contentNum} 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`);
+    e.pageW = pageW; e.pageH = pageH;
+  });
+
+  entries.forEach(e=>{
+    offsets[e.pageNum] = offset;
+    write(`${e.pageNum} 0 obj\n<< /Type /Page /Parent ${pagesNum} 0 R /MediaBox [0 0 ${e.pageW} ${e.pageH}] /Resources << /XObject << /Im${e.imageNum} ${e.imageNum} 0 R >> >> /Contents ${e.contentNum} 0 R >>\nendobj\n`);
+  });
+
+  offsets[pagesNum] = offset;
+  const kids = entries.map(e=>`${e.pageNum} 0 R`).join(' ');
+  write(`${pagesNum} 0 obj\n<< /Type /Pages /Kids [${kids}] /Count ${entries.length} >>\nendobj\n`);
+
+  offsets[catalogNum] = offset;
+  write(`${catalogNum} 0 obj\n<< /Type /Catalog /Pages ${pagesNum} 0 R >>\nendobj\n`);
+
+  const maxNum = nextNum - 1;
+  const xrefOffset = offset;
+  write(`xref\n0 ${maxNum + 1}\n0000000000 65535 f \n`);
+  for(let n = 1; n <= maxNum; n++){
+    write(String(offsets[n]).padStart(10, '0') + ' 00000 n \n');
+  }
+  write(`trailer\n<< /Size ${maxNum + 1} /Root ${catalogNum} 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`);
+
+  return new Blob(chunks, {type: 'application/pdf'});
 }
 
 async function refreshBootstrap(){
@@ -2957,12 +3063,16 @@ function bindViewBody(){
 // Modal de expediente (uso interno)
 // ---------------------------------------------------------------
 async function openModal(k, tab){
+  detenerCamara();
+  limpiarFotosCapturadas();
   ACTIVE_CASE = k; MODAL_TAB = tab || "resumen";
   if(MODAL_TAB === 'documentos') await loadDocumentos(k.id);
   renderModal();
   document.getElementById('modalOverlay').classList.add('show');
 }
 function closeModal(){
+  detenerCamara();
+  limpiarFotosCapturadas();
   document.getElementById('modalOverlay').classList.remove('show');
   document.getElementById('modalOverlay').innerHTML = "";
 }
@@ -3000,12 +3110,65 @@ function renderModal(){
   overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
   document.querySelectorAll('.modal-tabs button').forEach(b=>{
     b.addEventListener('click', async ()=>{
+      if(b.dataset.t !== 'documentos') detenerCamara(); // no dejar la cámara prendida al salir de la pestaña
       MODAL_TAB = b.dataset.t;
       if(MODAL_TAB === 'documentos') await loadDocumentos(ACTIVE_CASE.id);
       renderModal();
     });
   });
   bindModalTabEvents();
+}
+
+function fotosPanelHTML(){
+  return `
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+    ${FOTOS_CAPTURADAS.map((f,i)=>`
+      <div style="position:relative;">
+        <img src="${f.url}" style="width:70px; height:70px; object-fit:cover; border-radius:6px; border:1px solid var(--border); display:block;">
+        <button data-quitar-foto="${i}" title="Quitar" style="position:absolute; top:-6px; right:-6px; width:20px; height:20px; border-radius:50%; border:none; background:var(--red); color:#fff; font-size:12px; cursor:pointer; line-height:1; padding:0;">&times;</button>
+      </div>`).join("")}
+  </div>
+  ${FOTOS_CAPTURADAS.length ? `<button class="btn" id="generarPdfFotosBtn">Generar PDF (${FOTOS_CAPTURADAS.length} foto${FOTOS_CAPTURADAS.length>1?'s':''}) y subir al expediente</button> <span id="fotosPdfStatus" style="font-size:12px; color:var(--gray); margin-left:8px;"></span>` : ''}
+  `;
+}
+
+function bindFotosPanelEvents(){
+  document.querySelectorAll('[data-quitar-foto]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const i = parseInt(btn.dataset.quitarFoto);
+      URL.revokeObjectURL(FOTOS_CAPTURADAS[i].url);
+      FOTOS_CAPTURADAS.splice(i,1);
+      const panel = document.getElementById('fotosPanel');
+      if(panel){ panel.innerHTML = fotosPanelHTML(); bindFotosPanelEvents(); }
+    });
+  });
+  const generarPdfFotosBtn = document.getElementById('generarPdfFotosBtn');
+  if(generarPdfFotosBtn){
+    generarPdfFotosBtn.addEventListener('click', async ()=>{
+      const status = document.getElementById('fotosPdfStatus');
+      generarPdfFotosBtn.disabled = true;
+      if(status) status.textContent = 'Generando PDF...';
+      try{
+        const imagenes = [];
+        for(const f of FOTOS_CAPTURADAS){
+          imagenes.push({bytes: new Uint8Array(await f.blob.arrayBuffer()), width: f.width, height: f.height});
+        }
+        const pdfBlob = buildPdfFromJpegs(imagenes);
+        const categoria = document.getElementById('documentoCategoria').value;
+        const nombre = 'fotos-' + (ACTIVE_CASE.exp || ACTIVE_CASE.id) + '-' + dateToISO(new Date()) + '.pdf';
+        const pdfFile = new File([pdfBlob], nombre, {type:'application/pdf'});
+        if(status) status.textContent = 'Subiendo...';
+        await subirDocumento(ACTIVE_CASE.id, pdfFile, categoria);
+        limpiarFotosCapturadas();
+        detenerCamara();
+        await loadDocumentos(ACTIVE_CASE.id);
+        renderModal();
+      }catch(err){
+        if(status) status.textContent = 'Error: ' + err.message;
+        generarPdfFotosBtn.disabled = false;
+      }
+    });
+  }
 }
 
 function modalTabContent(k,p,meta){
@@ -3188,6 +3351,18 @@ function modalTabContent(k,p,meta){
           <label>${escapeHTML(f.label)}</label>
           ${f.type==='date' ?
             `<input type="date" class="edit-field" data-field="${f.key}" value="${k[f.key]||''}">` :
+            f.type==='select' ?
+            (()=>{
+              const actual = k[f.key]!=null ? String(k[f.key]) : '';
+              // Si el valor guardado no está en la lista cerrada (dato legado), se
+              // agrega como primera opción para no perderlo ni cambiarlo solo.
+              const extra = actual && !f.options.includes(actual) ? `<option value="${escapeHTML(actual)}" selected>${escapeHTML(actual)} (dato anterior — vuelve a elegir para estandarizar)</option>` : '';
+              return `<select class="edit-field" data-field="${f.key}" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+                <option value="">— Sin definir —</option>
+                ${extra}
+                ${f.options.map(o=>`<option value="${escapeHTML(o)}" ${actual===o?'selected':''}>${escapeHTML(o)}</option>`).join("")}
+              </select>`;
+            })() :
             f.key==='ultima_nota' ?
             `<textarea class="edit-field" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
@@ -3209,6 +3384,18 @@ function modalTabContent(k,p,meta){
       <div class="field"><label>Archivo</label><input type="file" id="documentoArchivo" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"></div>
     </div>
     <div style="margin-top:8px;"><button class="btn" id="subirDocumentoBtn">Subir documento</button> <span id="documentoStatus" style="font-size:12px; color:var(--gray); margin-left:8px;"></span></div>
+    <div class="divider"></div>
+    <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Tomar fotos con la cámara</div>
+    <div class="notice" style="margin-bottom:12px;">Toma todas las fotos que necesites (actas, pruebas, identificaciones...); al terminar se arma un solo PDF y se sube automáticamente al expediente, usando la categoría elegida arriba.</div>
+    <div style="margin-bottom:10px;">
+      <video id="camaraVideo" autoplay playsinline muted style="width:100%; max-width:380px; border-radius:8px; background:#000; display:${CAMARA_STREAM ? 'block' : 'none'};"></video>
+    </div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+      <button class="btn secondary" id="abrirCamaraBtn" style="${CAMARA_STREAM ? 'display:none;' : ''}">📷 Abrir cámara</button>
+      <button class="btn" id="capturarFotoBtn" style="${CAMARA_STREAM ? '' : 'display:none;'}">Tomar foto</button>
+      <button class="btn secondary" id="cerrarCamaraBtn" style="${CAMARA_STREAM ? '' : 'display:none;'}">Cerrar cámara</button>
+    </div>
+    <div id="fotosPanel">${fotosPanelHTML()}</div>
     <div class="divider"></div>
     <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Documentos subidos (${DOCUMENTOS_ACTIVOS.length})</div>
     ${DOCUMENTOS_ACTIVOS.length ? `<table><thead><tr><th>Archivo</th><th>Categoría</th><th>Tamaño</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead><tbody>
@@ -3420,6 +3607,48 @@ function bindModalTabEvents(){
       }
     });
   }
+  const abrirCamaraBtn = document.getElementById('abrirCamaraBtn');
+  if(abrirCamaraBtn){
+    abrirCamaraBtn.addEventListener('click', async ()=>{
+      if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+        alert('Este navegador no permite abrir la cámara desde aquí. Actualiza el navegador o usa uno más reciente.');
+        return;
+      }
+      try{
+        CAMARA_STREAM = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}, width:{ideal:1600}}, audio:false});
+        const video = document.getElementById('camaraVideo');
+        video.srcObject = CAMARA_STREAM;
+        video.style.display = 'block';
+        abrirCamaraBtn.style.display = 'none';
+        document.getElementById('capturarFotoBtn').style.display = '';
+        document.getElementById('cerrarCamaraBtn').style.display = '';
+      }catch(err){
+        alert('No se pudo abrir la cámara: ' + err.message + '. Revisa que le hayas dado permiso de cámara a esta página.');
+      }
+    });
+  }
+  const capturarFotoBtn = document.getElementById('capturarFotoBtn');
+  if(capturarFotoBtn){
+    capturarFotoBtn.addEventListener('click', ()=>{
+      const video = document.getElementById('camaraVideo');
+      if(!video || !video.videoWidth) return;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      canvas.toBlob(blob=>{
+        if(!blob) return;
+        FOTOS_CAPTURADAS.push({blob, url: URL.createObjectURL(blob), width: canvas.width, height: canvas.height});
+        const panel = document.getElementById('fotosPanel');
+        if(panel){ panel.innerHTML = fotosPanelHTML(); bindFotosPanelEvents(); }
+      }, 'image/jpeg', 0.85);
+    });
+  }
+  const cerrarCamaraBtn = document.getElementById('cerrarCamaraBtn');
+  if(cerrarCamaraBtn){
+    cerrarCamaraBtn.addEventListener('click', ()=>{ detenerCamara(); renderModal(); });
+  }
+  bindFotosPanelEvents();
   document.querySelectorAll('[data-delete-documento]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const id = parseInt(btn.dataset.deleteDocumento);
@@ -3766,6 +3995,7 @@ const ETAPA_CLIENTE_LABEL = {
   conciliacion_solicitada: 'Se inició el trámite de conciliación con la empresa',
   constancia_no_conciliacion: 'No se llegó a un acuerdo con la empresa; se procede a demandar',
   demanda_presentada: 'Se presentó tu demanda ante el Tribunal',
+  prevencion: 'El Tribunal pidió corregir o aclarar algo de la demanda',
   demanda_admitida: 'El Tribunal admitió tu demanda',
   emplazamiento: 'Se notificó oficialmente a la empresa de la demanda',
   contestacion_recibida: 'La empresa ya respondió a la demanda',
@@ -3781,6 +4011,7 @@ const ETAPA_CLIENTE_SIGUIENTE = {
   conciliacion_solicitada: 'Se espera la audiencia de conciliación con la empresa.',
   constancia_no_conciliacion: 'Tu abogado(a) está preparando la demanda para presentarla ante el Tribunal.',
   demanda_presentada: 'El Tribunal debe admitir la demanda y ordenar notificar a la empresa.',
+  prevencion: 'Tu abogado(a) corregirá o aclarará lo que pidió el Tribunal para que se admita la demanda.',
   demanda_admitida: 'Se notificará formalmente a la empresa demandada.',
   emplazamiento: 'Se espera la respuesta de la empresa a la demanda.',
   contestacion_recibida: 'Se revisarán las pruebas que ofreció la empresa.',
