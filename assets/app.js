@@ -1131,6 +1131,9 @@ const AMBITO_INHABIL_LABEL = {
 let DOCUMENTOS_ACTIVOS = []; // documentos del expediente actualmente abierto en el modal
 let CAMARA_STREAM = null; // MediaStream activo del visor de cámara (pestaña Documentos), o null si está cerrado
 let FOTOS_CAPTURADAS = []; // {blob, url, width, height} tomadas con la cámara, pendientes de armar el PDF
+// Foto recién tomada, en pantalla de recorte antes de agregarse a FOTOS_CAPTURADAS:
+// {canvas, dataURL, scale, dispW, dispH, rect:{x,y,w,h}} — rect en px de pantalla (coordenadas del recuadro mostrado).
+let CROP_PENDING = null;
 let PLANTILLAS_LIB = []; // biblioteca de plantillas .docx adicionales a la demanda
 
 async function loadPlantillasLib(){
@@ -1284,6 +1287,80 @@ function limpiarFotosCapturadas(){
 // (/Filter /DCTDecode) y el tamaño de página se deriva de sus píxeles
 // asumiendo 150 dpi, para que el PDF resultante tenga un tamaño físico
 // razonable en vez del típico "página" de metros de ancho.
+// Intenta detectar el borde de la hoja dentro de la foto para proponer un
+// recorte inicial (el usuario siempre puede ajustarlo a mano después). Es
+// una heurística ligera por gradiente de contraste, no un escáner real:
+// funciona bien cuando hay buen contraste entre la hoja y el fondo, y
+// puede fallar con fondos muy texturizados o poca luz — por eso siempre
+// se muestra el recuadro para corregir, nunca se recorta sin confirmar.
+// Trabaja en escala de grises reducida para que sea rápido, y devuelve el
+// rectángulo ya escalado a las coordenadas reales de la foto.
+function detectarBordeHoja(canvas){
+  const W = 240;
+  const scale = W / canvas.width;
+  const H = Math.max(1, Math.round(canvas.height * scale));
+  const work = document.createElement('canvas');
+  work.width = W; work.height = H;
+  const wctx = work.getContext('2d');
+  wctx.drawImage(canvas, 0, 0, W, H);
+  const data = wctx.getImageData(0, 0, W, H).data;
+
+  const gray = new Float32Array(W * H);
+  for(let i = 0; i < W * H; i++){
+    gray[i] = 0.299 * data[i*4] + 0.587 * data[i*4+1] + 0.114 * data[i*4+2];
+  }
+
+  const mag = new Float32Array(W * H);
+  for(let y = 1; y < H - 1; y++){
+    for(let x = 1; x < W - 1; x++){
+      const i = y * W + x;
+      const gx = gray[i-1-W] - gray[i+1-W] + 2*gray[i-1] - 2*gray[i+1] + gray[i-1+W] - gray[i+1+W];
+      const gy = gray[i-W-1] + 2*gray[i-W] + gray[i-W+1] - gray[i+W-1] - 2*gray[i+W] - gray[i+W+1];
+      mag[i] = Math.sqrt(gx*gx + gy*gy);
+    }
+  }
+
+  const colEnergy = new Float32Array(W);
+  const rowEnergy = new Float32Array(H);
+  for(let y = 0; y < H; y++){
+    for(let x = 0; x < W; x++){
+      const v = mag[y*W + x];
+      colEnergy[x] += v;
+      rowEnergy[y] += v;
+    }
+  }
+
+  function findEdge(energy, len, fromStart){
+    let max = 0;
+    for(let i = 0; i < len; i++) if(energy[i] > max) max = energy[i];
+    if(max <= 0) return fromStart ? 0 : len - 1;
+    const thresh = max * 0.35;
+    const margin = Math.floor(len * 0.35); // nunca recorta más del 35% por lado
+    if(fromStart){
+      for(let i = 0; i < margin; i++) if(energy[i] > thresh) return Math.max(0, i - 2);
+      return 0;
+    }
+    for(let i = len - 1; i > len - 1 - margin; i--) if(energy[i] > thresh) return Math.min(len - 1, i + 2);
+    return len - 1;
+  }
+
+  let left = findEdge(colEnergy, W, true);
+  let right = findEdge(colEnergy, W, false);
+  let top = findEdge(rowEnergy, H, true);
+  let bottom = findEdge(rowEnergy, H, false);
+
+  // Recuadro demasiado chico o inválido: usar uno centrado de respaldo en
+  // vez de proponer un recorte absurdo.
+  if(right - left < W * 0.3 || bottom - top < H * 0.3 || right <= left || bottom <= top){
+    left = W * 0.08; right = W * 0.92; top = H * 0.08; bottom = H * 0.92;
+  }
+
+  return {
+    x: left / scale, y: top / scale,
+    w: (right - left) / scale, h: (bottom - top) / scale,
+  };
+}
+
 function buildPdfFromJpegs(images){
   const DPI = 150;
   const enc = new TextEncoder();
@@ -3065,6 +3142,7 @@ function bindViewBody(){
 async function openModal(k, tab){
   detenerCamara();
   limpiarFotosCapturadas();
+  CROP_PENDING = null;
   ACTIVE_CASE = k; MODAL_TAB = tab || "resumen";
   if(MODAL_TAB === 'documentos') await loadDocumentos(k.id);
   renderModal();
@@ -3073,6 +3151,7 @@ async function openModal(k, tab){
 function closeModal(){
   detenerCamara();
   limpiarFotosCapturadas();
+  CROP_PENDING = null;
   document.getElementById('modalOverlay').classList.remove('show');
   document.getElementById('modalOverlay').innerHTML = "";
 }
@@ -3110,7 +3189,7 @@ function renderModal(){
   overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
   document.querySelectorAll('.modal-tabs button').forEach(b=>{
     b.addEventListener('click', async ()=>{
-      if(b.dataset.t !== 'documentos') detenerCamara(); // no dejar la cámara prendida al salir de la pestaña
+      if(b.dataset.t !== 'documentos'){ detenerCamara(); CROP_PENDING = null; } // no dejar la cámara prendida al salir de la pestaña
       MODAL_TAB = b.dataset.t;
       if(MODAL_TAB === 'documentos') await loadDocumentos(ACTIVE_CASE.id);
       renderModal();
@@ -3168,6 +3247,95 @@ function bindFotosPanelEvents(){
         generarPdfFotosBtn.disabled = false;
       }
     });
+  }
+}
+
+function cropPanelHTML(){
+  const r = CROP_PENDING.rect;
+  return `
+  <div class="notice" style="margin-bottom:12px;">El sistema ya intentó detectar el borde de la hoja. Arrastra las esquinas o los lados del recuadro para ajustarlo, o el recuadro completo para moverlo, y confirma.</div>
+  <div id="cropStage" style="position:relative; width:${CROP_PENDING.dispW}px; max-width:100%; margin:0 auto 14px; touch-action:none;">
+    <img id="cropImg" src="${CROP_PENDING.dataURL}" style="display:block; width:${CROP_PENDING.dispW}px; max-width:100%; height:auto; border-radius:4px;">
+    <div id="cropRect" style="position:absolute; left:${r.x}px; top:${r.y}px; width:${r.w}px; height:${r.h}px; border:2px solid #fff; box-shadow:0 0 0 9999px rgba(0,0,0,.55); cursor:move;">
+      <div class="crop-handle" data-corner="tl" style="position:absolute; left:-9px; top:-9px; width:18px; height:18px; background:#fff; border:2px solid var(--brass); border-radius:50%; cursor:nwse-resize;"></div>
+      <div class="crop-handle" data-corner="tr" style="position:absolute; right:-9px; top:-9px; width:18px; height:18px; background:#fff; border:2px solid var(--brass); border-radius:50%; cursor:nesw-resize;"></div>
+      <div class="crop-handle" data-corner="bl" style="position:absolute; left:-9px; bottom:-9px; width:18px; height:18px; background:#fff; border:2px solid var(--brass); border-radius:50%; cursor:nesw-resize;"></div>
+      <div class="crop-handle" data-corner="br" style="position:absolute; right:-9px; bottom:-9px; width:18px; height:18px; background:#fff; border:2px solid var(--brass); border-radius:50%; cursor:nwse-resize;"></div>
+    </div>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap;">
+    <button class="btn" id="confirmarRecorteBtn">Usar este recorte</button>
+    <button class="btn secondary" id="cancelarRecorteBtn">Descartar foto</button>
+  </div>
+  `;
+}
+
+function bindCropEvents(){
+  const rectEl = document.getElementById('cropRect');
+  if(!rectEl || !CROP_PENDING) return;
+  const MIN_SIZE = 30;
+  function clamp(v, lo, hi){ return Math.max(lo, Math.min(hi, v)); }
+  function applyRectStyle(){
+    const r = CROP_PENDING.rect;
+    rectEl.style.left = r.x + 'px';
+    rectEl.style.top = r.y + 'px';
+    rectEl.style.width = r.w + 'px';
+    rectEl.style.height = r.h + 'px';
+  }
+  function startDrag(e, corner){
+    e.preventDefault();
+    const startX = e.clientX, startY = e.clientY;
+    const startRect = Object.assign({}, CROP_PENDING.rect);
+    function onMove(ev){
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      let r = Object.assign({}, startRect);
+      if(!corner){
+        r.x = clamp(startRect.x + dx, 0, CROP_PENDING.dispW - r.w);
+        r.y = clamp(startRect.y + dy, 0, CROP_PENDING.dispH - r.h);
+      } else {
+        if(corner.includes('l')){ const nx = clamp(startRect.x+dx, 0, startRect.x+startRect.w-MIN_SIZE); r.w = startRect.w - (nx - startRect.x); r.x = nx; }
+        if(corner.includes('r')){ r.w = clamp(startRect.w+dx, MIN_SIZE, CROP_PENDING.dispW - startRect.x); }
+        if(corner.includes('t')){ const ny = clamp(startRect.y+dy, 0, startRect.y+startRect.h-MIN_SIZE); r.h = startRect.h - (ny - startRect.y); r.y = ny; }
+        if(corner.includes('b')){ r.h = clamp(startRect.h+dy, MIN_SIZE, CROP_PENDING.dispH - startRect.y); }
+      }
+      CROP_PENDING.rect = r;
+      applyRectStyle();
+    }
+    function onUp(){
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+    }
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+  }
+  rectEl.addEventListener('pointerdown', (e)=>{
+    if(e.target.classList.contains('crop-handle')) return;
+    startDrag(e, null);
+  });
+  rectEl.querySelectorAll('.crop-handle').forEach(h=>{
+    h.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); startDrag(e, h.dataset.corner); });
+  });
+  const confirmarRecorteBtn = document.getElementById('confirmarRecorteBtn');
+  if(confirmarRecorteBtn){
+    confirmarRecorteBtn.addEventListener('click', ()=>{
+      const {canvas, scale, rect} = CROP_PENDING;
+      const sx = rect.x/scale, sy = rect.y/scale, sw = rect.w/scale, sh = rect.h/scale;
+      const out = document.createElement('canvas');
+      out.width = Math.max(1, Math.round(sw));
+      out.height = Math.max(1, Math.round(sh));
+      out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
+      out.toBlob(blob=>{
+        if(blob){
+          FOTOS_CAPTURADAS.push({blob, url: URL.createObjectURL(blob), width: out.width, height: out.height});
+        }
+        CROP_PENDING = null;
+        renderModal();
+      }, 'image/jpeg', 0.85);
+    });
+  }
+  const cancelarRecorteBtn = document.getElementById('cancelarRecorteBtn');
+  if(cancelarRecorteBtn){
+    cancelarRecorteBtn.addEventListener('click', ()=>{ CROP_PENDING = null; renderModal(); });
   }
 }
 
@@ -3387,6 +3555,7 @@ function modalTabContent(k,p,meta){
     <div class="divider"></div>
     <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Tomar fotos con la cámara</div>
     <div class="notice" style="margin-bottom:12px;">Toma todas las fotos que necesites (actas, pruebas, identificaciones...); al terminar se arma un solo PDF y se sube automáticamente al expediente, usando la categoría elegida arriba.</div>
+    ${CROP_PENDING ? cropPanelHTML() : `
     <div style="margin-bottom:10px;">
       <video id="camaraVideo" autoplay playsinline muted style="width:100%; max-width:380px; border-radius:8px; background:#000; display:${CAMARA_STREAM ? 'block' : 'none'};"></video>
     </div>
@@ -3395,6 +3564,7 @@ function modalTabContent(k,p,meta){
       <button class="btn" id="capturarFotoBtn" style="${CAMARA_STREAM ? '' : 'display:none;'}">Tomar foto</button>
       <button class="btn secondary" id="cerrarCamaraBtn" style="${CAMARA_STREAM ? '' : 'display:none;'}">Cerrar cámara</button>
     </div>
+    `}
     <div id="fotosPanel">${fotosPanelHTML()}</div>
     <div class="divider"></div>
     <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Documentos subidos (${DOCUMENTOS_ACTIVOS.length})</div>
@@ -3607,6 +3777,13 @@ function bindModalTabEvents(){
       }
     });
   }
+  // Si el modal se volvió a renderizar (p.ej. al confirmar/cancelar un
+  // recorte) y la cámara seguía abierta, el <video> es nuevo y perdió el
+  // stream — hay que reconectarlo sin pedir permiso de nuevo.
+  const camaraVideoEl = document.getElementById('camaraVideo');
+  if(camaraVideoEl && CAMARA_STREAM && !camaraVideoEl.srcObject){
+    camaraVideoEl.srcObject = CAMARA_STREAM;
+  }
   const abrirCamaraBtn = document.getElementById('abrirCamaraBtn');
   if(abrirCamaraBtn){
     abrirCamaraBtn.addEventListener('click', async ()=>{
@@ -3636,12 +3813,16 @@ function bindModalTabEvents(){
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
       canvas.getContext('2d').drawImage(video, 0, 0);
-      canvas.toBlob(blob=>{
-        if(!blob) return;
-        FOTOS_CAPTURADAS.push({blob, url: URL.createObjectURL(blob), width: canvas.width, height: canvas.height});
-        const panel = document.getElementById('fotosPanel');
-        if(panel){ panel.innerHTML = fotosPanelHTML(); bindFotosPanelEvents(); }
-      }, 'image/jpeg', 0.85);
+      const rectReal = detectarBordeHoja(canvas);
+      const dispW = Math.min(320, canvas.width);
+      const scale = dispW / canvas.width;
+      const dispH = Math.round(canvas.height * scale);
+      CROP_PENDING = {
+        canvas, scale, dispW, dispH,
+        dataURL: canvas.toDataURL('image/jpeg', 0.85),
+        rect: {x: rectReal.x*scale, y: rectReal.y*scale, w: rectReal.w*scale, h: rectReal.h*scale},
+      };
+      renderModal();
     });
   }
   const cerrarCamaraBtn = document.getElementById('cerrarCamaraBtn');
@@ -3649,6 +3830,7 @@ function bindModalTabEvents(){
     cerrarCamaraBtn.addEventListener('click', ()=>{ detenerCamara(); renderModal(); });
   }
   bindFotosPanelEvents();
+  bindCropEvents();
   document.querySelectorAll('[data-delete-documento]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const id = parseInt(btn.dataset.deleteDocumento);
