@@ -30,10 +30,11 @@ const EDITABLE_CAMPOS = [
     'tribunal','exp','status','quien_despidio','puesto_despidio','hora_despido','testigos',
     'dom_testigos','ultima_nota','aguinaldo_dias_pactados','dias_salarios_devengados',
     'fecha_desde_salarios_devengados','dias_vacaciones_anteriores_reclamados',
+    'prima_vacacional_pct_pactada',
 ];
 
 const ETAPA_KEYS = [
-    'conciliacion_solicitada','constancia_no_conciliacion','demanda_presentada','prevencion','demanda_admitida',
+    'conciliacion_prejudicial','conciliacion_solicitada','constancia_no_conciliacion','demanda_presentada','prevencion','demanda_admitida',
     'emplazamiento','contestacion_recibida','objeciones_replica','contrarreplica',
     'manifestaciones_3dias','audiencia_preliminar','audiencia_juicio','sentencia','amparo_directo',
 ];
@@ -46,6 +47,7 @@ const CAMPOS_NUMERICOS_EXPEDIENTE = [
     'indemnizacion_90','indemnizacion_60','prima_antiguedad','vacaciones_dias','vacaciones_monto',
     'prima_vacacional','aguinaldo_dias','aguinaldo_monto','total_90','total_60','honorario_90','honorario_60',
     'convenio_monto','aguinaldo_dias_pactados','dias_salarios_devengados','dias_vacaciones_anteriores_reclamados',
+    'prima_vacacional_pct_pactada',
 ];
 
 function cast_numeric_fields(array $row): array

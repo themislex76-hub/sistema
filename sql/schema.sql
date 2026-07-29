@@ -94,6 +94,9 @@ CREATE TABLE expedientes (
   dias_salarios_devengados SMALLINT UNSIGNED NULL,
   fecha_desde_salarios_devengados DATE NULL,
   dias_vacaciones_anteriores_reclamados SMALLINT UNSIGNED NULL,
+  -- Prima vacacional pactada por contrato, en % (Art. 80 LFT exige un mínimo
+  -- de 25%; se deja NULL cuando aplica el mínimo, y el sistema usa 25%).
+  prima_vacacional_pct_pactada DECIMAL(5,2) NULL,
 
   -- Antes vivían en meta (gestión interna / amparo / convenio manual):
   notas_internas TEXT NULL,
@@ -148,6 +151,21 @@ CREATE TABLE expediente_pagos (
   fecha_cobro DATE NULL,
   orden SMALLINT UNSIGNED NOT NULL DEFAULT 0,
   CONSTRAINT fk_pagos_expediente FOREIGN KEY (expediente_id) REFERENCES expedientes(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ----------------------------------------------------------------------------
+-- expediente_prestaciones_extra: prestaciones adicionales capturadas a mano
+-- en "Cálculo de liquidación" que no forman parte del cálculo estándar de
+-- ley (p.ej. fondo de ahorro pactado por contrato) — concepto libre + monto,
+-- se suman al total del cálculo.
+-- ----------------------------------------------------------------------------
+CREATE TABLE expediente_prestaciones_extra (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  expediente_id INT UNSIGNED NOT NULL,
+  concepto VARCHAR(150) NOT NULL,
+  monto DECIMAL(12,2) NULL,
+  orden SMALLINT UNSIGNED NOT NULL DEFAULT 0,
+  CONSTRAINT fk_prestaciones_extra_expediente FOREIGN KEY (expediente_id) REFERENCES expedientes(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------------------------

@@ -106,6 +106,7 @@ const EDITABLE_FIELDS = [
   {key:'dias_salarios_devengados', label:'Salarios devengados pendientes — días sin pagar', type:'number'},
   {key:'fecha_desde_salarios_devengados', label:'Salarios devengados — desde qué fecha', type:'date'},
   {key:'dias_vacaciones_anteriores_reclamados', label:'Vacaciones de periodos anteriores — días que reclama (ver el máximo no prescrito en "Cálculo de liquidación")', type:'number'},
+  {key:'prima_vacacional_pct_pactada', label:'Prima vacacional pactada (%) — solo si es mayor al mínimo de 25% (deja vacío si es el mínimo)', type:'number'},
 ];
 // La indemnización constitucional, la prima de antigüedad, las vacaciones
 // proporcionales, la prima vacacional y el aguinaldo proporcional YA NO se
@@ -309,8 +310,10 @@ function computeLiquidacion(kase){
   const vacacionesMonto = vacacionesDias * sd;
 
   // Prima vacacional — mínimo de ley, 25% sobre el total de vacaciones
-  // cubiertas (proporcionales + de años anteriores) (art. 80).
-  const primaVacacionalMonto = vacacionesMonto * 0.25;
+  // cubiertas (proporcionales + de años anteriores) (art. 80), salvo que el
+  // despacho haya capturado un porcentaje mayor pactado por contrato.
+  const primaVacacionalPct = kase.prima_vacacional_pct_pactada > 25 ? kase.prima_vacacional_pct_pactada : 25;
+  const primaVacacionalMonto = vacacionesMonto * (primaVacacionalPct/100);
 
   // Prima de antigüedad — 12 días por año, con base topada a 2x el salario
   // mínimo diario vigente (art. 162). Siempre procede: en este despacho el
@@ -325,7 +328,14 @@ function computeLiquidacion(kase){
   // (arts. 48 y 50, fracc. II).
   const indemnizacion90 = 90 * sdi;
 
-  const totalFiniquito = salariosDevengadosMonto + aguinaldoMonto + vacacionesMonto + primaVacacionalMonto + primaAntiguedad;
+  // Prestaciones adicionales capturadas a mano (p.ej. fondo de ahorro
+  // pactado por contrato) — no forman parte del cálculo estándar de ley,
+  // se suman tal cual el despacho las capturó en "Cálculo de liquidación".
+  const meta = getMeta(kase.id);
+  const prestacionesExtra = (meta.prestaciones_extra || []).filter(p => p && p.concepto);
+  const prestacionesExtraTotal = prestacionesExtra.reduce((s,p)=> s + (parseFloat(p.monto) || 0), 0);
+
+  const totalFiniquito = salariosDevengadosMonto + aguinaldoMonto + vacacionesMonto + primaVacacionalMonto + primaAntiguedad + prestacionesExtraTotal;
   const total90 = totalFiniquito + indemnizacion90;
 
   return {
@@ -334,9 +344,10 @@ function computeLiquidacion(kase){
     aguinaldoDiasBase, aguinaldoDias, aguinaldoMonto,
     vacacionesDiasProp, vacAntDias, vacAntPedidos, vacAntExcedePrescripcion, vacNoPrescrito,
     vacacionesDias, vacacionesMonto,
-    primaVacacionalMonto,
+    primaVacacionalMonto, primaVacacionalPct,
     primaAntiguedad, primaTopada, topePrima,
     indemnizacion90, sdiUsado: sdi, sdiReal, sdiSospechoso,
+    prestacionesExtra, prestacionesExtraTotal,
     totalFiniquito, total90,
   };
 }
@@ -402,6 +413,7 @@ function computeAmparoDeadline(meta){
 // (venció el plazo legal de la siguiente etapa sin que se haya marcado).
 // ---------------------------------------------------------------
 const ETAPAS_DEF = [
+  {key:'conciliacion_prejudicial', label:'Conciliación prejudicial (pláticas directas con la empresa antes de acudir al Centro de Conciliación)', fundamento:'Gestión previa del despacho — sin plazo legal fijo, no suspende la prescripción'},
   {key:'conciliacion_solicitada', label:'Solicitud de conciliación presentada', fundamento:'Art. 684-B LFT'},
   {key:'constancia_no_conciliacion', label:'Constancia de no conciliación recibida', fundamento:'Arts. 684-C y 521-III LFT', plazoDesdeEtapa:'conciliacion_solicitada', plazoDias:45, plazoTipo:'naturales', plazoLabel:'La conciliación dura hasta 45 días naturales (Art. 684-C LFT)'},
   {key:'demanda_presentada', label:'Demanda presentada ante el Tribunal', fundamento:'Art. 871 LFT', plazoLabel:'Debe presentarse antes de que venza la prescripción (Art. 518 LFT — ver pestaña Prescripción)'},
@@ -893,7 +905,7 @@ function manualHTML(){
   secciones.push(manualStep(++n, 'Marcar avances en "Etapas del juicio", paso a paso', `
     <ol>
       <li>Abre el expediente y ve a la pestaña <span class="tag">Etapas del juicio</span>.</li>
-      <li>Vas a ver una lista de 14 etapas en orden: solicitud de conciliación, constancia de no conciliación, demanda presentada, prevención, demanda admitida, emplazamiento, contestación recibida, objeciones y réplica, contrarréplica, manifestaciones de 3 días, audiencia preliminar, audiencia de juicio, sentencia, y amparo directo.</li>
+      <li>Vas a ver una lista de 15 etapas en orden: conciliación prejudicial, solicitud de conciliación, constancia de no conciliación, demanda presentada, prevención, demanda admitida, emplazamiento, contestación recibida, objeciones y réplica, contrarréplica, manifestaciones de 3 días, audiencia preliminar, audiencia de juicio, sentencia, y amparo directo.</li>
       <li>Cada una tiene: una casilla para marcarla como cumplida, y un campo de fecha.</li>
       <li>Cuando esa etapa ya ocurrió: marca la casilla y pon la fecha en que pasó.</li>
       <li><strong>"Prevención"</strong> solo aplica si el Tribunal la notifica por defectos u omisiones en la demanda — si no hubo prevención, déjala en blanco y marca directo "Demanda admitida".</li>
@@ -1463,7 +1475,7 @@ async function loadUsuariosAdmin(){
 
 function defaultMeta(){
   return {notas:"", cobro_pendiente:false,
-    pagos:[], amparo_activo:false, amparo_fecha_notif:"", amparo_notas:"", amparo_presentado:false,
+    pagos:[], prestaciones_extra:[], amparo_activo:false, amparo_fecha_notif:"", amparo_notas:"", amparo_presentado:false,
     etapas:{}, pendientes:[], historial:[], concluido_manual:false, notas_bitacora:[],
     convenio_manual:{activo:false, monto:'', fecha_pago:''}};
 }
@@ -1473,6 +1485,7 @@ function getMeta(id){
   const m = Object.assign(defaultMeta(), (kase && kase.meta) || {});
   m.etapas = Object.assign({}, m.etapas);
   m.pendientes = m.pendientes || [];
+  m.prestaciones_extra = m.prestaciones_extra || [];
   m.historial = m.historial || [];
   m.notas_bitacora = m.notas_bitacora || [];
   return m;
@@ -2152,6 +2165,12 @@ function abrirCalculoPDF(k){
   const totalGeneral90 = liq.total90 + (sc? sc.total : 0);
 
   let filas = '';
+  filas += `<div class="csection">DATOS DEL EXPEDIENTE</div>`;
+  filas += conceptoRowNum('Fecha de ingreso', '—', fmtDate(k.fecha_ingreso));
+  filas += conceptoRowNum('Fecha de baja', '—', fmtDate(k.fecha_baja));
+  filas += conceptoRowNum('Salario diario', '—', fmtMoney(k.salario_diario));
+  filas += conceptoRowNum('Salario diario integrado (SDI)', liq.sdiReal ? '—' : 'Aproximado — no capturado, se usó el salario diario', fmtMoney(liq.sdiUsado));
+
   filas += `<div class="csection">INDEMNIZACIÓN CONSTITUCIONAL — ART. 48 Y 50 LFT</div>`;
   filas += conceptoRow('Indemnización constitucional (90 días — 3 meses de salario)', 'Art. 48 y 50, fracc. II, LFT', liq.indemnizacion90);
 
@@ -2163,8 +2182,15 @@ function abrirCalculoPDF(k){
   filas += `<div class="csection">PRESTACIONES PROPORCIONALES</div>`;
   filas += conceptoRow('Prima de antigüedad (12 días × ' + liq.aniosDec.toFixed(2) + ' años' + (liq.primaTopada? ', topada a 2× salario mínimo':'') + ')', 'Art. 162 LFT', liq.primaAntiguedad);
   filas += conceptoRow('Vacaciones (' + liq.vacacionesDiasProp.toFixed(2) + ' días del periodo en curso' + (liq.vacAntDias>0? ' + '+liq.vacAntDias+' de periodos anteriores':'') + ')', 'Art. 76-79 LFT' + (liq.vacAntDias>0? ' y 516':''), liq.vacacionesMonto);
-  filas += conceptoRow('Prima vacacional (25% sobre vacaciones)', 'Art. 80 LFT', liq.primaVacacionalMonto);
+  filas += conceptoRow('Prima vacacional (' + liq.primaVacacionalPct + '% sobre vacaciones' + (liq.primaVacacionalPct>25? ' — pactada por contrato':'') + ')', 'Art. 80 LFT', liq.primaVacacionalMonto);
   filas += conceptoRow('Aguinaldo proporcional (' + liq.aguinaldoDias.toFixed(2) + ' días' + (liq.aguinaldoDiasBase!==15? ', '+liq.aguinaldoDiasBase+' días pactados':'') + ')', 'Art. 87 LFT', liq.aguinaldoMonto);
+
+  if(liq.prestacionesExtra.length){
+    filas += `<div class="csection">PRESTACIONES ADICIONALES (CAPTURADAS A MANO)</div>`;
+    liq.prestacionesExtra.forEach(pr=>{
+      filas += conceptoRow(pr.concepto, 'Capturado manualmente', parseFloat(pr.monto) || 0);
+    });
+  }
 
   if(sc){
     filas += `<div class="csection">SALARIOS CAÍDOS E INTERESES — ART. 48 LFT${!sc.sdiReal? ' (aprox., sin salario integrado capturado)':''}${sc.sdiSospechoso? ' (aprox., dato de salario integrado inconsistente)':''}</div>`;
@@ -3445,8 +3471,22 @@ function modalTabContent(k,p,meta){
     ${liq.vacAntExcedePrescripcion ? `<div class="notice" style="border-left:3px solid var(--amber); background:var(--amber-bg);">Se reclaman ${liq.vacAntPedidos} días de vacaciones de periodos anteriores, pero solo ${liq.vacNoPrescrito.tot} no están prescritos (Art. 516 LFT, criterio SCJN 2a./J. 1/97) — se calculan ${liq.vacNoPrescrito.tot}.</div>` : ''}
     ${conceptoRow('Vacaciones (' + liq.vacacionesDiasProp.toFixed(2) + ' días del periodo en curso' + (liq.vacAntDias>0? ' + '+liq.vacAntDias+' de periodos anteriores':'') + ')', 'Art. 76-79 LFT' + (liq.vacAntDias>0? ' y 516 (criterio SCJN 2a./J. 1/97)':''), liq.vacacionesMonto)}
     <div class="hint" style="font-size:11px; color:var(--gray); margin:-6px 0 10px;">Máximo de días de periodos anteriores que aún no prescriben: <strong>${liq.vacNoPrescrito.tot}</strong>${liq.vacNoPrescrito.per.length? ' (año(s) '+liq.vacNoPrescrito.per.join(', ')+')' : ''}. Captura cuántos reclama en "Editar datos" si aplica.</div>
-    ${conceptoRow('Prima vacacional (25% sobre vacaciones)', 'Art. 80 LFT', liq.primaVacacionalMonto)}
+    ${conceptoRow('Prima vacacional (' + liq.primaVacacionalPct + '% sobre vacaciones' + (liq.primaVacacionalPct>25? ' — pactada por contrato':'') + ')', 'Art. 80 LFT', liq.primaVacacionalMonto)}
     ${conceptoRow('Aguinaldo proporcional (' + liq.aguinaldoDias.toFixed(2) + ' días' + (liq.aguinaldoDiasBase!==15? ', '+liq.aguinaldoDiasBase+' días pactados':'') + ')', 'Art. 87 LFT', liq.aguinaldoMonto)}
+
+    <div class="csection">Prestaciones adicionales (manual)</div>
+    <div class="notice" style="margin-bottom:10px;">Agrega aquí cualquier prestación pactada que no forme parte del cálculo estándar de ley (por ejemplo, fondo de ahorro). Se suma al total del cálculo y aparece en el PDF.</div>
+    <div id="prestacionesList">
+      ${meta.prestaciones_extra.map((pr,i)=>`
+        <div style="display:grid; grid-template-columns:2fr 1fr auto; gap:10px; align-items:end; margin-bottom:8px;" data-prestacion-row="${i}">
+          <div class="field" style="margin:0;"><label>Concepto</label><input type="text" class="prestacion-concepto" value="${escapeHTML(pr.concepto||'')}" placeholder="Ej. Fondo de ahorro"></div>
+          <div class="field" style="margin:0;"><label>Monto</label><input type="text" class="prestacion-monto" value="${escapeHTML(pr.monto!=null?String(pr.monto):'')}" placeholder="$"></div>
+          <button class="btn secondary" data-remove-prestacion="${i}" style="padding:8px 10px; font-size:11px;">Quitar</button>
+        </div>`).join("")}
+    </div>
+    <button class="btn secondary" id="addPrestacionBtn" style="margin-bottom:6px;">+ Agregar prestación</button>
+    <div style="margin-bottom:14px;"><button class="btn" id="savePrestacionesBtn">Guardar prestaciones adicionales</button> <span id="prestacionesStatus" style="font-size:12px; color:var(--gray); margin-left:8px;"></span></div>
+    ${liq.prestacionesExtraTotal>0 ? conceptoRow('Total prestaciones adicionales', 'Capturado manualmente', liq.prestacionesExtraTotal) : ''}
 
     ${sc ? `
     <div class="csection">Salarios caídos e intereses — Art. 48 LFT (demanda ya presentada)</div>
@@ -3738,6 +3778,17 @@ function readPagosFromDOM(){
     pagos.push({fecha, monto, cobrado, fecha_cobro});
   });
   return pagos;
+}
+
+function readPrestacionesFromDOM(){
+  const rows = document.querySelectorAll('[data-prestacion-row]');
+  const prestaciones = [];
+  rows.forEach(r=>{
+    const concepto = r.querySelector('.prestacion-concepto').value.trim();
+    const monto = r.querySelector('.prestacion-monto').value;
+    if(concepto) prestaciones.push({concepto, monto});
+  });
+  return prestaciones;
 }
 
 function readPendientesFromDOM(){
@@ -4050,6 +4101,43 @@ function bindModalTabEvents(){
       }catch(err){ alert('No se pudo guardar: ' + err.message); }
     });
   }
+  const addPrestacionBtn = document.getElementById('addPrestacionBtn');
+  if(addPrestacionBtn){
+    addPrestacionBtn.addEventListener('click', ()=>{
+      const list = document.getElementById('prestacionesList');
+      const div = document.createElement('div');
+      div.style.cssText = 'display:grid; grid-template-columns:2fr 1fr auto; gap:10px; align-items:end; margin-bottom:8px;';
+      div.setAttribute('data-prestacion-row', '');
+      div.innerHTML = `
+        <div class="field" style="margin:0;"><label>Concepto</label><input type="text" class="prestacion-concepto" placeholder="Ej. Fondo de ahorro"></div>
+        <div class="field" style="margin:0;"><label>Monto</label><input type="text" class="prestacion-monto" placeholder="$"></div>
+        <button type="button" class="btn secondary" data-remove-prestacion-row style="padding:8px 10px; font-size:11px;">Quitar</button>`;
+      list.appendChild(div);
+      div.querySelector('[data-remove-prestacion-row]').addEventListener('click', ()=> div.remove());
+    });
+  }
+  document.querySelectorAll('[data-remove-prestacion]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ btn.closest('[data-prestacion-row]').remove(); });
+  });
+  const savePrestacionesBtn = document.getElementById('savePrestacionesBtn');
+  if(savePrestacionesBtn){
+    savePrestacionesBtn.addEventListener('click', async ()=>{
+      const status = document.getElementById('prestacionesStatus');
+      savePrestacionesBtn.disabled = true;
+      try{
+        await api('POST', 'expedientes_update_prestaciones.php', {id: ACTIVE_CASE.id, prestaciones: readPrestacionesFromDOM()});
+        if(status) status.textContent = 'Guardado ✓';
+        setTimeout(()=>{ if(status) status.textContent = ''; }, 1600);
+        await refreshBootstrap();
+        ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+        renderModal();
+      }catch(err){
+        if(status) status.textContent = 'Error: ' + err.message;
+      } finally {
+        savePrestacionesBtn.disabled = false;
+      }
+    });
+  }
   const saveAmparoBtn = document.getElementById('saveAmparoBtn');
   if(saveAmparoBtn){
     saveAmparoBtn.addEventListener('click', async ()=>{
@@ -4174,6 +4262,7 @@ function bindClientPortal(){
 // caso sin tener que llamar a preguntar qué significa lo que ve.
 // ---------------------------------------------------------------
 const ETAPA_CLIENTE_LABEL = {
+  conciliacion_prejudicial: 'Tu abogado(a) buscó un arreglo directo con la empresa',
   conciliacion_solicitada: 'Se inició el trámite de conciliación con la empresa',
   constancia_no_conciliacion: 'No se llegó a un acuerdo con la empresa; se procede a demandar',
   demanda_presentada: 'Se presentó tu demanda ante el Tribunal',
@@ -4190,6 +4279,7 @@ const ETAPA_CLIENTE_LABEL = {
   amparo_directo: 'Se presentó un amparo para revisar la resolución',
 };
 const ETAPA_CLIENTE_SIGUIENTE = {
+  conciliacion_prejudicial: 'Si no hay arreglo directo, se presentará la solicitud de conciliación ante el Centro correspondiente.',
   conciliacion_solicitada: 'Se espera la audiencia de conciliación con la empresa.',
   constancia_no_conciliacion: 'Tu abogado(a) está preparando la demanda para presentarla ante el Tribunal.',
   demanda_presentada: 'El Tribunal debe admitir la demanda y ordenar notificar a la empresa.',

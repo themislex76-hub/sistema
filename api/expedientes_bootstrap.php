@@ -23,6 +23,7 @@ $ids = array_map(fn($r) => (int)$r['id'], $expedientesRows);
 
 $etapasByCase = [];
 $pagosByCase = [];
+$prestacionesExtraByCase = [];
 $pendientesByCase = [];
 $notasByCase = [];
 $historialByCase = [];
@@ -49,6 +50,16 @@ if ($ids) {
             'monto' => $r['monto'] !== null ? (float)$r['monto'] : null,
             'cobrado' => (bool)$r['cobrado'],
             'fecha_cobro' => $r['fecha_cobro'],
+        ];
+    }
+
+    $q = $pdo->prepare("SELECT * FROM expediente_prestaciones_extra WHERE expediente_id IN ($in) ORDER BY orden ASC, id ASC");
+    $q->execute($ids);
+    foreach ($q->fetchAll() as $r) {
+        $prestacionesExtraByCase[$r['expediente_id']][] = [
+            'id' => (int)$r['id'],
+            'concepto' => $r['concepto'],
+            'monto' => $r['monto'] !== null ? (float)$r['monto'] : null,
         ];
     }
 
@@ -114,6 +125,7 @@ foreach ($expedientesRows as $r) {
         ],
         'etapas' => $etapasByCase[$id] ?? new stdClass(),
         'pagos' => $pagosByCase[$id] ?? [],
+        'prestaciones_extra' => $prestacionesExtraByCase[$id] ?? [],
         'pendientes' => $pendientesByCase[$id] ?? [],
         'notas_bitacora' => $notasByCase[$id] ?? [],
         'historial' => $historialByCase[$id] ?? [],
