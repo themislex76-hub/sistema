@@ -92,8 +92,8 @@ const EDITABLE_FIELDS = [
   {key:'salario_diario', label:'Salario diario', type:'number'},
   {key:'sdi', label:'Salario diario integrado', type:'number'},
   {key:'instancia', label:'Centro de Conciliación / Instancia'},
-  {key:'junta', label:'Tribunal / Junta competente'},
-  {key:'tribunal', label:'Tribunal (si ya está radicado)'},
+  {key:'junta', label:'Tribunal / Junta competente', type:'tribunal'},
+  {key:'tribunal', label:'Tribunal (si ya está radicado)', type:'tribunal'},
   {key:'exp', label:'Número de expediente o registro'},
   {key:'status', label:'Estatus', type:'select', options:STATUS_OPCIONES},
   {key:'quien_despidio', label:'Nombre de quien despidió'},
@@ -113,6 +113,474 @@ const EDITABLE_FIELDS = [
 // capturan a mano aquí: el sistema los calcula solos a partir de fecha de
 // ingreso, fecha de baja, salario y el salario mínimo vigente — ver
 // computeLiquidacion() y la pestaña "Cálculo de liquidación".
+
+// ---------------------------------------------------------------
+// Catálogo nacional de tribunales laborales (locales + federales),
+// construido a partir de investigación en fuentes oficiales de cada
+// Poder Judicial estatal y del directorio OAJ/CJF (julio 2026). Los
+// 13 estados con lista cerrada están verificados contra fuente oficial
+// primaria; el resto usa 'Otro (especificar)' hasta verificarse. Lo
+// que se escribe en 'Otro' se guarda vía tribunales_custom_add.php y
+// se suma al catálogo compartido para todos — ver tribunalFieldHTML()
+// y bindTribunalFieldEvents().
+// ---------------------------------------------------------------
+const ESTADOS_MX = [
+  "Aguascalientes",
+  "Baja California",
+  "Baja California Sur",
+  "Campeche",
+  "Chiapas",
+  "Chihuahua",
+  "Ciudad de México",
+  "Coahuila de Zaragoza",
+  "Colima",
+  "Durango",
+  "Estado de México",
+  "Guanajuato",
+  "Guerrero",
+  "Hidalgo",
+  "Jalisco",
+  "Michoacán",
+  "Morelos",
+  "Nayarit",
+  "Nuevo León",
+  "Oaxaca",
+  "Puebla",
+  "Querétaro",
+  "Quintana Roo",
+  "San Luis Potosí",
+  "Sinaloa",
+  "Sonora",
+  "Tabasco",
+  "Tamaulipas",
+  "Tlaxcala",
+  "Veracruz",
+  "Yucatán",
+  "Zacatecas",
+];
+
+// Estados con catálogo LOCAL cerrado y verificado al 100% contra fuente
+// oficial primaria (julio 2026). Los demás estados no aparecen aquí: para
+// ellos el selector solo ofrece 'Otro (especificar)' + lo ya agregado a
+// tribunales_custom.
+const TRIBUNALES_LOCALES_MX = {
+  "Baja California": [
+    "Tribunal Laboral Ensenada",
+    "Tribunal Laboral Mexicali",
+    "Tribunal Laboral San Quintín",
+    "Tribunal Laboral Tecate",
+    "Tribunal Laboral Tijuana",
+  ],
+  "Baja California Sur": [
+    "Tribunal Laboral del Partido Judicial de La Paz",
+    "Tribunal Laboral del Partido Judicial de Los Cabos, residencia San José del Cabo",
+    "Tribunal Laboral del Partido Judicial de Los Cabos, residencia Cabo San Lucas",
+    "Tribunal Laboral del Partido Judicial de Comondú, sede Ciudad Constitución",
+    "Tribunal Laboral del Partido Judicial de Loreto",
+    "Tribunal Laboral del Partido Judicial de Mulegé, residencia Santa Rosalía",
+  ],
+  "Chiapas": [
+    "Juzgado Primero Especializado en Materia Laboral, Región Uno (Tuxtla Gutiérrez)",
+    "Juzgado Segundo Especializado en Materia Laboral, Región Uno (Tuxtla Gutiérrez)",
+    "Juzgado Especializado en Materia Laboral, Región Dos (Tapachula)",
+  ],
+  "Chihuahua": [
+    "Tribunal Laboral — Chihuahua (capital)",
+    "Tribunal Laboral — Delicias",
+    "Tribunal Laboral — Ciudad Juárez",
+  ],
+  "Coahuila de Zaragoza": [
+    "Tribunal Laboral del Distrito Judicial de Saltillo",
+    "Tribunal Laboral del Distrito Judicial de Torreón",
+    "Tribunal Laboral del Distrito Judicial de Monclova",
+    "Tribunal Laboral del Distrito Judicial de la Región Carbonífera (San Juan de Sabinas)",
+    "Tribunal Laboral del Distrito Judicial de Río Grande (Piedras Negras)",
+    "Tribunal Laboral del Distrito Judicial de Acuña",
+  ],
+  "Hidalgo": [
+    "Tribunal Laboral del Poder Judicial del Estado de Hidalgo (Pachuca)",
+  ],
+  "Jalisco": [
+    "Primer Tribunal Laboral (Región I — Zapopan)",
+    "Segundo Tribunal Laboral (Región I — Zapopan)",
+    "Tercer Tribunal Laboral (Región I — Zapopan)",
+    "Cuarto Tribunal Laboral (Región I — Zapopan)",
+    "Quinto Tribunal Laboral (Región I — Zapopan)",
+    "Sexto Tribunal Laboral (Región I — Zapopan)",
+    "Séptimo Tribunal Laboral (Región I — Zapopan)",
+    "Octavo Tribunal Laboral (Región I — Zapopan)",
+    "Noveno Tribunal Laboral (Región I — Zapopan)",
+    "Décimo Tribunal Laboral (Región I — Zapopan)",
+    "Décimo Primer Tribunal Laboral (Región I — Zapopan)",
+    "Décimo Segundo Tribunal Laboral (Región I — Zapopan)",
+    "Décimo Tercer Tribunal Laboral (Región I — Zapopan)",
+    "Décimo Cuarto Tribunal Laboral (Región I — Zapopan)",
+    "Décimo Quinto Tribunal Laboral (Región I — Zapopan)",
+    "Décimo Sexto Tribunal Laboral (Región I — Zapopan)",
+    "Décimo Séptimo Tribunal Laboral (Región I — Zapopan)",
+    "Décimo Octavo Tribunal Laboral (Región I — Zapopan)",
+    "Décimo Noveno Tribunal Laboral (Región I — Zapopan)",
+    "Vigésimo Tribunal Laboral (Región I — Zapopan)",
+    "Vigésimo Primer Tribunal Laboral (Región I — Zapopan)",
+    "Vigésimo Segundo Tribunal Laboral (Región I — Zapopan)",
+    "Vigésimo Tercer Tribunal Laboral (Región I — Zapopan)",
+    "Vigésimo Cuarto Tribunal Laboral (Región I — Zapopan)",
+    "Primer Tribunal Laboral (Región 2 — Puerto Vallarta)",
+    "Segundo Tribunal Laboral (Región 2 — Puerto Vallarta)",
+    "Tribunal Laboral (Región 3 — Zapotlán El Grande / Ciudad Guzmán)",
+    "Tribunal Laboral (Región 4 — Lagos de Moreno)",
+    "Tribunal Laboral (Región 5 — Ocotlán)",
+    "Tribunal Laboral (Región 6 — Autlán de Navarro)",
+  ],
+  "Oaxaca": [
+    "Juzgado Primero Laboral del Circuito Judicial del Centro (Santa Lucía del Camino)",
+    "Juzgado Segundo Laboral del Circuito Judicial del Centro (Santa Lucía del Camino)",
+  ],
+  "Quintana Roo": [
+    "Tribunal Laboral de Chetumal",
+    "Tribunal Primero Laboral de Cancún",
+    "Tribunal Segundo Laboral de Cancún",
+    "Tribunal Laboral de Playa del Carmen",
+  ],
+  "Sonora": [
+    "Primer Tribunal Laboral del Distrito Judicial 1 (Hermosillo)",
+    "Segundo Tribunal Laboral del Distrito Judicial 1 (Hermosillo)",
+    "Tercer Tribunal Laboral del Distrito Judicial 1 (Hermosillo)",
+    "Primer Tribunal Laboral del Distrito Judicial 2 (Ciudad Obregón)",
+    "Primer Tribunal Laboral del Distrito Judicial 3 (Nogales)",
+    "Primer Tribunal Laboral del Distrito Judicial 4 (San Luis Río Colorado)",
+    "Primer Tribunal Laboral del Distrito Judicial 5 (Puerto Peñasco)",
+    "Primer Tribunal Laboral del Distrito Judicial 6 (Navojoa)",
+    "Primer Tribunal Laboral del Distrito Judicial 7 (Guaymas)",
+  ],
+  "Tabasco": [
+    "Primer Tribunal Laboral Región 01, Centro (Villahermosa)",
+    "Segundo Tribunal Laboral Región 01, Centro (Villahermosa)",
+    "Tercer Tribunal Laboral Región 01, Centro (Villahermosa)",
+    "Cuarto Tribunal Laboral Región 01, Centro (Villahermosa)",
+    "Tribunal Laboral Región 02 (Cunduacán)",
+    "Tribunal Laboral Región 03 (Macuspana)",
+  ],
+  "Tamaulipas": [
+    "Región I — Ciudad Victoria: Juzgado de Justicia Laboral",
+    "Región II — El Mante: Juzgado de Justicia Laboral",
+    "Región III — Matamoros: Juzgado de Justicia Laboral",
+    "Región IV — Nuevo Laredo: Juzgado de Justicia Laboral",
+    "Región V — Reynosa: Primer Tribunal Laboral",
+    "Región V — Reynosa: Segundo Tribunal Laboral",
+    "Región VI — Altamira: Primer Tribunal Laboral",
+    "Región VI — Altamira: Segundo Tribunal Laboral",
+  ],
+  "Zacatecas": [
+    "Tribunal Laboral de Zacatecas",
+    "Tribunal Laboral de Fresnillo",
+  ],
+};
+
+// Tribunales Laborales Federales de primera instancia (Asuntos
+// Individuales + Asuntos Colectivos) por estado — directorio oficial OAJ
+// (oaj.gob.mx/Directorios), 254 órganos federales de materia de trabajo
+// revisados, de los cuales estos 133 son de primera instancia (los que
+// aplican para radicar una demanda; se excluyen a propósito Juzgados de
+// Distrito y Tribunales Colegiados, que son de amparo, no de radicación).
+const TRIBUNALES_FEDERALES_MX = {
+  "Aguascalientes": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE AGUASCALIENTES, CON SEDE EN AGUASCALIENTES",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE AGUASCALIENTES, CON SEDE EN AGUASCALIENTES",
+  ],
+  "Baja California": [
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE BAJA CALIFORNIA, CON SEDE EN TIJUANA",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE BAJA CALIFORNIA, CON SEDE EN TIJUANA",
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE BAJA CALIFORNIA, CON SEDE EN ENSENADA",
+  ],
+  "Baja California Sur": [
+    "TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE BAJA CALIFORNIA SUR, CON SEDE EN LA PAZ",
+  ],
+  "Campeche": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL DE ESTADO DE CAMPECHE, CON SEDE EN CAMPECHE.",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL DE ESTADO DE CAMPECHE, CON SEDE EN CAMPECHE.",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL DE ESTADO DE CAMPECHE, CON SEDE EN CD. DEL CARMEN.",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL DE ESTADO DE CAMPECHE, CON SEDE EN CD. DEL CARMEN.",
+    "QUINTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL DE ESTADO DE CAMPECHE, CON SEDE EN CD. DEL CARMEN.",
+  ],
+  "Chiapas": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL DE ESTADO DE CHIAPAS, CON SEDE EN TUXTLA.",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL DE ESTADO DE CHIAPAS, CON SEDE EN TUXTLA.",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL DE ESTADO DE CHIAPAS, CON SEDE EN TUXTLA.",
+  ],
+  "Chihuahua": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE CHIHUAHUA, CON SEDE EN CHIHUAHUA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE CHIHUAHUA, CON SEDE EN CHIHUAHUA",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE CHIHUAHUA, CON SEDE EN CIUDAD JUÁREZ",
+  ],
+  "Ciudad de México": [
+    "TRIBUNAL LABORAL FEDERAL DE ASUNTOS COLECTIVOS, CON SEDE EN LA CIUDAD DE MÉXICO.",
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "QUINTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "SEXTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "SÉPTIMO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "OCTAVO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "NOVENO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "DÉCIMO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "DECIMOPRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "DECIMOSEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "DECIMOTERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "DECIMOCUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "DECIMOQUINTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "DECIMOSEXTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+    "DECIMOSEPTIMO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, CON SEDE EN LA CIUDAD DE MÉXICO",
+  ],
+  "Coahuila de Zaragoza": [
+    "QUINTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE COAHUILA, CON SEDE EN TORREÓN",
+    "SEXTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE COAHUILA, CON SEDE EN TORREÓN",
+    "SÉPTIMO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE COAHUILA, CON SEDE EN TORREÓN",
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE COAHUILA, CON SEDE EN SALTILLO",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE COAHUILA, CON SEDE EN SALTILLO",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE COAHUILA, CON SEDE EN SALTILLO",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE COAHUILA, CON SEDE EN SALTILLO",
+  ],
+  "Colima": [
+    "TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE COLIMA, CON SEDE EN COLIMA",
+  ],
+  "Durango": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE DURANGO, CON SEDE EN DURANGO",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE DURANGO, CON SEDE EN DURANGO",
+  ],
+  "Estado de México": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN TOLUCA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN TOLUCA",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN TOLUCA",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN NAUCALPAN DE JUÁREZ.",
+    "QUINTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN NAUCALPAN DE JUÁREZ.",
+    "SEXTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN NAUCALPAN DE JUÁREZ.",
+    "SÉPTIMO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN NAUCALPAN DE JUÁREZ.",
+    "OCTAVO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN NAUCALPAN DE JUÁREZ.",
+    "NOVENO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN NAUCALPAN DE JUÁREZ.",
+    "DÉCIMO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN NAUCALPAN DE JUÁREZ.",
+    "DÉCIMO PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MÉXICO, CON SEDE EN NAUCALPAN DE JUÁREZ",
+  ],
+  "Guanajuato": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE GUANAJUATO, CON SEDE EN GUANAJUATO",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE GUANAJUATO, CON SEDE EN GUANAJUATO",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE GUANAJUATO, CON SEDE EN GUANAJUATO",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE GUANAJUATO, CON SEDE EN GUANAJUATO",
+  ],
+  "Guerrero": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE GUERRERO, CON SEDE EN ACAPULCO",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE GUERRERO, CON SEDE EN ACAPULCO",
+  ],
+  "Hidalgo": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE HIDALGO, CON SEDE EN PACHUCA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE HIDALGO, CON SEDE EN PACHUCA",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE HIDALGO, CON SEDE EN PACHUCA",
+  ],
+  "Jalisco": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE JALISCO, CON SEDE EN ZAPOPAN",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE JALISCO, CON SEDE EN ZAPOPAN",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE JALISCO, CON SEDE EN ZAPOPAN",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE JALISCO, CON SEDE EN ZAPOPAN",
+    "QUINTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE JALISCO, CON SEDE EN ZAPOPAN",
+    "SEXTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE JALISCO, CON SEDE EN ZAPOPAN",
+    "SÉPTIMO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE JALISCO, CON SEDE EN ZAPOPAN",
+    "OCTAVO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE JALISCO, CON SEDE EN ZAPOPAN",
+  ],
+  "Michoacán": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MICHOACÁN, CON SEDE EN MORELIA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE MICHOACÁN, CON SEDE EN MORELIA",
+  ],
+  "Morelos": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE MORELOS, CON SEDE EN CUERNAVACA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE MORELOS, CON SEDE EN CUERNAVACA",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE MORELOS, CON SEDE EN CUERNAVACA",
+  ],
+  "Nayarit": [
+    "TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE NAYARIT, CON SEDE EN TEPIC",
+  ],
+  "Nuevo León": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE NUEVO LEÓN, CON SEDE EN MONTERREY",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE NUEVO LEÓN, CON SEDE EN MONTERREY",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE NUEVO LEÓN, CON SEDE EN MONTERREY",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE NUEVO LEÓN, CON SEDE EN MONTERREY",
+    "QUINTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE NUEVO LEÓN, CON SEDE EN MONTERREY",
+    "SEXTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE NUEVO LEÓN, CON SEDE EN MONTERREY",
+    "SÉPTIMO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE NUEVO LEÓN, CON SEDE EN MONTERREY",
+    "OCTAVO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE NUEVO LEÓN, CON SEDE EN MONTERREY",
+    "NOVENO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE NUEVO LEÓN, CON SEDE EN MONTERREY",
+    "DÉCIMO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE NUEVO LEÓN, CON SEDE EN MONTERREY",
+  ],
+  "Oaxaca": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE OAXACA, CON SEDE EN OAXACA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE OAXACA, CON SEDE EN OAXACA",
+  ],
+  "Puebla": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE PUEBLA, CON SEDE EN PUEBLA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE PUEBLA, CON SEDE EN PUEBLA",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE PUEBLA, CON SEDE EN PUEBLA",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE PUEBLA, CON SEDE EN PUEBLA",
+  ],
+  "Querétaro": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE QUERÉTARO, CON SEDE EN QUERÉTARO",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE QUERÉTARO, CON SEDE EN QUERÉTARO",
+  ],
+  "Quintana Roo": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE QUINTANA ROO, CON SEDE EN CANCÚN",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE QUINTANA ROO, CON SEDE EN CANCÚN",
+  ],
+  "San Luis Potosí": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE SAN LUIS POTOSÍ, CON SEDE EN SAN LUIS POTOSÍ.",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE SAN LUIS POTOSÍ, CON SEDE EN SAN LUIS POTOSÍ.",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE SAN LUIS POTOSÍ, CON SEDE EN SAN LUIS POTOSÍ.",
+  ],
+  "Sinaloa": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE SINALOA, CON SEDE EN CULIACÁN",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE SINALOA, CON SEDE EN CULIACÁN",
+  ],
+  "Sonora": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE SONORA, CON SEDE EN HERMOSILLO",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE SONORA, CON SEDE EN HERMOSILLO",
+  ],
+  "Tabasco": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TABASCO, CON SEDE EN VILLAHERMOSA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TABASCO, CON SEDE EN VILLAHERMOSA",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TABASCO, CON SEDE EN VILLAHERMOSA",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TABASCO, CON SEDE EN VILLAHERMOSA",
+    "QUINTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TABASCO, CON SEDE EN VILLAHERMOSA",
+    "SEXTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TABASCO, CON SEDE EN VILLAHERMOSA",
+  ],
+  "Tamaulipas": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TAMAULIPAS, CON SEDE EN CIUDAD VICTORIA",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TAMAULIPAS, CON SEDE EN REYNOSA",
+    "QUINTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TAMAULIPAS, CON SEDE EN REYNOSA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TAMAULIPAS, CON SEDE EN TAMPICO",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE TAMAULIPAS, CON SEDE EN TAMPICO",
+  ],
+  "Tlaxcala": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE TLAXCALA, CON SEDE EN TLAXCALA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE TLAXCALA, CON SEDE EN TLAXCALA",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE TLAXCALA, CON SEDE EN TLAXCALA",
+  ],
+  "Veracruz": [
+    "SEXTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE VERACRUZ, CON SEDE EN XALAPA",
+    "SÉPTIMO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE VERACRUZ, CON SEDE EN XALAPA",
+    "OCTAVO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE VERACRUZ, CON SEDE EN XALAPA",
+    "NOVENO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE VERACRUZ, CON SEDE EN XALAPA",
+    "TERCER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE VERACRUZ, CON SEDE EN VERACRUZ",
+    "CUARTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE VERACRUZ, CON SEDE EN VERACRUZ",
+    "QUINTO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE VERACRUZ, CON SEDE EN VERACRUZ",
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE VERACRUZ, CON SEDE EN COATZACOALCOS",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES EN EL ESTADO DE VERACRUZ, CON SEDE EN COATZACOALCOS",
+  ],
+  "Yucatán": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE YUCATÁN, CON SEDE EN MÉRIDA",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE YUCATÁN, CON SEDE EN MÉRIDA",
+  ],
+  "Zacatecas": [
+    "PRIMER TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE ZACATECAS, CON SEDE EN ZACATECAS.",
+    "SEGUNDO TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES, EN EL ESTADO DE ZACATECAS, CON SEDE EN ZACATECAS.",
+  ],
+};
+// ---------------------------------------------------------------
+// Selector de Tribunal (estado -> tribunal, con "Otro (especificar)") — ver
+// EDITABLE_FIELDS ('junta' y 'tribunal', type:'tribunal'), TRIBUNALES_MX y
+// TRIBUNALES_CUSTOM. El valor final sigue siendo un solo string plano (igual
+// que antes, para no romper los datos ya capturados) — el widget de dos
+// selects + texto libre es solo una ayuda para construirlo, guardado en un
+// <input type="hidden" class="edit-field"> que el save genérico ya lee.
+// ---------------------------------------------------------------
+function findTribunalEstado(nombre){
+  if(!nombre) return '';
+  for(const estado of ESTADOS_MX){
+    const locales = TRIBUNALES_LOCALES_MX[estado] || [];
+    const federales = TRIBUNALES_FEDERALES_MX[estado] || [];
+    const custom = TRIBUNALES_CUSTOM[estado] || [];
+    if(locales.includes(nombre) || federales.includes(nombre) || custom.includes(nombre)) return estado;
+  }
+  return '';
+}
+function tribunalOptionsHTML(estado, selected){
+  if(!estado) return `<option value="">Elige un estado primero…</option>`;
+  const locales = TRIBUNALES_LOCALES_MX[estado] || [];
+  const federales = TRIBUNALES_FEDERALES_MX[estado] || [];
+  const custom = (TRIBUNALES_CUSTOM[estado] || []).filter(n => !locales.includes(n) && !federales.includes(n));
+  const opt = o => `<option value="${escapeHTML(o)}" ${selected===o?'selected':''}>${escapeHTML(o)}</option>`;
+  let html = `<option value="">— Selecciona —</option>`;
+  if(locales.length){
+    html += `<optgroup label="Tribunales locales (estatales)">${locales.map(opt).join("")}</optgroup>`;
+  } else {
+    html += `<optgroup label="Tribunales locales (estatales)"><option value="" disabled>Aún no verificado — usa "Otro (especificar)"</option></optgroup>`;
+  }
+  if(federales.length){
+    html += `<optgroup label="Tribunales / Juzgados Laborales Federales">${federales.map(opt).join("")}</optgroup>`;
+  }
+  if(custom.length){
+    html += `<optgroup label="Agregados manualmente">${custom.map(opt).join("")}</optgroup>`;
+  }
+  html += `<option value="__otro__">Otro (especificar)…</option>`;
+  return html;
+}
+function tribunalFieldHTML(f, actual){
+  actual = actual || '';
+  const matchedEstado = findTribunalEstado(actual);
+  const isLegacyOtro = !!actual && !matchedEstado;
+  const estadoOptions = `<option value="">— Estado —</option>` +
+    ESTADOS_MX.map(e=>`<option value="${escapeHTML(e)}" ${matchedEstado===e?'selected':''}>${escapeHTML(e)}</option>`).join("");
+  const selStyle = 'width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;';
+  return `
+    <div class="trib-widget" data-field="${f.key}">
+      <input type="hidden" class="edit-field trib-hidden" data-field="${f.key}" value="${escapeHTML(actual)}">
+      <select class="trib-estado-select" data-target="${f.key}" style="${selStyle} margin-bottom:6px;">${estadoOptions}</select>
+      <select class="trib-tribunal-select" data-target="${f.key}" style="${selStyle}">${tribunalOptionsHTML(matchedEstado, matchedEstado ? actual : '')}</select>
+      <input type="text" class="trib-otro-input" data-target="${f.key}" placeholder="Escribe el nombre exacto del tribunal" value="${isLegacyOtro ? escapeHTML(actual) : ''}" style="${selStyle} margin-top:6px; display:${isLegacyOtro ? 'block' : 'none'};">
+      ${isLegacyOtro ? `<div style="font-size:11px; color:var(--gray); margin-top:4px;">Dato anterior sin estandarizar — elige un estado arriba para usar el catálogo, o deja el texto libre como está.</div>` : ''}
+    </div>
+  `;
+}
+function bindTribunalFieldEvents(){
+  document.querySelectorAll('.trib-widget').forEach(widget=>{
+    const hidden = widget.querySelector('.trib-hidden');
+    const estadoSel = widget.querySelector('.trib-estado-select');
+    const tribSel = widget.querySelector('.trib-tribunal-select');
+    const otroInput = widget.querySelector('.trib-otro-input');
+    estadoSel.addEventListener('change', ()=>{
+      tribSel.innerHTML = tribunalOptionsHTML(estadoSel.value, '');
+      otroInput.style.display = 'none';
+      otroInput.value = '';
+      hidden.value = '';
+    });
+    tribSel.addEventListener('change', ()=>{
+      if(tribSel.value === '__otro__'){
+        otroInput.style.display = 'block';
+        otroInput.focus();
+        hidden.value = otroInput.value.trim();
+      } else {
+        otroInput.style.display = 'none';
+        otroInput.value = '';
+        hidden.value = tribSel.value;
+      }
+    });
+    otroInput.addEventListener('input', ()=>{ hidden.value = otroInput.value.trim(); });
+  });
+}
+// Los tribunales escritos en "Otro" se suman al catálogo compartido para que
+// dejen de ser texto libre la próxima vez — se llama desde saveCamposBtn.
+async function persistTribunalesCustomNuevos(){
+  const nuevos = [];
+  document.querySelectorAll('.trib-widget').forEach(widget=>{
+    const estadoSel = widget.querySelector('.trib-estado-select');
+    const tribSel = widget.querySelector('.trib-tribunal-select');
+    const hidden = widget.querySelector('.trib-hidden');
+    if(tribSel && tribSel.value === '__otro__' && estadoSel.value && hidden.value){
+      nuevos.push({estado: estadoSel.value, nombre: hidden.value});
+    }
+  });
+  for(const n of nuevos){
+    try{ await api('POST', 'tribunales_custom_add.php', n); }catch(e){ /* no bloquea el guardado del expediente */ }
+  }
+  if(nuevos.length) await loadTribunalesCustom();
+}
 
 function allCases(){ return CASES_DATA; }
 
@@ -1440,6 +1908,7 @@ async function refreshBootstrap(){
   await loadConfiguracion();
   await loadPlantillasLib();
   await loadGoogleStatus();
+  await loadTribunalesCustom();
 }
 
 async function loadDiasInhabiles(){
@@ -1448,6 +1917,17 @@ async function loadDiasInhabiles(){
     DIAS_INHABILES = d.dias;
     DIAS_INHABILES_SET = new Set(d.dias.map(x=>x.fecha));
   }catch(e){ DIAS_INHABILES = []; DIAS_INHABILES_SET = new Set(); }
+}
+
+// Tribunales que se han agregado a mano vía "Otro (especificar)" en el
+// selector de Tribunal — se suma a TRIBUNALES_LOCALES_MX/TRIBUNALES_FEDERALES_MX
+// en el selector. Ver tribunalFieldHTML() y bindTribunalFieldEvents().
+let TRIBUNALES_CUSTOM = {};
+async function loadTribunalesCustom(){
+  try{
+    const d = await api('GET', 'tribunales_custom_list.php');
+    TRIBUNALES_CUSTOM = d.tribunales || {};
+  }catch(e){ TRIBUNALES_CUSTOM = {}; }
 }
 
 // Salario mínimo diario vigente, usado para topar la prima de antigüedad
@@ -3571,6 +4051,8 @@ function modalTabContent(k,p,meta){
                 ${f.options.map(o=>`<option value="${escapeHTML(o)}" ${actual===o?'selected':''}>${escapeHTML(o)}</option>`).join("")}
               </select>`;
             })() :
+            f.type==='tribunal' ?
+            tribunalFieldHTML(f, k[f.key]!=null ? String(k[f.key]) : '') :
             f.key==='ultima_nota' ?
             `<textarea class="edit-field" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
@@ -3807,6 +4289,7 @@ function readPendientesFromDOM(){
 }
 
 function bindModalTabEvents(){
+  bindTribunalFieldEvents();
   const subirDocumentoBtn = document.getElementById('subirDocumentoBtn');
   if(subirDocumentoBtn){
     subirDocumentoBtn.addEventListener('click', async ()=>{
@@ -3973,6 +4456,7 @@ function bindModalTabEvents(){
       });
       saveCamposBtn.disabled = true;
       try{
+        await persistTribunalesCustomNuevos();
         await api('POST', 'expedientes_update_campos.php', {id: ACTIVE_CASE.id, campos});
         saveCamposBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(saveCamposBtn) saveCamposBtn.textContent = "Guardar datos del expediente"; }, 1600);

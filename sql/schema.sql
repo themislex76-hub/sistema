@@ -305,4 +305,18 @@ CREATE TABLE plantillas_docx (
   CONSTRAINT fk_plantillas_creado_por FOREIGN KEY (creado_por) REFERENCES usuarios(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ----------------------------------------------------------------------------
+-- tribunales_custom: catálogo nacional de tribunales laborales, que se
+-- completa con lo que se escribe en "Otro (especificar)" del selector de
+-- Tribunal en EDITABLE_FIELDS, para que a partir de ahí sea una opción
+-- normal del selector. Ver api/tribunales_custom_*.php.
+-- ----------------------------------------------------------------------------
+CREATE TABLE tribunales_custom (
+  id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  estado VARCHAR(60) NOT NULL,
+  nombre VARCHAR(300) NOT NULL,
+  creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_tribunal_custom (estado, nombre(190))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
