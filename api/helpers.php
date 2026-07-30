@@ -48,6 +48,18 @@ function require_admin(): array
     return $u;
 }
 
+// Autenticación para los robots de monitoreo de boletines (Federal, CDMX,
+// Edomex) — no tienen sesión de usuario, mandan una llave secreta compartida
+// en el header X-Robot-Key. Ver api/robot_credentials.php.
+function require_robot_key(): void
+{
+    require_once __DIR__ . '/robot_credentials.php';
+    $sent = $_SERVER['HTTP_X_ROBOT_KEY'] ?? '';
+    if ($sent === '' || !hash_equals(ROBOT_API_KEY, $sent)) {
+        fail('Llave de robot inválida o ausente.', 401);
+    }
+}
+
 // Protección CSRF de "doble envío": el token se entrega al hacer login (en el
 // cuerpo JSON de la respuesta) y el frontend debe reenviarlo en el header
 // X-CSRF-Token en cada petición que modifique datos (POST/PUT/DELETE).

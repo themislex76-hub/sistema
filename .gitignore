@@ -1,5 +1,6 @@
 api/db_credentials.php
 api/google_credentials.php
+api/robot_credentials.php
 data/plantilla_demanda.docx
 data/documentos/
 data/plantillas/

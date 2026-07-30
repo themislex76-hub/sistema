@@ -1601,6 +1601,37 @@ let EQUIPO = [];
 let USUARIOS_ADMIN = []; // detalle completo (correo, activo, etc.) — solo lo usa la vista "Equipo" del Administrador
 let DIAS_INHABILES = []; // {id, fecha, descripcion, ambito} — ver pantalla "Días inhábiles"
 
+// Avisos de boletín/lista de acuerdos por expediente — registrados a mano
+// o encontrados por los robots de monitoreo automático (Federal, CDMX,
+// Edomex). Ver api/avisos_*.php.
+let AVISOS_BOLETIN = [];
+const FUENTE_BOLETIN_LABEL = {
+  cdmx_local: 'Tribunales Laborales locales — CDMX',
+  edomex_local: 'Tribunales Laborales locales — Estado de México',
+  federal_laboral: 'Tribunales Laborales Federales',
+  otro: 'Otra fuente',
+};
+function avisosNuevosCount(){ return AVISOS_BOLETIN.filter(a=>a.estado==='nuevo').length; }
+function avisosDeExpediente(id){ return AVISOS_BOLETIN.filter(a=>a.expediente_id===id); }
+async function loadAvisosBoletin(){
+  try{
+    const d = await api('GET', 'avisos_list.php');
+    AVISOS_BOLETIN = d.avisos;
+  }catch(e){ AVISOS_BOLETIN = []; }
+}
+
+// Captcha pendiente de Edomex — el robot que corre en la computadora del
+// despacho publica aquí la imagen cuando necesita que alguien lo resuelva.
+// Se revisa junto con el resto del bootstrap para que aparezca en Agenda
+// sin tener que entrar a buscarlo.
+let EDOMEX_CAPTCHA_PENDIENTE = null;
+async function loadEdomexCaptchaPendiente(){
+  try{
+    const d = await api('GET', 'edomex_captcha_pendiente.php');
+    EDOMEX_CAPTCHA_PENDIENTE = d.pendiente;
+  }catch(e){ EDOMEX_CAPTCHA_PENDIENTE = null; }
+}
+
 const AMBITO_INHABIL_LABEL = {
   federal: 'Federal (Art. 74 LFT)',
   cdmx: 'Tribunales locales — CDMX',
@@ -1909,6 +1940,8 @@ async function refreshBootstrap(){
   await loadPlantillasLib();
   await loadGoogleStatus();
   await loadTribunalesCustom();
+  await loadAvisosBoletin();
+  await loadEdomexCaptchaPendiente();
 }
 
 async function loadDiasInhabiles(){
@@ -2137,7 +2170,7 @@ function shellHTML(){
         <button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
-        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general</button>
+        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
         <div class="section-label">Referencia</div>
         <button data-v="manual" class="${VIEW==='manual'?'active':''}"><span class="ico">&#128218;</span> Manual de uso</button>
         <button data-v="cliente_preview" class="${VIEW==='cliente_preview'?'active':''}"><span class="ico">${ICONS.cliente}</span> Vista de portal cliente</button>
@@ -3131,6 +3164,38 @@ function agendaHTML(){
     </div>
   </div>` : ""}
   ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
+  ${EDOMEX_CAPTCHA_PENDIENTE? `
+  <div class="panel">
+    <div class="panel-head"><h3>&#128274; Captcha de Edomex pendiente de resolver</h3></div>
+    <div class="panel-body" style="padding:16px 20px;">
+      <div class="notice" style="margin-bottom:12px;">El robot que revisa el boletín de Edomex${EDOMEX_CAPTCHA_PENDIENTE.expediente_exp?` está consultando el expediente <strong>${escapeHTML(EDOMEX_CAPTCHA_PENDIENTE.expediente_exp)}</strong> y`:''} necesita que alguien escriba el código de la imagen para continuar.</div>
+      <img src="data:image/png;base64,${EDOMEX_CAPTCHA_PENDIENTE.imagen_base64}" alt="Captcha de Edomex" style="display:block; margin-bottom:10px; border:1px solid var(--border); border-radius:6px; max-width:260px;">
+      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+        <input type="text" id="edomexCaptchaInput" placeholder="Código de la imagen" style="padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px; max-width:200px;">
+        <button class="btn" id="edomexCaptchaBtn">Enviar</button>
+      </div>
+    </div>
+  </div>` : ""}
+  ${avisosNuevosCount()>0? `
+  <div class="panel">
+    <div class="panel-head"><h3>&#128276; Avisos de boletines por revisar</h3><span class="count">${avisosNuevosCount()}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${AVISOS_BOLETIN.filter(a=>a.estado==='nuevo').map(a=>`
+      <div class="aviso-card" data-aviso-id="${a.id}">
+        <div class="aviso-head">
+          <div data-id="${a.expediente_id}" data-tab="boletin" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(a.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(a.expediente_demandado||'—',30))} ${a.expediente_exp? `&middot; Exp. ${escapeHTML(a.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">${escapeHTML(FUENTE_BOLETIN_LABEL[a.fuente]||a.fuente)} ${a.origen==='manual'?'&middot; revisión registrada a mano':'&middot; encontrado automáticamente'}</div>
+          </div>
+          <span class="badge warn" style="flex-shrink:0;">nuevo</span>
+        </div>
+        <div class="aviso-resumen">${escapeHTML(a.resumen)}</div>
+        <div class="aviso-meta">${a.fecha_publicacion? 'Fecha del boletín: '+fmtDate(a.fecha_publicacion)+' &middot; ':''}${a.origen==='manual'?'Registrado por '+escapeHTML(a.creado_por_nombre||'—')+' el ':'Encontrado el '}${new Date(a.creado_en).toLocaleDateString('es-MX')}${a.url_verificacion? ` &middot; <a href="${escapeHTML(a.url_verificacion)}" target="_blank" rel="noopener">ver fuente</a>`:''}</div>
+        <div class="aviso-actions">
+          <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
+          <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+        </div>
+      </div>`).join("")}</div>
+  </div>` : ""}
   ${vencidas.length? `
   <div class="panel">
     <div class="panel-head"><h3>&#9888; Vencidas / requieren atención inmediata</h3><span class="count">${vencidas.length}</span></div>
@@ -3541,6 +3606,33 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo actualizar: ' + err.message); }
     });
   });
+  document.querySelectorAll('[data-aviso-mark]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      try{
+        await api('POST', 'avisos_mark.php', {id: parseInt(btn.dataset.avisoMark), estado: btn.dataset.estado});
+        await loadAvisosBoletin();
+        if(ACTIVE_CASE) ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+        renderModal();
+        renderViewBody();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); }
+    });
+  });
+  const edomexCaptchaBtn = document.getElementById('edomexCaptchaBtn');
+  if(edomexCaptchaBtn){
+    edomexCaptchaBtn.addEventListener('click', async ()=>{
+      const input = document.getElementById('edomexCaptchaInput');
+      const respuesta = input.value.trim();
+      if(!respuesta){ alert('Escribe el código que ves en la imagen.'); return; }
+      edomexCaptchaBtn.disabled = true;
+      try{
+        await api('POST', 'edomex_captcha_resolver.php', {id: EDOMEX_CAPTCHA_PENDIENTE.id, respuesta});
+        await loadEdomexCaptchaPendiente();
+        renderViewBody();
+      }catch(err){ alert('No se pudo enviar: ' + err.message); }
+      finally{ edomexCaptchaBtn.disabled = false; }
+    });
+  }
   document.querySelectorAll('[data-rename-btn]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const id = parseInt(btn.dataset.renameBtn);
@@ -3683,6 +3775,7 @@ function renderModal(){
       <button data-t="calculo" class="${MODAL_TAB==='calculo'?'active':''}">Cálculo de liquidación</button>
       ${tieneConvenio(k) ? `<button data-t="cobros" class="${MODAL_TAB==='cobros'?'active':''}">Cobros</button>` : ""}
       <button data-t="amparo" class="${MODAL_TAB==='amparo'?'active':''}">Amparo</button>
+      ${caseStage(k)==='juicio' ? `<button data-t="boletin" class="${MODAL_TAB==='boletin'?'active':''}">Boletín ${avisosDeExpediente(k.id).filter(a=>a.estado==='nuevo').length>0?`<span class="nav-badge">${avisosDeExpediente(k.id).filter(a=>a.estado==='nuevo').length}</span>`:""}</button>` : ""}
       <button data-t="pendientes" class="${MODAL_TAB==='pendientes'?'active':''}">Pendientes</button>
       <button data-t="demanda" class="${MODAL_TAB==='demanda'?'active':''}">Generar escrito</button>
       <button data-t="hechos" class="${MODAL_TAB==='hechos'?'active':''}">Hechos del despido</button>
@@ -4028,6 +4121,40 @@ function modalTabContent(k,p,meta){
     <div class="field" style="margin-top:14px;"><label>Notas sobre el amparo</label><textarea id="amparoNotas" placeholder="Acto reclamado, Tribunal Colegiado, número de expediente...">${escapeHTML(meta.amparo_notas||'')}</textarea></div>
     <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo descarta sábados, domingos y los días inhábiles capturados en "Días inhábiles"; aun así, verifica el calendario oficial del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales.</div>
     <div style="margin-top:14px;"><button class="btn" id="saveAmparoBtn">Guardar datos de amparo</button></div>
+    `;
+  }
+  if(MODAL_TAB==='boletin'){
+    const avisos = avisosDeExpediente(k.id);
+    return `
+    <div class="notice" style="margin-bottom:16px;">Los robots de monitoreo revisan solos el boletín Federal y el de CDMX todos los días; Edomex necesita que alguien resuelva un captcha cuando el robot lo pida (aparece en Agenda). También puedes registrar aquí a mano cualquier revisión que hagas tú mismo.</div>
+    <div class="grid2" style="margin-bottom:6px;">
+      <div class="field"><label>Fuente revisada</label>
+        <select id="avisoFuente" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+          ${Object.keys(FUENTE_BOLETIN_LABEL).map(f=>`<option value="${f}">${escapeHTML(FUENTE_BOLETIN_LABEL[f])}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field"><label>Fecha del boletín revisado</label><input type="date" id="avisoFecha" value="${dateToISO(new Date())}"></div>
+    </div>
+    <div class="field" style="margin-top:6px;"><label>¿Qué encontraste? (o "sin novedades" si no había nada nuevo)</label><textarea id="avisoResumen" placeholder="Ej. Se dictó auto admitiendo pruebas; próxima audiencia el..."></textarea></div>
+    <div class="field" style="margin-top:6px;"><label>Enlace de verificación (opcional)</label><input type="text" id="avisoUrl" placeholder="https://..."></div>
+    <div style="margin-top:12px;"><button class="btn" id="addAvisoBtn">Registrar revisión</button></div>
+    <div class="divider"></div>
+    <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Historial de revisiones (${avisos.length})</div>
+    ${avisos.length ? avisos.map(a=>`
+      <div class="aviso-card" style="${a.estado!=='nuevo'?'opacity:.75;':''}">
+        <div class="aviso-head">
+          <div>
+            <div class="aviso-fuente">${escapeHTML(FUENTE_BOLETIN_LABEL[a.fuente]||a.fuente)} ${a.origen==='manual'?'&middot; revisión registrada a mano':'&middot; encontrado automáticamente'}</div>
+          </div>
+          <span class="badge ${a.estado==='nuevo'?'warn':a.estado==='descartado'?'closed':'ok'}">${a.estado}</span>
+        </div>
+        <div class="aviso-resumen">${escapeHTML(a.resumen)}</div>
+        <div class="aviso-meta">${a.fecha_publicacion? 'Fecha del boletín: '+fmtDate(a.fecha_publicacion)+' &middot; ':''}${a.origen==='manual'?'Registrado por '+escapeHTML(a.creado_por_nombre||'—')+' el ':'Encontrado el '}${new Date(a.creado_en).toLocaleDateString('es-MX')}${a.url_verificacion? ` &middot; <a href="${escapeHTML(a.url_verificacion)}" target="_blank" rel="noopener">ver fuente</a>`:''}</div>
+        ${a.estado==='nuevo' ? `<div class="aviso-actions">
+          <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
+          <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+        </div>` : ''}
+      </div>`).join("") : '<div class="empty">Sin revisiones registradas todavía.</div>'}
     `;
   }
   if(MODAL_TAB==='editar'){
@@ -4640,6 +4767,27 @@ function bindModalTabEvents(){
         renderModal();
         renderViewBody();
       }catch(err){ alert('No se pudo guardar: ' + err.message); }
+    });
+  }
+  const addAvisoBtn = document.getElementById('addAvisoBtn');
+  if(addAvisoBtn){
+    addAvisoBtn.addEventListener('click', async ()=>{
+      const resumen = document.getElementById('avisoResumen').value.trim();
+      if(!resumen){ alert('Escribe qué encontraste (o "sin novedades").'); return; }
+      addAvisoBtn.disabled = true;
+      try{
+        await api('POST', 'avisos_create.php', {
+          expediente_id: ACTIVE_CASE.id,
+          fuente: document.getElementById('avisoFuente').value,
+          fecha_publicacion: document.getElementById('avisoFecha').value,
+          resumen,
+          url_verificacion: document.getElementById('avisoUrl').value.trim(),
+        });
+        await loadAvisosBoletin();
+        ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+        renderModal();
+      }catch(err){ alert('No se pudo registrar: ' + err.message); }
+      finally{ addAvisoBtn.disabled = false; }
     });
   }
   const codigoBox = document.getElementById('codigoAccesoBox');
