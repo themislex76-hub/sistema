@@ -60,6 +60,29 @@ function require_robot_key(): void
     }
 }
 
+// Cifrado reversible de la contraseña del Portal Federal (PJF) de cada
+// abogado. Reversible a propósito (no es un hash): el robot de monitoreo
+// necesita la contraseña en texto plano para iniciar sesión de verdad en
+// el portal. La llave vive en pjf_credentials_key.php (gitignored, nunca
+// en el repositorio) — sin ella, los valores guardados en la base de
+// datos son inútiles aunque alguien la descargue completa.
+function pjf_encrypt(string $plain): string
+{
+    require_once __DIR__ . '/pjf_credentials_key.php';
+    $iv = random_bytes(16);
+    $cipher = openssl_encrypt($plain, 'aes-256-cbc', PJF_CRED_ENC_KEY, OPENSSL_RAW_DATA, $iv);
+    return base64_encode($iv . $cipher);
+}
+
+function pjf_decrypt(string $encoded): string
+{
+    require_once __DIR__ . '/pjf_credentials_key.php';
+    $raw = base64_decode($encoded);
+    $iv = substr($raw, 0, 16);
+    $cipher = substr($raw, 16);
+    return (string)openssl_decrypt($cipher, 'aes-256-cbc', PJF_CRED_ENC_KEY, OPENSSL_RAW_DATA, $iv);
+}
+
 // Protección CSRF de "doble envío": el token se entrega al hacer login (en el
 // cuerpo JSON de la respuesta) y el frontend debe reenviarlo en el header
 // X-CSRF-Token en cada petición que modifique datos (POST/PUT/DELETE).

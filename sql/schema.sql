@@ -28,6 +28,9 @@ CREATE TABLE usuarios (
   google_refresh_token TEXT NULL,
   google_calendar_email VARCHAR(190) NULL,
   google_conectado_en DATETIME NULL,
+  pjf_usuario VARCHAR(190) NULL,
+  pjf_password_enc TEXT NULL,
+  pjf_actualizado_en DATETIME NULL,
   creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_usuarios_email (email)

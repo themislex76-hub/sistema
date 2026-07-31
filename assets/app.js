@@ -1614,6 +1614,17 @@ let EQUIPO = [];
 let USUARIOS_ADMIN = []; // detalle completo (correo, activo, etc.) — solo lo usa la vista "Equipo" del Administrador
 let DIAS_INHABILES = []; // {id, fecha, descripcion, ambito} — ver pantalla "Días inhábiles"
 
+// Estado de la cuenta propia del Portal Federal (PJF) — ver pantalla "Mi
+// cuenta". El robot Federal usa las cuentas guardadas por cada abogado
+// para revisar los expedientes de todos, no solo de uno.
+let PJF_CREDENCIALES = null;
+async function loadPjfCredenciales(){
+  try{
+    const d = await api('GET', 'pjf_credenciales_get.php');
+    PJF_CREDENCIALES = d;
+  }catch(e){ PJF_CREDENCIALES = null; }
+}
+
 // Avisos de boletín/lista de acuerdos por expediente — registrados a mano
 // o encontrados por los robots de monitoreo automático (Federal, CDMX,
 // Edomex). Ver api/avisos_*.php.
@@ -1955,6 +1966,7 @@ async function refreshBootstrap(){
   await loadTribunalesCustom();
   await loadAvisosBoletin();
   await loadEdomexCaptchaPendiente();
+  await loadPjfCredenciales();
 }
 
 async function loadDiasInhabiles(){
@@ -2187,6 +2199,7 @@ function shellHTML(){
         <div class="section-label">Referencia</div>
         <button data-v="manual" class="${VIEW==='manual'?'active':''}"><span class="ico">&#128218;</span> Manual de uso</button>
         <button data-v="cliente_preview" class="${VIEW==='cliente_preview'?'active':''}"><span class="ico">${ICONS.cliente}</span> Vista de portal cliente</button>
+        <button data-v="mi_cuenta" class="${VIEW==='mi_cuenta'?'active':''}"><span class="ico">&#128100;</span> Mi cuenta</button>
         ${isAdmin ? `<button data-v="equipo" class="${VIEW==='equipo'?'active':''}"><span class="ico">${ICONS.equipo}</span> Equipo</button>` : ""}
         ${isAdmin ? `<button data-v="formato_demanda" class="${VIEW==='formato_demanda'?'active':''}"><span class="ico">&#128221;</span> Formato de demanda</button>` : ""}
         ${isAdmin ? `<button data-v="dias_inhabiles" class="${VIEW==='dias_inhabiles'?'active':''}"><span class="ico">&#128198;</span> Días inhábiles</button>` : ""}
@@ -2223,7 +2236,8 @@ const VIEW_TITLES = {
   formato_demanda:["Formato de demanda", "Plantilla de demanda y biblioteca de otras plantillas de escritos"],
   cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
   equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
-  dias_inhabiles:["Días inhábiles", "Calendario usado para calcular automáticamente los vencimientos de términos en todo el sistema"]
+  dias_inhabiles:["Días inhábiles", "Calendario usado para calcular automáticamente los vencimientos de términos en todo el sistema"],
+  mi_cuenta:["Mi cuenta", "Datos personales para el funcionamiento del sistema"]
 };
 
 function topBarHTML(){
@@ -2307,6 +2321,7 @@ function renderViewBody(){
   else if(VIEW==='cliente_preview') el.innerHTML = clientePreviewHTML();
   else if(VIEW==='equipo') el.innerHTML = equipoHTML();
   else if(VIEW==='dias_inhabiles') el.innerHTML = diasInhabilesHTML();
+  else if(VIEW==='mi_cuenta') el.innerHTML = miCuentaHTML();
   bindViewBody();
 }
 
@@ -3363,6 +3378,25 @@ function diasInhabilesHTML(){
   </div>`;
 }
 
+function miCuentaHTML(){
+  const c = PJF_CREDENCIALES;
+  const configurado = c && c.configurado;
+  return `
+  <div class="notice" style="margin-bottom:18px;">El robot que revisa el boletín Federal todos los días necesita iniciar sesión en el Portal de Servicios en Línea del Poder Judicial de la Federación (serviciosenlinea.pjf.gob.mx) para ver los expedientes donde apareces como autorizado. Guarda aquí tu propio usuario y contraseña de ese portal (los mismos con los que tú entras) para que el robot también revise tus casos federales. Tu contraseña se guarda cifrada — nadie del despacho puede verla, ni siquiera un administrador.</div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:10px;">Cuenta del Portal Federal (PJF)</div>
+    ${configurado ? `<div class="notice" style="margin-bottom:14px; background:var(--amber-bg,#fdf6e3);">Ya tienes guardado el usuario <strong>${escapeHTML(c.pjf_usuario)}</strong>${c.actualizado_en ? ' (actualizado el '+new Date(c.actualizado_en).toLocaleDateString('es-MX')+')' : ''}. Para cambiarlo, captura los datos de nuevo abajo.</div>` : ''}
+    <form id="pjfCredencialesForm" class="grid2">
+      <div class="field"><label>Usuario del Portal Federal</label><input type="text" id="pjfUsuarioInput" placeholder="Tu usuario de serviciosenlinea.pjf.gob.mx" value="${configurado ? escapeHTML(c.pjf_usuario) : ''}"></div>
+      <div class="field"><label>Contraseña del Portal Federal</label><input type="password" id="pjfPasswordInput" placeholder="Tu contraseña (siempre hay que volver a escribirla para guardar)"></div>
+    </form>
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button class="btn" id="savePjfCredencialesBtn">Guardar</button>
+      ${configurado ? `<button class="btn secondary" id="borrarPjfCredencialesBtn">Quitar cuenta guardada</button>` : ''}
+    </div>
+  </div></div>`;
+}
+
 function clientePreviewHTML(){
   const list = visibleCases();
   return `
@@ -3745,6 +3779,32 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo quitar: ' + err.message); }
     });
   });
+  const savePjfCredencialesBtn = document.getElementById('savePjfCredencialesBtn');
+  if(savePjfCredencialesBtn){
+    savePjfCredencialesBtn.addEventListener('click', async ()=>{
+      const pjf_usuario = document.getElementById('pjfUsuarioInput').value.trim();
+      const pjf_password = document.getElementById('pjfPasswordInput').value;
+      if(!pjf_usuario || !pjf_password){ alert('Escribe tu usuario y tu contraseña del Portal Federal.'); return; }
+      savePjfCredencialesBtn.disabled = true;
+      try{
+        await api('POST', 'pjf_credenciales_set.php', {pjf_usuario, pjf_password});
+        await loadPjfCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+      finally{ savePjfCredencialesBtn.disabled = false; }
+    });
+  }
+  const borrarPjfCredencialesBtn = document.getElementById('borrarPjfCredencialesBtn');
+  if(borrarPjfCredencialesBtn){
+    borrarPjfCredencialesBtn.addEventListener('click', async ()=>{
+      if(!confirm('¿Quitar tu cuenta guardada del Portal Federal? El robot dejará de revisar tus casos federales hasta que la vuelvas a capturar.')) return;
+      try{
+        await api('POST', 'pjf_credenciales_set.php', {borrar: true});
+        await loadPjfCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); }
+    });
+  }
 }
 
 // ---------------------------------------------------------------
