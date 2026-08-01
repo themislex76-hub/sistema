@@ -2,11 +2,14 @@
 declare(strict_types=1);
 
 // Respuestas automáticas de WhatsApp con Claude (Anthropic). Un solo
-// llamado hace dos cosas a la vez: redacta la respuesta al usuario Y (si
-// aplica) clasifica el caso como lead de despido en CDMX/Edomex, usando
-// "tool use" — Claude decide llamar a la herramienta registrar_lead_despido
-// solo cuando el caso califica, sin que tengamos que pedir una segunda
-// llamada aparte para clasificar.
+// llamado hace todo a la vez: redacta la respuesta al usuario Y (si aplica)
+// clasifica dos tipos de lead usando "tool use" — Claude decide llamar a
+// una herramienta solo cuando corresponde, sin pedir una segunda llamada
+// aparte para clasificar:
+//   - registrar_lead_despido: despido en CDMX/Edomex → futuro cliente de
+//     litigio, el despacho lo contacta gratis para evaluar el caso.
+//   - registrar_interes_asesoria_paga: cualquier persona, de cualquier
+//     estado, que acepta o pregunta por la asesoría personalizada de pago.
 
 const IA_MODEL = 'claude-sonnet-5';
 
@@ -18,55 +21,99 @@ claro que el abogado usa en sus lives de TikTok: directo, en español de
 México, sin tecnicismos innecesarios, y CORTO (2-5 líneas, estilo WhatsApp,
 nunca un ensayo).
 
-Reglas:
+Reglas de contenido:
 - Da orientación general útil (qué dice la ley, qué puede hacer la
   persona), pero deja claro que cada caso hay que revisarlo a detalle —
   nunca prometas un resultado ni un monto exacto.
 - No des asesoría de otras ramas del derecho (penal, familiar, civil,
   etc.) — para eso, indica amablemente que no es tu especialidad.
+
+Lead 1 — despido en CDMX/Edomex (litigio):
 - Si la persona relata que la despidieron (o la están despidiendo, sea
   justificado o no) Y menciona que trabaja o vive en Ciudad de México o
   Estado de México, además de responder normalmente DEBES llamar la
   herramienta registrar_lead_despido con los datos que tengas. Solo
   regístralo si de verdad hay un despido — dudas generales sobre
   liquidación, aguinaldo, vacaciones, etc. sin que haya despido no
-  cuentan. Despidos fuera de esos dos estados tampoco (ahí solo orienta,
-  sin registrar).
-- Cuando registres el lead, tu respuesta de texto debe sonar natural y
-  SIN mencionar que "se está registrando" nada — solo responde la duda de
-  forma empática; el sistema añade automáticamente el aviso de contacto.
+  cuentan.
+- Cuando registres este lead, tu respuesta de texto debe sonar natural,
+  cálida y persuasiva — como si de verdad quisieras que te contrate:
+  destaca que tiene elementos para reclamar lo que le corresponde y que
+  un abogado del despacho lo va a contactar hoy mismo para revisarlo a
+  detalle. No menciones que "se está registrando" nada.
+
+Lead 2 — asesoría personalizada de pago (cualquier estado, cualquier tema
+laboral, aunque ya se haya registrado como lead 1):
+- El despacho ofrece una asesoría personalizada de 1 hora por $299 MXN,
+  donde el abogado revisa el caso a fondo por su cuenta (videollamada o
+  llamada). Después de dar tu respuesta a la duda de la persona, si no se
+  la has ofrecido ya en esta conversación, ofrécela de forma breve y
+  natural (no la repitas en cada mensaje ni la fuerces si la persona ya
+  dijo que no le interesa). Sé persuasivo pero no insistente: destaca el
+  valor (atención directa y a fondo con un abogado, no una respuesta
+  genérica) sin sonar a venta agresiva.
+- Si la persona acepta, pregunta cómo pagar/agendar, o de cualquier forma
+  muestra interés real en la asesoría pagada, DEBES llamar la herramienta
+  registrar_interes_asesoria_paga con los datos que tengas. No la llames
+  solo porque tú ofreciste la asesoría — solo cuando la persona responde
+  con interés.
 TXT;
 
-const IA_TOOLS = [[
-    'name' => 'registrar_lead_despido',
-    'description' => 'Registra un caso de despido de una persona que trabaja o vive en Ciudad de México o Estado de México, para que un abogado del despacho le dé seguimiento. Solo se usa cuando ambas condiciones se cumplen.',
-    'input_schema' => [
-        'type' => 'object',
-        'properties' => [
-            'estado' => [
-                'type' => 'string',
-                'enum' => ['Ciudad de México', 'Estado de México'],
-                'description' => 'Estado donde la persona trabaja o vive.',
+const IA_TOOLS = [
+    [
+        'name' => 'registrar_lead_despido',
+        'description' => 'Registra un caso de despido de una persona que trabaja o vive en Ciudad de México o Estado de México, para que un abogado del despacho le dé seguimiento como posible cliente de litigio. Solo se usa cuando ambas condiciones se cumplen.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'estado' => [
+                    'type' => 'string',
+                    'enum' => ['Ciudad de México', 'Estado de México'],
+                    'description' => 'Estado donde la persona trabaja o vive.',
+                ],
+                'nombre' => [
+                    'type' => 'string',
+                    'description' => 'Nombre de la persona si lo mencionó en la conversación, o cadena vacía si no.',
+                ],
+                'resumen' => [
+                    'type' => 'string',
+                    'description' => 'Resumen breve (1-2 líneas) del caso: qué pasó, tipo de trabajo, y cualquier dato relevante para que el abogado dé seguimiento.',
+                ],
             ],
-            'nombre' => [
-                'type' => 'string',
-                'description' => 'Nombre de la persona si lo mencionó en la conversación, o cadena vacía si no.',
-            ],
-            'resumen' => [
-                'type' => 'string',
-                'description' => 'Resumen breve (1-2 líneas) del caso: qué pasó, tipo de trabajo, y cualquier dato relevante para que el abogado dé seguimiento.',
-            ],
+            'required' => ['estado', 'resumen'],
         ],
-        'required' => ['estado', 'resumen'],
     ],
-]];
+    [
+        'name' => 'registrar_interes_asesoria_paga',
+        'description' => 'Registra que la persona mostró interés real en contratar la asesoría personalizada de pago ($299 MXN, 1 hora), sin importar en qué estado esté ni el tema laboral. Solo se usa cuando la persona respondió con interés, no solo porque se le ofreció.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'estado' => [
+                    'type' => 'string',
+                    'description' => 'Estado donde la persona vive/trabaja si lo mencionó, o cadena vacía si no se sabe.',
+                ],
+                'nombre' => [
+                    'type' => 'string',
+                    'description' => 'Nombre de la persona si lo mencionó en la conversación, o cadena vacía si no.',
+                ],
+                'resumen' => [
+                    'type' => 'string',
+                    'description' => 'Resumen breve (1-2 líneas) de su duda/tema laboral, para que el abogado sepa de qué le va a hablar al agendar.',
+                ],
+            ],
+            'required' => ['resumen'],
+        ],
+    ],
+];
 
 /**
  * $mensajes: lista ordenada (más antiguo primero) de
  * ['role' => 'user'|'assistant', 'content' => string]. El último debe ser
  * role=user (el mensaje que se está respondiendo).
  *
- * Devuelve ['texto' => string, 'lead' => null|['estado','nombre','resumen']].
+ * Devuelve ['texto' => string, 'lead' => null|['tipo','estado','nombre','resumen']].
+ * tipo es 'despido' o 'asesoria_paga'.
  */
 function ia_responder_whatsapp(array $mensajes): array
 {
@@ -115,13 +162,19 @@ function ia_responder_whatsapp(array $mensajes): array
     foreach ($bloques as $bloque) {
         if (($bloque['type'] ?? '') === 'text') {
             $texto .= $bloque['text'];
-        } elseif (($bloque['type'] ?? '') === 'tool_use' && ($bloque['name'] ?? '') === 'registrar_lead_despido') {
+        } elseif (($bloque['type'] ?? '') === 'tool_use' && in_array($bloque['name'] ?? '', ['registrar_lead_despido', 'registrar_interes_asesoria_paga'], true)) {
             $input = $bloque['input'] ?? [];
-            $lead = [
+            $nuevoLead = [
+                'tipo' => $bloque['name'] === 'registrar_lead_despido' ? 'despido' : 'asesoria_paga',
                 'estado' => (string)($input['estado'] ?? ''),
                 'nombre' => (string)($input['nombre'] ?? ''),
                 'resumen' => (string)($input['resumen'] ?? ''),
             ];
+            // Si Claude llama ambas herramientas en el mismo turno, el lead
+            // de despido (más valioso: litigio) manda sobre el de asesoría paga.
+            if ($lead === null || $nuevoLead['tipo'] === 'despido') {
+                $lead = $nuevoLead;
+            }
         }
     }
 

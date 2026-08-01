@@ -19,6 +19,7 @@ foreach ($stmt->fetchAll() as $r) {
     $prospectos[] = [
         'id' => (int)$r['id'],
         'telefono' => $r['telefono'],
+        'tipo' => $r['tipo'],
         'nombre' => $r['nombre'],
         'estado_ubicacion' => $r['estado_ubicacion'],
         'resumen_caso' => $r['resumen_caso'],

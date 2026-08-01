@@ -153,10 +153,19 @@ Cada expediente tiene ahora un **código de acceso** propio (además del número
 ## 10. WhatsApp con IA (asesoría automática + captación de prospectos)
 
 Esto conecta un número de WhatsApp dedicado a un asistente con IA (Claude) que
-contesta dudas laborales automáticamente. Cuando detecta que alguien fue
-despedido y radica en Ciudad de México o Estado de México, deja de contestar
-solo y crea un **prospecto** en la vista "Prospectos (WhatsApp)" del sistema
-para que tú le des seguimiento personalmente.
+contesta dudas laborales automáticamente y capta dos tipos de prospecto:
+
+- **Despido en CDMX/Edomex**: cuando alguien relata que lo despidieron y
+  radica en Ciudad de México o Estado de México, el bot deja de contestar
+  solo y lo registra como posible cliente de litigio.
+- **Asesoría personalizada de pago**: a cualquier persona, de cualquier
+  estado, el bot le ofrece la asesoría de 1 hora por $299 MXN. Si la
+  persona muestra interés, también se registra como prospecto — el bot no
+  cobra por sí solo, tú le mandas los datos de pago/agenda a mano desde la
+  conversación.
+
+Ambos aparecen en la vista "Prospectos (WhatsApp)" del sistema para que tú
+les des seguimiento personalmente.
 
 **Importante**: el número que uses aquí queda dedicado a la API — ya no se
 puede abrir en la app normal de WhatsApp del celular. Usa un número nuevo
@@ -167,11 +176,14 @@ Administrador — un socio no ve estos leads hasta que el Administrador
 convierte uno en expediente y se lo asigna; a partir de ahí lo ve como
 cualquier otro asunto suyo.
 
-### 10.1 Importar la tabla nueva
+### 10.1 Importar las tablas nuevas
 
 1. En phpMyAdmin, con tu base de datos seleccionada, ve a la pestaña
    **"Importar"** otra vez y sube el archivo `sql/migraciones/012_whatsapp_prospectos.sql`.
    Esto crea las tablas `prospectos` y `whatsapp_conversaciones`.
+2. Repite el mismo paso con `sql/migraciones/013_prospectos_asesoria_paga.sql`
+   (agrega la columna que distingue un lead de despido de uno de asesoría
+   de pago).
 
 ### 10.2 Dar de alta la app de WhatsApp en Meta
 

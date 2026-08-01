@@ -3149,25 +3149,28 @@ let AGENDA_SOCIO = 'todos';
 
 const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
 const PROSPECTO_ESTATUS_BADGE = {nuevo:'crit', contactado:'warn', descartado:'closed', convertido:'ok'};
+const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesoría $299'};
+const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida'};
 
 function prospectosHTML(){
   const abierto = PROSPECTO_ABIERTO ? PROSPECTOS.find(p=>p.id===PROSPECTO_ABIERTO) : null;
   if(!PROSPECTOS.length){
     return `<div class="panel"><div class="panel-body" style="padding:24px;">
-      <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte un caso de despido en Ciudad de México o Estado de México, aparecerá aquí.</div>
+      <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte un caso de despido en CDMX/Edomex, o a alguien interesado en la asesoría de pago, aparecerá aquí.</div>
     </div></div>`;
   }
   return `
   <div class="panel">
-    <div class="panel-head"><h3>Prospectos de despido (CDMX / Edomex)</h3><span class="count">${PROSPECTOS.length}</span></div>
+    <div class="panel-head"><h3>Prospectos de WhatsApp</h3><span class="count">${PROSPECTOS.length}</span></div>
     <div class="panel-body" style="padding:0;">
       ${PROSPECTOS.map(p=>`
       <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${PROSPECTO_ABIERTO===p.id?'background:var(--parchment);':''}" data-prospecto-abrir="${p.id}">
         <span class="badge ${PROSPECTO_ESTATUS_BADGE[p.estatus]||'warn'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_ESTATUS_LABEL[p.estatus]||p.estatus}</span>
         <div class="alert-info">
-          <div class="name">${escapeHTML(p.nombre || 'Sin nombre')} <span style="color:var(--gray); font-weight:400;">&middot; ${escapeHTML(p.estado_ubicacion||'')}</span></div>
+          <div class="name">${escapeHTML(p.nombre || 'Sin nombre')} <span style="color:var(--gray); font-weight:400;">&middot; ${escapeHTML(p.estado_ubicacion||'sin estado')}</span></div>
           <div class="meta">${escapeHTML(p.telefono)} &middot; ${escapeHTML(truncate(p.resumen_caso||'',90))}</div>
         </div>
+        <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'closed'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
         <div style="flex-shrink:0; font-size:11px; color:var(--gray); text-align:right;">${fmtFechaHora(p.actualizado_en)}</div>
       </div>`).join("")}
     </div>
@@ -3182,6 +3185,7 @@ function prospectoDetalleHTML(p){
     <div class="panel-head"><h3>${escapeHTML(p.nombre || 'Sin nombre')} &middot; ${escapeHTML(p.telefono)}</h3></div>
     <div class="panel-body" style="padding:16px 20px;">
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+        <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'closed'}">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
         <select data-prospecto-estatus="${p.id}" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
           ${Object.keys(PROSPECTO_ESTATUS_LABEL).map(k=>`<option value="${k}" ${p.estatus===k?'selected':''}>${PROSPECTO_ESTATUS_LABEL[k]}</option>`).join("")}
         </select>

@@ -98,7 +98,9 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     $lead = $resultado['lead'];
 
     if ($lead) {
-        $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
+        $respuesta .= $lead['tipo'] === 'despido'
+            ? "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo."
+            : "\n\n¡Perfecto! En breve te comparten los datos para agendar y pagar tu asesoría personalizada.";
         guardar_prospecto($pdo, $telefono, $nombrePerfil, $lead);
     }
 
@@ -113,19 +115,25 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
 function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, array $lead): void
 {
     $nombre = $lead['nombre'] !== '' ? $lead['nombre'] : $nombrePerfil;
+    $estado = $lead['estado'] !== '' ? $lead['estado'] : null;
+    // Un lead de despido nunca se degrada a asesoría paga si llega uno
+    // nuevo después — es el más valioso de los dos (posible cliente de
+    // litigio, no solo de una consulta de una hora).
     $stmt = $pdo->prepare(
-        'INSERT INTO prospectos (telefono, nombre, estado_ubicacion, resumen_caso, pausado_bot)
-         VALUES (:t, :nombre, :estado, :resumen, 1)
+        "INSERT INTO prospectos (telefono, tipo, nombre, estado_ubicacion, resumen_caso, pausado_bot)
+         VALUES (:t, :tipo, :nombre, :estado, :resumen, 1)
          ON DUPLICATE KEY UPDATE
+           tipo = IF(tipo = 'despido', 'despido', VALUES(tipo)),
            nombre = COALESCE(VALUES(nombre), nombre),
-           estado_ubicacion = VALUES(estado_ubicacion),
+           estado_ubicacion = COALESCE(VALUES(estado_ubicacion), estado_ubicacion),
            resumen_caso = VALUES(resumen_caso),
-           pausado_bot = 1'
+           pausado_bot = 1"
     );
     $stmt->execute([
         ':t' => $telefono,
+        ':tipo' => $lead['tipo'],
         ':nombre' => $nombre,
-        ':estado' => $lead['estado'],
+        ':estado' => $estado,
         ':resumen' => $lead['resumen'],
     ]);
 }
