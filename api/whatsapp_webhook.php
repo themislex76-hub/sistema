@@ -11,6 +11,13 @@ error_reporting(E_ALL);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
+// DEBUG TEMPORAL — registra CUALQUIER petición (GET o POST) desde el
+// primer instante, antes de cualquier otra cosa. Quitar cuando ya funcione.
+file_put_contents(__DIR__ . '/webhook_debug.log', date('c')
+    . " | INICIO | metodo=" . ($_SERVER['REQUEST_METHOD'] ?? '?')
+    . " | qs=" . ($_SERVER['QUERY_STRING'] ?? '')
+    . "\n", FILE_APPEND);
+
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/ia_helpers.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
