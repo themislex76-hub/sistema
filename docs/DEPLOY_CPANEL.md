@@ -248,6 +248,46 @@ día hasta que tu número y tu negocio queden verificados en Meta Business
 Manager (proceso que puede tardar unos días); una vez verificado, el límite
 sube automáticamente.
 
+### 10.6 Puente con Cloudflare Workers (si Meta no puede llegar directo)
+
+Algunos hostings compartidos tienen un firewall/WAF automático que
+bloquea las peticiones POST que manda Meta, sin dejar ningún error visible
+(la verificación GET funciona bien, pero los mensajes reales nunca llegan).
+Si te pasa esto, en vez de mudar todo tu hosting, agregas un "puente"
+gratuito con Cloudflare Workers que recibe el mensaje de Meta y se lo
+reenvía a tu sistema — a esa conexión sí le va bien, porque ya no viene
+directo de Meta.
+
+1. Crea una cuenta gratis en [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up).
+2. En el panel, ve a **Workers y Pages → Crear → Crear Worker**. Ponle un
+   nombre (p. ej. `ela-whatsapp-relay`) y despliégalo (te da una plantilla
+   de ejemplo, no importa).
+3. Dale clic a **"Editar código"**. Borra todo el código de ejemplo y pega
+   el contenido completo de `scripts/cloudflare_worker_whatsapp.js` de
+   este proyecto. Guarda y despliega.
+4. En la configuración del Worker, ve a **Configuración → Variables y
+   secretos** y agrega estas 4 (marca "Cifrado/Secret" en las que tienen
+   datos sensibles):
+   - `VERIFY_TOKEN`: el mismo valor que `WHATSAPP_VERIFY_TOKEN` en tu
+     servidor.
+   - `APP_SECRET`: el mismo valor que `WHATSAPP_APP_SECRET`.
+   - `SISTEMA_RELAY_URL`: `https://sistema.expertoslaborales.com/sistema/api/whatsapp_relay.php`
+   - `RELAY_KEY`: una llave nueva que inventes (genera una con
+     `php -r "echo bin2hex(random_bytes(24)), PHP_EOL;"` o cualquier
+     cadena larga y aleatoria) — la vas a pegar también como
+     `WHATSAPP_RELAY_KEY` en tu servidor.
+5. Copia la URL pública que te dio Cloudflare para tu Worker (algo como
+   `https://ela-whatsapp-relay.tu-usuario.workers.dev`).
+6. En `whatsapp_credentials.php` (en tu servidor), agrega la línea:
+   ```php
+   define('WHATSAPP_RELAY_KEY', 'LA_MISMA_LLAVE_QUE_PUSISTE_EN_RELAY_KEY');
+   ```
+7. En Meta (developers.facebook.com → tu app → Paso 2: Configuración de
+   producción → Configurar webhooks), cambia la **URL de devolución de
+   llamada** por la URL de tu Worker de Cloudflare (la del paso 5), dejando
+   el mismo Verify token. Dale "Verificar y guardar".
+8. Prueba mandando un WhatsApp real — ahora sí debería contestar.
+
 ---
 
 ## 11. Respaldo periódico

@@ -25,3 +25,9 @@ define('WHATSAPP_VERIFY_TOKEN', 'CAMBIA_ESTO_POR_UNA_CADENA_LARGA_Y_UNICA');
 // para verificar la firma X-Hub-Signature-256 de cada webhook entrante y
 // así rechazar mensajes falsificados que no vengan realmente de Meta.
 define('WHATSAPP_APP_SECRET', 'CAMBIA_ESTO_POR_EL_APP_SECRET_DE_TU_APP_META');
+
+// Llave compartida con el puente externo (Cloudflare Worker) que reenvía
+// los mensajes cuando el hosting bloquea la conexión directa de Meta —
+// solo se usa si configuraste ese puente. Genera una llave segura con:
+//   php -r "echo bin2hex(random_bytes(24)), PHP_EOL;"
+define('WHATSAPP_RELAY_KEY', 'CAMBIA_ESTO_POR_OTRA_LLAVE_LARGA_Y_ALEATORIA');
