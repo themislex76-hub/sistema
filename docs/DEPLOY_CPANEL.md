@@ -162,6 +162,11 @@ para que tú le des seguimiento personalmente.
 puede abrir en la app normal de WhatsApp del celular. Usa un número nuevo
 que no sea tu WhatsApp personal.
 
+**Visibilidad**: la vista "Prospectos (WhatsApp)" solo la ve el
+Administrador — un socio no ve estos leads hasta que el Administrador
+convierte uno en expediente y se lo asigna; a partir de ahí lo ve como
+cualquier otro asunto suyo.
+
 ### 10.1 Importar la tabla nueva
 
 1. En phpMyAdmin, con tu base de datos seleccionada, ve a la pestaña

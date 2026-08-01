@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Método no permitido.', 405);
-require_login();
+require_admin();
 require_csrf();
 
 $in = json_input();

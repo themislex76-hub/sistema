@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') fail('Método no permitido.', 405);
-require_login();
+require_admin();
 
 $telefono = trim((string)($_GET['telefono'] ?? ''));
 if ($telefono === '') fail('Falta el teléfono.', 400);

@@ -4,7 +4,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Método no permitido.', 405);
-require_login();
+require_admin();
 require_csrf();
 
 $in = json_input();
