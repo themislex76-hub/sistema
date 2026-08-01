@@ -45,6 +45,13 @@ $raw = (string)file_get_contents('php://input');
 
 $firmaEsperada = 'sha256=' . hash_hmac('sha256', $raw, WHATSAPP_APP_SECRET);
 $firmaRecibida = $_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '';
+
+// DEBUG TEMPORAL — quitar este bloque cuando ya funcione.
+file_put_contents(__DIR__ . '/webhook_debug.log', date('c')
+    . " | sig_recibida=" . ($firmaRecibida !== '' ? $firmaRecibida : 'NINGUNA')
+    . " | sig_esperada=" . $firmaEsperada
+    . " | raw=" . $raw . "\n", FILE_APPEND);
+
 if ($firmaRecibida === '' || !hash_equals($firmaEsperada, $firmaRecibida)) {
     http_response_code(403);
     exit;
