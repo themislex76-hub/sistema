@@ -48,6 +48,9 @@ let VIEW = "tablero";
 let FILTER_STATUS = "todos";
 let SEARCH_TERM = "";
 let CASES_DATA = []; // expedientes que devuelve la API (ya con meta anidada)
+let PROSPECTOS = []; // leads de despido CDMX/Edomex captados por el bot de WhatsApp
+let PROSPECTO_ABIERTO = null; // id del prospecto con el chat expandido en la vista Prospectos
+let PROSPECTO_MENSAJES = []; // historial de WhatsApp del prospecto abierto
 let ACTIVE_CASE = null;
 let MODAL_TAB = "resumen";
 let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de CASES_DATA)
@@ -1967,6 +1970,30 @@ async function refreshBootstrap(){
   await loadAvisosBoletin();
   await loadEdomexCaptchaPendiente();
   await loadPjfCredenciales();
+  await loadProspectos();
+}
+
+async function loadProspectos(){
+  try{
+    const d = await api('GET', 'prospectos_list.php');
+    PROSPECTOS = d.prospectos;
+  }catch(e){ PROSPECTOS = []; }
+}
+
+async function loadProspectoMensajes(telefono){
+  try{
+    const d = await api('GET', 'prospectos_mensajes.php?telefono=' + encodeURIComponent(telefono));
+    PROSPECTO_MENSAJES = d.mensajes;
+  }catch(e){ PROSPECTO_MENSAJES = []; }
+}
+
+function prospectosNuevosCount(){ return PROSPECTOS.filter(p=>p.estatus==='nuevo').length; }
+
+function fmtFechaHora(s){
+  if(!s) return "—";
+  const d = new Date(String(s).replace(' ', 'T'));
+  if(isNaN(d.getTime())) return "—";
+  return d.toLocaleString('es-MX', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'});
 }
 
 async function loadDiasInhabiles(){
@@ -2196,6 +2223,7 @@ function shellHTML(){
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
         <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
+        <button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge">${prospectosNuevosCount()}</span>`:""}</button>
         <div class="section-label">Referencia</div>
         <button data-v="manual" class="${VIEW==='manual'?'active':''}"><span class="ico">&#128218;</span> Manual de uso</button>
         <button data-v="cliente_preview" class="${VIEW==='cliente_preview'?'active':''}"><span class="ico">${ICONS.cliente}</span> Vista de portal cliente</button>
@@ -2233,6 +2261,7 @@ const VIEW_TITLES = {
   exito:["Tasa de éxito", "Qué tan seguido se resuelven los asuntos a favor del trabajador"],
   manual:["Manual de uso", "Guía paso a paso del sistema"],
   agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
+  prospectos:["Prospectos (WhatsApp)", "Casos de despido en CDMX/Edomex captados por el asistente de IA en WhatsApp"],
   formato_demanda:["Formato de demanda", "Plantilla de demanda y biblioteca de otras plantillas de escritos"],
   cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
   equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
@@ -2317,6 +2346,7 @@ function renderViewBody(){
   else if(VIEW==='exito') el.innerHTML = tasaExitoHTML();
   else if(VIEW==='manual') el.innerHTML = manualHTML();
   else if(VIEW==='agenda') el.innerHTML = agendaHTML();
+  else if(VIEW==='prospectos') el.innerHTML = prospectosHTML();
   else if(VIEW==='formato_demanda') el.innerHTML = formatoDemandaHTML();
   else if(VIEW==='cliente_preview') el.innerHTML = clientePreviewHTML();
   else if(VIEW==='equipo') el.innerHTML = equipoHTML();
@@ -3115,6 +3145,67 @@ const AGENDA_TIPO = {
 
 let AGENDA_SOCIO = 'todos';
 
+const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
+const PROSPECTO_ESTATUS_BADGE = {nuevo:'crit', contactado:'warn', descartado:'closed', convertido:'ok'};
+
+function prospectosHTML(){
+  const abierto = PROSPECTO_ABIERTO ? PROSPECTOS.find(p=>p.id===PROSPECTO_ABIERTO) : null;
+  if(!PROSPECTOS.length){
+    return `<div class="panel"><div class="panel-body" style="padding:24px;">
+      <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte un caso de despido en Ciudad de México o Estado de México, aparecerá aquí.</div>
+    </div></div>`;
+  }
+  return `
+  <div class="panel">
+    <div class="panel-head"><h3>Prospectos de despido (CDMX / Edomex)</h3><span class="count">${PROSPECTOS.length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      ${PROSPECTOS.map(p=>`
+      <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${PROSPECTO_ABIERTO===p.id?'background:var(--parchment);':''}" data-prospecto-abrir="${p.id}">
+        <span class="badge ${PROSPECTO_ESTATUS_BADGE[p.estatus]||'warn'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_ESTATUS_LABEL[p.estatus]||p.estatus}</span>
+        <div class="alert-info">
+          <div class="name">${escapeHTML(p.nombre || 'Sin nombre')} <span style="color:var(--gray); font-weight:400;">&middot; ${escapeHTML(p.estado_ubicacion||'')}</span></div>
+          <div class="meta">${escapeHTML(p.telefono)} &middot; ${escapeHTML(truncate(p.resumen_caso||'',90))}</div>
+        </div>
+        <div style="flex-shrink:0; font-size:11px; color:var(--gray); text-align:right;">${fmtFechaHora(p.actualizado_en)}</div>
+      </div>`).join("")}
+    </div>
+  </div>
+  ${abierto ? prospectoDetalleHTML(abierto) : ""}
+  `;
+}
+
+function prospectoDetalleHTML(p){
+  return `
+  <div class="panel">
+    <div class="panel-head"><h3>${escapeHTML(p.nombre || 'Sin nombre')} &middot; ${escapeHTML(p.telefono)}</h3></div>
+    <div class="panel-body" style="padding:16px 20px;">
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+        <select data-prospecto-estatus="${p.id}" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          ${Object.keys(PROSPECTO_ESTATUS_LABEL).map(k=>`<option value="${k}" ${p.estatus===k?'selected':''}>${PROSPECTO_ESTATUS_LABEL[k]}</option>`).join("")}
+        </select>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
+          <input type="checkbox" data-prospecto-pausado="${p.id}" ${p.pausado_bot?'checked':''}> Bot pausado (seguimiento humano)
+        </label>
+        ${p.expediente_id ? `<span class="badge ok">Convertido en expediente ${escapeHTML(p.expediente_exp||'')}</span>` : `<button class="btn secondary" data-prospecto-convertir="${p.id}" style="font-size:11px; padding:6px 10px;">Convertir en expediente</button>`}
+      </div>
+      ${p.resumen_caso ? `<div class="notice" style="margin-bottom:14px;"><strong>Resumen del caso (según el bot):</strong> ${escapeHTML(p.resumen_caso)}</div>` : ""}
+      <div style="max-height:340px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px; background:var(--parchment);">
+        ${PROSPECTO_MENSAJES.length ? PROSPECTO_MENSAJES.map(m=>`
+          <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
+            <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
+              ${escapeHTML(m.texto)}
+              <div style="font-size:10px; opacity:.6; margin-top:3px;">${m.direccion==='saliente'?(m.respondido_por==='humano'?'Tú':'Bot'):'Cliente'} &middot; ${fmtFechaHora(m.creado_en)}</div>
+            </div>
+          </div>`).join("") : `<div class="notice">Sin mensajes todavía.</div>`}
+      </div>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="prospectoRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+        <button class="btn" id="prospectoEnviarBtn" data-telefono="${escapeHTML(p.telefono)}">Enviar</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function agendaHTML(){
   const isAdmin = CURRENT_USER.role === 'Administrador';
   let all = buildAgendaEntries();
@@ -3665,6 +3756,60 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo actualizar: ' + err.message); }
     });
   });
+  document.querySelectorAll('[data-prospecto-abrir]').forEach(el=>{
+    el.addEventListener('click', async ()=>{
+      const id = parseInt(el.dataset.prospectoAbrir);
+      const p = PROSPECTOS.find(x=>x.id===id);
+      if(!p) return;
+      PROSPECTO_ABIERTO = (PROSPECTO_ABIERTO === id) ? null : id;
+      if(PROSPECTO_ABIERTO){ await loadProspectoMensajes(p.telefono); }
+      renderViewBody();
+    });
+  });
+  document.querySelectorAll('[data-prospecto-estatus]').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(sel.dataset.prospectoEstatus), estatus: sel.value});
+        await loadProspectos();
+        renderViewBody();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-pausado]').forEach(chk=>{
+    chk.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(chk.dataset.prospectoPausado), pausado_bot: chk.checked});
+        await loadProspectos();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); chk.checked = !chk.checked; }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-convertir]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('¿Convertir este prospecto en expediente nuevo?')) return;
+      btn.disabled = true;
+      try{
+        await api('POST', 'prospectos_convertir.php', {id: parseInt(btn.dataset.prospectoConvertir)});
+        await Promise.all([refreshBootstrap()]);
+        renderViewBody();
+      }catch(err){ alert('No se pudo convertir: ' + err.message); btn.disabled = false; }
+    });
+  });
+  const prospectoEnviarBtn = document.getElementById('prospectoEnviarBtn');
+  if(prospectoEnviarBtn){
+    prospectoEnviarBtn.addEventListener('click', async ()=>{
+      const input = document.getElementById('prospectoRespuestaInput');
+      const texto = input.value.trim();
+      if(!texto) return;
+      const telefono = prospectoEnviarBtn.dataset.telefono;
+      prospectoEnviarBtn.disabled = true;
+      try{
+        await api('POST', 'prospectos_enviar.php', {telefono, texto});
+        await loadProspectoMensajes(telefono);
+        renderViewBody();
+      }catch(err){ alert('No se pudo enviar: ' + err.message); }
+      finally{ prospectoEnviarBtn.disabled = false; }
+    });
+  }
   const edomexCaptchaBtn = document.getElementById('edomexCaptchaBtn');
   if(edomexCaptchaBtn){
     edomexCaptchaBtn.addEventListener('click', async ()=>{

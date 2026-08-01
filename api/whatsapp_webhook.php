@@ -1,0 +1,150 @@
+<?php
+declare(strict_types=1);
+
+// Endpoint público (sin sesión) que Meta llama para:
+//  - GET:  verificar el webhook una sola vez, al configurarlo.
+//  - POST: entregar cada mensaje entrante de WhatsApp.
+// No usa config.php a propósito: ese archivo fuerza sesión + Content-Type
+// JSON, y la verificación GET debe responder texto plano.
+
+error_reporting(E_ALL);
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/ia_helpers.php';
+require_once __DIR__ . '/whatsapp_helpers.php';
+
+$credentialsFile = __DIR__ . '/whatsapp_credentials.php';
+if (!file_exists($credentialsFile)) {
+    http_response_code(500);
+    exit;
+}
+require_once $credentialsFile;
+
+$method = $_SERVER['REQUEST_METHOD'];
+
+if ($method === 'GET') {
+    $modo = $_GET['hub_mode'] ?? '';
+    $tokenRecibido = $_GET['hub_verify_token'] ?? '';
+    if ($modo === 'subscribe' && hash_equals(WHATSAPP_VERIFY_TOKEN, $tokenRecibido)) {
+        header('Content-Type: text/plain');
+        echo $_GET['hub_challenge'] ?? '';
+        exit;
+    }
+    http_response_code(403);
+    exit;
+}
+
+if ($method !== 'POST') {
+    http_response_code(405);
+    exit;
+}
+
+$raw = (string)file_get_contents('php://input');
+
+$firmaEsperada = 'sha256=' . hash_hmac('sha256', $raw, WHATSAPP_APP_SECRET);
+$firmaRecibida = $_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '';
+if ($firmaRecibida === '' || !hash_equals($firmaEsperada, $firmaRecibida)) {
+    http_response_code(403);
+    exit;
+}
+
+function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil): void
+{
+    $telefono = (string)($msg['from'] ?? '');
+    if ($telefono === '') return;
+
+    if (($msg['type'] ?? '') !== 'text') {
+        whatsapp_enviar($telefono, 'Por ahora solo puedo leer mensajes de texto. Cuéntame tu duda escribiéndola, por favor.');
+        return;
+    }
+
+    $texto = trim((string)($msg['text']['body'] ?? ''));
+    if ($texto === '') return;
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'entrante', :texto, 'ia')"
+    );
+    $stmt->execute([':t' => $telefono, ':texto' => $texto]);
+
+    // Si ya hay un prospecto y el bot está pausado, un humano lleva el
+    // caso: no autorespondemos, solo quedó guardado el mensaje para que
+    // el abogado lo vea y conteste desde la vista Prospectos.
+    $stmt = $pdo->prepare('SELECT pausado_bot FROM prospectos WHERE telefono = :t LIMIT 1');
+    $stmt->execute([':t' => $telefono]);
+    $prospecto = $stmt->fetch();
+    if ($prospecto && (int)$prospecto['pausado_bot'] === 1) {
+        return;
+    }
+
+    $stmt = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
+    $stmt->execute([':t' => $telefono]);
+    $historial = array_reverse($stmt->fetchAll());
+
+    $mensajesIA = [];
+    foreach ($historial as $h) {
+        $mensajesIA[] = [
+            'role' => $h['direccion'] === 'entrante' ? 'user' : 'assistant',
+            'content' => $h['texto'],
+        ];
+    }
+    if (!$mensajesIA || end($mensajesIA)['role'] !== 'user') {
+        $mensajesIA[] = ['role' => 'user', 'content' => $texto];
+    }
+
+    $resultado = ia_responder_whatsapp($mensajesIA);
+    $respuesta = $resultado['texto'];
+    $lead = $resultado['lead'];
+
+    if ($lead) {
+        $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
+        guardar_prospecto($pdo, $telefono, $nombrePerfil, $lead);
+    }
+
+    whatsapp_enviar($telefono, $respuesta);
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+    );
+    $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
+}
+
+function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, array $lead): void
+{
+    $nombre = $lead['nombre'] !== '' ? $lead['nombre'] : $nombrePerfil;
+    $stmt = $pdo->prepare(
+        'INSERT INTO prospectos (telefono, nombre, estado_ubicacion, resumen_caso, pausado_bot)
+         VALUES (:t, :nombre, :estado, :resumen, 1)
+         ON DUPLICATE KEY UPDATE
+           nombre = COALESCE(VALUES(nombre), nombre),
+           estado_ubicacion = VALUES(estado_ubicacion),
+           resumen_caso = VALUES(resumen_caso),
+           pausado_bot = 1'
+    );
+    $stmt->execute([
+        ':t' => $telefono,
+        ':nombre' => $nombre,
+        ':estado' => $lead['estado'],
+        ':resumen' => $lead['resumen'],
+    ]);
+}
+
+$data = json_decode($raw, true) ?: [];
+$pdo = db();
+
+foreach (($data['entry'] ?? []) as $entry) {
+    foreach (($entry['changes'] ?? []) as $change) {
+        $value = $change['value'] ?? [];
+        $mensajes = $value['messages'] ?? [];
+        if (!$mensajes) continue; // ignora confirmaciones de entrega/lectura ("statuses")
+
+        $nombrePerfil = $value['contacts'][0]['profile']['name'] ?? null;
+        foreach ($mensajes as $msg) {
+            procesar_mensaje_entrante($pdo, $msg, $nombrePerfil);
+        }
+    }
+}
+
+http_response_code(200);
+echo 'EVENT_RECEIVED';
