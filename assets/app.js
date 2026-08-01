@@ -4377,7 +4377,7 @@ function modalTabContent(k,p,meta){
     <div style="margin-top:18px;"><button class="btn" id="saveMetaBtn">Guardar cambios</button></div>
     <div class="divider"></div>
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:6px;">Acceso del cliente al portal</div>
-    <div class="notice" style="margin-bottom:10px;">Comparte con tu cliente el número de expediente, su apellido y este código, para que consulte su asunto en "Acceder como cliente" — sin este código no puede ver nada.</div>
+    <div class="notice" style="margin-bottom:10px;">Comparte con tu cliente su apellido y este código, para que consulte su asunto en "Acceder como cliente" — sin este código no puede ver nada.</div>
     <div id="codigoAccesoBox" style="font-family:var(--mono); font-size:13px; color:var(--gray);">Cargando código de acceso…</div>
     <button class="btn secondary" id="regenCodigoBtn" style="margin-top:8px;">Generar código nuevo (invalida el anterior)</button>
   `;
@@ -4927,8 +4927,7 @@ function clientSearchHTML(){
   return `
   <div class="client-search">
     <h2>Consulta tu asunto</h2>
-    <p>Ingresa el número de expediente o registro, tu apellido, y el código de acceso que te proporcionó el despacho, para ver el estatus.</p>
-    <input type="text" id="cExp" placeholder="Número de expediente o registro">
+    <p>Ingresa tu apellido paterno y el código de acceso que te proporcionó el despacho, para ver el estatus.</p>
     <input type="text" id="cApellido" placeholder="Tu apellido paterno">
     <input type="text" id="cCodigo" placeholder="Código de acceso" style="text-transform:uppercase;">
     <button class="btn" id="cSearchBtn" style="width:100%; margin-top:6px;">Consultar</button>
@@ -4943,14 +4942,13 @@ function bindClientPortal(){
   const back = document.getElementById('backToStaffBtn');
   if(back) back.addEventListener('click', ()=>{ CURRENT_USER = null; VIEW = 'tablero'; render(); });
   btn.addEventListener('click', async ()=>{
-    const exp = (document.getElementById('cExp').value||'').trim();
     const ape = (document.getElementById('cApellido').value||'').trim();
     const codigo = (document.getElementById('cCodigo').value||'').trim();
     const res = document.getElementById('cResult');
-    if(!exp || !ape || !codigo){ res.innerHTML = `<div class="notice">Ingresa expediente, apellido y código de acceso para continuar.</div>`; return; }
+    if(!ape || !codigo){ res.innerHTML = `<div class="notice">Ingresa tu apellido y código de acceso para continuar.</div>`; return; }
     btn.disabled = true; btn.textContent = 'Consultando…';
     try{
-      const data = await api('POST', 'portal_cliente.php', {exp, apellido: ape, codigo});
+      const data = await api('POST', 'portal_cliente.php', {apellido: ape, codigo});
       CLIENT_CASE = data.expediente;
       res.innerHTML = `<div class="client-result">${clientCardHTML(CLIENT_CASE)}</div>`;
     }catch(err){
