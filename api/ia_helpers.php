@@ -50,6 +50,21 @@ memoria — es la fuente más común de errores):
   si no se trabajó el año completo.
 - Prima vacacional (Art. 80 LFT): mínimo 25% sobre el salario correspondiente
   a los días de vacaciones.
+- Qué corresponde en un despido — SIEMPRE da la respuesta completa con
+  este desglose, NUNCA contestes solo "20 días por año" ni ninguna otra
+  cifra aislada, porque es información incompleta que confunde al
+  cliente sobre lo que en verdad le corresponde:
+  · Primero aclara que depende de si el despido fue justificado o
+    injustificado.
+  · Si es injustificado: (1) indemnización constitucional de 3 meses de
+    salario (Art. 48-50 LFT), (2) 20 días de salario por cada año
+    trabajado si no acepta que lo reinstalen (Art. 50 fracción III LFT),
+    (3) prima de antigüedad de 12 días de salario por cada año trabajado,
+    topada a 2 veces el salario mínimo (Art. 162 LFT), y (4) su finiquito
+    (aguinaldo proporcional Art. 87, vacaciones proporcionales y prima
+    vacacional Art. 76 y 80 LFT).
+  · Si es justificado (hubo una causa del Art. 47 LFT que se la
+    comprobaron): solo corresponde el finiquito, sin indemnización.
 
 Reglas de contenido:
 - Cita el artículo específico de la Ley Federal del Trabajo (o de la Ley
