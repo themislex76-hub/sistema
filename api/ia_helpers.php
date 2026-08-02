@@ -2,14 +2,18 @@
 declare(strict_types=1);
 
 // Respuestas automáticas de WhatsApp con Claude (Anthropic). Un solo
-// llamado hace todo a la vez: redacta la respuesta al usuario Y (si aplica)
-// clasifica dos tipos de lead usando "tool use" — Claude decide llamar a
-// una herramienta solo cuando corresponde, sin pedir una segunda llamada
-// aparte para clasificar:
+// llamado hace todo a la vez: redacta la respuesta al usuario Y (si
+// aplica) clasifica leads y calcula estimados usando "tool use" — Claude
+// decide llamar a una herramienta solo cuando corresponde:
 //   - registrar_lead_despido: despido en CDMX/Edomex → futuro cliente de
 //     litigio, el despacho lo contacta gratis para evaluar el caso.
 //   - registrar_interes_asesoria_paga: cualquier persona, de cualquier
 //     estado, que acepta o pregunta por la asesoría personalizada de pago.
+//   - calcular_estimado_liquidacion: hace la aritmética real en PHP (con
+//     las mismas fórmulas que la calculadora del sistema, ver
+//     liquidacion_calculadora.php) en vez de que la IA "calcule a mano" y
+//     se equivoque — cuando se usa, se hace una segunda llamada a Claude
+//     para que redacte la respuesta final con el resultado ya calculado.
 
 const IA_MODEL = 'claude-sonnet-5';
 
@@ -73,13 +77,19 @@ memoria — es la fuente más común de errores):
     general de un despido salvo que se dé alguno de esos dos supuestos.
   · Si es justificado (hubo una causa del Art. 47 LFT que se la
     comprobaron): solo corresponde el finiquito, sin indemnización.
-  · Si te piden calcular un monto estimado, para que sea preciso pide
-    estos 3 datos exactos antes de calcular: (1) fecha de ingreso,
-    (2) fecha de baja (o si aún no ha pasado el despido), y (3) salario
-    (diario o mensual). No uses "años aproximados" que te haya dado la
-    persona de forma vaga si puedes pedir las fechas exactas — las fechas
-    permiten calcular bien las partes proporcionales (aguinaldo,
-    vacaciones) en vez de solo años completos.
+  · Si te piden calcular un monto estimado, antes de llamar la
+    herramienta calcular_estimado_liquidacion pregunta y reúne TODOS
+    estos datos (uno o varios mensajes, lo que haga falta): (1) fecha de
+    ingreso, (2) fecha de baja (o si aún no ha pasado el despido), (3)
+    salario diario o mensual (conviértelo tú a diario si te lo dan
+    mensual o quincenal), (4) si el despido es/sería justificado o
+    injustificado, (5) si le deben vacaciones de periodos/años anteriores
+    que no disfrutó (y cuántos días, si lo sabe), y (6) si le deben días
+    ya trabajados y no pagados (Art. 82 LFT) antes de la baja (y cuántos
+    días, si lo sabe). Los puntos 5 y 6 puedes dejarlos en 0 si la
+    persona dice que no aplica o no sabe. NUNCA calcules el monto tú
+    mismo "a mano" — siempre usa la herramienta para la aritmética real,
+    y luego redacta la respuesta final con el resultado que te devuelva.
 
 Reglas de contenido:
 - Cita el artículo específico de la Ley Federal del Trabajo (o de la Ley
@@ -184,25 +194,49 @@ const IA_TOOLS = [
             'required' => ['resumen'],
         ],
     ],
+    [
+        'name' => 'calcular_estimado_liquidacion',
+        'description' => 'Calcula un estimado real (con las mismas fórmulas que la calculadora del sistema, no aproximado) de lo que le corresponde a la persona por su despido: finiquito y, si aplica, indemnización constitucional. Llama esta herramienta SOLO cuando ya tengas los datos necesarios — nunca inventes ni calcules el monto tú mismo.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'fecha_ingreso' => [
+                    'type' => 'string',
+                    'description' => 'Fecha de ingreso al trabajo, formato YYYY-MM-DD.',
+                ],
+                'fecha_baja' => [
+                    'type' => 'string',
+                    'description' => 'Fecha de baja/despido, formato YYYY-MM-DD. Si todavía no lo despiden pero quiere saber qué le tocaría, usa la fecha de hoy.',
+                ],
+                'salario_diario' => [
+                    'type' => 'number',
+                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15) antes de llamar la herramienta.',
+                ],
+                'tipo' => [
+                    'type' => 'string',
+                    'enum' => ['justificado', 'injustificado'],
+                    'description' => 'Si el despido es o sería justificado o injustificado.',
+                ],
+                'dias_vacaciones_anteriores' => [
+                    'type' => 'number',
+                    'description' => 'Días de vacaciones de años/periodos anteriores que la persona reporta que no disfrutó. 0 si no aplica o no sabe.',
+                ],
+                'dias_salarios_devengados' => [
+                    'type' => 'number',
+                    'description' => 'Días ya trabajados y no pagados antes de la baja (Art. 82 LFT) que la persona reporta. 0 si no aplica o no sabe.',
+                ],
+            ],
+            'required' => ['fecha_ingreso', 'fecha_baja', 'salario_diario', 'tipo'],
+        ],
+    ],
 ];
 
 /**
- * $mensajes: lista ordenada (más antiguo primero) de
- * ['role' => 'user'|'assistant', 'content' => string]. El último debe ser
- * role=user (el mensaje que se está respondiendo).
- *
- * Devuelve ['texto' => string, 'lead' => null|['tipo','estado','nombre','resumen']].
- * tipo es 'despido' o 'asesoria_paga'.
+ * Llama a la API de mensajes de Claude con el historial de mensajes dado.
+ * Devuelve el arreglo decodificado de la respuesta, o null si falló.
  */
-function ia_responder_whatsapp(array $mensajes): array
+function ia_llamar_claude(array $mensajes): ?array
 {
-    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
-    if (!file_exists($credentialsFile)) {
-        error_log('Falta api/anthropic_credentials.php');
-        return ['texto' => 'Gracias por tu mensaje, en un momento te contesto.', 'lead' => null];
-    }
-    require_once $credentialsFile;
-
     $payload = [
         'model' => IA_MODEL,
         'max_tokens' => 700,
@@ -231,10 +265,101 @@ function ia_responder_whatsapp(array $mensajes): array
     if ($raw === false || $status !== 200) {
         file_put_contents(__DIR__ . '/ia_debug.log', date('c')
             . " | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    return json_decode($raw, true);
+}
+
+/**
+ * $mensajes: lista ordenada (más antiguo primero) de
+ * ['role' => 'user'|'assistant', 'content' => string]. El último debe ser
+ * role=user (el mensaje que se está respondiendo).
+ *
+ * Devuelve ['texto' => string, 'lead' => null|['tipo','estado','nombre','resumen']].
+ * tipo es 'despido' o 'asesoria_paga'.
+ */
+function ia_responder_whatsapp(PDO $pdo, array $mensajes): array
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return ['texto' => 'Gracias por tu mensaje, en un momento te contesto.', 'lead' => null];
+    }
+    require_once $credentialsFile;
+    require_once __DIR__ . '/liquidacion_calculadora.php';
+
+    $data = ia_llamar_claude($mensajes);
+    if ($data === null) {
         return ['texto' => 'Gracias por tu mensaje, en un momento te contesto.', 'lead' => null];
     }
 
-    $data = json_decode($raw, true);
+    [$texto, $lead, $bloques] = ia_extraer_respuesta($data);
+
+    $toolUseCalculadora = null;
+    foreach ($bloques as $bloque) {
+        if (($bloque['type'] ?? '') === 'tool_use' && ($bloque['name'] ?? '') === 'calcular_estimado_liquidacion') {
+            $toolUseCalculadora = $bloque;
+            break;
+        }
+    }
+
+    if ($toolUseCalculadora !== null) {
+        $in = $toolUseCalculadora['input'] ?? [];
+        $calc = calcular_estimado_liquidacion(
+            $pdo,
+            (string)($in['fecha_ingreso'] ?? ''),
+            (string)($in['fecha_baja'] ?? ''),
+            (float)($in['salario_diario'] ?? 0),
+            (string)($in['tipo'] ?? 'injustificado'),
+            (float)($in['dias_vacaciones_anteriores'] ?? 0),
+            (float)($in['dias_salarios_devengados'] ?? 0)
+        );
+
+        $toolResults = [];
+        foreach ($bloques as $bloque) {
+            if (($bloque['type'] ?? '') !== 'tool_use') continue;
+            if ($bloque['name'] === 'calcular_estimado_liquidacion') {
+                $contenido = $calc !== null
+                    ? json_encode($calc, JSON_UNESCAPED_UNICODE)
+                    : json_encode(['error' => 'Datos insuficientes o inválidos para calcular.'], JSON_UNESCAPED_UNICODE);
+            } else {
+                $contenido = json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+            }
+            $toolResults[] = [
+                'type' => 'tool_result',
+                'tool_use_id' => $bloque['id'],
+                'content' => $contenido,
+            ];
+        }
+
+        $mensajesSeguimiento = $mensajes;
+        $mensajesSeguimiento[] = ['role' => 'assistant', 'content' => $bloques];
+        $mensajesSeguimiento[] = ['role' => 'user', 'content' => $toolResults];
+
+        $data2 = ia_llamar_claude($mensajesSeguimiento);
+        if ($data2 !== null) {
+            [$texto2, ,] = ia_extraer_respuesta($data2);
+            if (trim($texto2) !== '') {
+                $texto = $texto2;
+            }
+        }
+    }
+
+    if (trim($texto) === '') {
+        $texto = 'Gracias por tu mensaje, en un momento te contesto.';
+    }
+
+    return ['texto' => trim($texto), 'lead' => $lead];
+}
+
+/**
+ * Extrae el texto, el lead (si se llamó alguna herramienta de registro) y
+ * los bloques de contenido crudos de una respuesta de la API de Claude.
+ * Devuelve [texto, lead, bloques].
+ */
+function ia_extraer_respuesta(array $data): array
+{
     $bloques = $data['content'] ?? [];
 
     $texto = '';
@@ -258,9 +383,5 @@ function ia_responder_whatsapp(array $mensajes): array
         }
     }
 
-    if (trim($texto) === '') {
-        $texto = 'Gracias por tu mensaje, en un momento te contesto.';
-    }
-
-    return ['texto' => trim($texto), 'lead' => $lead];
+    return [$texto, $lead, $bloques];
 }

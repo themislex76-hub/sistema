@@ -50,7 +50,7 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         $mensajesIA[] = ['role' => 'user', 'content' => $texto];
     }
 
-    $resultado = ia_responder_whatsapp($mensajesIA);
+    $resultado = ia_responder_whatsapp($pdo, $mensajesIA);
     $respuesta = $resultado['texto'];
     $lead = $resultado['lead'];
 
