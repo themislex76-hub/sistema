@@ -38,7 +38,8 @@ function whatsapp_enviar(string $telefono, string $texto): bool
     curl_close($ch);
 
     if ($raw === false || $status < 200 || $status >= 300) {
-        error_log('WhatsApp send error: status=' . $status . ' curl=' . $curlError . ' body=' . (string)$raw);
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
         return false;
     }
     return true;

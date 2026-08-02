@@ -150,7 +150,8 @@ function ia_responder_whatsapp(array $mensajes): array
     curl_close($ch);
 
     if ($raw === false || $status !== 200) {
-        error_log('Anthropic API error: status=' . $status . ' curl=' . $curlError . ' body=' . (string)$raw);
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
         return ['texto' => 'Gracias por tu mensaje, en un momento te contesto.', 'lead' => null];
     }
 
