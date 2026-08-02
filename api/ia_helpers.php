@@ -73,6 +73,13 @@ memoria — es la fuente más común de errores):
     general de un despido salvo que se dé alguno de esos dos supuestos.
   · Si es justificado (hubo una causa del Art. 47 LFT que se la
     comprobaron): solo corresponde el finiquito, sin indemnización.
+  · Si te piden calcular un monto estimado, para que sea preciso pide
+    estos 3 datos exactos antes de calcular: (1) fecha de ingreso,
+    (2) fecha de baja (o si aún no ha pasado el despido), y (3) salario
+    (diario o mensual). No uses "años aproximados" que te haya dado la
+    persona de forma vaga si puedes pedir las fechas exactas — las fechas
+    permiten calcular bien las partes proporcionales (aguinaldo,
+    vacaciones) en vez de solo años completos.
 
 Reglas de contenido:
 - Cita el artículo específico de la Ley Federal del Trabajo (o de la Ley
