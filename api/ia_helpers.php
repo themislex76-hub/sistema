@@ -239,7 +239,7 @@ function ia_llamar_claude(array $mensajes): ?array
 {
     $payload = [
         'model' => IA_MODEL,
-        'max_tokens' => 700,
+        'max_tokens' => 1500,
         'system' => IA_SYSTEM_PROMPT,
         'tools' => IA_TOOLS,
         'messages' => $mensajes,
