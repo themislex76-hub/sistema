@@ -38,6 +38,11 @@ if (array_key_exists('pausado_bot', $in)) {
     $campos[] = 'pausado_bot = :pausado';
     $params[':pausado'] = !empty($in['pausado_bot']) ? 1 : 0;
 }
+if (array_key_exists('asignado_a', $in)) {
+    $asignadoA = (int)$in['asignado_a'];
+    $campos[] = 'asignado_a = :asignado';
+    $params[':asignado'] = $asignadoA > 0 ? $asignadoA : null;
+}
 
 if (!$campos) fail('Nada que actualizar.', 400);
 

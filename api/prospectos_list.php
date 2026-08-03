@@ -7,9 +7,10 @@ require_admin();
 
 $pdo = db();
 $stmt = $pdo->query(
-    "SELECT p.*, e.exp AS expediente_exp
+    "SELECT p.*, e.exp AS expediente_exp, u.nombre AS asignado_nombre
      FROM prospectos p
      LEFT JOIN expedientes e ON e.id = p.expediente_id
+     LEFT JOIN usuarios u ON u.id = p.asignado_a
      ORDER BY (p.estatus = 'nuevo') DESC, p.actualizado_en DESC
      LIMIT 300"
 );
@@ -25,6 +26,8 @@ foreach ($stmt->fetchAll() as $r) {
         'resumen_caso' => $r['resumen_caso'],
         'estatus' => $r['estatus'],
         'pausado_bot' => (bool)$r['pausado_bot'],
+        'asignado_a' => $r['asignado_a'] !== null ? (int)$r['asignado_a'] : null,
+        'asignado_nombre' => $r['asignado_nombre'],
         'notas_internas' => $r['notas_internas'],
         'expediente_id' => $r['expediente_id'] !== null ? (int)$r['expediente_id'] : null,
         'expediente_exp' => $r['expediente_exp'],

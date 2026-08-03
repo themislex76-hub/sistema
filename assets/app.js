@@ -3174,6 +3174,7 @@ function prospectosHTML(){
           <div class="meta">${escapeHTML(p.telefono)} &middot; ${escapeHTML(truncate(p.resumen_caso||'',90))}</div>
         </div>
         <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'closed'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
+        <span class="badge ${p.asignado_nombre?'ok':'warn'}" style="flex-shrink:0; margin-top:1px;">${p.asignado_nombre ? escapeHTML(p.asignado_nombre) : 'Sin turnar'}</span>
         <div style="flex-shrink:0; font-size:11px; color:var(--gray); text-align:right;">${fmtFechaHora(p.actualizado_en)}</div>
       </div>`).join("")}
     </div>
@@ -3194,6 +3195,13 @@ function prospectoDetalleHTML(p){
         </select>
         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
           <input type="checkbox" data-prospecto-pausado="${p.id}" ${p.pausado_bot?'checked':''}> Bot pausado (seguimiento humano)
+        </label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
+          Turnar a
+          <select data-prospecto-asignado="${p.id}" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+            <option value="">Sin asignar (yo lo atiendo)</option>
+            ${EQUIPO.map(u=>`<option value="${u.id}" ${p.asignado_a===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+          </select>
         </label>
         ${p.expediente_id ? `<span class="badge ok">Convertido en expediente ${escapeHTML(p.expediente_exp||'')}</span>` : `<button class="btn secondary" data-prospecto-convertir="${p.id}" style="font-size:11px; padding:6px 10px;">Convertir en expediente</button>`}
       </div>
@@ -3790,6 +3798,15 @@ function bindViewBody(){
         await api('POST', 'prospectos_update.php', {id: parseInt(chk.dataset.prospectoPausado), pausado_bot: chk.checked});
         await loadProspectos();
       }catch(err){ alert('No se pudo actualizar: ' + err.message); chk.checked = !chk.checked; }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-asignado]').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(sel.dataset.prospectoAsignado), asignado_a: sel.value ? parseInt(sel.value) : 0});
+        await loadProspectos();
+        renderViewBody();
+      }catch(err){ alert('No se pudo turnar: ' + err.message); }
     });
   });
   document.querySelectorAll('[data-prospecto-convertir]').forEach(btn=>{

@@ -17,18 +17,21 @@ $prospecto = $stmt->fetch();
 if (!$prospecto) fail('Prospecto no encontrado.', 404);
 if ($prospecto['expediente_id']) fail('Este prospecto ya fue convertido en expediente.', 409);
 
-// Se crea sin abogado asignado — el Administrador lo asigna a un socio
-// después, desde el propio expediente, igual que con cualquier otro asunto.
+// Si ya se había turnado el prospecto a un abogado desde la vista
+// Prospectos, el expediente nace asignado a ese mismo abogado; si no,
+// nace sin asignar y el Administrador lo asigna después, igual que con
+// cualquier otro asunto.
 $notas = trim("Prospecto captado por WhatsApp ({$prospecto['estado_ubicacion']}).\n\n{$prospecto['resumen_caso']}");
 
 $stmt = $pdo->prepare(
-    'INSERT INTO expedientes (status, actor, telefono, notas_internas) VALUES (:status, :actor, :telefono, :notas)'
+    'INSERT INTO expedientes (status, actor, telefono, notas_internas, abogado_id) VALUES (:status, :actor, :telefono, :notas, :abogado_id)'
 );
 $stmt->execute([
     ':status' => 'Status',
     ':actor' => $prospecto['nombre'],
     ':telefono' => $prospecto['telefono'],
     ':notas' => $notas,
+    ':abogado_id' => $prospecto['asignado_a'] !== null ? (int)$prospecto['asignado_a'] : null,
 ]);
 $expedienteId = (int)$pdo->lastInsertId();
 
