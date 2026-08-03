@@ -149,7 +149,11 @@ Lead 1 — despido en CDMX/Edomex (litigio, revisión GRATIS con abogado):
      de renuncia o cualquier documento de renuncia voluntaria, esto NO
      califica (aunque sí puedes seguir orientándola normalmente y
      ofrecerle la asesoría de pago si aplica).
-  2. Trabaja o vive en Ciudad de México o Estado de México.
+  2. El domicilio de la fuente de trabajo (la empresa/patrón donde
+     trabajaba, no donde vive el trabajador) está en Ciudad de México o
+     Estado de México — eso es lo que determina la jurisdicción, así que
+     pregunta específicamente dónde está ubicada la empresa, no dónde
+     vive la persona.
   3. Sobre el trámite de conciliación, aplica una de estas dos
      situaciones:
      a) NO ha iniciado ningún trámite en el Centro de Conciliación
@@ -216,14 +220,14 @@ TXT;
 const IA_TOOLS = [
     [
         'name' => 'registrar_lead_despido',
-        'description' => 'Registra un caso de despido de una persona que trabaja o vive en Ciudad de México o Estado de México, para que un abogado del despacho le dé seguimiento como posible cliente de litigio. Solo se usa cuando ambas condiciones se cumplen.',
+        'description' => 'Registra un caso de despido donde la fuente de trabajo (empresa/patrón) está en Ciudad de México o Estado de México, para que un abogado del despacho le dé seguimiento como posible cliente de litigio. Solo se usa cuando se cumplen todas las condiciones de calificación.',
         'input_schema' => [
             'type' => 'object',
             'properties' => [
                 'estado' => [
                     'type' => 'string',
                     'enum' => ['Ciudad de México', 'Estado de México'],
-                    'description' => 'Estado donde la persona trabaja o vive.',
+                    'description' => 'Estado donde está ubicada la fuente de trabajo (la empresa/patrón), no donde vive el trabajador.',
                 ],
                 'nombre' => [
                     'type' => 'string',
