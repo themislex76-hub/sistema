@@ -64,7 +64,7 @@ function cast_numeric_fields(array $row): array
 // alcance HTTP directo (data/.htaccess tiene "Require all denied"); solo se
 // sirven a través de documentos_descargar.php, que valida sesión y permisos.
 // ----------------------------------------------------------------------------
-const CATEGORIA_DOCUMENTO_KEYS = ['demanda', 'contestacion', 'pruebas', 'actas', 'convenio', 'otro'];
+const CATEGORIA_DOCUMENTO_KEYS = ['constancia_no_conciliacion', 'demanda', 'contestacion', 'pruebas', 'actas', 'convenio', 'otro'];
 
 const EXTENSION_DOCUMENTO_PERMITIDA = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
 
