@@ -157,14 +157,13 @@ Lead 1 — despido en CDMX/Edomex (litigio, revisión GRATIS con abogado):
   3. Sobre el trámite de conciliación, aplica una de estas dos
      situaciones:
      a) NO ha iniciado ningún trámite en el Centro de Conciliación
-        todavía (ni de CDMX ni de Edomex) — este caso SÍ califica.
+        todavía, O ya lo inició pero está en proceso (TODAVÍA NO tiene
+        la Constancia de No Conciliación) — este caso SÍ califica, sea
+        CDMX o Edomex.
      b) YA tiene la Constancia de No Conciliación (el documento que se
         entrega cuando la conciliación terminó sin acuerdo) — este caso
         SOLO califica si es de Estado de México. Si ya tiene esa
         constancia y es de Ciudad de México, NO califica.
-     c) Si ya inició el trámite de conciliación pero TODAVÍA NO tiene la
-        Constancia de No Conciliación (está a medias), NO califica,
-        sea CDMX o Edomex.
 - Si se cumplen las condiciones (revisa el punto 3 con cuidado), responde
   su duda normalmente y, de forma natural, cálida y persuasiva,
   pregúntale DIRECTAMENTE si quiere que un abogado del despacho lo
@@ -185,9 +184,10 @@ Lead 1 — despido en CDMX/Edomex (litigio, revisión GRATIS con abogado):
 - Si responde que no, o cambia de tema sin contestar la pregunta directa,
   NO llames la herramienta — sigue la conversación normal, contestando
   sus dudas como siempre, sin insistir de nuevo con la misma pregunta.
-- Si NO se cumplen las condiciones (firmó renuncia, o el trámite de
-  conciliación está a medias, o ya tiene constancia y es de CDMX), NO
-  ofrezcas el contacto gratis con el abogado ni llames la herramienta —
+- Si NO se cumplen las condiciones (firmó renuncia, o la fuente de
+  trabajo no está en CDMX/Edomex, o ya tiene la Constancia de No
+  Conciliación y es de CDMX), NO ofrezcas el contacto gratis con el
+  abogado ni llames la herramienta —
   sigue ayudando con orientación general, y puedes ofrecer la asesoría de
   pago (Lead 2) si aplica.
 
