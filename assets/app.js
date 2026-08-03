@@ -1378,7 +1378,7 @@ function manualHTML(){
     <p>Al abrir cualquier expediente, arriba ves su nombre, contra quién demanda, el número de expediente, y una fila de pestañas. Aquí está cada una a detalle:</p>
     <p><strong><span class="tag">Informe del juicio</span></strong> — lo primero que ves. Arriba, en un recuadro, dice en qué etapa está el asunto ahora mismo y desde cuándo. Si hay una audiencia o un pago agendados, salen destacados justo debajo. Si el asunto lleva 30+ días sin movimiento, o parece atorado, también te avisa aquí. Más abajo están los datos generales (puesto, salario, instancia, teléfono, correo) y la bitácora de notas con fecha, con un cuadro de texto para agregar una nueva.</p>
     <p><strong><span class="tag">Editar datos</span></strong> — todos los campos del expediente en modo edición: nombre del actor, CURP, teléfono, correo, demandado, giro, domicilio, puesto, fechas, salarios, instancia, quién despidió, testigos, y los montos de la liquidación (indemnización, prima de antigüedad, vacaciones, prima vacacional, aguinaldo). Escribe el dato y dale <span class="tag">Guardar datos del expediente</span> al final. Cada cambio que hagas aquí queda registrado con tu nombre y la fecha en el Historial (lo ve solo el Administrador).</p>
-    <p><strong><span class="tag">Documentos</span></strong> — sube y organiza los archivos de este asunto (constancia de no conciliación, demanda, contestación, pruebas, actas de audiencia...) por categoría. Acepta PDF, Word, Excel e imágenes, hasta 20 MB por archivo. Si subes una imagen (JPG/PNG), primero se abre en un visor con un recuadro que puedes arrastrar y ajustar a las orillas del documento antes de subirla — igual que las fotos tomadas con la cámara. Los PDF e imágenes tienen botón <span class="tag">Ver</span> para abrirlos directo en una pestaña nueva sin descargarlos; Word y Excel solo se pueden descargar. Cualquiera con acceso a este expediente puede descargarlos o eliminarlos.</p>
+    <p><strong><span class="tag">Documentos</span></strong> — sube y organiza los archivos de este asunto (constancia de no conciliación, demanda, contestación, pruebas, actas de audiencia...) por categoría. Acepta PDF, Word, Excel e imágenes, hasta 20 MB por archivo. Si subes una o varias imágenes (JPG/PNG) a la vez, cada una se abre primero en un visor donde puedes arrastrar el recuadro para ajustarlo a las orillas del documento y girarla con los botones <span class="tag">Girar izquierda</span>/<span class="tag">Girar derecha</span> si salió de lado o al revés — igual que las fotos tomadas con la cámara. Si eliges varias imágenes juntas, después de recortarlas todas se arman en un solo PDF, ya acomodadas en orden, y se sube ese único archivo. Los PDF e imágenes tienen botón <span class="tag">Ver</span> para abrirlos directo en una pestaña nueva sin descargarlos; Word y Excel solo se pueden descargar. Cualquiera con acceso a este expediente puede descargarlos o eliminarlos.</p>
     <p><strong><span class="tag">Etapas del juicio</span></strong> — el checklist completo del procedimiento (lo explico a detalle en la sección 6).</p>
     <p><strong><span class="tag">Prescripción</span></strong> — te dice si ya tienen la constancia de no conciliación, desde cuándo corre el plazo, cuántos días de suspensión hubo por la conciliación, y la fecha límite calculada para presentar la demanda, con los días que faltan.</p>
     <p><strong><span class="tag">Cálculo de liquidación</span></strong> — el desglose completo: indemnización de 90 días, prima de antigüedad, vacaciones, prima vacacional, aguinaldo, y si el asunto ya está en juicio, también salarios caídos e intereses. Al final hay un recuadro oscuro con el total general, y un botón <span class="tag">Extraer cálculo (PDF con desglose)</span> para imprimirlo o guardarlo como PDF — listo para presentarlo como propuesta, sin honorarios del despacho incluidos.</p>
@@ -1686,8 +1686,14 @@ let DOCUMENTOS_ACTIVOS = []; // documentos del expediente actualmente abierto en
 let CAMARA_STREAM = null; // MediaStream activo del visor de cámara (pestaña Documentos), o null si está cerrado
 let FOTOS_CAPTURADAS = []; // {blob, url, width, height} tomadas con la cámara, pendientes de armar el PDF
 // Foto recién tomada, en pantalla de recorte antes de agregarse a FOTOS_CAPTURADAS:
-// {canvas, dataURL, scale, dispW, dispH, rect:{x,y,w,h}} — rect en px de pantalla (coordenadas del recuadro mostrado).
+// {canvas, dataURL, scale, dispW, dispH, rect:{x,y,w,h}, origen, nombreOriginal} — rect en px de
+// pantalla (coordenadas del recuadro mostrado); origen es 'camara', 'archivo' (una sola imagen
+// elegida del disco, se sube directo al confirmar) o 'archivo_multi' (varias imágenes elegidas
+// juntas, se van juntando en FOTOS_CAPTURADAS para armar un solo PDF al terminar la cola).
 let CROP_PENDING = null;
+// Archivos de imagen todavía pendientes de pasar por el visor de recorte,
+// cuando se eligieron varios de una vez desde "Archivo" (no cámara).
+let ARCHIVO_CROP_QUEUE = [];
 let PLANTILLAS_LIB = []; // biblioteca de plantillas .docx adicionales a la demanda
 
 async function loadPlantillasLib(){
@@ -1914,6 +1920,35 @@ function detectarBordeHoja(canvas){
     x: left / scale, y: top / scale,
     w: (right - left) / scale, h: (bottom - top) / scale,
   };
+}
+
+// Gira 90° (deg: -90 o 90) la imagen que está en el visor de recorte —
+// las fotos de la galería del teléfono a veces llegan de lado o al revés
+// (dos giros de 90°). Vuelve a intentar detectar el borde de la hoja sobre
+// la imagen ya girada, para no dejar un recuadro con las proporciones del
+// encuadre anterior.
+function rotarCropPendiente(deg){
+  if(!CROP_PENDING) return;
+  const src = CROP_PENDING.canvas;
+  const rotated = document.createElement('canvas');
+  rotated.width = src.height;
+  rotated.height = src.width;
+  const ctx = rotated.getContext('2d');
+  ctx.translate(rotated.width/2, rotated.height/2);
+  ctx.rotate(deg * Math.PI/180);
+  ctx.drawImage(src, -src.width/2, -src.height/2);
+
+  const rectReal = detectarBordeHoja(rotated);
+  const dispW = Math.min(320, rotated.width);
+  const scale = dispW / rotated.width;
+  const dispH = Math.round(rotated.height * scale);
+  CROP_PENDING.canvas = rotated;
+  CROP_PENDING.scale = scale;
+  CROP_PENDING.dispW = dispW;
+  CROP_PENDING.dispH = dispH;
+  CROP_PENDING.dataURL = rotated.toDataURL('image/jpeg', 0.9);
+  CROP_PENDING.rect = {x: rectReal.x*scale, y: rectReal.y*scale, w: rectReal.w*scale, h: rectReal.h*scale};
+  renderModal();
 }
 
 function buildPdfFromJpegs(images){
@@ -3999,6 +4034,7 @@ async function openModal(k, tab){
   detenerCamara();
   limpiarFotosCapturadas();
   CROP_PENDING = null;
+  ARCHIVO_CROP_QUEUE = [];
   ACTIVE_CASE = k; MODAL_TAB = tab || "resumen";
   if(MODAL_TAB === 'documentos') await loadDocumentos(k.id);
   renderModal();
@@ -4008,6 +4044,7 @@ function closeModal(){
   detenerCamara();
   limpiarFotosCapturadas();
   CROP_PENDING = null;
+  ARCHIVO_CROP_QUEUE = [];
   document.getElementById('modalOverlay').classList.remove('show');
   document.getElementById('modalOverlay').innerHTML = "";
 }
@@ -4046,7 +4083,7 @@ function renderModal(){
   overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
   document.querySelectorAll('.modal-tabs button').forEach(b=>{
     b.addEventListener('click', async ()=>{
-      if(b.dataset.t !== 'documentos'){ detenerCamara(); CROP_PENDING = null; } // no dejar la cámara prendida al salir de la pestaña
+      if(b.dataset.t !== 'documentos'){ detenerCamara(); CROP_PENDING = null; ARCHIVO_CROP_QUEUE = []; } // no dejar la cámara prendida ni una cola de recorte a medias al salir de la pestaña
       MODAL_TAB = b.dataset.t;
       if(MODAL_TAB === 'documentos') await loadDocumentos(ACTIVE_CASE.id);
       renderModal();
@@ -4109,8 +4146,10 @@ function bindFotosPanelEvents(){
 
 function cropPanelHTML(){
   const r = CROP_PENDING.rect;
+  const esArchivo = CROP_PENDING.origen === 'archivo' || CROP_PENDING.origen === 'archivo_multi';
+  const restantes = ARCHIVO_CROP_QUEUE.length;
   return `
-  <div class="notice" style="margin-bottom:12px;">El sistema ya intentó detectar el borde de la hoja. Arrastra las esquinas o los lados del recuadro para ajustarlo, o el recuadro completo para moverlo, y confirma.</div>
+  <div class="notice" style="margin-bottom:12px;">El sistema ya intentó detectar el borde de la hoja. Arrastra las esquinas o los lados del recuadro para ajustarlo, o el recuadro completo para moverlo. Si la imagen salió de lado o al revés, gírala antes de confirmar.${esArchivo && restantes ? ' Después sigue con la siguiente imagen ('+restantes+' más en espera).' : ''}</div>
   <div id="cropStage" style="position:relative; width:${CROP_PENDING.dispW}px; max-width:100%; margin:0 auto 14px; touch-action:none;">
     <img id="cropImg" src="${CROP_PENDING.dataURL}" style="display:block; width:${CROP_PENDING.dispW}px; max-width:100%; height:auto; border-radius:4px;">
     <div id="cropRect" style="position:absolute; left:${r.x}px; top:${r.y}px; width:${r.w}px; height:${r.h}px; border:2px solid #fff; box-shadow:0 0 0 9999px rgba(0,0,0,.55); cursor:move;">
@@ -4120,9 +4159,13 @@ function cropPanelHTML(){
       <div class="crop-handle" data-corner="br" style="position:absolute; right:-9px; bottom:-9px; width:18px; height:18px; background:#fff; border:2px solid var(--brass); border-radius:50%; cursor:nwse-resize;"></div>
     </div>
   </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+    <button class="btn secondary" id="girarIzqBtn" type="button">&#8634; Girar izquierda</button>
+    <button class="btn secondary" id="girarDerBtn" type="button">&#8635; Girar derecha</button>
+  </div>
   <div style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button class="btn" id="confirmarRecorteBtn">${CROP_PENDING.origen==='archivo' ? 'Usar este recorte y subir' : 'Usar este recorte'}</button>
-    <button class="btn secondary" id="cancelarRecorteBtn">${CROP_PENDING.origen==='archivo' ? 'Cancelar' : 'Descartar foto'}</button>
+    <button class="btn" id="confirmarRecorteBtn">${CROP_PENDING.origen==='archivo' ? 'Usar este recorte y subir' : (CROP_PENDING.origen==='archivo_multi' ? 'Usar este recorte' + (restantes? ' y seguir':'') : 'Usar este recorte')}</button>
+    <button class="btn secondary" id="cancelarRecorteBtn">${esArchivo ? 'Cancelar' : 'Descartar foto'}</button>
   </div>
   `;
 }
@@ -4172,6 +4215,20 @@ function bindCropEvents(){
   rectEl.querySelectorAll('.crop-handle').forEach(h=>{
     h.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); startDrag(e, h.dataset.corner); });
   });
+  const girarIzqBtn = document.getElementById('girarIzqBtn');
+  if(girarIzqBtn) girarIzqBtn.addEventListener('click', ()=> rotarCropPendiente(-90));
+  const girarDerBtn = document.getElementById('girarDerBtn');
+  if(girarDerBtn) girarDerBtn.addEventListener('click', ()=> rotarCropPendiente(90));
+  // Si quedan más imágenes en la cola (varios archivos elegidos de una
+  // vez), pasa a la siguiente en el visor de recorte; si no, listo.
+  function continuarColaArchivos(){
+    if(ARCHIVO_CROP_QUEUE.length){
+      iniciarCropArchivo(ARCHIVO_CROP_QUEUE.shift(), true);
+    } else {
+      CROP_PENDING = null;
+      renderModal();
+    }
+  }
   const confirmarRecorteBtn = document.getElementById('confirmarRecorteBtn');
   if(confirmarRecorteBtn){
     confirmarRecorteBtn.addEventListener('click', ()=>{
@@ -4182,10 +4239,11 @@ function bindCropEvents(){
       out.height = Math.max(1, Math.round(sh));
       out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
       out.toBlob(blob=>{
-        if(!blob){ CROP_PENDING = null; renderModal(); return; }
-        // Un archivo/imagen elegido del disco se sube de inmediato, ya
-        // recortado; una foto de cámara se junta con las demás en
-        // FOTOS_CAPTURADAS para armar un solo PDF al final.
+        if(!blob){ continuarColaArchivos(); return; }
+        // Una sola imagen elegida del disco se sube de inmediato, ya
+        // recortada; varias imágenes elegidas juntas (o fotos de cámara)
+        // se van juntando en FOTOS_CAPTURADAS para armar un solo PDF,
+        // bien acomodado, al terminar.
         if(origen === 'archivo'){
           const categoria = document.getElementById('documentoCategoria').value;
           const nombre = (nombreOriginal || 'documento').replace(/\.[^.]+$/, '') + '.jpg';
@@ -4200,15 +4258,20 @@ function bindCropEvents(){
             .catch(err=>{ alert('No se pudo subir el documento: ' + err.message); });
         } else {
           FOTOS_CAPTURADAS.push({blob, url: URL.createObjectURL(blob), width: out.width, height: out.height});
-          CROP_PENDING = null;
-          renderModal();
+          continuarColaArchivos();
         }
       }, 'image/jpeg', 0.85);
     });
   }
   const cancelarRecorteBtn = document.getElementById('cancelarRecorteBtn');
   if(cancelarRecorteBtn){
-    cancelarRecorteBtn.addEventListener('click', ()=>{ CROP_PENDING = null; renderModal(); });
+    cancelarRecorteBtn.addEventListener('click', ()=>{
+      // Si es una de varias imágenes en cola, "Cancelar" solo descarta
+      // ésta y sigue con la siguiente; no cancela todo el lote.
+      if(CROP_PENDING && CROP_PENDING.origen === 'archivo_multi'){ continuarColaArchivos(); return; }
+      CROP_PENDING = null;
+      renderModal();
+    });
   }
 }
 
@@ -4465,14 +4528,14 @@ function modalTabContent(k,p,meta){
   }
   if(MODAL_TAB==='documentos'){
     return `
-    <div class="notice" style="margin-bottom:16px;">Sube aquí los documentos de este asunto (demanda, contestación, pruebas, actas de audiencia...). Formatos permitidos: PDF, Word, Excel e imágenes (JPG/PNG), hasta 20 MB por archivo. Si eliges una imagen, se abre primero en un visor con un recuadro que puedes ajustar a las orillas del documento antes de subirla.</div>
+    <div class="notice" style="margin-bottom:16px;">Sube aquí los documentos de este asunto (demanda, contestación, pruebas, actas de audiencia...). Formatos permitidos: PDF, Word, Excel e imágenes (JPG/PNG), hasta 20 MB por archivo. Si eliges una o varias imágenes, cada una se abre primero en un visor donde puedes ajustar el recuadro a las orillas del documento y girarla si salió de lado o al revés; si eliges varias juntas, al terminar se arman en un solo PDF, ya recortadas y acomodadas en orden.</div>
     <div class="grid2" style="margin-bottom:6px;">
       <div class="field"><label>Categoría</label>
         <select id="documentoCategoria" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
           ${Object.keys(CATEGORIA_DOCUMENTO_LABEL).map(c=>`<option value="${c}">${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[c])}</option>`).join("")}
         </select>
       </div>
-      <div class="field"><label>Archivo</label><input type="file" id="documentoArchivo" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"></div>
+      <div class="field"><label>Archivo (puedes elegir varias imágenes a la vez)</label><input type="file" id="documentoArchivo" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" multiple></div>
     </div>
     <div style="margin-top:8px;"><button class="btn" id="subirDocumentoBtn">Subir documento</button> <span id="documentoStatus" style="font-size:12px; color:var(--gray); margin-left:8px;"></span></div>
     <div class="divider"></div>
@@ -4704,6 +4767,38 @@ function cargarImagenDesdeArchivo(file){
   });
 }
 
+// Abre una imagen elegida del disco en el visor de recorte. esMulti=true
+// cuando viene de un lote de varias imágenes elegidas juntas: al confirmar
+// se junta con las demás en FOTOS_CAPTURADAS (en vez de subirse sola) para
+// armar un solo PDF, bien acomodado, con todas al terminar la cola.
+async function iniciarCropArchivo(file, esMulti){
+  const status = document.getElementById('documentoStatus');
+  try{
+    const img = await cargarImagenDesdeArchivo(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    const rectReal = detectarBordeHoja(canvas);
+    const dispW = Math.min(320, canvas.width);
+    const scale = dispW / canvas.width;
+    const dispH = Math.round(canvas.height * scale);
+    CROP_PENDING = {
+      canvas, scale, dispW, dispH,
+      dataURL: canvas.toDataURL('image/jpeg', 0.9),
+      rect: {x: rectReal.x*scale, y: rectReal.y*scale, w: rectReal.w*scale, h: rectReal.h*scale},
+      origen: esMulti ? 'archivo_multi' : 'archivo', nombreOriginal: file.name,
+    };
+    if(status) status.textContent = '';
+    renderModal();
+  }catch(err){
+    if(status) status.textContent = 'No se pudo abrir "' + file.name + '": ' + err.message;
+    // si venía de un lote, no se atora ahí — sigue con la siguiente imagen
+    if(esMulti && ARCHIVO_CROP_QUEUE.length) await iniciarCropArchivo(ARCHIVO_CROP_QUEUE.shift(), true);
+    else renderModal();
+  }
+}
+
 function bindModalTabEvents(){
   bindTribunalFieldEvents();
   const subirDocumentoBtn = document.getElementById('subirDocumentoBtn');
@@ -4712,48 +4807,39 @@ function bindModalTabEvents(){
       const input = document.getElementById('documentoArchivo');
       const categoria = document.getElementById('documentoCategoria').value;
       const status = document.getElementById('documentoStatus');
-      const file = input.files[0];
-      if(!file){ if(status) status.textContent = 'Elige un archivo primero.'; return; }
-      const ext = (file.name.split('.').pop() || '').toLowerCase();
-      // Las imágenes pasan primero por el visor de recorte, para poder
-      // ajustar el recuadro a las orillas del documento antes de subirlo
-      // (igual que las fotos tomadas con la cámara); PDF/Word/Excel se
-      // suben tal cual, sin recorte.
-      if(['jpg','jpeg','png'].includes(ext)){
-        if(status) status.textContent = 'Abriendo visor...';
+      const files = Array.from(input.files || []);
+      if(!files.length){ if(status) status.textContent = 'Elige uno o más archivos primero.'; return; }
+      const esImagen = f => ['jpg','jpeg','png'].includes((f.name.split('.').pop() || '').toLowerCase());
+      const imagenes = files.filter(esImagen);
+      const otros = files.filter(f => !esImagen(f));
+
+      // PDF/Word/Excel se suben tal cual, sin recorte.
+      if(otros.length){
+        subirDocumentoBtn.disabled = true;
+        if(status) status.textContent = 'Subiendo...';
         try{
-          const img = await cargarImagenDesdeArchivo(file);
-          const canvas = document.createElement('canvas');
-          canvas.width = img.naturalWidth;
-          canvas.height = img.naturalHeight;
-          canvas.getContext('2d').drawImage(img, 0, 0);
-          const rectReal = detectarBordeHoja(canvas);
-          const dispW = Math.min(320, canvas.width);
-          const scale = dispW / canvas.width;
-          const dispH = Math.round(canvas.height * scale);
-          CROP_PENDING = {
-            canvas, scale, dispW, dispH,
-            dataURL: canvas.toDataURL('image/jpeg', 0.9),
-            rect: {x: rectReal.x*scale, y: rectReal.y*scale, w: rectReal.w*scale, h: rectReal.h*scale},
-            origen: 'archivo', nombreOriginal: file.name,
-          };
-          if(status) status.textContent = '';
-          renderModal();
+          for(const f of otros) await subirDocumento(ACTIVE_CASE.id, f, categoria);
+          await loadDocumentos(ACTIVE_CASE.id);
         }catch(err){
-          if(status) status.textContent = 'No se pudo abrir la imagen: ' + err.message;
+          if(status) status.textContent = 'Error: ' + err.message;
+          subirDocumentoBtn.disabled = false;
+          return;
         }
-        return;
-      }
-      subirDocumentoBtn.disabled = true;
-      if(status) status.textContent = 'Subiendo...';
-      try{
-        await subirDocumento(ACTIVE_CASE.id, file, categoria);
-        await loadDocumentos(ACTIVE_CASE.id);
-        renderModal();
-      }catch(err){
-        if(status) status.textContent = 'Error: ' + err.message;
-      } finally {
         subirDocumentoBtn.disabled = false;
+      }
+      // Las imágenes pasan primero por el visor de recorte (con giro),
+      // para poder ajustarlas a las orillas del documento antes de
+      // subirlas — igual que las fotos tomadas con la cámara. Si se
+      // eligió más de una junta, se recortan una por una y se arman en un
+      // solo PDF al terminar; si es una sola, se sube directo al confirmar.
+      if(imagenes.length > 1){
+        ARCHIVO_CROP_QUEUE = imagenes.slice(1);
+        await iniciarCropArchivo(imagenes[0], true);
+      } else if(imagenes.length === 1){
+        ARCHIVO_CROP_QUEUE = [];
+        await iniciarCropArchivo(imagenes[0], false);
+      } else {
+        renderModal();
       }
     });
   }
