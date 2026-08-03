@@ -34,7 +34,8 @@ const EDITABLE_CAMPOS = [
 ];
 
 const ETAPA_KEYS = [
-    'conciliacion_prejudicial','conciliacion_solicitada','constancia_no_conciliacion','demanda_presentada','prevencion','demanda_admitida',
+    'conciliacion_prejudicial','conciliacion_solicitada','conciliacion_primer_citatorio','conciliacion_segundo_citatorio',
+    'conciliacion_convenio','constancia_no_conciliacion','demanda_presentada','prevencion','demanda_admitida',
     'emplazamiento','contestacion_recibida','objeciones_replica','contrarreplica',
     'manifestaciones_3dias','audiencia_preliminar','audiencia_juicio','sentencia','amparo_directo',
 ];

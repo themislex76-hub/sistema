@@ -16,26 +16,28 @@ $pdo = db();
 guard_expediente_access($pdo, $user, $id);
 
 $upsert = $pdo->prepare(
-    'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha, fecha_programada, resultado)
-     VALUES (:eid, :key, :fecha, :fecha_programada, :resultado)
-     ON DUPLICATE KEY UPDATE fecha = VALUES(fecha), fecha_programada = VALUES(fecha_programada), resultado = VALUES(resultado)'
+    'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha, hora, fecha_programada, resultado)
+     VALUES (:eid, :key, :fecha, :hora, :fecha_programada, :resultado)
+     ON DUPLICATE KEY UPDATE fecha = VALUES(fecha), hora = VALUES(hora), fecha_programada = VALUES(fecha_programada), resultado = VALUES(resultado)'
 );
 $delete = $pdo->prepare('DELETE FROM expediente_etapas WHERE expediente_id = :eid AND etapa_key = :key');
 
 foreach (ETAPA_KEYS as $key) {
     $val = $etapas[$key] ?? null;
     $fecha = is_array($val) ? ($val['fecha'] ?? '') : '';
+    $hora = is_array($val) ? ($val['hora'] ?? '') : '';
     $fechaProg = is_array($val) ? ($val['fecha_programada'] ?? '') : '';
     $resultado = is_array($val) ? ($val['resultado'] ?? '') : '';
     $fecha = $fecha === '' ? null : $fecha;
+    $hora = $hora === '' ? null : $hora;
     $fechaProg = $fechaProg === '' ? null : $fechaProg;
     $resultado = $resultado === '' ? null : $resultado;
 
-    if ($fecha === null && $fechaProg === null && $resultado === null) {
+    if ($fecha === null && $hora === null && $fechaProg === null && $resultado === null) {
         $delete->execute([':eid' => $id, ':key' => $key]);
         continue;
     }
-    $upsert->execute([':eid' => $id, ':key' => $key, ':fecha' => $fecha, ':fecha_programada' => $fechaProg, ':resultado' => $resultado]);
+    $upsert->execute([':eid' => $id, ':key' => $key, ':fecha' => $fecha, ':hora' => $hora, ':fecha_programada' => $fechaProg, ':resultado' => $resultado]);
 }
 
 // Si se marcó la etapa de amparo directo con fecha, refleja el estado también

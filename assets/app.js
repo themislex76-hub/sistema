@@ -897,8 +897,11 @@ function computeAmparoDeadline(meta){
 // (venció el plazo legal de la siguiente etapa sin que se haya marcado).
 // ---------------------------------------------------------------
 const ETAPAS_DEF = [
-  {key:'conciliacion_prejudicial', label:'Conciliación prejudicial (pláticas directas con la empresa antes de acudir al Centro de Conciliación)', fundamento:'Gestión previa del despacho — sin plazo legal fijo, no suspende la prescripción'},
+  {key:'conciliacion_prejudicial', label:'Conciliación prejudicial', fundamento:''},
   {key:'conciliacion_solicitada', label:'Solicitud de conciliación presentada', fundamento:'Art. 684-B LFT'},
+  {key:'conciliacion_primer_citatorio', label:'Conciliación prejudicial (Primer citatorio)', fundamento:'Art. 684-B LFT', conHora:true},
+  {key:'conciliacion_segundo_citatorio', label:'Conciliación prejudicial (Segundo citatorio)', fundamento:'Art. 684-B LFT', conHora:true},
+  {key:'conciliacion_convenio', label:'Convenio', fundamento:'Acuerdo entre las partes ante el Centro de Conciliación'},
   {key:'constancia_no_conciliacion', label:'Constancia de no conciliación recibida', fundamento:'Arts. 684-C y 521-III LFT', plazoDesdeEtapa:'conciliacion_solicitada', plazoDias:45, plazoTipo:'naturales', plazoLabel:'La conciliación dura hasta 45 días naturales (Art. 684-C LFT)'},
   {key:'demanda_presentada', label:'Demanda presentada ante el Tribunal', fundamento:'Art. 871 LFT', plazoLabel:'Debe presentarse antes de que venza la prescripción (Art. 518 LFT — ver pestaña Prescripción)'},
   {key:'prevencion', label:'Prevención (el Tribunal previno por defectos u omisiones en la demanda)', fundamento:'Art. 873 LFT', plazoDesdeEtapa:'demanda_presentada', plazoDias:3, plazoTipo:'habiles', plazoLabel:'Solo aplica si el Tribunal previno la demanda; el actor debe desahogarla dentro de los 3 días siguientes a la notificación (Art. 873 LFT). Si no hubo prevención, deja esta etapa en blanco y continúa con "Demanda admitida".'},
@@ -4545,6 +4548,7 @@ function modalTabContent(k,p,meta){
       const esSentencia = def.key==='sentencia';
       const programada = (meta.etapas[def.key] && meta.etapas[def.key].fecha_programada) || '';
       const resultado = (meta.etapas[def.key] && meta.etapas[def.key].resultado) || '';
+      const hora = (meta.etapas[def.key] && meta.etapas[def.key].hora) || '';
       return `<div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #f0ece1; flex-wrap:wrap;" data-etapa-row="${def.key}">
         <input type="checkbox" class="etapa-check" data-etapa="${def.key}" ${val?'checked':''} style="width:16px;height:16px;">
         <div style="flex:1; min-width:200px;">
@@ -4560,6 +4564,7 @@ function modalTabContent(k,p,meta){
           </select></div>` : ''}
         ${esAudiencia ? `<div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">Fecha agendada</label><input type="date" class="etapa-fecha-programada" data-etapa="${def.key}" value="${programada}" style="padding:6px 8px; border:1px solid var(--brass-dim); border-radius:6px; font-size:12px;"></div>` : ''}
         <div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">${esAudiencia?'Fecha en que se celebró':''}</label><input type="date" class="etapa-fecha" data-etapa="${def.key}" value="${val||''}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></div>
+        ${def.conHora ? `<div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">Hora</label><input type="time" class="etapa-hora" data-etapa="${def.key}" value="${hora}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></div>` : ''}
       </div>`;
     }).join("")}
     <div style="margin-top:18px;"><button class="btn" id="saveEtapasBtn">Guardar etapas</button> <span id="avisoClienteEtapas"></span></div>
@@ -4832,7 +4837,9 @@ function bindModalTabEvents(){
         const fecha_programada = progInput ? progInput.value : '';
         const resInput = row.querySelector('.etapa-resultado');
         const resultado = resInput ? resInput.value : '';
-        if(checked || fecha || fecha_programada || resultado) etapas[key] = {fecha: (checked||fecha) ? (fecha || dateToISO(new Date())) : '', fecha_programada, resultado};
+        const horaInput = row.querySelector('.etapa-hora');
+        const hora = horaInput ? horaInput.value : '';
+        if(checked || fecha || fecha_programada || resultado || hora) etapas[key] = {fecha: (checked||fecha) ? (fecha || dateToISO(new Date())) : '', fecha_programada, resultado, hora};
       });
       try{
         // El servidor activa amparo_activo/amparo_presentado automáticamente
@@ -5118,6 +5125,9 @@ function bindClientPortal(){
 const ETAPA_CLIENTE_LABEL = {
   conciliacion_prejudicial: 'Tu abogado(a) buscó un arreglo directo con la empresa',
   conciliacion_solicitada: 'Se inició el trámite de conciliación con la empresa',
+  conciliacion_primer_citatorio: 'Tienes tu primera cita de conciliación con la empresa',
+  conciliacion_segundo_citatorio: 'Tienes tu segunda cita de conciliación con la empresa',
+  conciliacion_convenio: 'Se llegó a un convenio con la empresa',
   constancia_no_conciliacion: 'No se llegó a un acuerdo con la empresa; se procede a demandar',
   demanda_presentada: 'Se presentó tu demanda ante el Tribunal',
   prevencion: 'El Tribunal pidió corregir o aclarar algo de la demanda',
@@ -5135,6 +5145,9 @@ const ETAPA_CLIENTE_LABEL = {
 const ETAPA_CLIENTE_SIGUIENTE = {
   conciliacion_prejudicial: 'Si no hay arreglo directo, se presentará la solicitud de conciliación ante el Centro correspondiente.',
   conciliacion_solicitada: 'Se espera la audiencia de conciliación con la empresa.',
+  conciliacion_primer_citatorio: 'Se espera el resultado de esa cita de conciliación.',
+  conciliacion_segundo_citatorio: 'Se espera el resultado de esa cita de conciliación.',
+  conciliacion_convenio: 'Tu abogado(a) le dará seguimiento al cumplimiento del convenio.',
   constancia_no_conciliacion: 'Tu abogado(a) está preparando la demanda para presentarla ante el Tribunal.',
   demanda_presentada: 'El Tribunal debe admitir la demanda y ordenar notificar a la empresa.',
   prevencion: 'Tu abogado(a) corregirá o aclarará lo que pidió el Tribunal para que se admita la demanda.',
@@ -5163,6 +5176,7 @@ function clienteEstadoInfo(kase){
     return {
       label: ETAPA_CLIENTE_LABEL[def.key] || def.label,
       fecha: meta.etapas[def.key].fecha,
+      hora: def.conHora ? (meta.etapas[def.key].hora || null) : null,
       siguiente: ETAPA_CLIENTE_SIGUIENTE[def.key] || 'Tu abogado(a) te informará del siguiente paso.',
       completado: []
     };
@@ -5192,7 +5206,7 @@ function clientCardHTML(k){
       <div class="legal-box" style="margin-bottom:16px;">
         <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--brass); margin-bottom:4px;">Cómo va tu caso ahora mismo</div>
         <div style="font-size:15px; font-weight:700; color:var(--ink); line-height:1.4;">${escapeHTML(estado.label)}</div>
-        ${estado.fecha ? `<div style="font-size:12px; color:#3c4a63; margin-top:4px;">Desde el ${fmtDate(estado.fecha)}${dias!=null? ' ('+dias+' día(s))':''}</div>` : ''}
+        ${estado.fecha ? `<div style="font-size:12px; color:#3c4a63; margin-top:4px;">${estado.hora ? 'El '+fmtDate(estado.fecha)+' a las '+escapeHTML(estado.hora)+' hrs' : 'Desde el '+fmtDate(estado.fecha)+(dias!=null? ' ('+dias+' día(s))':'')}</div>` : ''}
       </div>
 
       ${estado.siguiente ? `<div style="background:var(--parchment); border-radius:8px; padding:12px 14px; margin-bottom:16px;">
@@ -5238,7 +5252,7 @@ function clientTimeline(k){
   ETAPAS_DEF.forEach(def=>{
     if(meta.etapas[def.key] && meta.etapas[def.key].fecha){
       algunaEtapaManual = true;
-      stages.push({label: ETAPA_CLIENTE_LABEL[def.key] || def.label, done:true, date: meta.etapas[def.key].fecha});
+      stages.push({label: ETAPA_CLIENTE_LABEL[def.key] || def.label, done:true, date: meta.etapas[def.key].fecha, hora: def.conHora ? (meta.etapas[def.key].hora || null) : null});
     }
   });
   if(!algunaEtapaManual){
@@ -5251,7 +5265,7 @@ function clientTimeline(k){
   return stages.map(s=>`
     <div class="tl-item done">
       <div class="tl-dot">&#10003;</div>
-      <div class="tl-text"><div class="t">${escapeHTML(s.label)}</div>${s.date?`<div class="d">${fmtDate(s.date)}</div>`:''}</div>
+      <div class="tl-text"><div class="t">${escapeHTML(s.label)}</div>${s.date?`<div class="d">${fmtDate(s.date)}${s.hora?' a las '+escapeHTML(s.hora)+' hrs':''}</div>`:''}</div>
     </div>`).join("");
 }
 

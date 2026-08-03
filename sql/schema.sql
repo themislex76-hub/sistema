@@ -136,6 +136,7 @@ CREATE TABLE expediente_etapas (
   expediente_id INT UNSIGNED NOT NULL,
   etapa_key VARCHAR(60) NOT NULL,
   fecha DATE NULL,
+  hora TIME NULL,
   fecha_programada DATE NULL,
   resultado VARCHAR(30) NULL,
   UNIQUE KEY uq_expediente_etapa (expediente_id, etapa_key),

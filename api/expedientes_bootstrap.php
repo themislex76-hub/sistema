@@ -36,6 +36,7 @@ if ($ids) {
     foreach ($q->fetchAll() as $r) {
         $etapasByCase[$r['expediente_id']][$r['etapa_key']] = [
             'fecha' => $r['fecha'],
+            'hora' => $r['hora'],
             'fecha_programada' => $r['fecha_programada'],
             'resultado' => $r['resultado'],
         ];

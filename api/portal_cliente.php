@@ -52,7 +52,7 @@ $etapas = [];
 $q = $pdo->prepare('SELECT * FROM expediente_etapas WHERE expediente_id = :id');
 $q->execute([':id' => $id]);
 foreach ($q->fetchAll() as $r) {
-    $etapas[$r['etapa_key']] = ['fecha' => $r['fecha'], 'fecha_programada' => $r['fecha_programada'], 'resultado' => $r['resultado']];
+    $etapas[$r['etapa_key']] = ['fecha' => $r['fecha'], 'hora' => $r['hora'], 'fecha_programada' => $r['fecha_programada'], 'resultado' => $r['resultado']];
 }
 
 $pagos = [];
