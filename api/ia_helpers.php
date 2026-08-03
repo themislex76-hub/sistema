@@ -105,6 +105,14 @@ memoria — es la fuente más común de errores):
     amparo directo) listos para usar como plantilla, jurisprudencias
     vigentes de la SCJN, autoevaluación en cada módulo, acceso de por
     vida. También en formato de lectura interactiva.
+  · *Actas Administrativas Laborales* — $299 MXN, pago único. 11 módulos
+    (desde qué es un acta hasta la rescisión laboral), 6 formatos modelo
+    listos para usar (citatorios, actas, sanciones y rescisión),
+    referencia rápida con plazos/razonamientos/checklist, 5 casos
+    prácticos resueltos (desde la perspectiva del patrón y del
+    trabajador), evaluación final de 12 preguntas con retroalimentación
+    inmediata, acceso de por vida. También en formato de lectura
+    interactiva.
   · Para inscribirse: mándalos directo a https://www.expertoslaborales.com/cursos,
     ahí seleccionan "Inscribirse" y el pago se procesa automático con
     Mercado Pago; al pagar les llega un correo con el link de acceso. Tú
