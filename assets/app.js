@@ -836,28 +836,41 @@ function computeLiquidacion(kase){
   };
 }
 
+// Plazo de prescripción: 60 días naturales corridos, contados uno por uno
+// desde el día siguiente a la separación (no "2 meses de fecha a fecha" —
+// esa variante puede dar 59 a 62 días según los meses que abarque, un día
+// de diferencia real que ya causó una prescripción mal calculada). Mientras
+// dura la conciliación prejudicial el plazo se suspende: los días desde que
+// se presenta la solicitud hasta que se levanta la constancia de no
+// conciliación (ambos inclusive) no cuentan, y el conteo se reanuda al día
+// siguiente de la constancia.
 function computePrescripcion(kase){
   const fb = parseDate(kase.fecha_baja);
   if(!fb) return null;
-  const start = addDaysDate(fb, 1); // "corre a partir del día siguiente a la separación"
-  let deadline = addMonthsDate(start, 2);
+  const PLAZO_DIAS = 60;
+  const start = addDaysDate(fb, 1); // corre a partir del día siguiente a la separación
 
-  let suspensionDays = 0;
   const {inicio, constancia} = fechasConciliacionEfectivas(kase);
   const ci = parseDate(inicio);
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  let deadline, suspensionDays = 0;
   if(ci){
     const cf = parseDate(constancia);
-    const today = new Date(); today.setHours(0,0,0,0);
-    const suspEnd = cf ? cf : today; // si aún no hay constancia, la suspensión sigue corriendo (provisional)
-    suspensionDays = Math.max(0, daysBetween(ci, suspEnd));
-    deadline = addDaysDate(deadline, suspensionDays);
+    const suspEnd = cf ? cf : today; // si aún no hay constancia, estimado provisional a hoy
+    const diasCorridosAntes = Math.max(0, daysBetween(start, ci)); // días de "start" a "ci-1", ya corridos
+    suspensionDays = Math.max(0, daysBetween(ci, suspEnd) + 1); // ci..suspEnd, ambos inclusive, no cuentan
+    const reanuda = addDaysDate(suspEnd, 1);
+    const diasRestantes = Math.max(1, PLAZO_DIAS - diasCorridosAntes);
+    deadline = addDaysDate(reanuda, diasRestantes - 1);
+  } else {
+    deadline = addDaysDate(start, PLAZO_DIAS - 1);
   }
   // Si concluye en día inhábil (sáb/dom), se traslada al día hábil siguiente (simplificación:
   // no incorpora el calendario oficial de días inhábiles de cada Tribunal/Centro, solo fines de semana).
   let adjustedForWeekend = false;
   while(isWeekend(deadline)){ deadline = addDaysDate(deadline,1); adjustedForWeekend = true; }
 
-  const today = new Date(); today.setHours(0,0,0,0);
   const daysLeft = daysBetween(today, deadline);
   return {
     start, deadline, suspensionDays, daysLeft, adjustedForWeekend,
@@ -4272,7 +4285,7 @@ function modalTabContent(k,p,meta){
       <div class="field"><label>Días restantes hoy</label><div class="v">${p.daysLeft} día(s)</div></div>
       <div class="field"><label>Ajuste por fin de semana</label><div class="v">${p.adjustedForWeekend? 'Sí, se recorrió al siguiente día hábil':'No aplicó'}</div></div>
     </div>
-    <div class="legal-box">Cómputo con base en el Art. 518 de la Ley Federal del Trabajo (dos meses de calendario, contados a partir del día siguiente a la separación) y el criterio de la Segunda Sala de la SCJN sobre meses completos y suspensión durante el procedimiento de conciliación. Verifique el calendario oficial de días inhábiles del Tribunal o Centro de Conciliación correspondiente antes de tomar decisiones procesales.</div>
+    <div class="legal-box">Cómputo con base en el Art. 518 de la Ley Federal del Trabajo: 60 días naturales contados uno por uno a partir del día siguiente a la separación, suspendiéndose durante el procedimiento de conciliación (desde la solicitud hasta la constancia de no conciliación, ambos días inclusive) y reanudándose al día siguiente de ésta. Verifique el calendario oficial de días inhábiles del Tribunal o Centro de Conciliación correspondiente antes de tomar decisiones procesales.</div>
     `;
   }
   if(MODAL_TAB==='calculo'){
