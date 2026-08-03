@@ -2022,7 +2022,7 @@ async function refreshBootstrap(){
   await loadAvisosBoletin();
   await loadEdomexCaptchaPendiente();
   await loadPjfCredenciales();
-  if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
+  if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
     await loadProspectos();
   }
 }
@@ -2277,7 +2277,7 @@ function shellHTML(){
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
         <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
-        ${isAdmin ? `<button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge">${prospectosNuevosCount()}</span>`:""}</button>` : ""}
+        <button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge">${prospectosNuevosCount()}</span>`:""}</button>
         <div class="section-label">Referencia</div>
         <button data-v="manual" class="${VIEW==='manual'?'active':''}"><span class="ico">&#128218;</span> Manual de uso</button>
         <button data-v="cliente_preview" class="${VIEW==='cliente_preview'?'active':''}"><span class="ico">${ICONS.cliente}</span> Vista de portal cliente</button>
@@ -3233,6 +3233,7 @@ function prospectosHTML(){
 }
 
 function prospectoDetalleHTML(p){
+  const isAdmin = CURRENT_USER.role === 'Administrador';
   return `
   <div class="panel">
     <div class="panel-head"><h3>${escapeHTML(p.nombre || 'Sin nombre')} &middot; ${escapeHTML(p.telefono)}</h3></div>
@@ -3245,13 +3246,13 @@ function prospectoDetalleHTML(p){
         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
           <input type="checkbox" data-prospecto-pausado="${p.id}" ${p.pausado_bot?'checked':''}> Bot pausado (seguimiento humano)
         </label>
-        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
+        ${isAdmin ? `<label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
           Turnar a
           <select data-prospecto-asignado="${p.id}" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
             <option value="">Sin asignar (yo lo atiendo)</option>
             ${EQUIPO.map(u=>`<option value="${u.id}" ${p.asignado_a===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
           </select>
-        </label>
+        </label>` : `<span class="badge ok">Turnado a ti</span>`}
         ${p.expediente_id ? `<span class="badge ok">Convertido en expediente ${escapeHTML(p.expediente_exp||'')}</span>` : `<button class="btn secondary" data-prospecto-convertir="${p.id}" style="font-size:11px; padding:6px 10px;">Convertir en expediente</button>`}
       </div>
       ${p.resumen_caso ? `<div class="notice" style="margin-bottom:14px;"><strong>Resumen del caso (según el bot):</strong> ${escapeHTML(p.resumen_caso)}</div>` : ""}

@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Método no permitido.', 405);
-require_admin();
+$user = require_login();
 require_csrf();
 
 $in = json_input();
@@ -11,9 +11,17 @@ $id = (int)($in['id'] ?? 0);
 if ($id <= 0) fail('Falta el id del prospecto.', 400);
 
 $pdo = db();
-$stmt = $pdo->prepare('SELECT id FROM prospectos WHERE id = :id');
+$stmt = $pdo->prepare('SELECT id, asignado_a FROM prospectos WHERE id = :id');
 $stmt->execute([':id' => $id]);
-if (!$stmt->fetch()) fail('Prospecto no encontrado.', 404);
+$prospecto = $stmt->fetch();
+if (!$prospecto) fail('Prospecto no encontrado.', 404);
+
+$esAdmin = $user['rol'] === 'administrador';
+if (!$esAdmin) {
+    if ((int)$prospecto['asignado_a'] !== (int)$user['id']) fail('No tienes acceso a este prospecto.', 403);
+    // Solo el Administrador puede turnar/reasignar un prospecto.
+    unset($in['asignado_a']);
+}
 
 $campos = [];
 $params = [':id' => $id];

@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Método no permitido.', 405);
-$user = require_admin();
+$user = require_login();
 require_csrf();
 
 $in = json_input();
@@ -15,6 +15,9 @@ $stmt = $pdo->prepare('SELECT * FROM prospectos WHERE id = :id');
 $stmt->execute([':id' => $id]);
 $prospecto = $stmt->fetch();
 if (!$prospecto) fail('Prospecto no encontrado.', 404);
+if ($user['rol'] !== 'administrador' && (int)$prospecto['asignado_a'] !== (int)$user['id']) {
+    fail('No tienes acceso a este prospecto.', 403);
+}
 if ($prospecto['expediente_id']) fail('Este prospecto ya fue convertido en expediente.', 409);
 
 // Si ya se había turnado el prospecto a un abogado desde la vista

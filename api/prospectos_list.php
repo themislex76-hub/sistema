@@ -3,17 +3,21 @@ declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') fail('Método no permitido.', 405);
-require_admin();
+$user = require_login();
 
 $pdo = db();
-$stmt = $pdo->query(
-    "SELECT p.*, e.exp AS expediente_exp, u.nombre AS asignado_nombre
-     FROM prospectos p
-     LEFT JOIN expedientes e ON e.id = p.expediente_id
-     LEFT JOIN usuarios u ON u.id = p.asignado_a
-     ORDER BY (p.estatus = 'nuevo') DESC, p.actualizado_en DESC
-     LIMIT 300"
-);
+// El Administrador ve todos los prospectos; un abogado solo ve los que se
+// le turnaron desde esta misma vista (ver prospectos_update.php).
+$esAdmin = $user['rol'] === 'administrador';
+$sql = "SELECT p.*, e.exp AS expediente_exp, u.nombre AS asignado_nombre
+        FROM prospectos p
+        LEFT JOIN expedientes e ON e.id = p.expediente_id
+        LEFT JOIN usuarios u ON u.id = p.asignado_a"
+     . (!$esAdmin ? ' WHERE p.asignado_a = :uid' : '')
+     . " ORDER BY (p.estatus = 'nuevo') DESC, p.actualizado_en DESC
+        LIMIT 300";
+$stmt = $pdo->prepare($sql);
+$stmt->execute($esAdmin ? [] : [':uid' => $user['id']]);
 
 $prospectos = [];
 foreach ($stmt->fetchAll() as $r) {
