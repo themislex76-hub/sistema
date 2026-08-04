@@ -458,10 +458,35 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             $texto = $textoRonda;
         }
 
+        $toolUseBlocks = array_values(array_filter($bloques, fn($b) => ($b['type'] ?? '') === 'tool_use'));
+        if (!$toolUseBlocks) {
+            // No llamó ninguna herramienta — $textoRonda es la respuesta final.
+            break;
+        }
+
+        $tieneSeguimiento = false;
+        foreach ($toolUseBlocks as $bloque) {
+            if (in_array($bloque['name'] ?? '', $herramientasConSeguimiento, true)) {
+                $tieneSeguimiento = true;
+                break;
+            }
+        }
+        if (!$tieneSeguimiento) {
+            // Solo llamó herramientas de puro registro (p. ej.
+            // registrar_lead_despido sola, sin ofrecer horarios) — no
+            // necesitan que Claude redacte de nuevo con datos calculados,
+            // así que $textoRonda ya es la respuesta final.
+            break;
+        }
+
+        // La API de Claude exige un tool_result por CADA tool_use que
+        // haya en la respuesta anterior — incluyendo las de puro registro
+        // (registrar_lead_despido, registrar_interes_asesoria_paga), no
+        // solo las que necesitan cálculo real. Omitir una deja ese
+        // tool_use "huérfano" y la API rechaza la siguiente llamada con
+        // 400 ("tool_use ids were found without tool_result blocks").
         $toolResults = [];
-        foreach ($bloques as $bloque) {
-            if (($bloque['type'] ?? '') !== 'tool_use') continue;
-            if (!in_array($bloque['name'] ?? '', $herramientasConSeguimiento, true)) continue;
+        foreach ($toolUseBlocks as $bloque) {
             $in = $bloque['input'] ?? [];
             if ($bloque['name'] === 'calcular_estimado_liquidacion') {
                 $calc = calcular_estimado_liquidacion(
@@ -478,20 +503,19 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     : json_encode(['error' => 'Datos insuficientes o inválidos para calcular.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'ofrecer_horarios_asesoria') {
                 $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono);
-            } else { // confirmar_horario_asesoria
+            } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
                 $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in);
+            } else {
+                // registrar_lead_despido, registrar_interes_asesoria_paga:
+                // solo hace falta reconocer la llamada, ya se registró el
+                // lead en ia_extraer_respuesta().
+                $contenido = json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
             }
             $toolResults[] = [
                 'type' => 'tool_result',
                 'tool_use_id' => $bloque['id'],
                 'content' => $contenido,
             ];
-        }
-
-        if (!$toolResults) {
-            // No llamó ninguna herramienta que necesite seguimiento —
-            // $textoRonda (si lo hay) es la respuesta final.
-            break;
         }
 
         // Al decodificar la respuesta de Claude, un tool_use con input
