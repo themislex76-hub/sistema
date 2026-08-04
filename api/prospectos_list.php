@@ -9,7 +9,14 @@ $pdo = db();
 // El Administrador ve todos los prospectos; un abogado solo ve los que se
 // le turnaron desde esta misma vista (ver prospectos_update.php).
 $esAdmin = $user['rol'] === 'administrador';
-$sql = "SELECT p.*, e.exp AS expediente_exp, u.nombre AS asignado_nombre
+// ultimo_entrante: el mensaje ENTRANTE más reciente de ese teléfono — se
+// compara contra visto_en para saber si hay algo que el abogado todavía no
+// ha visto (el bot puede seguir contestando solo sin que eso cuente como
+// "visto por un humano", por eso se compara contra visto_en y no contra
+// actualizado_en).
+$sql = "SELECT p.*, e.exp AS expediente_exp, u.nombre AS asignado_nombre,
+               (SELECT MAX(creado_en) FROM whatsapp_conversaciones w
+                WHERE w.telefono = p.telefono AND w.direccion = 'entrante') AS ultimo_entrante
         FROM prospectos p
         LEFT JOIN expedientes e ON e.id = p.expediente_id
         LEFT JOIN usuarios u ON u.id = p.asignado_a"
@@ -21,6 +28,8 @@ $stmt->execute($esAdmin ? [] : [':uid' => $user['id']]);
 
 $prospectos = [];
 foreach ($stmt->fetchAll() as $r) {
+    $mensajeNuevo = $r['ultimo_entrante'] !== null
+        && ($r['visto_en'] === null || $r['ultimo_entrante'] > $r['visto_en']);
     $prospectos[] = [
         'id' => (int)$r['id'],
         'telefono' => $r['telefono'],
@@ -30,6 +39,7 @@ foreach ($stmt->fetchAll() as $r) {
         'resumen_caso' => $r['resumen_caso'],
         'estatus' => $r['estatus'],
         'pausado_bot' => (bool)$r['pausado_bot'],
+        'mensaje_nuevo' => $mensajeNuevo,
         'asignado_a' => $r['asignado_a'] !== null ? (int)$r['asignado_a'] : null,
         'asignado_nombre' => $r['asignado_nombre'],
         'notas_internas' => $r['notas_internas'],

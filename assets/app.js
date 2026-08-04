@@ -2115,7 +2115,7 @@ async function loadProspectoMensajes(telefono){
   }catch(e){ PROSPECTO_MENSAJES = []; }
 }
 
-function prospectosNuevosCount(){ return PROSPECTOS.filter(p=>p.estatus==='nuevo').length; }
+function prospectosNuevosCount(){ return PROSPECTOS.filter(p=>p.estatus==='nuevo' || p.mensaje_nuevo).length; }
 
 async function loadConversaciones(){
   try{
@@ -3310,28 +3310,32 @@ function prospectosHTML(){
       <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte un caso de despido en CDMX/Edomex, o a alguien interesado en la asesoría de pago, aparecerá aquí.</div>
     </div></div>`;
   }
-  const descartados = PROSPECTOS.filter(p=>p.estatus==='descartado');
-  const visibles = PROSPECTOS_MOSTRAR_DESCARTADOS ? PROSPECTOS : PROSPECTOS.filter(p=>p.estatus!=='descartado');
+  // Un descartado con mensaje nuevo (el cliente volvió a escribir) se
+  // muestra igual aunque el filtro de descartados esté oculto — de eso se
+  // trata el indicador, no queremos perder un mensaje real.
+  const visibles = PROSPECTOS.filter(p => PROSPECTOS_MOSTRAR_DESCARTADOS || p.estatus !== 'descartado' || p.mensaje_nuevo);
+  const descartadosOcultos = PROSPECTOS.filter(p => p.estatus === 'descartado' && !p.mensaje_nuevo);
   return `
   <div class="panel">
     <div class="panel-head"><h3>Prospectos de WhatsApp</h3><span class="count">${visibles.length}</span></div>
     <div class="panel-body" style="padding:0;">
       ${visibles.map(p=>`
-      <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${PROSPECTO_ABIERTO===p.id?'background:var(--parchment);':''}" data-prospecto-abrir="${p.id}">
+      <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${PROSPECTO_ABIERTO===p.id?'background:var(--parchment);':(p.mensaje_nuevo?'background:#fdf3e7;':'')}" data-prospecto-abrir="${p.id}">
         <span class="badge ${PROSPECTO_ESTATUS_BADGE[p.estatus]||'warn'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_ESTATUS_LABEL[p.estatus]||p.estatus}</span>
         <div class="alert-info">
-          <div class="name">${escapeHTML(p.nombre || 'Sin nombre')} <span style="color:var(--gray); font-weight:400;">&middot; ${escapeHTML(p.estado_ubicacion||'sin estado')}</span></div>
+          <div class="name">${p.mensaje_nuevo?'<span style="color:var(--red); font-size:10px; vertical-align:2px;">&#9679;</span> ':''}${escapeHTML(p.nombre || 'Sin nombre')} <span style="color:var(--gray); font-weight:400;">&middot; ${escapeHTML(p.estado_ubicacion||'sin estado')}</span></div>
           <div class="meta">${escapeHTML(p.telefono)} &middot; ${escapeHTML(truncate(p.resumen_caso||'',90))}</div>
         </div>
+        ${p.mensaje_nuevo ? `<span class="badge crit" style="flex-shrink:0; margin-top:1px;">Mensaje nuevo</span>` : ''}
         <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'closed'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
         <span class="badge ${p.asignado_nombre?'ok':'warn'}" style="flex-shrink:0; margin-top:1px;">${p.asignado_nombre ? escapeHTML(p.asignado_nombre) : 'Sin turnar'}</span>
         <div style="flex-shrink:0; font-size:11px; color:var(--gray); text-align:right;">${fmtFechaHora(p.actualizado_en)}</div>
       </div>`).join("")}
     </div>
   </div>
-  ${descartados.length ? `<div class="notice" style="max-width:100%;">${PROSPECTOS_MOSTRAR_DESCARTADOS
-    ? `Mostrando también los ${descartados.length} descartados. <button class="btn secondary" data-prospectos-toggle-descartados style="padding:4px 10px; font-size:11px; margin-left:6px;">Ocultarlos de nuevo</button>`
-    : `Hay ${descartados.length} prospecto${descartados.length===1?'':'s'} descartado${descartados.length===1?'':'s'} oculto${descartados.length===1?'':'s'}. <button class="btn secondary" data-prospectos-toggle-descartados style="padding:4px 10px; font-size:11px; margin-left:6px;">Mostrarlos</button>`}</div>` : ""}
+  ${descartadosOcultos.length ? `<div class="notice" style="max-width:100%;">${PROSPECTOS_MOSTRAR_DESCARTADOS
+    ? `Mostrando también los descartados. <button class="btn secondary" data-prospectos-toggle-descartados style="padding:4px 10px; font-size:11px; margin-left:6px;">Ocultarlos de nuevo</button>`
+    : `Hay ${descartadosOcultos.length} prospecto${descartadosOcultos.length===1?'':'s'} descartado${descartadosOcultos.length===1?'':'s'} oculto${descartadosOcultos.length===1?'':'s'}. <button class="btn secondary" data-prospectos-toggle-descartados style="padding:4px 10px; font-size:11px; margin-left:6px;">Mostrarlos</button>`}</div>` : ""}
   `;
 }
 
@@ -4320,6 +4324,10 @@ function bindViewBody(){
       if(!p) return;
       await loadProspectoMensajes(p.telefono);
       abrirProspectoModal(id);
+      if(p.mensaje_nuevo){
+        p.mensaje_nuevo = false;
+        api('POST', 'prospectos_update.php', {id, marcar_visto: true}).catch(()=>{});
+      }
     });
   });
   document.querySelectorAll('[data-cita-telefono]').forEach(el=>{

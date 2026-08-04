@@ -51,6 +51,12 @@ if (array_key_exists('asignado_a', $in)) {
     $campos[] = 'asignado_a = :asignado';
     $params[':asignado'] = $asignadoA > 0 ? $asignadoA : null;
 }
+if (!empty($in['marcar_visto'])) {
+    // Se manda al abrir el chat del prospecto — apaga el indicador de
+    // "mensaje nuevo" hasta que llegue otro mensaje entrante después de
+    // este momento (ver prospectos_list.php).
+    $campos[] = 'visto_en = NOW()';
+}
 
 if (!$campos) fail('Nada que actualizar.', 400);
 
