@@ -429,29 +429,37 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     require_once __DIR__ . '/citas_helpers.php';
     require_once __DIR__ . '/mercadopago_helpers.php';
 
-    $data = ia_llamar_claude($mensajes);
-    if ($data === null) {
-        return ['texto' => IA_FALLBACK_TEXTO, 'lead' => null];
-    }
-
-    [$texto, $lead, $bloques] = ia_extraer_respuesta($data);
-
     // Herramientas cuyo resultado hay que calcular de verdad en PHP (no
     // dejar que la IA "invente" el número o el horario) y devolverle a
     // Claude para que redacte la respuesta final ya con el dato real.
+    // Claude a veces encadena más de una (p. ej. ofrecer_horarios_asesoria
+    // y, una vez elegido el horario, confirmar_horario_asesoria) sin
+    // escribir texto todavía — por eso esto es un ciclo y no una sola
+    // "segunda llamada", con un tope de rondas por seguridad.
     $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria'];
-    $necesitaSeguimiento = false;
-    foreach ($bloques as $bloque) {
-        if (($bloque['type'] ?? '') === 'tool_use' && in_array($bloque['name'] ?? '', $herramientasConSeguimiento, true)) {
-            $necesitaSeguimiento = true;
-            break;
-        }
-    }
+    $mensajesActuales = $mensajes;
+    $lead = null;
+    $texto = '';
+    $maxRondas = 4;
 
-    if ($necesitaSeguimiento) {
+    for ($ronda = 0; $ronda < $maxRondas; $ronda++) {
+        $data = ia_llamar_claude($mensajesActuales);
+        if ($data === null) {
+            return ['texto' => IA_FALLBACK_TEXTO, 'lead' => $lead];
+        }
+
+        [$textoRonda, $leadRonda, $bloques] = ia_extraer_respuesta($data);
+        if ($leadRonda !== null && ($lead === null || $leadRonda['tipo'] === 'despido')) {
+            $lead = $leadRonda;
+        }
+        if (trim($textoRonda) !== '') {
+            $texto = $textoRonda;
+        }
+
         $toolResults = [];
         foreach ($bloques as $bloque) {
             if (($bloque['type'] ?? '') !== 'tool_use') continue;
+            if (!in_array($bloque['name'] ?? '', $herramientasConSeguimiento, true)) continue;
             $in = $bloque['input'] ?? [];
             if ($bloque['name'] === 'calcular_estimado_liquidacion') {
                 $calc = calcular_estimado_liquidacion(
@@ -468,16 +476,20 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     : json_encode(['error' => 'Datos insuficientes o inválidos para calcular.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'ofrecer_horarios_asesoria') {
                 $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono);
-            } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
+            } else { // confirmar_horario_asesoria
                 $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in);
-            } else {
-                $contenido = json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
             }
             $toolResults[] = [
                 'type' => 'tool_result',
                 'tool_use_id' => $bloque['id'],
                 'content' => $contenido,
             ];
+        }
+
+        if (!$toolResults) {
+            // No llamó ninguna herramienta que necesite seguimiento —
+            // $textoRonda (si lo hay) es la respuesta final.
+            break;
         }
 
         // Al decodificar la respuesta de Claude, un tool_use con input
@@ -493,17 +505,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             return $bloque;
         }, $bloques);
 
-        $mensajesSeguimiento = $mensajes;
-        $mensajesSeguimiento[] = ['role' => 'assistant', 'content' => $bloquesParaEnviar];
-        $mensajesSeguimiento[] = ['role' => 'user', 'content' => $toolResults];
-
-        $data2 = ia_llamar_claude($mensajesSeguimiento);
-        if ($data2 !== null) {
-            [$texto2, ,] = ia_extraer_respuesta($data2);
-            if (trim($texto2) !== '') {
-                $texto = $texto2;
-            }
-        }
+        $mensajesActuales[] = ['role' => 'assistant', 'content' => $bloquesParaEnviar];
+        $mensajesActuales[] = ['role' => 'user', 'content' => $toolResults];
     }
 
     if (trim($texto) === '') {
