@@ -2115,7 +2115,7 @@ async function loadProspectoMensajes(telefono){
   }catch(e){ PROSPECTO_MENSAJES = []; }
 }
 
-function prospectosNuevosCount(){ return PROSPECTOS.filter(p=>p.estatus==='nuevo' || p.mensaje_nuevo).length; }
+function prospectosNuevosCount(){ return PROSPECTOS.filter(p=>p.estatus!=='descartado' && (p.estatus==='nuevo' || p.mensaje_nuevo)).length; }
 
 async function loadConversaciones(){
   try{
@@ -3310,11 +3310,12 @@ function prospectosHTML(){
       <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte un caso de despido en CDMX/Edomex, o a alguien interesado en la asesoría de pago, aparecerá aquí.</div>
     </div></div>`;
   }
-  // Un descartado con mensaje nuevo (el cliente volvió a escribir) se
-  // muestra igual aunque el filtro de descartados esté oculto — de eso se
-  // trata el indicador, no queremos perder un mensaje real.
-  const visibles = PROSPECTOS.filter(p => PROSPECTOS_MOSTRAR_DESCARTADOS || p.estatus !== 'descartado' || p.mensaje_nuevo);
-  const descartadosOcultos = PROSPECTOS.filter(p => p.estatus === 'descartado' && !p.mensaje_nuevo);
+  // Un descartado se queda oculto siempre, incluso si escribe de nuevo —
+  // "descartado" es que el despacho no toma el litigio, no que haga falta
+  // que un humano lo revise; si escribe otra cosa el bot le sigue
+  // contestando solo (ver prospectos_update.php).
+  const visibles = PROSPECTOS.filter(p => PROSPECTOS_MOSTRAR_DESCARTADOS || p.estatus !== 'descartado');
+  const descartadosOcultos = PROSPECTOS.filter(p => p.estatus === 'descartado');
   return `
   <div class="panel">
     <div class="panel-head"><h3>Prospectos de WhatsApp</h3><span class="count">${visibles.length}</span></div>

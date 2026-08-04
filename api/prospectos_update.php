@@ -33,6 +33,13 @@ if (array_key_exists('estatus', $in)) {
     }
     $campos[] = 'estatus = :estatus';
     $params[':estatus'] = $estatus;
+    // "Descartado" es que el despacho no toma el litigio, no que se deje
+    // de contestarle a la persona — si no se mandó explícitamente un
+    // valor para pausado_bot en esta misma petición, se reactiva el bot
+    // para que siga contestando solo si escribe de nuevo.
+    if ($estatus === 'descartado' && !array_key_exists('pausado_bot', $in)) {
+        $campos[] = 'pausado_bot = 0';
+    }
 }
 if (array_key_exists('nombre', $in)) {
     $campos[] = 'nombre = :nombre';
