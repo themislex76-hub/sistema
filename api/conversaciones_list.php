@@ -44,7 +44,7 @@ foreach ($stmt->fetchAll() as $r) {
         'prospecto_nombre' => $r['prospecto_nombre'],
         'expediente_id' => $r['expediente_id'] !== null ? (int)$r['expediente_id'] : null,
         'asignado_nombre' => $r['asignado_nombre'],
-        'fallo' => $r['ultima_direccion'] === 'saliente' && $r['ultimo_texto'] === IA_FALLBACK_TEXTO,
+        'fallo' => $r['ultima_direccion'] === 'saliente' && strpos((string)$r['ultimo_texto'], IA_FALLBACK_TEXTO) === 0,
     ];
 }
 
@@ -67,10 +67,10 @@ $sinResponderStmt = $pdo->prepare(
          SELECT telefono, MAX(id) AS ultimo_id FROM whatsapp_conversaciones GROUP BY telefono
      ) t ON t.ultimo_id = c.id
      LEFT JOIN prospectos p ON p.telefono = c.telefono
-     WHERE c.direccion = 'saliente' AND c.texto = :fallback
+     WHERE c.direccion = 'saliente' AND c.texto LIKE :fallback
        AND (p.pausado_bot IS NULL OR p.pausado_bot = 0)"
 );
-$sinResponderStmt->execute([':fallback' => IA_FALLBACK_TEXTO]);
+$sinResponderStmt->execute([':fallback' => IA_FALLBACK_TEXTO . '%']);
 $sinResponder = (int)$sinResponderStmt->fetch()['n'];
 
 $conversacionesTotales = (int)($statsRow['conversaciones_totales'] ?? 0);

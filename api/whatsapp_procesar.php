@@ -98,8 +98,12 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
         return ['ok' => false, 'motivo' => 'No hay mensajes para este número.'];
     }
 
+    // Antes de corregir el flujo de varias rondas, el texto de emergencia a
+    // veces salía pegado con un texto genérico adicional (p. ej. leads de
+    // asesoría vieja) — por eso se compara con "empieza con" y no con
+    // igualdad exacta, para poder recuperar también esos casos viejos.
     $ultimo = end($historial);
-    if ($ultimo['direccion'] !== 'saliente' || $ultimo['texto'] !== IA_FALLBACK_TEXTO) {
+    if ($ultimo['direccion'] !== 'saliente' || strpos($ultimo['texto'], IA_FALLBACK_TEXTO) !== 0) {
         return ['ok' => false, 'motivo' => 'Esta conversación ya tiene una respuesta real; no hace falta reintentar.'];
     }
 
