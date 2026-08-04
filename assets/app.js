@@ -4063,7 +4063,7 @@ function bindViewBody(){
         let restantes = Infinity;
         let totalOk = 0, totalFallo = 0;
         while(restantes > 0){
-          const d = await api('POST', 'conversaciones_reintentar.php', {lote:true, tamano:8});
+          const d = await api('POST', 'conversaciones_reintentar.php', {lote:true, tamano:3});
           totalOk += d.resultados.filter(r=>r.ok).length;
           totalFallo += d.resultados.filter(r=>!r.ok).length;
           restantes = d.restantes;

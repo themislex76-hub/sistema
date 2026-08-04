@@ -15,6 +15,14 @@ require_once __DIR__ . '/whatsapp_procesar.php';
 //   sea 0.
 require_admin();
 
+// Cada reintento hace dos llamadas de red (Anthropic + WhatsApp), así que un
+// lote puede tardar más que el límite por defecto de PHP en hosting
+// compartido (típicamente 30s) y el servidor corta la respuesta a la mitad
+// — eso es lo que el frontend reporta como "no se pudo conectar". Le pedimos
+// más margen aquí; si el hosting lo ignora (algunos lo bloquean), el tamaño
+// de lote reducido abajo es la mitigación real.
+set_time_limit(120);
+
 $pdo = db();
 
 function conversaciones_candidatas_reintento(PDO $pdo, int $limite): array
@@ -44,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $body = json_input();
 
     if (!empty($body['lote'])) {
-        $tamano = isset($body['tamano']) ? max(1, min(20, (int)$body['tamano'])) : 8;
+        $tamano = isset($body['tamano']) ? max(1, min(5, (int)$body['tamano'])) : 3;
         $candidatos = conversaciones_candidatas_reintento($pdo, $tamano);
         $resultados = [];
         foreach ($candidatos as $telefono) {
