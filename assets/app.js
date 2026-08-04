@@ -51,6 +51,15 @@ let CASES_DATA = []; // expedientes que devuelve la API (ya con meta anidada)
 let PROSPECTOS = []; // leads de despido CDMX/Edomex captados por el bot de WhatsApp
 let PROSPECTO_ABIERTO = null; // id del prospecto con el chat expandido en la vista Prospectos
 let PROSPECTO_MENSAJES = []; // historial de WhatsApp del prospecto abierto
+
+// Vista "Conversaciones (WhatsApp)" (solo Administrador) — control de
+// calidad del bot: TODAS las conversaciones, hayan calificado como
+// prospecto o no, para poder revisar qué está contestando el bot.
+let CONVERSACIONES = [];
+let CONVERSACIONES_STATS = {};
+let CONVERSACION_ABIERTA = null; // teléfono de la conversación expandida
+let CONVERSACION_MENSAJES = [];
+let CONVERSACION_RESUMEN = null; // {resumen, mensajes_contados, generado_en} o null
 let ACTIVE_CASE = null;
 let MODAL_TAB = "resumen";
 let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de CASES_DATA)
@@ -2025,6 +2034,9 @@ async function refreshBootstrap(){
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
     await loadProspectos();
   }
+  if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
+    await loadConversaciones();
+  }
 }
 
 async function loadProspectos(){
@@ -2042,6 +2054,28 @@ async function loadProspectoMensajes(telefono){
 }
 
 function prospectosNuevosCount(){ return PROSPECTOS.filter(p=>p.estatus==='nuevo').length; }
+
+async function loadConversaciones(){
+  try{
+    const d = await api('GET', 'conversaciones_list.php');
+    CONVERSACIONES = d.conversaciones;
+    CONVERSACIONES_STATS = d.stats;
+  }catch(e){ CONVERSACIONES = []; CONVERSACIONES_STATS = {}; }
+}
+
+async function loadConversacionMensajes(telefono){
+  try{
+    const d = await api('GET', 'conversaciones_mensajes.php?telefono=' + encodeURIComponent(telefono));
+    CONVERSACION_MENSAJES = d.mensajes;
+  }catch(e){ CONVERSACION_MENSAJES = []; }
+}
+
+async function loadConversacionResumen(telefono){
+  try{
+    const d = await api('GET', 'conversaciones_resumen.php?telefono=' + encodeURIComponent(telefono));
+    CONVERSACION_RESUMEN = d.resumen;
+  }catch(e){ CONVERSACION_RESUMEN = null; }
+}
 
 function fmtFechaHora(s){
   if(!s) return "—";
@@ -2278,6 +2312,7 @@ function shellHTML(){
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
         <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
         <button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge">${prospectosNuevosCount()}</span>`:""}</button>
+        ${isAdmin ? `<button data-v="conversaciones" class="${VIEW==='conversaciones'?'active':''}"><span class="ico">&#128269;</span> Conversaciones (WhatsApp)</button>` : ""}
         <div class="section-label">Referencia</div>
         <button data-v="manual" class="${VIEW==='manual'?'active':''}"><span class="ico">&#128218;</span> Manual de uso</button>
         <button data-v="cliente_preview" class="${VIEW==='cliente_preview'?'active':''}"><span class="ico">${ICONS.cliente}</span> Vista de portal cliente</button>
@@ -2316,6 +2351,7 @@ const VIEW_TITLES = {
   manual:["Manual de uso", "Guía paso a paso del sistema"],
   agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
   prospectos:["Prospectos (WhatsApp)", "Casos de despido en CDMX/Edomex captados por el asistente de IA en WhatsApp"],
+  conversaciones:["Conversaciones (WhatsApp)", "Todas las conversaciones del bot, calificaran o no como prospecto — para revisar y perfeccionar sus respuestas"],
   formato_demanda:["Formato de demanda", "Plantilla de demanda y biblioteca de otras plantillas de escritos"],
   cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
   equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
@@ -2401,6 +2437,7 @@ function renderViewBody(){
   else if(VIEW==='manual') el.innerHTML = manualHTML();
   else if(VIEW==='agenda') el.innerHTML = agendaHTML();
   else if(VIEW==='prospectos') el.innerHTML = prospectosHTML();
+  else if(VIEW==='conversaciones') el.innerHTML = conversacionesHTML();
   else if(VIEW==='formato_demanda') el.innerHTML = formatoDemandaHTML();
   else if(VIEW==='cliente_preview') el.innerHTML = clientePreviewHTML();
   else if(VIEW==='equipo') el.innerHTML = equipoHTML();
@@ -3273,6 +3310,81 @@ function prospectoDetalleHTML(p){
   </div>`;
 }
 
+// ---------------------------------------------------------------
+// Vista "Conversaciones (WhatsApp)" (solo Administrador) — control de
+// calidad del bot: todas las conversaciones, califiquen o no como
+// prospecto, con estadísticas y un visor de solo lectura de cada hilo.
+// ---------------------------------------------------------------
+function conversacionesHTML(){
+  const s = CONVERSACIONES_STATS || {};
+  const abierta = CONVERSACION_ABIERTA ? CONVERSACIONES.find(c=>c.telefono===CONVERSACION_ABIERTA) : null;
+  const statsHTML = `
+  <div class="stat-grid" style="grid-template-columns:repeat(5,1fr); margin-bottom:18px;">
+    <div class="stat-card"><div class="bar"></div><div class="num">${s.entrantes_hoy ?? '—'}</div><div class="label">Mensajes entrantes hoy</div></div>
+    <div class="stat-card"><div class="bar"></div><div class="num">${s.entrantes_semana ?? '—'}</div><div class="label">Mensajes entrantes (últimos 7 días)</div></div>
+    <div class="stat-card"><div class="bar"></div><div class="num">${s.conversaciones_totales ?? '—'}</div><div class="label">Conversaciones totales (números distintos)</div></div>
+    <div class="stat-card"><div class="bar"></div><div class="num">${s.conversaciones_nuevas_hoy ?? '—'}</div><div class="label">Conversaciones nuevas hoy</div></div>
+    <div class="stat-card ok"><div class="bar"></div><div class="num">${s.tasa_conversion!=null? s.tasa_conversion+'%':'—'}</div><div class="label">Calificaron como prospecto (${s.total_prospectos ?? 0} de ${s.conversaciones_totales ?? 0})</div></div>
+  </div>`;
+  if(!CONVERSACIONES.length){
+    return statsHTML + `<div class="panel"><div class="panel-body" style="padding:24px;">
+      <div class="notice">Todavía no hay conversaciones registradas del bot de WhatsApp.</div>
+    </div></div>`;
+  }
+  return statsHTML + `
+  <div class="panel">
+    <div class="panel-head"><h3>Todas las conversaciones</h3><span class="count">${CONVERSACIONES.length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      ${CONVERSACIONES.map(c=>{
+        const calificado = !!c.prospecto_tipo;
+        return `
+      <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${CONVERSACION_ABIERTA===c.telefono?'background:var(--parchment);':''}" data-conversacion-abrir="${escapeHTML(c.telefono)}">
+        <span class="badge ${calificado ? (PROSPECTO_TIPO_BADGE[c.prospecto_tipo]||'closed') : 'warn'}" style="flex-shrink:0; margin-top:1px;">${calificado ? (PROSPECTO_TIPO_LABEL[c.prospecto_tipo]||c.prospecto_tipo) : 'Sin calificar'}</span>
+        <div class="alert-info">
+          <div class="name">${escapeHTML(c.prospecto_nombre || c.telefono)}</div>
+          <div class="meta">${c.ultima_direccion==='entrante'?'Cliente: ':'Bot/Tú: '}${escapeHTML(truncate(c.ultimo_texto||'',90))}</div>
+        </div>
+        <span class="badge" style="flex-shrink:0; margin-top:1px;">${c.total_mensajes} mensaje${c.total_mensajes===1?'':'s'}</span>
+        <div style="flex-shrink:0; font-size:11px; color:var(--gray); text-align:right;">${fmtFechaHora(c.ultimo_mensaje)}</div>
+      </div>`;}).join("")}
+    </div>
+  </div>
+  ${abierta ? conversacionDetalleHTML(abierta) : ""}
+  `;
+}
+
+function conversacionDetalleHTML(c){
+  const r = CONVERSACION_RESUMEN;
+  return `
+  <div class="panel">
+    <div class="panel-head"><h3>${escapeHTML(c.prospecto_nombre || c.telefono)} &middot; ${escapeHTML(c.telefono)}</h3></div>
+    <div class="panel-body" style="padding:16px 20px;">
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+        ${c.prospecto_tipo ? `<span class="badge ${PROSPECTO_TIPO_BADGE[c.prospecto_tipo]||'closed'}">${PROSPECTO_TIPO_LABEL[c.prospecto_tipo]||c.prospecto_tipo}</span>` : `<span class="badge warn">Sin calificar como prospecto</span>`}
+        ${c.asignado_nombre ? `<span class="badge ok">Turnado a ${escapeHTML(c.asignado_nombre)}</span>` : ""}
+        ${c.expediente_id ? `<span class="badge ok">Convertido en expediente</span>` : ""}
+      </div>
+      <div style="background:var(--parchment); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px;">
+          <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray);">Resumen (IA) — para revisar cómo va contestando el bot</div>
+          <button class="btn secondary" id="conversacionResumenBtn" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:5px 10px;">${r ? 'Actualizar resumen' : 'Generar resumen'}</button>
+        </div>
+        <div id="conversacionResumenTexto" style="font-size:13px; color:var(--ink); white-space:pre-wrap;">${r ? escapeHTML(r.resumen) : 'Sin generar todavía. Dale clic a "Generar resumen".'}</div>
+        ${r ? `<div style="font-size:10.5px; color:var(--gray); margin-top:6px;">Generado el ${fmtFechaHora(r.generado_en)} con ${r.mensajes_contados} mensaje(s)${r.mensajes_contados !== c.total_mensajes ? ' — hay mensajes nuevos desde entonces, considera actualizarlo' : ''}.</div>` : ''}
+      </div>
+      <div style="max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:12px; background:var(--parchment);">
+        ${CONVERSACION_MENSAJES.length ? CONVERSACION_MENSAJES.map(m=>`
+          <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
+            <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
+              ${escapeHTML(m.texto)}
+              <div style="font-size:10px; opacity:.6; margin-top:3px;">${m.direccion==='saliente'?(m.respondido_por==='humano'?'Humano':'Bot'):'Cliente'} &middot; ${fmtFechaHora(m.creado_en)}</div>
+            </div>
+          </div>`).join("") : `<div class="notice">Sin mensajes.</div>`}
+      </div>
+    </div>
+  </div>`;
+}
+
 function agendaHTML(){
   const isAdmin = CURRENT_USER.role === 'Administrador';
   let all = buildAgendaEntries();
@@ -3884,6 +3996,33 @@ function bindViewBody(){
         renderViewBody();
       }catch(err){ alert('No se pudo enviar: ' + err.message); }
       finally{ prospectoEnviarBtn.disabled = false; }
+    });
+  }
+  document.querySelectorAll('[data-conversacion-abrir]').forEach(el=>{
+    el.addEventListener('click', async ()=>{
+      const telefono = el.dataset.conversacionAbrir;
+      CONVERSACION_ABIERTA = (CONVERSACION_ABIERTA === telefono) ? null : telefono;
+      if(CONVERSACION_ABIERTA){
+        await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
+      }
+      renderViewBody();
+    });
+  });
+  const conversacionResumenBtn = document.getElementById('conversacionResumenBtn');
+  if(conversacionResumenBtn){
+    conversacionResumenBtn.addEventListener('click', async ()=>{
+      const telefono = conversacionResumenBtn.dataset.telefono;
+      conversacionResumenBtn.disabled = true;
+      conversacionResumenBtn.textContent = 'Generando...';
+      try{
+        await api('POST', 'conversaciones_resumen.php', {telefono});
+        await loadConversacionResumen(telefono);
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo generar el resumen: ' + err.message);
+        conversacionResumenBtn.disabled = false;
+        conversacionResumenBtn.textContent = CONVERSACION_RESUMEN ? 'Actualizar resumen' : 'Generar resumen';
+      }
     });
   }
   const edomexCaptchaBtn = document.getElementById('edomexCaptchaBtn');

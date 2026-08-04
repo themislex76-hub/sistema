@@ -454,3 +454,73 @@ function ia_extraer_respuesta(array $data): array
 
     return [$texto, $lead, $bloques];
 }
+
+/**
+ * Genera (o regenera) un resumen breve, de uso interno, de una conversación
+ * completa de WhatsApp — para que el abogado no tenga que leer todo el
+ * hilo para saber de qué se trató y cómo respondió el bot. Llamada
+ * completamente aparte del flujo de respuesta en vivo (no usa IA_SYSTEM_PROMPT
+ * ni IA_TOOLS): no toca ni arriesga la lógica del bot en producción.
+ * $historial: lista ordenada (más antiguo primero) de ['direccion' => 'entrante'|'saliente', 'texto' => string].
+ * Devuelve el resumen en texto plano, o null si falló la llamada a la API.
+ */
+function ia_generar_resumen_conversacion(array $historial): ?string
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $transcript = '';
+    foreach ($historial as $h) {
+        $quien = ($h['direccion'] ?? '') === 'entrante' ? 'Cliente' : 'Bot/Despacho';
+        $transcript .= $quien . ': ' . ($h['texto'] ?? '') . "\n";
+    }
+    if (trim($transcript) === '') return null;
+
+    $payload = [
+        'model' => IA_MODEL,
+        'max_tokens' => 400,
+        'system' => 'Eres un asistente interno del despacho Expertos Laborales. Te doy la transcripción '
+            . 'completa de una conversación de WhatsApp entre un posible cliente y el bot de asesoría '
+            . 'laboral del despacho. Escribe un resumen breve (4-6 líneas, en español, sin encabezados ni '
+            . 'viñetas) para que un abogado entienda rápido: de qué se trata el caso o duda, qué le '
+            . 'contestó el bot, si el bot calificó bien la situación o si parece que se equivocó o dio '
+            . 'información dudosa, y en qué quedó la conversación (pendiente, resuelta, el cliente dejó '
+            . 'de contestar, etc.). Sé directo y crítico si notas algo que el bot debería mejorar.',
+        'messages' => [['role' => 'user', 'content' => $transcript]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [resumen] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+    return $texto !== '' ? $texto : null;
+}
