@@ -51,6 +51,7 @@ let CASES_DATA = []; // expedientes que devuelve la API (ya con meta anidada)
 let PROSPECTOS = []; // leads de despido CDMX/Edomex captados por el bot de WhatsApp
 let PROSPECTO_ABIERTO = null; // id del prospecto cuyo chat está abierto en el modal
 let PROSPECTO_MENSAJES = []; // historial de WhatsApp del prospecto abierto
+let PROSPECTOS_MOSTRAR_DESCARTADOS = false; // los "Descartado" se esconden de la lista por default
 
 // Vista "Conversaciones (WhatsApp)" (solo Administrador) — control de
 // calidad del bot: TODAS las conversaciones, hayan calificado como
@@ -3276,11 +3277,13 @@ function prospectosHTML(){
       <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte un caso de despido en CDMX/Edomex, o a alguien interesado en la asesoría de pago, aparecerá aquí.</div>
     </div></div>`;
   }
+  const descartados = PROSPECTOS.filter(p=>p.estatus==='descartado');
+  const visibles = PROSPECTOS_MOSTRAR_DESCARTADOS ? PROSPECTOS : PROSPECTOS.filter(p=>p.estatus!=='descartado');
   return `
   <div class="panel">
-    <div class="panel-head"><h3>Prospectos de WhatsApp</h3><span class="count">${PROSPECTOS.length}</span></div>
+    <div class="panel-head"><h3>Prospectos de WhatsApp</h3><span class="count">${visibles.length}</span></div>
     <div class="panel-body" style="padding:0;">
-      ${PROSPECTOS.map(p=>`
+      ${visibles.map(p=>`
       <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${PROSPECTO_ABIERTO===p.id?'background:var(--parchment);':''}" data-prospecto-abrir="${p.id}">
         <span class="badge ${PROSPECTO_ESTATUS_BADGE[p.estatus]||'warn'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_ESTATUS_LABEL[p.estatus]||p.estatus}</span>
         <div class="alert-info">
@@ -3293,6 +3296,9 @@ function prospectosHTML(){
       </div>`).join("")}
     </div>
   </div>
+  ${descartados.length ? `<div class="notice" style="max-width:100%;">${PROSPECTOS_MOSTRAR_DESCARTADOS
+    ? `Mostrando también los ${descartados.length} descartados. <button class="btn secondary" data-prospectos-toggle-descartados style="padding:4px 10px; font-size:11px; margin-left:6px;">Ocultarlos de nuevo</button>`
+    : `Hay ${descartados.length} prospecto${descartados.length===1?'':'s'} descartado${descartados.length===1?'':'s'} oculto${descartados.length===1?'':'s'}. <button class="btn secondary" data-prospectos-toggle-descartados style="padding:4px 10px; font-size:11px; margin-left:6px;">Mostrarlos</button>`}</div>` : ""}
   `;
 }
 
@@ -4252,6 +4258,13 @@ function bindViewBody(){
       abrirProspectoModal(id);
     });
   });
+  const prospectosToggleDescartados = document.querySelector('[data-prospectos-toggle-descartados]');
+  if(prospectosToggleDescartados){
+    prospectosToggleDescartados.addEventListener('click', ()=>{
+      PROSPECTOS_MOSTRAR_DESCARTADOS = !PROSPECTOS_MOSTRAR_DESCARTADOS;
+      renderViewBody();
+    });
+  }
   document.querySelectorAll('[data-conversacion-abrir]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const telefono = el.dataset.conversacionAbrir;
