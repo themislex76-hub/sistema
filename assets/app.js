@@ -3319,7 +3319,6 @@ function prospectoDetalleHTML(p){
 // ---------------------------------------------------------------
 function conversacionesHTML(){
   const s = CONVERSACIONES_STATS || {};
-  const abierta = CONVERSACION_ABIERTA ? CONVERSACIONES.find(c=>c.telefono===CONVERSACION_ABIERTA) : null;
   const statsHTML = `
   <div class="stat-grid" style="grid-template-columns:repeat(5,1fr); margin-bottom:18px;">
     <div class="stat-card"><div class="bar"></div><div class="num">${s.entrantes_hoy ?? '—'}</div><div class="label">Mensajes entrantes hoy</div></div>
@@ -3357,16 +3356,16 @@ function conversacionesHTML(){
       </div>`;}).join("")}
     </div>
   </div>
-  ${abierta ? conversacionDetalleHTML(abierta) : ""}
   `;
 }
 
+// Detalle de una conversación — se muestra en un modal (ver
+// abrirConversacionModal/renderConversacionModal) para poder abrirlo con un
+// clic sin importar en qué parte de la lista esté la fila, sin tener que
+// bajar entre decenas de conversaciones para verlo.
 function conversacionDetalleHTML(c){
   const r = CONVERSACION_RESUMEN;
   return `
-  <div class="panel">
-    <div class="panel-head"><h3>${escapeHTML(c.prospecto_nombre || c.telefono)} &middot; ${escapeHTML(c.telefono)}</h3></div>
-    <div class="panel-body" style="padding:16px 20px;">
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
         ${c.prospecto_tipo ? `<span class="badge ${PROSPECTO_TIPO_BADGE[c.prospecto_tipo]||'closed'}">${PROSPECTO_TIPO_LABEL[c.prospecto_tipo]||c.prospecto_tipo}</span>` : `<span class="badge warn">Sin calificar como prospecto</span>`}
         ${c.asignado_nombre ? `<span class="badge ok">Turnado a ${escapeHTML(c.asignado_nombre)}</span>` : ""}
@@ -3390,8 +3389,77 @@ function conversacionDetalleHTML(c){
             </div>
           </div>`).join("") : `<div class="notice">Sin mensajes.</div>`}
       </div>
+  `;
+}
+
+// Abre el detalle de una conversación en un modal (en vez de tener que
+// desplazarse hasta el fondo de la lista) — así queda encima de la pantalla
+// sin importar en qué fila se dio clic.
+function abrirConversacionModal(telefono){
+  CONVERSACION_ABIERTA = telefono;
+  renderConversacionModal();
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function cerrarConversacionModal(){
+  closeModal();
+  CONVERSACION_ABIERTA = null;
+}
+
+function renderConversacionModal(){
+  const c = CONVERSACIONES.find(x=>x.telefono===CONVERSACION_ABIERTA);
+  if(!c) return;
+  const overlay = document.getElementById('modalOverlay');
+  overlay.innerHTML = `<div class="modal" style="max-width:720px;">
+    <div class="modal-head">
+      <button class="close" id="modalClose">&times;</button>
+      <h2>${escapeHTML(c.prospecto_nombre || c.telefono)}</h2>
+      <div class="sub">${escapeHTML(c.telefono)}</div>
     </div>
+    <div class="modal-body">${conversacionDetalleHTML(c)}</div>
   </div>`;
+  document.getElementById('modalClose').addEventListener('click', cerrarConversacionModal);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) cerrarConversacionModal(); });
+  bindConversacionModalEvents();
+}
+
+function bindConversacionModalEvents(){
+  const conversacionResumenBtn = document.getElementById('conversacionResumenBtn');
+  if(conversacionResumenBtn){
+    conversacionResumenBtn.addEventListener('click', async ()=>{
+      const telefono = conversacionResumenBtn.dataset.telefono;
+      conversacionResumenBtn.disabled = true;
+      conversacionResumenBtn.textContent = 'Generando...';
+      try{
+        await api('POST', 'conversaciones_resumen.php', {telefono});
+        await loadConversacionResumen(telefono);
+        renderConversacionModal();
+      }catch(err){
+        alert('No se pudo generar el resumen: ' + err.message);
+        conversacionResumenBtn.disabled = false;
+        conversacionResumenBtn.textContent = CONVERSACION_RESUMEN ? 'Actualizar resumen' : 'Generar resumen';
+      }
+    });
+  }
+  const conversacionReintentarBtn = document.getElementById('conversacionReintentarBtn');
+  if(conversacionReintentarBtn){
+    conversacionReintentarBtn.addEventListener('click', async ()=>{
+      const telefono = conversacionReintentarBtn.dataset.telefono;
+      conversacionReintentarBtn.disabled = true;
+      conversacionReintentarBtn.textContent = 'Reintentando...';
+      try{
+        const d = await api('POST', 'conversaciones_reintentar.php', {telefono});
+        if(!d.ok){ alert('No se pudo reintentar: ' + d.motivo); }
+        await loadConversaciones();
+        await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
+        renderConversacionModal();
+      }catch(err){
+        alert('No se pudo reintentar: ' + err.message);
+        conversacionReintentarBtn.disabled = false;
+        conversacionReintentarBtn.textContent = 'Reintentar esta conversación';
+      }
+    });
+  }
 }
 
 function agendaHTML(){
@@ -4010,49 +4078,10 @@ function bindViewBody(){
   document.querySelectorAll('[data-conversacion-abrir]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const telefono = el.dataset.conversacionAbrir;
-      CONVERSACION_ABIERTA = (CONVERSACION_ABIERTA === telefono) ? null : telefono;
-      if(CONVERSACION_ABIERTA){
-        await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
-      }
-      renderViewBody();
+      await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
+      abrirConversacionModal(telefono);
     });
   });
-  const conversacionResumenBtn = document.getElementById('conversacionResumenBtn');
-  if(conversacionResumenBtn){
-    conversacionResumenBtn.addEventListener('click', async ()=>{
-      const telefono = conversacionResumenBtn.dataset.telefono;
-      conversacionResumenBtn.disabled = true;
-      conversacionResumenBtn.textContent = 'Generando...';
-      try{
-        await api('POST', 'conversaciones_resumen.php', {telefono});
-        await loadConversacionResumen(telefono);
-        renderViewBody();
-      }catch(err){
-        alert('No se pudo generar el resumen: ' + err.message);
-        conversacionResumenBtn.disabled = false;
-        conversacionResumenBtn.textContent = CONVERSACION_RESUMEN ? 'Actualizar resumen' : 'Generar resumen';
-      }
-    });
-  }
-  const conversacionReintentarBtn = document.getElementById('conversacionReintentarBtn');
-  if(conversacionReintentarBtn){
-    conversacionReintentarBtn.addEventListener('click', async ()=>{
-      const telefono = conversacionReintentarBtn.dataset.telefono;
-      conversacionReintentarBtn.disabled = true;
-      conversacionReintentarBtn.textContent = 'Reintentando...';
-      try{
-        const d = await api('POST', 'conversaciones_reintentar.php', {telefono});
-        if(!d.ok){ alert('No se pudo reintentar: ' + d.motivo); }
-        await loadConversaciones();
-        await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
-        renderViewBody();
-      }catch(err){
-        alert('No se pudo reintentar: ' + err.message);
-        conversacionReintentarBtn.disabled = false;
-        conversacionReintentarBtn.textContent = 'Reintentar esta conversación';
-      }
-    });
-  }
   const reintentarLoteBtn = document.getElementById('reintentarLoteBtn');
   if(reintentarLoteBtn){
     reintentarLoteBtn.addEventListener('click', async ()=>{
