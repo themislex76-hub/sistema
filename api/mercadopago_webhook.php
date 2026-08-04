@@ -64,16 +64,22 @@ if (!$cita) {
     mp_webhook_responder(200);
 }
 
-if ($cita['estado'] === 'confirmada') {
-    // Aviso duplicado (Mercado Pago puede reenviar el mismo evento) — ya
-    // se procesó, no hay que volver a mandar el WhatsApp de confirmación.
-    mp_webhook_responder(200);
-}
-
+// El UPDATE solo afecta una fila si todavía NO estaba confirmada — esto es
+// atómico a nivel de base de datos, así que aunque Mercado Pago mande el
+// mismo aviso dos veces casi al mismo tiempo (le pasa seguido), solo uno de
+// los dos avisos puede "ganar" la carrera y mandar el WhatsApp de
+// confirmación. El otro ve rowCount() = 0 y no hace nada más.
 $stmt = $pdo->prepare(
-    "UPDATE citas_asesoria SET estado = 'confirmada', mp_payment_id = :pago_id, pagado_en = NOW() WHERE id = :id"
+    "UPDATE citas_asesoria SET estado = 'confirmada', mp_payment_id = :pago_id, pagado_en = NOW()
+     WHERE id = :id AND estado != 'confirmada'"
 );
 $stmt->execute([':pago_id' => $paymentId, ':id' => $citaId]);
+
+if ($stmt->rowCount() === 0) {
+    // Ya estaba confirmada (aviso duplicado) o perdió la carrera contra otro
+    // aviso simultáneo — no hay que volver a mandar el WhatsApp.
+    mp_webhook_responder(200);
+}
 
 // A partir de aquí un humano se encarga (preparar y hacer la llamada) —
 // se pausa el bot para este teléfono igual que un lead de despido.
