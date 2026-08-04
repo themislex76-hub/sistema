@@ -3263,6 +3263,7 @@ const AGENDA_TIPO = {
 };
 
 let AGENDA_SOCIO = 'todos';
+let AGENDA_TAB = 'general';
 
 const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
 const PROSPECTO_ESTATUS_BADGE = {nuevo:'crit', contactado:'warn', descartado:'closed', convertido:'ok'};
@@ -3493,15 +3494,15 @@ function bindConversacionModalEvents(){
 // cruzando la disponibilidad de cada abogado con Mercado Pago. Un abogado
 // ve las suyas; el administrador las ve todas.
 // ---------------------------------------------------------------
-function citasPanelHTML(){
-  if(!CITAS.length) return "";
+function citasPanelHTML(forzar){
+  if(!CITAS.length && !forzar) return "";
   const CITA_ESTADO_BADGE = {confirmada:'ok', pendiente_pago:'warn'};
   const CITA_ESTADO_LABEL = {confirmada:'Pagada', pendiente_pago:'Esperando pago'};
   return `
   <div class="panel">
     <div class="panel-head"><h3>Próximas asesorías agendadas</h3><span class="count">${CITAS.length}</span></div>
     <div class="panel-body" style="padding:0;">
-      ${CITAS.map(c=>`
+      ${CITAS.length ? CITAS.map(c=>`
       <div class="alert-row" style="align-items:flex-start;">
         <span class="badge ${CITA_ESTADO_BADGE[c.estado]||'closed'}" style="flex-shrink:0; margin-top:1px;">${CITA_ESTADO_LABEL[c.estado]||c.estado}</span>
         <div class="alert-info">
@@ -3509,7 +3510,7 @@ function citasPanelHTML(){
           <div class="meta">${escapeHTML(c.nombre_cliente || c.telefono)} &middot; ${escapeHTML(c.telefono)} &middot; con ${escapeHTML(c.usuario_nombre)}</div>
         </div>
         <div style="flex-shrink:0; font-size:12px; color:var(--gray); text-align:right;">$${c.monto.toFixed(0)} MXN</div>
-      </div>`).join("")}
+      </div>`).join("") : '<div class="empty">Sin asesorías agendadas por ahora.</div>'}
     </div>
   </div>`;
 }
@@ -3601,7 +3602,17 @@ function agendaHTML(){
     </div>`;
   };
 
-  return `
+  const tabsHTML = `
+  <div style="display:flex; gap:8px; margin-bottom:16px;">
+    <button class="btn ${AGENDA_TAB==='general'?'':'secondary'}" data-agenda-tab="general" style="padding:8px 16px;">General</button>
+    <button class="btn ${AGENDA_TAB==='asesorias'?'':'secondary'}" data-agenda-tab="asesorias" style="padding:8px 16px;">Asesorías</button>
+  </div>`;
+
+  if(AGENDA_TAB === 'asesorias'){
+    return tabsHTML + citasPanelHTML(true) + disponibilidadPanelHTML();
+  }
+
+  return tabsHTML + `
   <div class="panel">
     <div class="panel-head"><h3>Google Calendar</h3></div>
     <div class="panel-body" style="padding:16px 20px;">
@@ -3616,8 +3627,6 @@ function agendaHTML(){
       `}
     </div>
   </div>
-  ${citasPanelHTML()}
-  ${disponibilidadPanelHTML()}
   ${isAdmin ? `
   <div class="panel">
     <div class="panel-head"><h3>Pendientes por socio</h3><span class="count">${Object.keys(resumenPorSocio).length}</span></div>
@@ -3993,6 +4002,12 @@ function bindViewBody(){
       renderViewBody();
     });
   }
+  document.querySelectorAll('[data-agenda-tab]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      AGENDA_TAB = el.dataset.agendaTab;
+      renderViewBody();
+    });
+  });
   document.querySelectorAll('[data-agenda-socio]').forEach(el=>{
     el.addEventListener('click', ()=>{
       AGENDA_SOCIO = el.dataset.agendaSocio;
