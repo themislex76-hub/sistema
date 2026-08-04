@@ -312,10 +312,18 @@ const IA_TOOLS = [
  */
 function ia_llamar_claude(array $mensajes): ?array
 {
+    // El system prompt y las tools son fijos — se mandan idénticos en cada
+    // llamada. Poner cache_control en el bloque de system cachea tools+system
+    // juntos (tools se renderiza antes que system en la solicitud a la API),
+    // así que solo hace falta un breakpoint aquí. La primera llamada de cada
+    // ventana de caché (5 min) paga el precio normal; las siguientes pagan
+    // ~10% de esa parte del prompt en vez de 100%.
     $payload = [
         'model' => IA_MODEL,
         'max_tokens' => 1500,
-        'system' => IA_SYSTEM_PROMPT,
+        'system' => [
+            ['type' => 'text', 'text' => IA_SYSTEM_PROMPT, 'cache_control' => ['type' => 'ephemeral']],
+        ],
         'tools' => IA_TOOLS,
         'messages' => $mensajes,
     ];
