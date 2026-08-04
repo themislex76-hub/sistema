@@ -1644,6 +1644,12 @@ let EQUIPO = [];
 let USUARIOS_ADMIN = []; // detalle completo (correo, activo, etc.) — solo lo usa la vista "Equipo" del Administrador
 let DIAS_INHABILES = []; // {id, fecha, descripcion, ambito} — ver pantalla "Días inhábiles"
 
+// Horarios semanales propios para atender asesorías telefónicas de pago —
+// ver panel "Mi disponibilidad para asesorías" dentro de Agenda general.
+let DISPONIBILIDAD = []; // {id, dia_semana (1=lunes..7=domingo), hora_inicio, hora_fin}
+let DISPONIBILIDAD_ABIERTA = false; // si el panel está desplegado
+const DIA_SEMANA_LABEL = {1:'Lunes', 2:'Martes', 3:'Miércoles', 4:'Jueves', 5:'Viernes', 6:'Sábado', 7:'Domingo'};
+
 // Estado de la cuenta propia del Portal Federal (PJF) — ver pantalla "Mi
 // cuenta". El robot Federal usa las cuentas guardadas por cada abogado
 // para revisar los expedientes de todos, no solo de uno.
@@ -2035,6 +2041,7 @@ async function refreshBootstrap(){
   await loadPjfCredenciales();
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
     await loadProspectos();
+    await loadDisponibilidad();
   }
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadConversaciones();
@@ -2046,6 +2053,13 @@ async function loadProspectos(){
     const d = await api('GET', 'prospectos_list.php');
     PROSPECTOS = d.prospectos;
   }catch(e){ PROSPECTOS = []; }
+}
+
+async function loadDisponibilidad(){
+  try{
+    const d = await api('GET', 'disponibilidad_list.php');
+    DISPONIBILIDAD = d.bloques;
+  }catch(e){ DISPONIBILIDAD = []; }
 }
 
 async function loadProspectoMensajes(telefono){
@@ -3462,6 +3476,53 @@ function bindConversacionModalEvents(){
   }
 }
 
+// ---------------------------------------------------------------
+// "Mi disponibilidad para asesorías" — cada abogado (o administrador que
+// también las atienda) define los días y horas de la semana en que puede
+// tomar una llamada de asesoría de pago. Es la base para poder ofrecer
+// horarios reales desde el bot de WhatsApp más adelante.
+// ---------------------------------------------------------------
+function disponibilidadPanelHTML(){
+  const porDia = {};
+  DISPONIBILIDAD.forEach(b=>{
+    if(!porDia[b.dia_semana]) porDia[b.dia_semana] = [];
+    porDia[b.dia_semana].push(b);
+  });
+  const filas = Object.keys(porDia).map(Number).sort((a,b)=>a-b).map(dia=>
+    porDia[dia].map(b=>`
+      <tr>
+        <td>${DIA_SEMANA_LABEL[dia]}</td>
+        <td>${b.hora_inicio} – ${b.hora_fin}</td>
+        <td><button class="btn secondary" data-delete-disponibilidad="${b.id}" style="padding:5px 10px; font-size:11px;">Quitar</button></td>
+      </tr>`).join("")
+  ).join("");
+  return `
+  <div class="panel">
+    <div class="panel-head" style="cursor:pointer;" data-toggle-disponibilidad>
+      <h3>Mi disponibilidad para asesorías</h3>
+      <span class="count">${DISPONIBILIDAD.length}</span>
+    </div>
+    ${DISPONIBILIDAD_ABIERTA ? `
+    <div class="panel-body" style="padding:16px 20px;">
+      <div class="notice" style="margin-bottom:14px;">Define los días y horas en que puedes atender una asesoría telefónica de 1 hora. Esto es lo que se va a usar para ofrecer horarios reales a los clientes que agenden.</div>
+      <form id="addDisponibilidadForm" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;">
+        <div class="field" style="margin:0;"><label>Día</label>
+          <select id="disponibilidadDia" style="padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+            ${[1,2,3,4,5,6,7].map(d=>`<option value="${d}">${DIA_SEMANA_LABEL[d]}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field" style="margin:0;"><label>Desde</label><input type="time" id="disponibilidadInicio" required></div>
+        <div class="field" style="margin:0;"><label>Hasta</label><input type="time" id="disponibilidadFin" required></div>
+        <button type="submit" class="btn">Agregar horario</button>
+      </form>
+      ${DISPONIBILIDAD.length ? `
+      <table><thead><tr><th>Día</th><th>Horario</th><th></th></tr></thead>
+      <tbody>${filas}</tbody></table>
+      ` : `<div class="notice">Todavía no tienes horarios registrados.</div>`}
+    </div>` : ""}
+  </div>`;
+}
+
 function agendaHTML(){
   const isAdmin = CURRENT_USER.role === 'Administrador';
   let all = buildAgendaEntries();
@@ -3517,6 +3578,7 @@ function agendaHTML(){
       `}
     </div>
   </div>
+  ${disponibilidadPanelHTML()}
   ${isAdmin ? `
   <div class="panel">
     <div class="panel-head"><h3>Pendientes por socio</h3><span class="count">${Object.keys(resumenPorSocio).length}</span></div>
@@ -3896,6 +3958,39 @@ function bindViewBody(){
     el.addEventListener('click', ()=>{
       AGENDA_SOCIO = el.dataset.agendaSocio;
       renderViewBody();
+    });
+  });
+  const toggleDisponibilidad = document.querySelector('[data-toggle-disponibilidad]');
+  if(toggleDisponibilidad){
+    toggleDisponibilidad.addEventListener('click', ()=>{
+      DISPONIBILIDAD_ABIERTA = !DISPONIBILIDAD_ABIERTA;
+      renderViewBody();
+    });
+  }
+  const addDisponibilidadForm = document.getElementById('addDisponibilidadForm');
+  if(addDisponibilidadForm){
+    addDisponibilidadForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const dia_semana = parseInt(document.getElementById('disponibilidadDia').value, 10);
+      const hora_inicio = document.getElementById('disponibilidadInicio').value;
+      const hora_fin = document.getElementById('disponibilidadFin').value;
+      if(!hora_inicio || !hora_fin){ alert('Captura la hora de inicio y de fin.'); return; }
+      if(hora_inicio >= hora_fin){ alert('La hora de inicio debe ser antes que la hora de fin.'); return; }
+      try{
+        await api('POST', 'disponibilidad_agregar.php', {dia_semana, hora_inicio, hora_fin});
+        await loadDisponibilidad();
+        renderViewBody();
+      }catch(err){ alert('No se pudo agregar el horario: ' + err.message); }
+    });
+  }
+  document.querySelectorAll('[data-delete-disponibilidad]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = parseInt(btn.dataset.deleteDisponibilidad, 10);
+      try{
+        await api('POST', 'disponibilidad_eliminar.php', {id});
+        await loadDisponibilidad();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar el horario: ' + err.message); }
     });
   });
   const googleConnectBtn = document.getElementById('googleConnectBtn');
