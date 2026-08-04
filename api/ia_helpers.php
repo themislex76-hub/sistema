@@ -654,7 +654,7 @@ function ia_registrar_prospecto_atorado(PDO $pdo, string $telefono, ?array $lead
     if (trim($datosLead['resumen']) === '') {
         $datosLead['resumen'] = $resumenFallback;
     }
-    guardar_prospecto($pdo, $telefono, $nombre, $datosLead, true);
+    guardar_prospecto($pdo, $telefono, $nombre, $datosLead, true, true);
 }
 
 /**

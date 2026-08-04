@@ -15,12 +15,18 @@ declare(strict_types=1);
  * despido siempre se pausa de inmediato (necesita intake humano real) y
  * nunca se "degrada" a asesoría paga si llega uno nuevo después. Esto
  * nunca vuelve a activar solo un bot que un abogado ya pausó a mano.
+ *
+ * $reactivarEstatus=true vuelve a poner estatus='nuevo' aunque ya
+ * estuviera "Descartado" o "Contactado" — se usa cuando de verdad hay algo
+ * nuevo que requiere atención (se atoró el flujo, o se confirmó un pago),
+ * para no dejar un caso real escondido bajo un estatus viejo.
  */
-function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, array $lead, bool $forzarPausa = false): void
+function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, array $lead, bool $forzarPausa = false, bool $reactivarEstatus = false): void
 {
     $nombre = $lead['nombre'] !== '' ? $lead['nombre'] : $nombrePerfil;
     $estado = $lead['estado'] !== '' ? $lead['estado'] : null;
     $pausar = ($forzarPausa || $lead['tipo'] === 'despido') ? 1 : 0;
+    $estatusUpdate = $reactivarEstatus ? "estatus = 'nuevo'," : '';
     $stmt = $pdo->prepare(
         "INSERT INTO prospectos (telefono, tipo, nombre, estado_ubicacion, resumen_caso, pausado_bot)
          VALUES (:t, :tipo, :nombre, :estado, :resumen, :pausar)
@@ -29,6 +35,7 @@ function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, ar
            nombre = COALESCE(VALUES(nombre), nombre),
            estado_ubicacion = COALESCE(VALUES(estado_ubicacion), estado_ubicacion),
            resumen_caso = VALUES(resumen_caso),
+           {$estatusUpdate}
            pausado_bot = IF(tipo = 'despido' OR VALUES(tipo) = 'despido' OR VALUES(pausado_bot) = 1, 1, pausado_bot)"
     );
     $stmt->execute([
