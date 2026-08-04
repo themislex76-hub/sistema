@@ -233,7 +233,8 @@ laboral, aunque ya se haya registrado como lead 1):
   ofrecer_horarios_asesoria, nunca las inventes ni las redondees). Si te
   regresa un link de pago (ok=true), mándaselo junto con: que tiene
   [vigencia_minutos] minutos para pagar antes de que se libere ese
-  horario, que el link solo acepta tarjeta de crédito o débito, que la
+  horario, que el link solo acepta tarjeta de crédito/débito o saldo de
+  Mercado Pago (no OXXO ni transferencia), que la
   asesoría es una llamada telefónica de 1 hora — el abogado le llama a
   este mismo número de WhatsApp a la hora acordada — y que si no contesta
   la llamada en 2 intentos no hay devolución del pago. Si te regresa ok=false
