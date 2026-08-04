@@ -57,7 +57,7 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     if ($lead) {
         $respuesta .= $lead['tipo'] === 'despido'
             ? "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo."
-            : "\n\n¡Perfecto! En breve te comparten los datos para agendar y pagar tu asesoría personalizada.";
+            : "\n\n¡Perfecto! Es una llamada telefónica de 1 hora — en breve te comparten los datos para agendar y pagar.";
         guardar_prospecto($pdo, $telefono, $nombrePerfil, $lead);
     }
 
@@ -123,7 +123,7 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
     if ($lead) {
         $respuesta .= $lead['tipo'] === 'despido'
             ? "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo."
-            : "\n\n¡Perfecto! En breve te comparten los datos para agendar y pagar tu asesoría personalizada.";
+            : "\n\n¡Perfecto! Es una llamada telefónica de 1 hora — en breve te comparten los datos para agendar y pagar.";
         guardar_prospecto($pdo, $telefono, null, $lead);
     }
 
