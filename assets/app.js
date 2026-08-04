@@ -60,6 +60,8 @@ let CONVERSACIONES_STATS = {};
 let CONVERSACION_ABIERTA = null; // teléfono de la conversación expandida
 let CONVERSACION_MENSAJES = [];
 let CONVERSACION_RESUMEN = null; // {resumen, mensajes_contados, generado_en} o null
+let REINTENTO_EN_PROGRESO = false; // true mientras corre el reintento en lote de respuestas fallidas
+let REINTENTO_PROGRESO_TXT = "";
 let ACTIVE_CASE = null;
 let MODAL_TAB = "resumen";
 let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de CASES_DATA)
@@ -3325,7 +3327,12 @@ function conversacionesHTML(){
     <div class="stat-card"><div class="bar"></div><div class="num">${s.conversaciones_totales ?? '—'}</div><div class="label">Conversaciones totales (números distintos)</div></div>
     <div class="stat-card"><div class="bar"></div><div class="num">${s.conversaciones_nuevas_hoy ?? '—'}</div><div class="label">Conversaciones nuevas hoy</div></div>
     <div class="stat-card ok"><div class="bar"></div><div class="num">${s.tasa_conversion!=null? s.tasa_conversion+'%':'—'}</div><div class="label">Calificaron como prospecto (${s.total_prospectos ?? 0} de ${s.conversaciones_totales ?? 0})</div></div>
-  </div>`;
+  </div>
+  ${(s.sin_responder > 0 || REINTENTO_EN_PROGRESO) ? `
+  <div class="notice" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px; margin-top:0;">
+    <div>${REINTENTO_EN_PROGRESO ? escapeHTML(REINTENTO_PROGRESO_TXT) : `<strong>${s.sin_responder}</strong> conversación${s.sin_responder===1?'':'es'} se quedaron sin respuesta real (falló la IA) y ${s.sin_responder===1?'puede':'pueden'} reintentarse ahora.`}</div>
+    <button class="btn" id="reintentarLoteBtn" ${REINTENTO_EN_PROGRESO?'disabled':''}>${REINTENTO_EN_PROGRESO ? 'Reintentando...' : 'Reintentar respuestas fallidas'}</button>
+  </div>` : ''}`;
   if(!CONVERSACIONES.length){
     return statsHTML + `<div class="panel"><div class="panel-body" style="padding:24px;">
       <div class="notice">Todavía no hay conversaciones registradas del bot de WhatsApp.</div>
@@ -3340,6 +3347,7 @@ function conversacionesHTML(){
         return `
       <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${CONVERSACION_ABIERTA===c.telefono?'background:var(--parchment);':''}" data-conversacion-abrir="${escapeHTML(c.telefono)}">
         <span class="badge ${calificado ? (PROSPECTO_TIPO_BADGE[c.prospecto_tipo]||'closed') : 'warn'}" style="flex-shrink:0; margin-top:1px;">${calificado ? (PROSPECTO_TIPO_LABEL[c.prospecto_tipo]||c.prospecto_tipo) : 'Sin calificar'}</span>
+        ${c.fallo ? '<span class="badge crit" style="flex-shrink:0; margin-top:1px;">Falló</span>' : ''}
         <div class="alert-info">
           <div class="name">${escapeHTML(c.prospecto_nombre || c.telefono)}</div>
           <div class="meta">${c.ultima_direccion==='entrante'?'Cliente: ':'Bot/Tú: '}${escapeHTML(truncate(c.ultimo_texto||'',90))}</div>
@@ -3363,6 +3371,7 @@ function conversacionDetalleHTML(c){
         ${c.prospecto_tipo ? `<span class="badge ${PROSPECTO_TIPO_BADGE[c.prospecto_tipo]||'closed'}">${PROSPECTO_TIPO_LABEL[c.prospecto_tipo]||c.prospecto_tipo}</span>` : `<span class="badge warn">Sin calificar como prospecto</span>`}
         ${c.asignado_nombre ? `<span class="badge ok">Turnado a ${escapeHTML(c.asignado_nombre)}</span>` : ""}
         ${c.expediente_id ? `<span class="badge ok">Convertido en expediente</span>` : ""}
+        ${c.fallo ? `<span class="badge crit">La IA no pudo contestar el último mensaje</span> <button class="btn secondary" id="conversacionReintentarBtn" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:5px 10px;">Reintentar esta conversación</button>` : ""}
       </div>
       <div style="background:var(--parchment); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px;">
@@ -4022,6 +4031,53 @@ function bindViewBody(){
         alert('No se pudo generar el resumen: ' + err.message);
         conversacionResumenBtn.disabled = false;
         conversacionResumenBtn.textContent = CONVERSACION_RESUMEN ? 'Actualizar resumen' : 'Generar resumen';
+      }
+    });
+  }
+  const conversacionReintentarBtn = document.getElementById('conversacionReintentarBtn');
+  if(conversacionReintentarBtn){
+    conversacionReintentarBtn.addEventListener('click', async ()=>{
+      const telefono = conversacionReintentarBtn.dataset.telefono;
+      conversacionReintentarBtn.disabled = true;
+      conversacionReintentarBtn.textContent = 'Reintentando...';
+      try{
+        const d = await api('POST', 'conversaciones_reintentar.php', {telefono});
+        if(!d.ok){ alert('No se pudo reintentar: ' + d.motivo); }
+        await loadConversaciones();
+        await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo reintentar: ' + err.message);
+        conversacionReintentarBtn.disabled = false;
+        conversacionReintentarBtn.textContent = 'Reintentar esta conversación';
+      }
+    });
+  }
+  const reintentarLoteBtn = document.getElementById('reintentarLoteBtn');
+  if(reintentarLoteBtn){
+    reintentarLoteBtn.addEventListener('click', async ()=>{
+      REINTENTO_EN_PROGRESO = true;
+      REINTENTO_PROGRESO_TXT = 'Reintentando respuestas fallidas...';
+      renderViewBody();
+      try{
+        let restantes = Infinity;
+        let totalOk = 0, totalFallo = 0;
+        while(restantes > 0){
+          const d = await api('POST', 'conversaciones_reintentar.php', {lote:true, tamano:8});
+          totalOk += d.resultados.filter(r=>r.ok).length;
+          totalFallo += d.resultados.filter(r=>!r.ok).length;
+          restantes = d.restantes;
+          REINTENTO_PROGRESO_TXT = `Reintentando... ${totalOk} contestadas, ${totalFallo} sin poder contestar, ${restantes} pendientes.`;
+          renderViewBody();
+          if(d.resultados.length === 0) break; // no debería pasar, pero evita loop infinito
+        }
+        await loadConversaciones();
+      }catch(err){
+        alert('No se pudo completar el reintento en lote: ' + err.message);
+      }finally{
+        REINTENTO_EN_PROGRESO = false;
+        REINTENTO_PROGRESO_TXT = "";
+        renderViewBody();
       }
     });
   }

@@ -69,6 +69,76 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
 }
 
+// Reintenta contestar una conversación cuyo último mensaje fue la
+// respuesta de emergencia (IA_FALLBACK_TEXTO) — típicamente porque en ese
+// momento la API de Claude falló (sin saldo, credencial inválida, etc.).
+// Se usa desde "Conversaciones (WhatsApp)" para recuperar esos casos una
+// vez arreglado el problema, sin esperar a que el cliente vuelva a escribir.
+// Devuelve ['ok' => bool, 'motivo' => string] — motivo solo se llena si ok=false.
+function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
+{
+    // Si un humano ya tomó el caso, no lo interrumpimos con una respuesta
+    // automática — mismo criterio que procesar_mensaje_entrante().
+    $stmt = $pdo->prepare('SELECT pausado_bot FROM prospectos WHERE telefono = :t LIMIT 1');
+    $stmt->execute([':t' => $telefono]);
+    $prospecto = $stmt->fetch();
+    if ($prospecto && (int)$prospecto['pausado_bot'] === 1) {
+        return ['ok' => false, 'motivo' => 'Un humano ya está atendiendo esta conversación.'];
+    }
+
+    $stmt = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
+    $stmt->execute([':t' => $telefono]);
+    $historial = array_reverse($stmt->fetchAll());
+    if (!$historial) {
+        return ['ok' => false, 'motivo' => 'No hay mensajes para este número.'];
+    }
+
+    $ultimo = end($historial);
+    if ($ultimo['direccion'] !== 'saliente' || $ultimo['texto'] !== IA_FALLBACK_TEXTO) {
+        return ['ok' => false, 'motivo' => 'Esta conversación ya tiene una respuesta real; no hace falta reintentar.'];
+    }
+
+    // El historial que se manda a Claude debe terminar en un mensaje del
+    // cliente (role=user) — se descarta la respuesta de emergencia previa.
+    array_pop($historial);
+    $mensajesIA = [];
+    foreach ($historial as $h) {
+        $mensajesIA[] = [
+            'role' => $h['direccion'] === 'entrante' ? 'user' : 'assistant',
+            'content' => $h['texto'],
+        ];
+    }
+    if (!$mensajesIA || end($mensajesIA)['role'] !== 'user') {
+        return ['ok' => false, 'motivo' => 'No se encontró un mensaje del cliente pendiente de contestar.'];
+    }
+
+    $resultado = ia_responder_whatsapp($pdo, $mensajesIA);
+    $respuesta = $resultado['texto'];
+    $lead = $resultado['lead'];
+
+    if ($respuesta === IA_FALLBACK_TEXTO) {
+        return ['ok' => false, 'motivo' => 'La IA sigue sin poder contestar (revisa las credenciales o el saldo de Anthropic).'];
+    }
+
+    if ($lead) {
+        $respuesta .= $lead['tipo'] === 'despido'
+            ? "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo."
+            : "\n\n¡Perfecto! En breve te comparten los datos para agendar y pagar tu asesoría personalizada.";
+        guardar_prospecto($pdo, $telefono, null, $lead);
+    }
+
+    if (!whatsapp_enviar($telefono, $respuesta)) {
+        return ['ok' => false, 'motivo' => 'No se pudo enviar el mensaje por WhatsApp.'];
+    }
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+    );
+    $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
+
+    return ['ok' => true, 'motivo' => ''];
+}
+
 function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, array $lead): void
 {
     $nombre = $lead['nombre'] !== '' ? $lead['nombre'] : $nombrePerfil;

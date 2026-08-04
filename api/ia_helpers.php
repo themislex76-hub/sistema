@@ -17,6 +17,12 @@ declare(strict_types=1);
 
 const IA_MODEL = 'claude-sonnet-5';
 
+// Respuesta de emergencia cuando la IA no pudo contestar (sin credenciales,
+// sin saldo, la API caída, etc.) — una sola constante para poder detectar
+// después, desde "Conversaciones (WhatsApp)", qué conversaciones se
+// quedaron sin respuesta real y reintentarlas. Ver conversaciones_reintentar.php.
+const IA_FALLBACK_TEXTO = 'Gracias por tu mensaje, en un momento te contesto.';
+
 const IA_SYSTEM_PROMPT = <<<TXT
 Eres el asistente de WhatsApp de Expertos Laborales Abogados, un despacho
 mexicano de derecho laboral. Respondes las dudas de derecho laboral
@@ -353,14 +359,14 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes): array
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
         error_log('Falta api/anthropic_credentials.php');
-        return ['texto' => 'Gracias por tu mensaje, en un momento te contesto.', 'lead' => null];
+        return ['texto' => IA_FALLBACK_TEXTO, 'lead' => null];
     }
     require_once $credentialsFile;
     require_once __DIR__ . '/liquidacion_calculadora.php';
 
     $data = ia_llamar_claude($mensajes);
     if ($data === null) {
-        return ['texto' => 'Gracias por tu mensaje, en un momento te contesto.', 'lead' => null];
+        return ['texto' => IA_FALLBACK_TEXTO, 'lead' => null];
     }
 
     [$texto, $lead, $bloques] = ia_extraer_respuesta($data);
@@ -416,7 +422,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes): array
     }
 
     if (trim($texto) === '') {
-        $texto = 'Gracias por tu mensaje, en un momento te contesto.';
+        $texto = IA_FALLBACK_TEXTO;
     }
 
     return ['texto' => trim($texto), 'lead' => $lead];

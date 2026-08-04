@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/ia_helpers.php';
 
 // Vista de todas las conversaciones de WhatsApp (calificaran o no como
 // prospecto), para que el Administrador pueda ver de un vistazo qué está
@@ -43,6 +44,7 @@ foreach ($stmt->fetchAll() as $r) {
         'prospecto_nombre' => $r['prospecto_nombre'],
         'expediente_id' => $r['expediente_id'] !== null ? (int)$r['expediente_id'] : null,
         'asignado_nombre' => $r['asignado_nombre'],
+        'fallo' => $r['ultima_direccion'] === 'saliente' && $r['ultimo_texto'] === IA_FALLBACK_TEXTO,
     ];
 }
 
@@ -54,6 +56,22 @@ $statsRow = $pdo->query(
         (SELECT COUNT(DISTINCT telefono) FROM whatsapp_conversaciones WHERE creado_en >= CURDATE()) AS conversaciones_nuevas_hoy,
         (SELECT COUNT(*) FROM prospectos) AS total_prospectos"
 )->fetch();
+
+// Cuántas conversaciones se quedaron con la respuesta de emergencia como
+// último mensaje (la IA falló) y todavía no las atiende un humano — esas
+// son las que "Reintentar respuestas fallidas" puede recuperar.
+$sinResponderStmt = $pdo->prepare(
+    "SELECT COUNT(*) AS n
+     FROM whatsapp_conversaciones c
+     INNER JOIN (
+         SELECT telefono, MAX(id) AS ultimo_id FROM whatsapp_conversaciones GROUP BY telefono
+     ) t ON t.ultimo_id = c.id
+     LEFT JOIN prospectos p ON p.telefono = c.telefono
+     WHERE c.direccion = 'saliente' AND c.texto = :fallback
+       AND (p.pausado_bot IS NULL OR p.pausado_bot = 0)"
+);
+$sinResponderStmt->execute([':fallback' => IA_FALLBACK_TEXTO]);
+$sinResponder = (int)$sinResponderStmt->fetch()['n'];
 
 $conversacionesTotales = (int)($statsRow['conversaciones_totales'] ?? 0);
 $totalProspectos = (int)($statsRow['total_prospectos'] ?? 0);
@@ -67,5 +85,6 @@ respond([
         'conversaciones_nuevas_hoy' => (int)$statsRow['conversaciones_nuevas_hoy'],
         'total_prospectos' => $totalProspectos,
         'tasa_conversion' => $conversacionesTotales > 0 ? round($totalProspectos / $conversacionesTotales * 100, 1) : null,
+        'sin_responder' => $sinResponder,
     ],
 ]);
