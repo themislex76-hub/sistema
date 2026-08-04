@@ -15,6 +15,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/mercadopago_helpers.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
 require_once __DIR__ . '/citas_helpers.php';
+require_once __DIR__ . '/prospectos_helpers.php';
 
 // Mercado Pago acepta que el endpoint conteste rápido y sin cuerpo — si
 // tarda o falla, reintenta la notificación más tarde.
@@ -81,12 +82,20 @@ if ($stmt->rowCount() === 0) {
     mp_webhook_responder(200);
 }
 
-// A partir de aquí un humano se encarga (preparar y hacer la llamada) —
-// se pausa el bot para este teléfono igual que un lead de despido.
-$stmt = $pdo->prepare('UPDATE prospectos SET pausado_bot = 1 WHERE telefono = :t');
-$stmt->execute([':t' => $cita['telefono']]);
-
 $horarioTexto = citas_formatear_fecha_hora($cita['fecha'], substr($cita['hora_inicio'], 0, 5));
+
+// Mientras el bot ofrecía horarios y generaba el link de pago solo, esta
+// persona nunca se guardó en Prospectos (para no llenarle la lista al
+// despacho con interesados que no habían pagado todavía) — ya que sí pagó,
+// recién aquí se registra, con los datos reales de la cita, y se pausa el
+// bot (a partir de aquí un humano se encarga de preparar y hacer la llamada).
+guardar_prospecto($pdo, $cita['telefono'], $cita['nombre_cliente'], [
+    'tipo' => 'asesoria_paga',
+    'estado' => '',
+    'nombre' => $cita['nombre_cliente'] ?? '',
+    'resumen' => "Asesoría pagada (\${$cita['monto']} MXN) y agendada para {$horarioTexto}.",
+], true);
+
 $mensaje = "¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada para el {$horarioTexto}. Un abogado del despacho te va a llamar a este mismo número de WhatsApp a esa hora — por favor ten tu teléfono a la mano. Si no contestas la llamada en 2 intentos, no habrá devolución del pago. Cualquier cosa antes, aquí mismo nos puedes escribir.";
 whatsapp_enviar($cita['telefono'], $mensaje);
 

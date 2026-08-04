@@ -447,6 +447,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     require_once __DIR__ . '/liquidacion_calculadora.php';
     require_once __DIR__ . '/citas_helpers.php';
     require_once __DIR__ . '/mercadopago_helpers.php';
+    require_once __DIR__ . '/prospectos_helpers.php';
 
     // Herramientas cuyo resultado hay que calcular de verdad en PHP (no
     // dejar que la IA "invente" el número o el horario) y devolverle a
@@ -519,9 +520,9 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ? json_encode($calc, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Datos insuficientes o inválidos para calcular.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'ofrecer_horarios_asesoria') {
-                $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono);
+                $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead);
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
-                $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in);
+                $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in, $lead);
             } else {
                 // registrar_lead_despido, registrar_interes_asesoria_paga:
                 // solo hace falta reconocer la llamada, ya se registró el
@@ -566,15 +567,15 @@ const MERCADOPAGO_WEBHOOK_URL = 'https://sistema.expertoslaborales.com/sistema/a
 /**
  * Resultado (como JSON) de la herramienta ofrecer_horarios_asesoria: la
  * lista de horarios reales disponibles ahora mismo. Si no hay ninguno (por
- * ejemplo, todavía ningún abogado configuró su disponibilidad), pausa el
- * bot para esa conversación — a partir de ahí un humano tiene que
- * coordinar directo, igual que antes de tener este agendado automático.
+ * ejemplo, todavía ningún abogado configuró su disponibilidad), recién
+ * AHÍ se registra el prospecto (no antes, con solo el interés) y se pausa
+ * el bot — a partir de ahí un humano tiene que coordinar directo.
  */
-function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono): string
+function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead): string
 {
     $horarios = citas_calcular_horarios_disponibles($pdo);
     if (!$horarios) {
-        ia_pausar_prospecto($pdo, $telefono);
+        ia_registrar_prospecto_atorado($pdo, $telefono, $lead, 'Mostró interés en la asesoría de pago pero no hay horarios disponibles en este momento.');
         return json_encode([
             'horarios' => [],
             'nota' => 'No hay horarios disponibles en este momento. Dile a la persona que un abogado del despacho la va a contactar directo para coordinar — no le des ningún link de pago ni le prometas un horario.',
@@ -588,9 +589,10 @@ function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono): string
  * aparta el horario elegido y genera el link de pago (solo tarjeta) de
  * Mercado Pago. Si el horario ya no está libre, o si algo falla al
  * generar el link, avisa y — cuando ya no hay nada más que el bot pueda
- * hacer — pausa la conversación para que un humano la retome.
+ * hacer — recién ahí registra el prospecto y pausa la conversación para
+ * que un humano la retome.
  */
-function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in): string
+function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?array $lead): string
 {
     $fecha = (string)($in['fecha'] ?? '');
     $horaInicio = (string)($in['hora_inicio'] ?? '');
@@ -615,7 +617,7 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in): 
         // generar el link de pago.
         $stmt = $pdo->prepare("UPDATE citas_asesoria SET estado = 'cancelada' WHERE id = :id");
         $stmt->execute([':id' => $citaId]);
-        ia_pausar_prospecto($pdo, $telefono);
+        ia_registrar_prospecto_atorado($pdo, $telefono, $lead, 'Eligió horario para la asesoría de pago pero hubo un problema técnico generando el link de pago.', $nombre);
         return json_encode([
             'ok' => false,
             'motivo' => 'Hubo un problema técnico generando el link de pago. Dile a la persona que un abogado del despacho le va a mandar el link directo en breve — no le des ningún link tú.',
@@ -635,16 +637,24 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in): 
 }
 
 /**
- * Pausa el bot para un teléfono cuando ya no hay nada más que pueda hacer
- * de forma automática (sin horarios, o falló el link de pago) — mismo
- * criterio de "a partir de aquí un humano lo atiende" que un lead de
- * despido. No falla si el teléfono todavía no tiene fila en prospectos
- * (el UPDATE simplemente no afecta nada en ese caso).
+ * Registra (o actualiza) el prospecto de asesoría de pago y pausa el bot
+ * cuando el flujo automático ya no puede seguir solo (sin horarios, o
+ * falló el pago) — esta es la ÚNICA vez que un interesado en la asesoría
+ * de pago se guarda en Prospectos: mientras el bot sigue ofreciendo
+ * horarios y generando el link de pago solo, no se guarda nada, para no
+ * llenarle la lista al despacho con conversaciones que no necesitan que
+ * un humano intervenga. $lead trae el resumen/estado si se registró
+ * interés en esta misma ronda; si es null (p. ej. preguntó horarios
+ * directo, sin haber dicho antes que le interesaba) se usa un resumen
+ * genérico.
  */
-function ia_pausar_prospecto(PDO $pdo, string $telefono): void
+function ia_registrar_prospecto_atorado(PDO $pdo, string $telefono, ?array $lead, string $resumenFallback, ?string $nombre = null): void
 {
-    $stmt = $pdo->prepare('UPDATE prospectos SET pausado_bot = 1 WHERE telefono = :t');
-    $stmt->execute([':t' => $telefono]);
+    $datosLead = $lead ?? ['tipo' => 'asesoria_paga', 'estado' => '', 'nombre' => '', 'resumen' => ''];
+    if (trim($datosLead['resumen']) === '') {
+        $datosLead['resumen'] = $resumenFallback;
+    }
+    guardar_prospecto($pdo, $telefono, $nombre, $datosLead, true);
 }
 
 /**
