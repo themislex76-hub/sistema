@@ -4059,19 +4059,39 @@ function bindViewBody(){
       REINTENTO_EN_PROGRESO = true;
       REINTENTO_PROGRESO_TXT = 'Reintentando respuestas fallidas...';
       renderViewBody();
+      let motivosFallo = {}; // motivo -> cuántas veces pasó, para el resumen final
+      let atorado = false;
       try{
         let restantes = Infinity;
+        let restantesAnterior = Infinity;
         let totalOk = 0, totalFallo = 0;
         while(restantes > 0){
           const d = await api('POST', 'conversaciones_reintentar.php', {lote:true, tamano:3});
           totalOk += d.resultados.filter(r=>r.ok).length;
           totalFallo += d.resultados.filter(r=>!r.ok).length;
+          d.resultados.filter(r=>!r.ok).forEach(r=>{
+            motivosFallo[r.motivo] = (motivosFallo[r.motivo]||0) + 1;
+          });
           restantes = d.restantes;
           REINTENTO_PROGRESO_TXT = `Reintentando... ${totalOk} contestadas, ${totalFallo} sin poder contestar, ${restantes} pendientes.`;
           renderViewBody();
           if(d.resultados.length === 0) break; // no debería pasar, pero evita loop infinito
+          // Si nadie se contestó en esta vuelta y el número de pendientes no bajó,
+          // son casos que se van a quedar fallando siempre (ej. sin saldo de
+          // Anthropic) — seguir insistiendo solo gastaría llamadas a la API sin
+          // avanzar, así que nos detenemos y lo explicamos en el resumen.
+          if(d.resultados.every(r=>!r.ok) && restantes === restantesAnterior){
+            atorado = true;
+            break;
+          }
+          restantesAnterior = restantes;
         }
         await loadConversaciones();
+        const resumenMotivos = Object.entries(motivosFallo).map(([m,n])=>`• ${n}× ${m}`).join('\n');
+        let mensaje = `Reintento terminado: ${totalOk} conversación${totalOk===1?'':'es'} contestada${totalOk===1?'':'s'}, ${totalFallo} sin poder contestar.`;
+        if(resumenMotivos) mensaje += `\n\nMotivos de las que no se pudieron:\n${resumenMotivos}`;
+        if(atorado) mensaje += `\n\nSe detuvo porque las restantes van a seguir fallando por la misma razón — dale clic de nuevo cuando esté resuelto.`;
+        if(totalOk > 0 || totalFallo > 0) alert(mensaje);
       }catch(err){
         alert('No se pudo completar el reintento en lote: ' + err.message);
       }finally{
