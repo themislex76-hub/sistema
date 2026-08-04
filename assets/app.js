@@ -1747,14 +1747,39 @@ async function googleEventId(usuarioId, e){
   return 'ela' + hex.slice(0, 40);
 }
 
+async function googleCitaEventId(usuarioId, citaId){
+  const key = usuarioId + '|cita_asesoria|' + citaId;
+  const bytes = new TextEncoder().encode(key);
+  const hashBuf = await crypto.subtle.digest('SHA-256', bytes);
+  const hex = Array.from(new Uint8Array(hashBuf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  return 'ela' + hex.slice(0, 40);
+}
+
+// Crea o actualiza (si ya existe, 409) un evento con id fijo — así
+// resincronizar no crea duplicados, solo actualiza el mismo evento.
+async function googlePushEvent(base, headers, id, body){
+  let res = await fetch(base, {method:'POST', headers, body: JSON.stringify(Object.assign({id}, body))});
+  if(res.status === 409){
+    res = await fetch(base + '/' + id, {method:'PATCH', headers, body: JSON.stringify(body)});
+  }
+  return res.ok;
+}
+
 async function sincronizarGoogleCalendar(onProgress){
   const tok = await api('GET', 'google_access_token.php');
   const accessToken = tok.access_token;
   const entries = buildAgendaEntries().filter(e => GOOGLE_TIPOS_SINCRONIZABLES.includes(e.tipo));
+  // Las asesorías de pago ya confirmadas (pagadas) también se agendan solas
+  // en el calendario — con hora exacta, a diferencia de audiencias/pagos/
+  // etc. que son de todo el día, porque aquí sí importa la hora exacta de
+  // la llamada.
+  const citas = CITAS.filter(c => c.estado === 'confirmada');
+  const total = entries.length + citas.length;
   const headers = {'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json'};
   const base = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
   const idsActuales = [];
   let fallos = 0;
+  let hechos = 0;
 
   for(const e of entries){
     const id = await googleEventId(CURRENT_USER.id, e);
@@ -1765,20 +1790,28 @@ async function sincronizarGoogleCalendar(onProgress){
       start: {date: e.fecha},
       end: {date: e.fecha},
     };
-    try{
-      let res = await fetch(base, {
-        method:'POST', headers, body: JSON.stringify(Object.assign({id}, body))
-      });
-      if(res.status === 409){
-        res = await fetch(base + '/' + id, {method:'PATCH', headers, body: JSON.stringify(body)});
-      }
-      if(!res.ok) fallos++;
-    }catch(err){ fallos++; }
-    if(onProgress) onProgress(idsActuales.length, entries.length);
+    try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
+    hechos++;
+    if(onProgress) onProgress(hechos, total);
+  }
+
+  for(const c of citas){
+    const id = await googleCitaEventId(CURRENT_USER.id, c.id);
+    idsActuales.push(id);
+    const body = {
+      summary: `[Asesoría] ${c.nombre_cliente || c.telefono}`,
+      description: `Llamada telefónica de la asesoría pagada ($${c.monto.toFixed(0)} MXN). Teléfono: ${c.telefono}.\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.`,
+      start: {dateTime: `${c.fecha}T${c.hora_inicio}:00`, timeZone: 'America/Mexico_City'},
+      end: {dateTime: `${c.fecha}T${c.hora_fin}:00`, timeZone: 'America/Mexico_City'},
+    };
+    try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
+    hechos++;
+    if(onProgress) onProgress(hechos, total);
   }
 
   // Borra del calendario lo que ya no aplica (pago cobrado, prescripción
-  // resuelta, etc.) comparando contra lo que se sincronizó la vez anterior.
+  // resuelta, cita cancelada/expirada, etc.) comparando contra lo que se
+  // sincronizó la vez anterior.
   let previos = [];
   try{ const st = await api('GET', 'google_sync_state.php'); previos = st.evento_ids; }catch(e){}
   const obsoletos = previos.filter(id => !idsActuales.includes(id));
@@ -1787,7 +1820,7 @@ async function sincronizarGoogleCalendar(onProgress){
   }
 
   await api('POST', 'google_sync_state.php', {evento_ids: idsActuales});
-  return {sincronizados: entries.length, borrados: obsoletos.length, fallos};
+  return {sincronizados: total, borrados: obsoletos.length, fallos};
 }
 
 // Sincroniza en segundo plano, sin interrumpir ni avisar, justo después de
