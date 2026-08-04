@@ -50,14 +50,19 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         $mensajesIA[] = ['role' => 'user', 'content' => $texto];
     }
 
-    $resultado = ia_responder_whatsapp($pdo, $mensajesIA);
+    $resultado = ia_responder_whatsapp($pdo, $mensajesIA, $telefono);
     $respuesta = $resultado['texto'];
     $lead = $resultado['lead'];
 
     if ($lead) {
-        $respuesta .= $lead['tipo'] === 'despido'
-            ? "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo."
-            : "\n\n¡Perfecto! Es una llamada telefónica de 1 hora — en breve te comparten los datos para agendar y pagar.";
+        // Un lead de despido no tiene nada más que el bot pueda hacer —
+        // siempre se avisa que un humano contacta directo. Uno de
+        // asesoría paga YA trae los horarios/link de pago dentro de
+        // $respuesta (ver ofrecer_horarios_asesoria/confirmar_horario_asesoria
+        // en ia_helpers.php), así que no hace falta ningún texto extra aquí.
+        if ($lead['tipo'] === 'despido') {
+            $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
+        }
         guardar_prospecto($pdo, $telefono, $nombrePerfil, $lead);
     }
 
@@ -112,7 +117,7 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
         return ['ok' => false, 'motivo' => 'No se encontró un mensaje del cliente pendiente de contestar.'];
     }
 
-    $resultado = ia_responder_whatsapp($pdo, $mensajesIA);
+    $resultado = ia_responder_whatsapp($pdo, $mensajesIA, $telefono);
     $respuesta = $resultado['texto'];
     $lead = $resultado['lead'];
 
@@ -121,9 +126,9 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
     }
 
     if ($lead) {
-        $respuesta .= $lead['tipo'] === 'despido'
-            ? "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo."
-            : "\n\n¡Perfecto! Es una llamada telefónica de 1 hora — en breve te comparten los datos para agendar y pagar.";
+        if ($lead['tipo'] === 'despido') {
+            $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
+        }
         guardar_prospecto($pdo, $telefono, null, $lead);
     }
 
@@ -146,15 +151,24 @@ function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, ar
     // Un lead de despido nunca se degrada a asesoría paga si llega uno
     // nuevo después — es el más valioso de los dos (posible cliente de
     // litigio, no solo de una consulta de una hora).
+    //
+    // Un lead de despido SÍ pausa el bot de inmediato (necesita intake
+    // humano real). Uno de asesoría paga NO se pausa aquí todavía — se
+    // deja que el bot siga solo para ofrecer horarios y generar el link
+    // de pago (ver ia_helpers.php); se pausa hasta que el pago se
+    // confirme (mercadopago_webhook.php) o si ya no hay nada automático
+    // que hacer (ia_pausar_prospecto). Si ya estaba pausado a mano por un
+    // abogado, este UPDATE nunca lo vuelve a activar solo.
+    $pausar = $lead['tipo'] === 'despido' ? 1 : 0;
     $stmt = $pdo->prepare(
         "INSERT INTO prospectos (telefono, tipo, nombre, estado_ubicacion, resumen_caso, pausado_bot)
-         VALUES (:t, :tipo, :nombre, :estado, :resumen, 1)
+         VALUES (:t, :tipo, :nombre, :estado, :resumen, :pausar)
          ON DUPLICATE KEY UPDATE
            tipo = IF(tipo = 'despido', 'despido', VALUES(tipo)),
            nombre = COALESCE(VALUES(nombre), nombre),
            estado_ubicacion = COALESCE(VALUES(estado_ubicacion), estado_ubicacion),
            resumen_caso = VALUES(resumen_caso),
-           pausado_bot = 1"
+           pausado_bot = IF(tipo = 'despido' OR VALUES(tipo) = 'despido', 1, pausado_bot)"
     );
     $stmt->execute([
         ':t' => $telefono,
@@ -162,5 +176,6 @@ function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, ar
         ':nombre' => $nombre,
         ':estado' => $estado,
         ':resumen' => $lead['resumen'],
+        ':pausar' => $pausar,
     ]);
 }

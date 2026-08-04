@@ -1650,6 +1650,10 @@ let DISPONIBILIDAD = []; // {id, dia_semana (1=lunes..7=domingo), hora_inicio, h
 let DISPONIBILIDAD_ABIERTA = false; // si el panel está desplegado
 const DIA_SEMANA_LABEL = {1:'Lunes', 2:'Martes', 3:'Miércoles', 4:'Jueves', 5:'Viernes', 6:'Sábado', 7:'Domingo'};
 
+// Próximas asesorías agendadas (pagadas o con pago pendiente) — ver panel
+// dentro de Agenda general.
+let CITAS = [];
+
 // Estado de la cuenta propia del Portal Federal (PJF) — ver pantalla "Mi
 // cuenta". El robot Federal usa las cuentas guardadas por cada abogado
 // para revisar los expedientes de todos, no solo de uno.
@@ -2042,6 +2046,7 @@ async function refreshBootstrap(){
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
     await loadProspectos();
     await loadDisponibilidad();
+    await loadCitas();
   }
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadConversaciones();
@@ -2060,6 +2065,13 @@ async function loadDisponibilidad(){
     const d = await api('GET', 'disponibilidad_list.php');
     DISPONIBILIDAD = d.bloques;
   }catch(e){ DISPONIBILIDAD = []; }
+}
+
+async function loadCitas(){
+  try{
+    const d = await api('GET', 'citas_list.php');
+    CITAS = d.citas;
+  }catch(e){ CITAS = []; }
 }
 
 async function loadProspectoMensajes(telefono){
@@ -3477,6 +3489,32 @@ function bindConversacionModalEvents(){
 }
 
 // ---------------------------------------------------------------
+// "Próximas asesorías agendadas" — lo que el bot agendó y cobró solo,
+// cruzando la disponibilidad de cada abogado con Mercado Pago. Un abogado
+// ve las suyas; el administrador las ve todas.
+// ---------------------------------------------------------------
+function citasPanelHTML(){
+  if(!CITAS.length) return "";
+  const CITA_ESTADO_BADGE = {confirmada:'ok', pendiente_pago:'warn'};
+  const CITA_ESTADO_LABEL = {confirmada:'Pagada', pendiente_pago:'Esperando pago'};
+  return `
+  <div class="panel">
+    <div class="panel-head"><h3>Próximas asesorías agendadas</h3><span class="count">${CITAS.length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      ${CITAS.map(c=>`
+      <div class="alert-row" style="align-items:flex-start;">
+        <span class="badge ${CITA_ESTADO_BADGE[c.estado]||'closed'}" style="flex-shrink:0; margin-top:1px;">${CITA_ESTADO_LABEL[c.estado]||c.estado}</span>
+        <div class="alert-info">
+          <div class="name">${escapeHTML(c.texto)}</div>
+          <div class="meta">${escapeHTML(c.nombre_cliente || c.telefono)} &middot; ${escapeHTML(c.telefono)} &middot; con ${escapeHTML(c.usuario_nombre)}</div>
+        </div>
+        <div style="flex-shrink:0; font-size:12px; color:var(--gray); text-align:right;">$${c.monto.toFixed(0)} MXN</div>
+      </div>`).join("")}
+    </div>
+  </div>`;
+}
+
+// ---------------------------------------------------------------
 // "Mi disponibilidad para asesorías" — cada abogado (o administrador que
 // también las atienda) define los días y horas de la semana en que puede
 // tomar una llamada de asesoría de pago. Es la base para poder ofrecer
@@ -3578,6 +3616,7 @@ function agendaHTML(){
       `}
     </div>
   </div>
+  ${citasPanelHTML()}
   ${disponibilidadPanelHTML()}
   ${isAdmin ? `
   <div class="panel">

@@ -217,12 +217,34 @@ laboral, aunque ya se haya registrado como lead 1):
   la repitas en cada mensaje ni la fuerces si ya dijo que no le
   interesa). No llames ninguna herramienta todavía en este mensaje.
 - Si en un mensaje siguiente la persona responde que sí (o equivalente:
-  pregunta cómo pagar/agendar, confirma interés, etc.), ahí SÍ, además de
-  responder, DEBES llamar la herramienta registrar_interes_asesoria_paga
-  con los datos que tengas.
+  pregunta cómo pagar/agendar, confirma interés, etc.), ahí SÍ, en el
+  mismo mensaje llama DOS herramientas: primero registrar_interes_asesoria_paga
+  con los datos que tengas, y también ofrecer_horarios_asesoria para traer
+  horarios reales de la agenda del despacho. Con el resultado, ofrécele
+  los horarios de forma clara y numerada (ejemplo: "Tengo estos horarios
+  disponibles:\n1. Lunes 10 de agosto, 9:00 am\n2. Martes 11 de agosto,
+  4:00 pm\n¿Cuál te acomoda?"). Si la herramienta te dice que no hay
+  horarios disponibles en este momento, dile a la persona que un abogado
+  la va a contactar directo para coordinar — nunca inventes un horario ni
+  des un link de pago sin haber usado esta herramienta.
+- Cuando la persona elija uno de los horarios que le ofreciste (por
+  número o describiéndolo), llama confirmar_horario_asesoria con la fecha
+  y hora EXACTAS de esa opción (tal como venían en el resultado de
+  ofrecer_horarios_asesoria, nunca las inventes ni las redondees). Si te
+  regresa un link de pago (ok=true), mándaselo junto con: que tiene
+  [vigencia_minutos] minutos para pagar antes de que se libere ese
+  horario, que el link solo acepta tarjeta de crédito o débito, y que la
+  asesoría es una llamada telefónica de 1 hora — el abogado le llama a
+  este mismo número de WhatsApp a la hora acordada. Si te regresa ok=false
+  con horarios alternativos, discúlpate brevemente (ese horario ya se
+  ocupó) y ofrécele esos horarios alternativos de la misma forma clara y
+  numerada. Si te regresa ok=false sin horarios alternativos, dile que un
+  abogado del despacho le va a contactar directo — no le des ningún link
+  ni horario tú mismo.
 - Si responde que no, o cambia de tema sin contestar la pregunta directa,
-  NO llames la herramienta — sigue la conversación normal, contestando
-  sus dudas como siempre, sin insistir de nuevo con la misma pregunta.
+  NO llames ninguna herramienta — sigue la conversación normal,
+  contestando sus dudas como siempre, sin insistir de nuevo con la misma
+  pregunta.
 TXT;
 
 const IA_TOOLS = [
@@ -269,6 +291,35 @@ const IA_TOOLS = [
                 ],
             ],
             'required' => ['resumen'],
+        ],
+    ],
+    [
+        'name' => 'ofrecer_horarios_asesoria',
+        'description' => 'Consulta horarios reales y disponibles ahora mismo para agendar la asesoría telefónica de pago, cruzando la agenda real de los abogados del despacho. Llama esta herramienta cuando la persona confirme que quiere agendar la asesoría (normalmente junto con registrar_interes_asesoria_paga, en el mismo mensaje), o si pregunta directamente qué días/horas hay disponibles. Te regresa una lista de horarios concretos y reales para que se los ofrezcas — nunca inventes ni prometas un horario sin usar esta herramienta primero.',
+        'input_schema' => [
+            'type' => 'object',
+        ],
+    ],
+    [
+        'name' => 'confirmar_horario_asesoria',
+        'description' => 'Aparta uno de los horarios que ya le ofreciste a la persona con ofrecer_horarios_asesoria, y genera el link de pago único de esa cita. Llama esta herramienta SOLO cuando la persona ya eligió con claridad uno de los horarios exactos que le ofreciste (por número o describiéndolo) — nunca inventes ni confirmes un horario que no venía en esa lista, y nunca generes un link de pago sin que la persona haya elegido un horario primero.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'fecha' => [
+                    'type' => 'string',
+                    'description' => 'Fecha exacta (YYYY-MM-DD) del horario elegido, tal como venía en el campo "fecha" de esa opción devuelta por ofrecer_horarios_asesoria.',
+                ],
+                'hora_inicio' => [
+                    'type' => 'string',
+                    'description' => 'Hora de inicio exacta (HH:MM, 24 horas) del horario elegido, tal como venía en el campo "hora_inicio" de esa opción devuelta por ofrecer_horarios_asesoria.',
+                ],
+                'nombre' => [
+                    'type' => 'string',
+                    'description' => 'Nombre de la persona si lo sabes, o cadena vacía si no.',
+                ],
+            ],
+            'required' => ['fecha', 'hora_inicio'],
         ],
     ],
     [
@@ -360,11 +411,13 @@ function ia_llamar_claude(array $mensajes): ?array
  * $mensajes: lista ordenada (más antiguo primero) de
  * ['role' => 'user'|'assistant', 'content' => string]. El último debe ser
  * role=user (el mensaje que se está respondiendo).
+ * $telefono: número de WhatsApp de la conversación — lo necesitan las
+ * herramientas de agendado para saber a nombre de quién apartar la cita.
  *
  * Devuelve ['texto' => string, 'lead' => null|['tipo','estado','nombre','resumen']].
  * tipo es 'despido' o 'asesoria_paga'.
  */
-function ia_responder_whatsapp(PDO $pdo, array $mensajes): array
+function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -373,6 +426,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes): array
     }
     require_once $credentialsFile;
     require_once __DIR__ . '/liquidacion_calculadora.php';
+    require_once __DIR__ . '/citas_helpers.php';
+    require_once __DIR__ . '/mercadopago_helpers.php';
 
     $data = ia_llamar_claude($mensajes);
     if ($data === null) {
@@ -381,33 +436,40 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes): array
 
     [$texto, $lead, $bloques] = ia_extraer_respuesta($data);
 
-    $toolUseCalculadora = null;
+    // Herramientas cuyo resultado hay que calcular de verdad en PHP (no
+    // dejar que la IA "invente" el número o el horario) y devolverle a
+    // Claude para que redacte la respuesta final ya con el dato real.
+    $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria'];
+    $necesitaSeguimiento = false;
     foreach ($bloques as $bloque) {
-        if (($bloque['type'] ?? '') === 'tool_use' && ($bloque['name'] ?? '') === 'calcular_estimado_liquidacion') {
-            $toolUseCalculadora = $bloque;
+        if (($bloque['type'] ?? '') === 'tool_use' && in_array($bloque['name'] ?? '', $herramientasConSeguimiento, true)) {
+            $necesitaSeguimiento = true;
             break;
         }
     }
 
-    if ($toolUseCalculadora !== null) {
-        $in = $toolUseCalculadora['input'] ?? [];
-        $calc = calcular_estimado_liquidacion(
-            $pdo,
-            (string)($in['fecha_ingreso'] ?? ''),
-            (string)($in['fecha_baja'] ?? ''),
-            (float)($in['salario_diario'] ?? 0),
-            (string)($in['tipo'] ?? 'injustificado'),
-            (float)($in['dias_vacaciones_anteriores'] ?? 0),
-            (float)($in['dias_salarios_devengados'] ?? 0)
-        );
-
+    if ($necesitaSeguimiento) {
         $toolResults = [];
         foreach ($bloques as $bloque) {
             if (($bloque['type'] ?? '') !== 'tool_use') continue;
+            $in = $bloque['input'] ?? [];
             if ($bloque['name'] === 'calcular_estimado_liquidacion') {
+                $calc = calcular_estimado_liquidacion(
+                    $pdo,
+                    (string)($in['fecha_ingreso'] ?? ''),
+                    (string)($in['fecha_baja'] ?? ''),
+                    (float)($in['salario_diario'] ?? 0),
+                    (string)($in['tipo'] ?? 'injustificado'),
+                    (float)($in['dias_vacaciones_anteriores'] ?? 0),
+                    (float)($in['dias_salarios_devengados'] ?? 0)
+                );
                 $contenido = $calc !== null
                     ? json_encode($calc, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Datos insuficientes o inválidos para calcular.'], JSON_UNESCAPED_UNICODE);
+            } elseif ($bloque['name'] === 'ofrecer_horarios_asesoria') {
+                $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono);
+            } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
+                $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in);
             } else {
                 $contenido = json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
             }
@@ -436,6 +498,94 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes): array
     }
 
     return ['texto' => trim($texto), 'lead' => $lead];
+}
+
+// URL pública del webhook de Mercado Pago — a donde Mercado Pago avisa
+// cuando se confirma un pago. Debe coincidir con dónde vive el sistema.
+const MERCADOPAGO_WEBHOOK_URL = 'https://sistema.expertoslaborales.com/sistema/api/mercadopago_webhook.php';
+
+/**
+ * Resultado (como JSON) de la herramienta ofrecer_horarios_asesoria: la
+ * lista de horarios reales disponibles ahora mismo. Si no hay ninguno (por
+ * ejemplo, todavía ningún abogado configuró su disponibilidad), pausa el
+ * bot para esa conversación — a partir de ahí un humano tiene que
+ * coordinar directo, igual que antes de tener este agendado automático.
+ */
+function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono): string
+{
+    $horarios = citas_calcular_horarios_disponibles($pdo);
+    if (!$horarios) {
+        ia_pausar_prospecto($pdo, $telefono);
+        return json_encode([
+            'horarios' => [],
+            'nota' => 'No hay horarios disponibles en este momento. Dile a la persona que un abogado del despacho la va a contactar directo para coordinar — no le des ningún link de pago ni le prometas un horario.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+    return json_encode(['horarios' => $horarios], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Resultado (como JSON) de la herramienta confirmar_horario_asesoria:
+ * aparta el horario elegido y genera el link de pago (solo tarjeta) de
+ * Mercado Pago. Si el horario ya no está libre, o si algo falla al
+ * generar el link, avisa y — cuando ya no hay nada más que el bot pueda
+ * hacer — pausa la conversación para que un humano la retome.
+ */
+function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in): string
+{
+    $fecha = (string)($in['fecha'] ?? '');
+    $horaInicio = (string)($in['hora_inicio'] ?? '');
+    $nombre = trim((string)($in['nombre'] ?? '')) ?: null;
+
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha) || !preg_match('/^\d{2}:\d{2}$/', $horaInicio)) {
+        return json_encode(['ok' => false, 'motivo' => 'Formato de fecha/hora inválido — vuelve a ofrecer los horarios disponibles con ofrecer_horarios_asesoria.'], JSON_UNESCAPED_UNICODE);
+    }
+
+    $citaId = citas_crear_pendiente($pdo, $telefono, $fecha, $horaInicio, $nombre);
+    if ($citaId === null) {
+        return json_encode([
+            'ok' => false,
+            'motivo' => 'Ese horario ya no está disponible.',
+            'horarios_alternativos' => citas_calcular_horarios_disponibles($pdo),
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    $pref = mercadopago_crear_preferencia_asesoria($citaId, $telefono, MERCADOPAGO_WEBHOOK_URL);
+    if ($pref === null) {
+        // No dejamos la cita "atorada" ocupando el horario si no se pudo
+        // generar el link de pago.
+        $stmt = $pdo->prepare("UPDATE citas_asesoria SET estado = 'cancelada' WHERE id = :id");
+        $stmt->execute([':id' => $citaId]);
+        ia_pausar_prospecto($pdo, $telefono);
+        return json_encode([
+            'ok' => false,
+            'motivo' => 'Hubo un problema técnico generando el link de pago. Dile a la persona que un abogado del despacho le va a mandar el link directo en breve — no le des ningún link tú.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    $stmt = $pdo->prepare("UPDATE citas_asesoria SET mp_preference_id = :pref WHERE id = :id");
+    $stmt->execute([':pref' => $pref['id'], ':id' => $citaId]);
+
+    return json_encode([
+        'ok' => true,
+        'link_pago' => $pref['init_point'],
+        'horario' => citas_formatear_fecha_hora($fecha, $horaInicio),
+        'vigencia_minutos' => CITAS_HOLD_MINUTOS,
+        'monto' => MERCADOPAGO_MONTO_ASESORIA,
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Pausa el bot para un teléfono cuando ya no hay nada más que pueda hacer
+ * de forma automática (sin horarios, o falló el link de pago) — mismo
+ * criterio de "a partir de aquí un humano lo atiende" que un lead de
+ * despido. No falla si el teléfono todavía no tiene fila en prospectos
+ * (el UPDATE simplemente no afecta nada en ese caso).
+ */
+function ia_pausar_prospecto(PDO $pdo, string $telefono): void
+{
+    $stmt = $pdo->prepare('UPDATE prospectos SET pausado_bot = 1 WHERE telefono = :t');
+    $stmt->execute([':t' => $telefono]);
 }
 
 /**
