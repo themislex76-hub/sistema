@@ -480,8 +480,21 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             ];
         }
 
+        // Al decodificar la respuesta de Claude, un tool_use con input
+        // vacío ({} — como ofrecer_horarios_asesoria, que no recibe
+        // parámetros) llega como arreglo PHP vacío []. Si se manda así de
+        // regreso, json_encode lo serializa como [] (arreglo JSON) en vez
+        // de {} (objeto JSON), y la API lo rechaza con 400 "Input should
+        // be an object". Se normaliza aquí antes de reenviarlo.
+        $bloquesParaEnviar = array_map(function ($bloque) {
+            if (($bloque['type'] ?? '') === 'tool_use' && empty($bloque['input'])) {
+                $bloque['input'] = new stdClass();
+            }
+            return $bloque;
+        }, $bloques);
+
         $mensajesSeguimiento = $mensajes;
-        $mensajesSeguimiento[] = ['role' => 'assistant', 'content' => $bloques];
+        $mensajesSeguimiento[] = ['role' => 'assistant', 'content' => $bloquesParaEnviar];
         $mensajesSeguimiento[] = ['role' => 'user', 'content' => $toolResults];
 
         $data2 = ia_llamar_claude($mensajesSeguimiento);
