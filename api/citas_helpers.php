@@ -138,15 +138,19 @@ function citas_crear_pendiente(PDO $pdo, string $telefono, string $fecha, string
     if (!$fechaObj) return null;
     $diaSemana = (int)$fechaObj->format('N');
 
+    // :hora_a y :hora_b llevan el mismo valor — con
+    // PDO::ATTR_EMULATE_PREPARES en false (como usa este sistema, ver
+    // db.php) no se puede reutilizar el mismo parámetro con nombre dos
+    // veces en la misma consulta.
     $stmt = $pdo->prepare(
         "SELECT d.usuario_id, d.hora_fin
          FROM disponibilidad_asesorias d
          JOIN usuarios u ON u.id = d.usuario_id
          WHERE u.activo = 1 AND d.dia_semana = :dia
-           AND d.hora_inicio <= :hora AND d.hora_fin >= ADDTIME(:hora, '01:00:00')
+           AND d.hora_inicio <= :hora_a AND d.hora_fin >= ADDTIME(:hora_b, '01:00:00')
          ORDER BY d.usuario_id"
     );
-    $stmt->execute([':dia' => $diaSemana, ':hora' => $horaInicio . ':00']);
+    $stmt->execute([':dia' => $diaSemana, ':hora_a' => $horaInicio . ':00', ':hora_b' => $horaInicio . ':00']);
     $candidatos = $stmt->fetchAll();
     if (!$candidatos) return null;
 
