@@ -81,7 +81,7 @@ $stmt = $pdo->prepare('UPDATE prospectos SET pausado_bot = 1 WHERE telefono = :t
 $stmt->execute([':t' => $cita['telefono']]);
 
 $horarioTexto = citas_formatear_fecha_hora($cita['fecha'], substr($cita['hora_inicio'], 0, 5));
-$mensaje = "¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada para el {$horarioTexto}. Un abogado del despacho te va a llamar a este mismo número de WhatsApp a esa hora. Cualquier cosa antes, aquí mismo nos puedes escribir.";
+$mensaje = "¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada para el {$horarioTexto}. Un abogado del despacho te va a llamar a este mismo número de WhatsApp a esa hora — por favor ten tu teléfono a la mano. Si no contestas la llamada en 2 intentos, no habrá devolución del pago. Cualquier cosa antes, aquí mismo nos puedes escribir.";
 whatsapp_enviar($cita['telefono'], $mensaje);
 
 $stmt = $pdo->prepare(

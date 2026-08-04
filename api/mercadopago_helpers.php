@@ -25,10 +25,10 @@ function mercadopago_token(): ?string
  * Crea una "preferencia" de pago en Mercado Pago para la asesoría
  * telefónica ($299 MXN) y devuelve el link de pago (init_point) listo
  * para mandarle al cliente por WhatsApp. Solo acepta tarjeta de crédito o
- * débito — se excluyen OXXO, transferencia y depósito en ventanilla
- * porque esos métodos no confirman el pago de inmediato (pueden tardar
- * horas o días), lo que dejaría un horario apartado sin certeza real de
- * si se va a pagar o no.
+ * débito — se excluyen OXXO, transferencia, depósito en ventanilla, el
+ * saldo de la cuenta de Mercado Pago y "Meses sin Tarjeta", porque esos
+ * métodos no confirman el pago de inmediato o no son tarjeta real, lo que
+ * dejaría un horario apartado sin certeza real de si se va a pagar o no.
  *
  * $citaId se manda como external_reference para poder relacionar la
  * notificación del webhook con la cita correcta.
@@ -51,9 +51,11 @@ function mercadopago_crear_preferencia_asesoria(int $citaId, string $telefono, s
         ]],
         'payment_methods' => [
             'excluded_payment_types' => [
-                ['id' => 'ticket'],        // pago en efectivo (OXXO, etc.)
-                ['id' => 'bank_transfer'], // transferencia SPEI
-                ['id' => 'atm'],           // depósito en ventanilla/cajero
+                ['id' => 'ticket'],          // pago en efectivo (OXXO, etc.)
+                ['id' => 'bank_transfer'],   // transferencia SPEI
+                ['id' => 'atm'],             // depósito en ventanilla/cajero
+                ['id' => 'account_money'],   // saldo de la cuenta de Mercado Pago
+                ['id' => 'mercado_credito'], // "Meses sin Tarjeta" (línea de crédito de Mercado Pago)
             ],
             'installments' => 1,
         ],
