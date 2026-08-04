@@ -49,7 +49,7 @@ let FILTER_STATUS = "todos";
 let SEARCH_TERM = "";
 let CASES_DATA = []; // expedientes que devuelve la API (ya con meta anidada)
 let PROSPECTOS = []; // leads de despido CDMX/Edomex captados por el bot de WhatsApp
-let PROSPECTO_ABIERTO = null; // id del prospecto con el chat expandido en la vista Prospectos
+let PROSPECTO_ABIERTO = null; // id del prospecto cuyo chat está abierto en el modal
 let PROSPECTO_MENSAJES = []; // historial de WhatsApp del prospecto abierto
 
 // Vista "Conversaciones (WhatsApp)" (solo Administrador) — control de
@@ -3271,7 +3271,6 @@ const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesor
 const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida'};
 
 function prospectosHTML(){
-  const abierto = PROSPECTO_ABIERTO ? PROSPECTOS.find(p=>p.id===PROSPECTO_ABIERTO) : null;
   if(!PROSPECTOS.length){
     return `<div class="panel"><div class="panel-body" style="padding:24px;">
       <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte un caso de despido en CDMX/Edomex, o a alguien interesado en la asesoría de pago, aparecerá aquí.</div>
@@ -3294,16 +3293,12 @@ function prospectosHTML(){
       </div>`).join("")}
     </div>
   </div>
-  ${abierto ? prospectoDetalleHTML(abierto) : ""}
   `;
 }
 
 function prospectoDetalleHTML(p){
   const isAdmin = CURRENT_USER.role === 'Administrador';
   return `
-  <div class="panel">
-    <div class="panel-head"><h3>${escapeHTML(p.nombre || 'Sin nombre')} &middot; ${escapeHTML(p.telefono)}</h3></div>
-    <div class="panel-body" style="padding:16px 20px;">
       <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
         <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'closed'}">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
         <select data-prospecto-estatus="${p.id}" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
@@ -3335,8 +3330,95 @@ function prospectoDetalleHTML(p){
         <input type="text" id="prospectoRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
         <button class="btn" id="prospectoEnviarBtn" data-telefono="${escapeHTML(p.telefono)}">Enviar</button>
       </div>
+  `;
+}
+
+// Abre el detalle de un prospecto en un modal (igual que en Conversaciones)
+// para poder revisarlo de un vistazo sin perder el lugar en la lista.
+function abrirProspectoModal(id){
+  PROSPECTO_ABIERTO = id;
+  renderProspectoModal();
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function cerrarProspectoModal(){
+  closeModal();
+  PROSPECTO_ABIERTO = null;
+}
+
+function renderProspectoModal(){
+  const p = PROSPECTOS.find(x=>x.id===PROSPECTO_ABIERTO);
+  if(!p) return;
+  const overlay = document.getElementById('modalOverlay');
+  overlay.innerHTML = `<div class="modal" style="max-width:720px;">
+    <div class="modal-head">
+      <button class="close" id="modalClose">&times;</button>
+      <h2>${escapeHTML(p.nombre || 'Sin nombre')}</h2>
+      <div class="sub">${escapeHTML(p.telefono)}</div>
     </div>
+    <div class="modal-body">${prospectoDetalleHTML(p)}</div>
   </div>`;
+  document.getElementById('modalClose').addEventListener('click', cerrarProspectoModal);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) cerrarProspectoModal(); });
+  bindProspectoModalEvents();
+}
+
+function bindProspectoModalEvents(){
+  document.querySelectorAll('[data-prospecto-estatus]').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(sel.dataset.prospectoEstatus), estatus: sel.value});
+        await loadProspectos();
+        renderViewBody();
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-pausado]').forEach(chk=>{
+    chk.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(chk.dataset.prospectoPausado), pausado_bot: chk.checked});
+        await loadProspectos();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); chk.checked = !chk.checked; }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-asignado]').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(sel.dataset.prospectoAsignado), asignado_a: sel.value ? parseInt(sel.value) : 0});
+        await loadProspectos();
+        renderViewBody();
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo turnar: ' + err.message); }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-convertir]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('¿Convertir este prospecto en expediente nuevo?')) return;
+      btn.disabled = true;
+      try{
+        await api('POST', 'prospectos_convertir.php', {id: parseInt(btn.dataset.prospectoConvertir)});
+        await Promise.all([refreshBootstrap()]);
+        renderViewBody();
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo convertir: ' + err.message); btn.disabled = false; }
+    });
+  });
+  const prospectoEnviarBtn = document.getElementById('prospectoEnviarBtn');
+  if(prospectoEnviarBtn){
+    prospectoEnviarBtn.addEventListener('click', async ()=>{
+      const input = document.getElementById('prospectoRespuestaInput');
+      const texto = input.value.trim();
+      if(!texto) return;
+      const telefono = prospectoEnviarBtn.dataset.telefono;
+      prospectoEnviarBtn.disabled = true;
+      try{
+        await api('POST', 'prospectos_enviar.php', {telefono, texto});
+        await loadProspectoMensajes(telefono);
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo enviar: ' + err.message); prospectoEnviarBtn.disabled = false; }
+    });
+  }
 }
 
 // ---------------------------------------------------------------
@@ -4166,64 +4248,10 @@ function bindViewBody(){
       const id = parseInt(el.dataset.prospectoAbrir);
       const p = PROSPECTOS.find(x=>x.id===id);
       if(!p) return;
-      PROSPECTO_ABIERTO = (PROSPECTO_ABIERTO === id) ? null : id;
-      if(PROSPECTO_ABIERTO){ await loadProspectoMensajes(p.telefono); }
-      renderViewBody();
+      await loadProspectoMensajes(p.telefono);
+      abrirProspectoModal(id);
     });
   });
-  document.querySelectorAll('[data-prospecto-estatus]').forEach(sel=>{
-    sel.addEventListener('change', async ()=>{
-      try{
-        await api('POST', 'prospectos_update.php', {id: parseInt(sel.dataset.prospectoEstatus), estatus: sel.value});
-        await loadProspectos();
-        renderViewBody();
-      }catch(err){ alert('No se pudo actualizar: ' + err.message); }
-    });
-  });
-  document.querySelectorAll('[data-prospecto-pausado]').forEach(chk=>{
-    chk.addEventListener('change', async ()=>{
-      try{
-        await api('POST', 'prospectos_update.php', {id: parseInt(chk.dataset.prospectoPausado), pausado_bot: chk.checked});
-        await loadProspectos();
-      }catch(err){ alert('No se pudo actualizar: ' + err.message); chk.checked = !chk.checked; }
-    });
-  });
-  document.querySelectorAll('[data-prospecto-asignado]').forEach(sel=>{
-    sel.addEventListener('change', async ()=>{
-      try{
-        await api('POST', 'prospectos_update.php', {id: parseInt(sel.dataset.prospectoAsignado), asignado_a: sel.value ? parseInt(sel.value) : 0});
-        await loadProspectos();
-        renderViewBody();
-      }catch(err){ alert('No se pudo turnar: ' + err.message); }
-    });
-  });
-  document.querySelectorAll('[data-prospecto-convertir]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      if(!confirm('¿Convertir este prospecto en expediente nuevo?')) return;
-      btn.disabled = true;
-      try{
-        await api('POST', 'prospectos_convertir.php', {id: parseInt(btn.dataset.prospectoConvertir)});
-        await Promise.all([refreshBootstrap()]);
-        renderViewBody();
-      }catch(err){ alert('No se pudo convertir: ' + err.message); btn.disabled = false; }
-    });
-  });
-  const prospectoEnviarBtn = document.getElementById('prospectoEnviarBtn');
-  if(prospectoEnviarBtn){
-    prospectoEnviarBtn.addEventListener('click', async ()=>{
-      const input = document.getElementById('prospectoRespuestaInput');
-      const texto = input.value.trim();
-      if(!texto) return;
-      const telefono = prospectoEnviarBtn.dataset.telefono;
-      prospectoEnviarBtn.disabled = true;
-      try{
-        await api('POST', 'prospectos_enviar.php', {telefono, texto});
-        await loadProspectoMensajes(telefono);
-        renderViewBody();
-      }catch(err){ alert('No se pudo enviar: ' + err.message); }
-      finally{ prospectoEnviarBtn.disabled = false; }
-    });
-  }
   document.querySelectorAll('[data-conversacion-abrir]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const telefono = el.dataset.conversacionAbrir;
