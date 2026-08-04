@@ -3584,6 +3584,7 @@ function bindConversacionModalEvents(){
 // ---------------------------------------------------------------
 function citasPanelHTML(forzar){
   if(!CITAS.length && !forzar) return "";
+  const isAdmin = CURRENT_USER.role === 'Administrador';
   const CITA_ESTADO_BADGE = {confirmada:'ok', pendiente_pago:'warn'};
   const CITA_ESTADO_LABEL = {confirmada:'Pagada', pendiente_pago:'Esperando pago'};
   return `
@@ -3591,7 +3592,7 @@ function citasPanelHTML(forzar){
     <div class="panel-head"><h3>Próximas asesorías agendadas</h3><span class="count">${CITAS.length}</span></div>
     <div class="panel-body" style="padding:0;">
       ${CITAS.length ? CITAS.map(c=>`
-      <div class="alert-row" style="align-items:flex-start;">
+      <div class="alert-row" style="align-items:flex-start; ${isAdmin?'cursor:pointer;':''}" ${isAdmin?`data-cita-telefono="${escapeHTML(c.telefono)}" data-cita-nombre="${escapeHTML(c.nombre_cliente || '')}"`:''}>
         <span class="badge ${CITA_ESTADO_BADGE[c.estado]||'closed'}" style="flex-shrink:0; margin-top:1px;">${CITA_ESTADO_LABEL[c.estado]||c.estado}</span>
         <div class="alert-info">
           <div class="name">${escapeHTML(c.texto)}</div>
@@ -3601,6 +3602,36 @@ function citasPanelHTML(forzar){
       </div>`).join("") : '<div class="empty">Sin asesorías agendadas por ahora.</div>'}
     </div>
   </div>`;
+}
+
+// Abre en una ventana emergente el chat de WhatsApp completo detrás de una
+// cita agendada — para revisar qué le contestó el bot sin tener que ir a
+// buscar el número en Conversaciones. No depende de que la vista
+// "Conversaciones (WhatsApp)" ya se haya cargado antes.
+async function abrirCitaConversacionModal(telefono, nombre){
+  await loadConversacionMensajes(telefono);
+  const overlay = document.getElementById('modalOverlay');
+  overlay.innerHTML = `<div class="modal" style="max-width:720px;">
+    <div class="modal-head">
+      <button class="close" id="modalClose">&times;</button>
+      <h2>${escapeHTML(nombre || telefono)}</h2>
+      <div class="sub">${escapeHTML(telefono)}</div>
+    </div>
+    <div class="modal-body">
+      <div style="max-height:420px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:12px; background:var(--parchment);">
+        ${CONVERSACION_MENSAJES.length ? CONVERSACION_MENSAJES.map(m=>`
+          <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
+            <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
+              ${escapeHTML(m.texto)}
+              <div style="font-size:10px; opacity:.6; margin-top:3px;">${m.direccion==='saliente'?(m.respondido_por==='humano'?'Humano':'Bot'):'Cliente'} &middot; ${fmtFechaHora(m.creado_en)}</div>
+            </div>
+          </div>`).join("") : `<div class="notice">Sin mensajes.</div>`}
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('modalClose').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
+  overlay.classList.add('show');
 }
 
 // ---------------------------------------------------------------
@@ -4256,6 +4287,11 @@ function bindViewBody(){
       if(!p) return;
       await loadProspectoMensajes(p.telefono);
       abrirProspectoModal(id);
+    });
+  });
+  document.querySelectorAll('[data-cita-telefono]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      abrirCitaConversacionModal(el.dataset.citaTelefono, el.dataset.citaNombre);
     });
   });
   const prospectosToggleDescartados = document.querySelector('[data-prospectos-toggle-descartados]');
