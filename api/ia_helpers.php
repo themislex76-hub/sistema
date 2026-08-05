@@ -392,6 +392,21 @@ const IA_TOOLS = [
     ],
 ];
 
+// Fecha/hora real de México en español, para que la IA nunca tenga que
+// "adivinar" qué día es hoy — sin esto, en conversaciones que llevan ya un
+// rato (o varios días), la IA puede calcular mal una fecha al confirmar un
+// horario de asesoría (se detectó una cita guardada con el año equivocado
+// por esto). citas_crear_pendiente() por sí sola no rechaza fechas
+// pasadas, así que además se revalida en ia_resultado_confirmar_horario().
+function ia_fecha_actual_es(): string
+{
+    $dias = [1 => 'lunes', 2 => 'martes', 3 => 'miércoles', 4 => 'jueves', 5 => 'viernes', 6 => 'sábado', 7 => 'domingo'];
+    $meses = [1 => 'enero', 2 => 'febrero', 3 => 'marzo', 4 => 'abril', 5 => 'mayo', 6 => 'junio', 7 => 'julio', 8 => 'agosto', 9 => 'septiembre', 10 => 'octubre', 11 => 'noviembre', 12 => 'diciembre'];
+    $ahora = new DateTimeImmutable();
+    return $dias[(int)$ahora->format('N')] . ' ' . (int)$ahora->format('j') . ' de ' . $meses[(int)$ahora->format('n')]
+        . ' de ' . $ahora->format('Y') . ', ' . $ahora->format('H:i') . ' (hora de Ciudad de México)';
+}
+
 /**
  * Llama a la API de mensajes de Claude con el historial de mensajes dado.
  * Devuelve el arreglo decodificado de la respuesta, o null si falló.
@@ -403,12 +418,18 @@ function ia_llamar_claude(array $mensajes): ?array
     // juntos (tools se renderiza antes que system en la solicitud a la API),
     // así que solo hace falta un breakpoint aquí. La primera llamada de cada
     // ventana de caché (5 min) paga el precio normal; las siguientes pagan
-    // ~10% de esa parte del prompt en vez de 100%.
+    // ~10% de esa parte del prompt en vez de 100%. Al pegarle la fecha de
+    // hoy al final, el caché se invalida una vez al día (cuando cambia la
+    // fecha) en vez de cada 5 minutos — sigue aprovechando el caché casi
+    // siempre.
+    $systemTexto = IA_SYSTEM_PROMPT
+        . "\n\nFecha y hora actual real ahora mismo: " . ia_fecha_actual_es()
+        . ". Úsala siempre como referencia de \"hoy\" — nunca la calcules ni la asumas de otra forma, y nunca inventes ni redondees una fecha por tu cuenta.";
     $payload = [
         'model' => IA_MODEL,
         'max_tokens' => 1500,
         'system' => [
-            ['type' => 'text', 'text' => IA_SYSTEM_PROMPT, 'cache_control' => ['type' => 'ephemeral']],
+            ['type' => 'text', 'text' => $systemTexto, 'cache_control' => ['type' => 'ephemeral']],
         ],
         'tools' => IA_TOOLS,
         'messages' => $mensajes,
@@ -615,6 +636,29 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
 
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha) || !preg_match('/^\d{2}:\d{2}$/', $horaInicio)) {
         return json_encode(['ok' => false, 'motivo' => 'Formato de fecha/hora inválido — vuelve a ofrecer los horarios disponibles con ofrecer_horarios_asesoria.'], JSON_UNESCAPED_UNICODE);
+    }
+
+    // Nunca hay que confiar en que la IA mandó una fecha real y vigente —
+    // puede llegar a copiar mal el año/fecha, sobre todo si la
+    // conversación con el cliente lleva ya un rato. Se revalida contra la
+    // lista de horarios de verdad disponibles AHORA MISMO antes de apartar
+    // nada; citas_crear_pendiente() por sí sola no rechaza una fecha
+    // pasada, solo checa que algún abogado tenga ese día/hora en su
+    // disponibilidad semanal.
+    $horariosVigentes = citas_calcular_horarios_disponibles($pdo);
+    $esValido = false;
+    foreach ($horariosVigentes as $h) {
+        if ($h['fecha'] === $fecha && $h['hora_inicio'] === $horaInicio) {
+            $esValido = true;
+            break;
+        }
+    }
+    if (!$esValido) {
+        return json_encode([
+            'ok' => false,
+            'motivo' => 'Ese horario ya no está disponible.',
+            'horarios_alternativos' => $horariosVigentes,
+        ], JSON_UNESCAPED_UNICODE);
     }
 
     $citaId = citas_crear_pendiente($pdo, $telefono, $fecha, $horaInicio, $nombre);
