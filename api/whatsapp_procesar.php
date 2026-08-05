@@ -10,6 +10,13 @@ declare(strict_types=1);
 require_once __DIR__ . '/prospectos_helpers.php';
 require_once __DIR__ . '/push_helpers.php';
 
+// Protege contra un número que abuse del bot (spam, pruebas, troleo) y
+// dispare el gasto de IA sin control — 30 mensajes entrantes en 24 horas
+// es generoso para cualquier conversación real (hasta un caso complicado
+// de despido rara vez pasa de 15-20 mensajes del cliente), pero corta a
+// alguien mandando decenas de mensajes seguidos sin sentido.
+const WHATSAPP_LIMITE_MENSAJES_DIA = 30;
+
 function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil): void
 {
     $telefono = (string)($msg['from'] ?? '');
@@ -49,6 +56,29 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     }
 
     if ($prospecto && (int)$prospecto['pausado_bot'] === 1) {
+        return;
+    }
+
+    // Ventana móvil de 24 horas (no por día de calendario) — cuenta el
+    // mensaje que se acaba de insertar arriba.
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*) AS n FROM whatsapp_conversaciones
+         WHERE telefono = :t AND direccion = 'entrante' AND creado_en >= :desde"
+    );
+    $stmt->execute([':t' => $telefono, ':desde' => date('Y-m-d H:i:s', time() - 86400)]);
+    $mensajesUltimas24h = (int)$stmt->fetch()['n'];
+    if ($mensajesUltimas24h > WHATSAPP_LIMITE_MENSAJES_DIA) {
+        if ($mensajesUltimas24h === WHATSAPP_LIMITE_MENSAJES_DIA + 1) {
+            // Justo se pasó del límite — se avisa UNA sola vez; los
+            // mensajes de después de este se ignoran en silencio (no hace
+            // falta seguir gastando IA ni repitiendo el aviso).
+            $avisoLimite = 'Por hoy ya platicamos bastante — dale chance a que un abogado revise tu caso directo. En cuanto pueda te contacta. ¡Gracias por tu paciencia!';
+            whatsapp_enviar($telefono, $avisoLimite);
+            $stmt = $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+            );
+            $stmt->execute([':t' => $telefono, ':texto' => $avisoLimite]);
+        }
         return;
     }
 
