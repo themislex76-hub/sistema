@@ -15,18 +15,23 @@ const CITAS_HOLD_MINUTOS = 30;
 const CITAS_DIA_SEMANA_ES = [1 => 'lunes', 2 => 'martes', 3 => 'miércoles', 4 => 'jueves', 5 => 'viernes', 6 => 'sábado', 7 => 'domingo'];
 const CITAS_MES_ES = [1 => 'enero', 2 => 'febrero', 3 => 'marzo', 4 => 'abril', 5 => 'mayo', 6 => 'junio', 7 => 'julio', 8 => 'agosto', 9 => 'septiembre', 10 => 'octubre', 11 => 'noviembre', 12 => 'diciembre'];
 
-function citas_formatear_fecha_hora(string $fecha, string $horaInicio): string
+function citas_formatear_hora(string $horaInicio): string
 {
-    $f = new DateTimeImmutable($fecha);
-    $diaSemana = CITAS_DIA_SEMANA_ES[(int)$f->format('N')];
-    $mes = CITAS_MES_ES[(int)$f->format('n')];
     [$h, $m] = explode(':', $horaInicio);
     $h = (int)$h;
     $ampm = $h >= 12 ? 'pm' : 'am';
     $h12 = $h % 12;
     if ($h12 === 0) $h12 = 12;
     $horaTxt = $m === '00' ? "{$h12}:00" : "{$h12}:{$m}";
-    return "{$diaSemana} {$f->format('j')} de {$mes}, {$horaTxt} {$ampm}";
+    return "{$horaTxt} {$ampm}";
+}
+
+function citas_formatear_fecha_hora(string $fecha, string $horaInicio): string
+{
+    $f = new DateTimeImmutable($fecha);
+    $diaSemana = CITAS_DIA_SEMANA_ES[(int)$f->format('N')];
+    $mes = CITAS_MES_ES[(int)$f->format('n')];
+    return "{$diaSemana} {$f->format('j')} de {$mes}, " . citas_formatear_hora($horaInicio);
 }
 
 /**
