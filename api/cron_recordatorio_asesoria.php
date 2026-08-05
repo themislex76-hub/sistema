@@ -29,12 +29,16 @@ $stmt = $pdo->prepare(
 $stmt->execute();
 $citas = $stmt->fetchAll();
 
+$enviados = 0;
+$fallidos = 0;
+
 foreach ($citas as $cita) {
     $saludo = $cita['nombre_cliente'] ? "¡Hola {$cita['nombre_cliente']}!" : '¡Hola!';
     $horaTxt = citas_formatear_hora(substr($cita['hora_inicio'], 0, 5));
     $mensaje = "{$saludo} Tu asesoría con el abogado es en 1 hora, a las {$horaTxt} — te va a llamar a este mismo número de WhatsApp. Aprovecha para tener a la mano cualquier documento o dato de tu caso que quieras comentarle. ¡Nos vemos al rato!";
 
     if (whatsapp_enviar($cita['telefono'], $mensaje)) {
+        $enviados++;
         $upd = $pdo->prepare('UPDATE citas_asesoria SET recordatorio_enviado = 1 WHERE id = :id');
         $upd->execute([':id' => $cita['id']]);
 
@@ -42,7 +46,9 @@ foreach ($citas as $cita) {
             "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
         );
         $ins->execute([':t' => $cita['telefono'], ':texto' => $mensaje]);
+    } else {
+        $fallidos++;
     }
 }
 
-echo count($citas) . " recordatorio(s) procesado(s).\n";
+echo count($citas) . " cita(s) encontrada(s), $enviados enviado(s), $fallidos fallido(s).\n";
