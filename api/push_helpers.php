@@ -51,37 +51,46 @@ function push_webpush_instancia(): ?WebPush
  */
 function push_enviar_a_usuario(PDO $pdo, int $usuarioId, string $titulo, string $cuerpo, string $url = ''): void
 {
-    $webPush = push_webpush_instancia();
-    if ($webPush === null) return;
+    // Las notificaciones son un extra — un error aquí (librería mal
+    // instalada, versión de PHP incompatible, Mercado Pago/Google caídos,
+    // etc.) NUNCA debe tumbar el flujo que las llama (confirmar un pago,
+    // contestar por WhatsApp), así que se atrapa cualquier error y solo se
+    // registra en el log de PHP.
+    try {
+        $webPush = push_webpush_instancia();
+        if ($webPush === null) return;
 
-    $stmt = $pdo->prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE usuario_id = :uid');
-    $stmt->execute([':uid' => $usuarioId]);
-    $filas = $stmt->fetchAll();
-    if (!$filas) return;
+        $stmt = $pdo->prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE usuario_id = :uid');
+        $stmt->execute([':uid' => $usuarioId]);
+        $filas = $stmt->fetchAll();
+        if (!$filas) return;
 
-    $payload = json_encode(['title' => $titulo, 'body' => $cuerpo, 'url' => $url], JSON_UNESCAPED_UNICODE);
+        $payload = json_encode(['title' => $titulo, 'body' => $cuerpo, 'url' => $url], JSON_UNESCAPED_UNICODE);
 
-    $porId = [];
-    foreach ($filas as $f) {
-        $porId[$f['endpoint']] = (int)$f['id'];
-        $webPush->queueNotification(
-            Subscription::create([
-                'endpoint' => $f['endpoint'],
-                'keys' => ['p256dh' => $f['p256dh'], 'auth' => $f['auth']],
-            ]),
-            $payload
-        );
-    }
-
-    foreach ($webPush->flush() as $reporte) {
-        if ($reporte->isSuccess()) continue;
-        $endpoint = $reporte->getEndpoint();
-        // 404/410 = el navegador ya no reconoce esa suscripción (caducó o
-        // se desactivó del otro lado) — hay que dejar de intentarle.
-        if ($reporte->isSubscriptionExpired() && isset($porId[$endpoint])) {
-            $del = $pdo->prepare('DELETE FROM push_subscriptions WHERE id = :id');
-            $del->execute([':id' => $porId[$endpoint]]);
+        $porId = [];
+        foreach ($filas as $f) {
+            $porId[$f['endpoint']] = (int)$f['id'];
+            $webPush->queueNotification(
+                Subscription::create([
+                    'endpoint' => $f['endpoint'],
+                    'keys' => ['p256dh' => $f['p256dh'], 'auth' => $f['auth']],
+                ]),
+                $payload
+            );
         }
+
+        foreach ($webPush->flush() as $reporte) {
+            if ($reporte->isSuccess()) continue;
+            $endpoint = $reporte->getEndpoint();
+            // 404/410 = el navegador ya no reconoce esa suscripción (caducó o
+            // se desactivó del otro lado) — hay que dejar de intentarle.
+            if ($reporte->isSubscriptionExpired() && isset($porId[$endpoint])) {
+                $del = $pdo->prepare('DELETE FROM push_subscriptions WHERE id = :id');
+                $del->execute([':id' => $porId[$endpoint]]);
+            }
+        }
+    } catch (\Throwable $e) {
+        error_log('push_enviar_a_usuario falló: ' . $e->getMessage());
     }
 }
 
