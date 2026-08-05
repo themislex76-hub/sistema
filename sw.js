@@ -1,8 +1,8 @@
-const CACHE_NAME = 'ela-shell-v32';
+const CACHE_NAME = 'ela-shell-v33';
 const SHELL_FILES = [
   '/sistema/',
   '/sistema/assets/style.css?v=4',
-  '/sistema/assets/app.js?v=31',
+  '/sistema/assets/app.js?v=32',
   '/sistema/manifest.json',
   '/sistema/assets/icons/icon-192.png',
   '/sistema/assets/icons/icon-512.png',
@@ -40,5 +40,35 @@ self.addEventListener('fetch', (event) => {
         return response;
       })
       .catch(() => caches.match(event.request))
+  );
+});
+
+// Notificaciones push (como WhatsApp) — el servidor manda un JSON
+// {title, body, url} (ver api/push_helpers.php); esto solo lo muestra.
+self.addEventListener('push', (event) => {
+  let data = {title: 'Expertos Laborales', body: 'Tienes un mensaje nuevo.', url: '/sistema/'};
+  try{ if(event.data) data = Object.assign(data, event.data.json()); }catch(e){}
+  event.waitUntil(
+    self.registration.showNotification(data.title, {
+      body: data.body,
+      icon: '/sistema/assets/icons/icon-192.png',
+      badge: '/sistema/assets/icons/icon-192.png',
+      data: {url: data.url || '/sistema/'},
+    })
+  );
+});
+
+// Al darle clic a la notificación, enfoca una pestaña ya abierta del
+// sistema si existe, o abre una nueva.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || '/sistema/';
+  event.waitUntil(
+    self.clients.matchAll({type: 'window', includeUncontrolled: true}).then((clientList) => {
+      for(const client of clientList){
+        if(client.url.includes('/sistema/') && 'focus' in client) return client.focus();
+      }
+      if(self.clients.openWindow) return self.clients.openWindow(url);
+    })
   );
 });

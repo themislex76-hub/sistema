@@ -2349,6 +2349,44 @@ function bindGate(){
   });
 }
 
+// ---------------------------------------------------------------
+// Notificaciones push (como WhatsApp) — avisan aunque el sistema esté
+// cerrado cuando llega un mensaje nuevo de un prospecto. Ver
+// api/push_helpers.php (servidor) y sw.js (qué hace el navegador con el
+// aviso). En iPhone solo funcionan si el sistema está "Agregado a pantalla
+// de inicio" (instalado como app) — es una limitación de Apple, no del
+// sistema.
+// ---------------------------------------------------------------
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for(let i=0;i<rawData.length;i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function activarNotificacionesPush(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)){
+    throw new Error('Este navegador no soporta notificaciones push.');
+  }
+  const permiso = await Notification.requestPermission();
+  if(permiso !== 'granted'){
+    throw new Error('No diste permiso de notificaciones. Si cambias de opinión, actívalo desde la configuración del navegador para este sitio.');
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const {public_key} = await api('GET', 'push_vapid_public_key.php');
+  let sub = await reg.pushManager.getSubscription();
+  if(!sub){
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(public_key),
+    });
+  }
+  const json = sub.toJSON();
+  await api('POST', 'push_subscribe.php', {endpoint: json.endpoint, keys: json.keys});
+}
+
 function shellHTML(){
   if(CURRENT_USER.role === "cliente"){
     return `<div class="app"><div class="main" style="max-width:720px; margin:0 auto; width:100%;">
@@ -2385,6 +2423,7 @@ function shellHTML(){
       </div>
       <div class="sidebar-foot">
         <div class="user-pill"><div class="dot"></div><span>${escapeHTML(CURRENT_USER.name)}</span></div>
+        <button class="switch-user" id="pushNotifBtn" style="margin-bottom:6px;">&#128276; Activar notificaciones</button>
         <button class="switch-user" id="switchUserBtn">Cambiar de usuario</button>
       </div>
     </div>
@@ -2458,6 +2497,26 @@ function bindShell(){
   document.querySelectorAll('.nav button[data-v]').forEach(b=>{
     b.addEventListener('click', ()=>{ VIEW = b.dataset.v; renderViewBody(); highlightNav(); closeMobileMenu(); });
   });
+  const pushNotifBtn = document.getElementById('pushNotifBtn');
+  if(pushNotifBtn){
+    if(typeof Notification !== 'undefined' && Notification.permission === 'granted'){
+      pushNotifBtn.textContent = '🔔 Notificaciones activadas ✓';
+    }
+    pushNotifBtn.addEventListener('click', async ()=>{
+      pushNotifBtn.disabled = true;
+      const textoOriginal = pushNotifBtn.textContent;
+      pushNotifBtn.textContent = 'Activando...';
+      try{
+        await activarNotificacionesPush();
+        pushNotifBtn.textContent = '🔔 Notificaciones activadas ✓';
+        pushNotifBtn.disabled = true;
+      }catch(err){
+        pushNotifBtn.disabled = false;
+        pushNotifBtn.textContent = textoOriginal;
+        alert('No se pudieron activar las notificaciones: ' + err.message);
+      }
+    });
+  }
   const su = document.getElementById('switchUserBtn');
   if(su) su.addEventListener('click', async ()=>{
     if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){

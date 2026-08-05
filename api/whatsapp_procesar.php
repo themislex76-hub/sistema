@@ -8,6 +8,7 @@ declare(strict_types=1);
 // directa — ver docs/DEPLOY_CPANEL.md).
 
 require_once __DIR__ . '/prospectos_helpers.php';
+require_once __DIR__ . '/push_helpers.php';
 
 function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil): void
 {
@@ -30,9 +31,23 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     // Si ya hay un prospecto y el bot está pausado, un humano lleva el
     // caso: no autorespondemos, solo quedó guardado el mensaje para que
     // el abogado lo vea y conteste desde la vista Prospectos.
-    $stmt = $pdo->prepare('SELECT pausado_bot FROM prospectos WHERE telefono = :t LIMIT 1');
+    $stmt = $pdo->prepare('SELECT pausado_bot, estatus, asignado_a, nombre FROM prospectos WHERE telefono = :t LIMIT 1');
     $stmt->execute([':t' => $telefono]);
     $prospecto = $stmt->fetch();
+
+    // Un candidato (prospecto) ya registrado que vuelve a escribir —
+    // avisa siempre, esté o no pausado el bot (si está pausado es
+    // justo cuando más hace falta que un humano se entere). Los
+    // descartados no avisan: el bot los sigue atendiendo solo.
+    if ($prospecto && $prospecto['estatus'] !== 'descartado') {
+        push_notificar_prospecto(
+            $pdo,
+            $prospecto['asignado_a'] !== null ? (int)$prospecto['asignado_a'] : null,
+            'Nuevo mensaje de ' . ($prospecto['nombre'] ?: $telefono),
+            mb_strimwidth($texto, 0, 140, '…')
+        );
+    }
+
     if ($prospecto && (int)$prospecto['pausado_bot'] === 1) {
         return;
     }
@@ -69,6 +84,11 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     if ($lead && $lead['tipo'] === 'despido') {
         $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
         guardar_prospecto($pdo, $telefono, $nombrePerfil, $lead);
+        // Si ya existía el prospecto, el aviso de "nuevo mensaje" de arriba
+        // ya cubrió este caso — este es solo para un candidato nuevo.
+        if (!$prospecto) {
+            push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono);
+        }
     }
 
     whatsapp_enviar($telefono, $respuesta);
@@ -136,6 +156,9 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
 
     if ($lead && $lead['tipo'] === 'despido') {
         $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
+        if (!$prospecto) {
+            push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono);
+        }
         guardar_prospecto($pdo, $telefono, null, $lead);
     }
 

@@ -16,6 +16,7 @@ require_once __DIR__ . '/mercadopago_helpers.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
 require_once __DIR__ . '/citas_helpers.php';
 require_once __DIR__ . '/prospectos_helpers.php';
+require_once __DIR__ . '/push_helpers.php';
 
 // Mercado Pago acepta que el endpoint conteste rápido y sin cuerpo — si
 // tarda o falla, reintenta la notificación más tarde.
@@ -95,6 +96,16 @@ guardar_prospecto($pdo, $cita['telefono'], $cita['nombre_cliente'], [
     'nombre' => $cita['nombre_cliente'] ?? '',
     'resumen' => "Asesoría pagada (\${$cita['monto']} MXN) y agendada para {$horarioTexto}.",
 ], true, true);
+
+// Se avisa directo al abogado que le tocó la cita (no al "asignado" del
+// prospecto, que normalmente está vacío en este punto) — es quien tiene
+// que hacer la llamada.
+push_enviar_a_usuario(
+    $pdo,
+    (int)$cita['usuario_id'],
+    '¡Pago confirmado!',
+    ($cita['nombre_cliente'] ?: $cita['telefono']) . ' — asesoría agendada para ' . $horarioTexto
+);
 
 $mensaje = "¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada para el {$horarioTexto}. Un abogado del despacho te va a llamar a este mismo número de WhatsApp a esa hora — por favor ten tu teléfono a la mano. Si no contestas la llamada en 2 intentos, no habrá devolución del pago. Cualquier cosa antes, aquí mismo nos puedes escribir.";
 whatsapp_enviar($cita['telefono'], $mensaje);

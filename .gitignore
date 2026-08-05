@@ -5,6 +5,8 @@ api/pjf_credentials_key.php
 api/whatsapp_credentials.php
 api/anthropic_credentials.php
 api/mercadopago_credentials.php
+api/push_credentials.php
+api/vendor/
 data/plantilla_demanda.docx
 data/documentos/
 data/plantillas/

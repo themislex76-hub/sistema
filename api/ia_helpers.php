@@ -462,6 +462,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     require_once __DIR__ . '/citas_helpers.php';
     require_once __DIR__ . '/mercadopago_helpers.php';
     require_once __DIR__ . '/prospectos_helpers.php';
+    require_once __DIR__ . '/push_helpers.php';
 
     // Herramientas cuyo resultado hay que calcular de verdad en PHP (no
     // dejar que la IA "invente" el número o el horario) y devolverle a
@@ -669,6 +670,7 @@ function ia_registrar_prospecto_atorado(PDO $pdo, string $telefono, ?array $lead
         $datosLead['resumen'] = $resumenFallback;
     }
     guardar_prospecto($pdo, $telefono, $nombre, $datosLead, true, true);
+    push_notificar_prospecto($pdo, null, 'Asesoría atorada, necesita ayuda', ($datosLead['nombre'] ?: $telefono) . ' — ' . $resumenFallback);
 }
 
 /**
