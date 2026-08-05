@@ -17,6 +17,7 @@ require_once __DIR__ . '/whatsapp_helpers.php';
 require_once __DIR__ . '/citas_helpers.php';
 require_once __DIR__ . '/prospectos_helpers.php';
 require_once __DIR__ . '/push_helpers.php';
+require_once __DIR__ . '/google_calendar_helpers.php';
 
 // Mercado Pago acepta que el endpoint conteste rápido y sin cuerpo — si
 // tarda o falla, reintenta la notificación más tarde.
@@ -106,6 +107,11 @@ push_enviar_a_usuario(
     '¡Pago confirmado!',
     ($cita['nombre_cliente'] ?: $cita['telefono']) . ' — asesoría agendada para ' . $horarioTexto
 );
+
+// Se agenda sola en el Google Calendar del abogado que le tocó la cita —
+// sin esto, solo se sincronizaba cuando alguien entraba al sistema y le
+// daba clic a "Sincronizar ahora".
+google_sincronizar_cita_pagada($pdo, $cita, $horarioTexto);
 
 $mensaje = "¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada para el {$horarioTexto}. Un abogado del despacho te va a llamar a este mismo número de WhatsApp a esa hora — por favor ten tu teléfono a la mano. Si no contestas la llamada en 2 intentos, no habrá devolución del pago. Cualquier cosa antes, aquí mismo nos puedes escribir.";
 whatsapp_enviar($cita['telefono'], $mensaje);
