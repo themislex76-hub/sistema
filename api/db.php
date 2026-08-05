@@ -1,6 +1,14 @@
 <?php
 declare(strict_types=1);
 
+// El servidor de hosting normalmente corre en UTC por default — sin esto,
+// TODAS las fechas/horas que calcula PHP (DateTimeImmutable, date(), etc.)
+// quedan varias horas adelantadas respecto a México. Se pone aquí (no en
+// config.php) porque db.php lo cargan tanto las vistas con sesión como los
+// webhooks públicos (WhatsApp, Mercado Pago), que nunca pasan por
+// config.php — así queda garantizado sin importar la puerta de entrada.
+date_default_timezone_set('America/Mexico_City');
+
 $credentialsFile = __DIR__ . '/db_credentials.php';
 if (!file_exists($credentialsFile)) {
     http_response_code(500);
@@ -20,6 +28,12 @@ function db(): PDO
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             PDO::ATTR_EMULATE_PREPARES => false,
         ]);
+        // El servidor de hosting normalmente corre en UTC — sin esto,
+        // NOW()/CURDATE() de MySQL quedan varias horas adelantados
+        // respecto a México (se usa el offset fijo -06:00 en vez del
+        // nombre "America/Mexico_City" porque muchos hostings compartidos
+        // no tienen cargadas las tablas de nombres de zona horaria).
+        $pdo->exec("SET time_zone = '-06:00'");
     }
     return $pdo;
 }
