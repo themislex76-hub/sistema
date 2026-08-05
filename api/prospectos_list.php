@@ -14,14 +14,19 @@ $esAdmin = $user['rol'] === 'administrador';
 // ha visto (el bot puede seguir contestando solo sin que eso cuente como
 // "visto por un humano", por eso se compara contra visto_en y no contra
 // actualizado_en).
+// ultima_actividad: el mensaje más reciente sea entrante o saliente — para
+// ordenar la lista igual que WhatsApp (el chat con la actividad más
+// reciente arriba de todo, no importa quién escribió al final).
 $sql = "SELECT p.*, e.exp AS expediente_exp, u.nombre AS asignado_nombre,
                (SELECT MAX(creado_en) FROM whatsapp_conversaciones w
-                WHERE w.telefono = p.telefono AND w.direccion = 'entrante') AS ultimo_entrante
+                WHERE w.telefono = p.telefono AND w.direccion = 'entrante') AS ultimo_entrante,
+               (SELECT MAX(creado_en) FROM whatsapp_conversaciones w
+                WHERE w.telefono = p.telefono) AS ultima_actividad
         FROM prospectos p
         LEFT JOIN expedientes e ON e.id = p.expediente_id
         LEFT JOIN usuarios u ON u.id = p.asignado_a"
      . (!$esAdmin ? ' WHERE p.asignado_a = :uid' : '')
-     . " ORDER BY (p.estatus = 'nuevo') DESC, p.actualizado_en DESC
+     . " ORDER BY COALESCE(ultima_actividad, p.actualizado_en) DESC
         LIMIT 300";
 $stmt = $pdo->prepare($sql);
 $stmt->execute($esAdmin ? [] : [':uid' => $user['id']]);
@@ -47,6 +52,7 @@ foreach ($stmt->fetchAll() as $r) {
         'expediente_exp' => $r['expediente_exp'],
         'creado_en' => $r['creado_en'],
         'actualizado_en' => $r['actualizado_en'],
+        'ultima_actividad' => $r['ultima_actividad'] ?? $r['actualizado_en'],
     ];
 }
 

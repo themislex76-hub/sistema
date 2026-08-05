@@ -3389,7 +3389,7 @@ function prospectosHTML(){
         ${p.mensaje_nuevo ? `<span class="badge crit" style="flex-shrink:0; margin-top:1px;">Mensaje nuevo</span>` : ''}
         <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'closed'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
         <span class="badge ${p.asignado_nombre?'ok':'warn'}" style="flex-shrink:0; margin-top:1px;">${p.asignado_nombre ? escapeHTML(p.asignado_nombre) : 'Sin turnar'}</span>
-        <div style="flex-shrink:0; font-size:11px; color:var(--gray); text-align:right;">${fmtFechaHora(p.actualizado_en)}</div>
+        <div style="flex-shrink:0; font-size:11px; color:var(--gray); text-align:right;">${fmtFechaHora(p.ultima_actividad || p.actualizado_en)}</div>
       </div>`).join("")}
     </div>
   </div>
