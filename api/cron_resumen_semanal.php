@@ -15,7 +15,7 @@ require_once __DIR__ . '/whatsapp_helpers.php';
 // Número al que se manda el resumen — formato con código de país (52) y el
 // "1" de celular que usa WhatsApp Business API para México, igual que
 // cualquier otro teléfono guardado en el sistema.
-const RESUMEN_SEMANAL_TELEFONO = '5215579913025';
+const RESUMEN_SEMANAL_TELEFONO = '525579913025';
 
 $pdo = db();
 

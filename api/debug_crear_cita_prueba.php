@@ -9,8 +9,9 @@ require_once __DIR__ . '/citas_helpers.php';
 // esperar a una cita real. Solo Administrador. Se puede borrar cuando ya
 // no haga falta.
 //
-// Uso: abre esta URL agregando ?telefono=5215XXXXXXXXX (tu propio WhatsApp,
-// con código de país) — si no mandas el teléfono, no crea nada, para no
+// Uso: abre esta URL agregando ?telefono=52XXXXXXXXXX (tu propio WhatsApp,
+// con código de país 52 pero SIN el 1 extra que se usa para marcar — la API
+// de Meta lo rechaza) — si no mandas el teléfono, no crea nada, para no
 // arriesgarte a mandarle un mensaje de prueba a un cliente real por error.
 $user = require_admin();
 header('Content-Type: text/plain; charset=utf-8');
@@ -18,8 +19,8 @@ header('Content-Type: text/plain; charset=utf-8');
 $telefono = trim((string)($_GET['telefono'] ?? ''));
 if ($telefono === '') {
     echo "Falta el teléfono. Usa la URL así:\n"
-        . "debug_crear_cita_prueba.php?telefono=5215XXXXXXXXX\n"
-        . "(tu propio WhatsApp, con código de país 521 al inicio).\n";
+        . "debug_crear_cita_prueba.php?telefono=52XXXXXXXXXX\n"
+        . "(tu propio WhatsApp: 52 + tu número a 10 dígitos, SIN el 1).\n";
     exit;
 }
 
