@@ -3383,13 +3383,15 @@ function prospectosHTML(){
       <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${PROSPECTO_ABIERTO===p.id?'background:var(--parchment);':(p.mensaje_nuevo?'background:#fdf3e7;':'')}" data-prospecto-abrir="${p.id}">
         <span class="badge ${PROSPECTO_ESTATUS_BADGE[p.estatus]||'warn'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_ESTATUS_LABEL[p.estatus]||p.estatus}</span>
         <div class="alert-info">
-          <div class="name">${p.mensaje_nuevo?'<span style="color:var(--red); font-size:10px; vertical-align:2px;">&#9679;</span> ':''}${escapeHTML(p.nombre || 'Sin nombre')} <span style="color:var(--gray); font-weight:400;">&middot; ${escapeHTML(p.estado_ubicacion||'sin estado')}</span></div>
-          <div class="meta">${escapeHTML(p.telefono)} &middot; ${escapeHTML(truncate(p.resumen_caso||'',90))}</div>
+          <div class="name" style="${p.mensaje_nuevo?'font-weight:700;':''}">${escapeHTML(p.nombre || 'Sin nombre')} <span style="color:var(--gray); font-weight:400;">&middot; ${escapeHTML(p.estado_ubicacion||'sin estado')}</span></div>
+          <div class="meta" style="${p.mensaje_nuevo?'color:var(--ink); font-weight:600;':''}">${escapeHTML(p.telefono)} &middot; ${escapeHTML(truncate(p.resumen_caso||'',90))}</div>
         </div>
-        ${p.mensaje_nuevo ? `<span class="badge crit" style="flex-shrink:0; margin-top:1px;">Mensaje nuevo</span>` : ''}
         <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'closed'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
         <span class="badge ${p.asignado_nombre?'ok':'warn'}" style="flex-shrink:0; margin-top:1px;">${p.asignado_nombre ? escapeHTML(p.asignado_nombre) : 'Sin turnar'}</span>
-        <div style="flex-shrink:0; font-size:11px; color:var(--gray); text-align:right;">${fmtFechaHora(p.ultima_actividad || p.actualizado_en)}</div>
+        <div style="flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:5px; min-width:34px;">
+          <div style="font-size:11px; color:var(--gray);">${fmtFechaHora(p.ultima_actividad || p.actualizado_en)}</div>
+          ${p.mensajes_sin_leer > 0 ? `<span style="background:#25D366; color:#fff; border-radius:999px; min-width:20px; height:20px; padding:0 6px; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; line-height:1;">${p.mensajes_sin_leer > 99 ? '99+' : p.mensajes_sin_leer}</span>` : ''}
+        </div>
       </div>`).join("")}
     </div>
   </div>

@@ -21,7 +21,10 @@ $sql = "SELECT p.*, e.exp AS expediente_exp, u.nombre AS asignado_nombre,
                (SELECT MAX(creado_en) FROM whatsapp_conversaciones w
                 WHERE w.telefono = p.telefono AND w.direccion = 'entrante') AS ultimo_entrante,
                (SELECT MAX(creado_en) FROM whatsapp_conversaciones w
-                WHERE w.telefono = p.telefono) AS ultima_actividad
+                WHERE w.telefono = p.telefono) AS ultima_actividad,
+               (SELECT COUNT(*) FROM whatsapp_conversaciones w
+                WHERE w.telefono = p.telefono AND w.direccion = 'entrante'
+                  AND w.creado_en > COALESCE(p.visto_en, '1970-01-01')) AS mensajes_sin_leer
         FROM prospectos p
         LEFT JOIN expedientes e ON e.id = p.expediente_id
         LEFT JOIN usuarios u ON u.id = p.asignado_a"
@@ -33,8 +36,7 @@ $stmt->execute($esAdmin ? [] : [':uid' => $user['id']]);
 
 $prospectos = [];
 foreach ($stmt->fetchAll() as $r) {
-    $mensajeNuevo = $r['ultimo_entrante'] !== null
-        && ($r['visto_en'] === null || $r['ultimo_entrante'] > $r['visto_en']);
+    $mensajesSinLeer = (int)$r['mensajes_sin_leer'];
     $prospectos[] = [
         'id' => (int)$r['id'],
         'telefono' => $r['telefono'],
@@ -44,7 +46,8 @@ foreach ($stmt->fetchAll() as $r) {
         'resumen_caso' => $r['resumen_caso'],
         'estatus' => $r['estatus'],
         'pausado_bot' => (bool)$r['pausado_bot'],
-        'mensaje_nuevo' => $mensajeNuevo,
+        'mensaje_nuevo' => $mensajesSinLeer > 0,
+        'mensajes_sin_leer' => $mensajesSinLeer,
         'asignado_a' => $r['asignado_a'] !== null ? (int)$r['asignado_a'] : null,
         'asignado_nombre' => $r['asignado_nombre'],
         'notas_internas' => $r['notas_internas'],
