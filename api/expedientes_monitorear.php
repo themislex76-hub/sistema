@@ -18,6 +18,12 @@ $rows = $pdo->query($sql)->fetchAll();
 
 $expedientes = [];
 foreach ($rows as $r) {
+    // Los tribunales laborales FEDERALES siempre incluyen la palabra
+    // "federal" en su nombre oficial, sin importar la ciudad/estado donde
+    // tengan su sede -- por eso los robots deben confiar en este campo y
+    // no en menciones de "Ciudad de México"/"CDMX"/"Estado de México".
+    $esFederal = stripos((string)($r['junta'] ?? ''), 'federal') !== false
+        || stripos((string)($r['tribunal'] ?? ''), 'federal') !== false;
     $expedientes[] = [
         'id' => (int)$r['id'],
         'exp' => $r['exp'],
@@ -25,6 +31,7 @@ foreach ($rows as $r) {
         'demandado' => $r['demandado'],
         'junta' => $r['junta'],
         'tribunal' => $r['tribunal'],
+        'es_federal' => $esFederal,
     ];
 }
 
