@@ -64,16 +64,16 @@ foreach (($data['entry'] ?? []) as $entry) {
     foreach (($entry['changes'] ?? []) as $change) {
         $value = $change['value'] ?? [];
 
-        // Confirmaciones de entrega/lectura ("statuses") — temporalmente se
-        // registran TODAS (sent/delivered/read/failed), no solo las
-        // fallidas, mientras se diagnostica un recordatorio que Meta acepta
-        // pero nunca llega al teléfono. Una vez resuelto, volver a filtrar
-        // solo 'failed' para no llenar el log de ruido.
+        // Confirmaciones de entrega/lectura ("statuses") — normalmente se
+        // ignoran, pero si una falló se registra el motivo exacto para
+        // poder diagnosticar (ej. mensaje fuera de la ventana de 24h que
+        // permite Meta para mensajes que inicia la empresa).
         foreach (($value['statuses'] ?? []) as $st) {
-            file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
-                . ' | ESTADO=' . ($st['status'] ?? '?') . ' | para=' . ($st['recipient_id'] ?? '?')
-                . ' | msg_id=' . ($st['id'] ?? '?')
-                . ' | ' . json_encode($st['errors'] ?? [], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+            if (($st['status'] ?? '') === 'failed') {
+                file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+                    . ' | ENTREGA FALLIDA | para=' . ($st['recipient_id'] ?? '?')
+                    . ' | ' . json_encode($st['errors'] ?? [], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+            }
         }
 
         $mensajes = $value['messages'] ?? [];
