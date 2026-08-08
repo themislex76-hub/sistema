@@ -9,6 +9,10 @@ require_once __DIR__ . '/config.php';
 require_admin();
 header('Content-Type: text/plain; charset=utf-8');
 
+$iaHelpersFile = __DIR__ . '/ia_helpers.php';
+echo "Última modificación de ia_helpers.php: " . (file_exists($iaHelpersFile) ? date('Y-m-d H:i:s', filemtime($iaHelpersFile)) : 'NO EXISTE') . "\n"
+    . "(la hora del servidor ahora mismo es " . date('Y-m-d H:i:s') . " — si la fecha de arriba es de hace varias horas, el archivo que subiste no se guardó)\n\n";
+
 $logFile = __DIR__ . '/ia_debug.log';
 if (!file_exists($logFile)) {
     echo "No existe ia_debug.log todavía — eso significa que ia_llamar_claude() no ha registrado ningún fallo.\n";
