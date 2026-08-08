@@ -516,6 +516,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
         error_log('Falta api/anthropic_credentials.php');
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [sin_texto] tel=$telefono | motivo=falta anthropic_credentials.php\n", FILE_APPEND);
         return ['texto' => IA_FALLBACK_TEXTO, 'lead' => null];
     }
     require_once $credentialsFile;
@@ -630,6 +632,13 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     }
 
     if (trim($texto) === '') {
+        // Todas las llamadas a la API funcionaron (si no, ya se habría
+        // registrado y devuelto arriba), pero Claude nunca terminó de
+        // redactar un texto final — típicamente porque se agotaron las
+        // $maxRondas encadenando herramientas sin concluir. Se registra
+        // aparte porque este caso no deja huella en ningún otro lado.
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [sin_texto] tel=$telefono | motivo=se agotaron $maxRondas rondas sin texto final\n", FILE_APPEND);
         $texto = IA_FALLBACK_TEXTO;
     }
 
