@@ -76,6 +76,33 @@ $sinResponder = (int)$sinResponderStmt->fetch()['n'];
 $conversacionesTotales = (int)($statsRow['conversaciones_totales'] ?? 0);
 $totalProspectos = (int)($statsRow['total_prospectos'] ?? 0);
 
+// Desglose por día (últimos 14 días) — para comparar a simple vista los
+// días de live contra los días normales.
+$porDiaMensajes = $pdo->query(
+    "SELECT DATE(creado_en) AS dia, COUNT(*) AS mensajes, COUNT(DISTINCT telefono) AS numeros
+     FROM whatsapp_conversaciones
+     WHERE direccion = 'entrante' AND creado_en >= CURDATE() - INTERVAL 13 DAY
+     GROUP BY DATE(creado_en)"
+)->fetchAll(PDO::FETCH_ASSOC | PDO::FETCH_UNIQUE);
+
+$porDiaProspectos = $pdo->query(
+    "SELECT DATE(creado_en) AS dia, COUNT(*) AS nuevos
+     FROM prospectos
+     WHERE creado_en >= CURDATE() - INTERVAL 13 DAY
+     GROUP BY DATE(creado_en)"
+)->fetchAll(PDO::FETCH_ASSOC | PDO::FETCH_UNIQUE);
+
+$porDia = [];
+for ($i = 13; $i >= 0; $i--) {
+    $dia = date('Y-m-d', strtotime("-{$i} days"));
+    $porDia[] = [
+        'dia' => $dia,
+        'mensajes' => (int)($porDiaMensajes[$dia]['mensajes'] ?? 0),
+        'numeros' => (int)($porDiaMensajes[$dia]['numeros'] ?? 0),
+        'prospectos_nuevos' => (int)($porDiaProspectos[$dia]['nuevos'] ?? 0),
+    ];
+}
+
 respond([
     'conversaciones' => $conversaciones,
     'stats' => [
@@ -86,5 +113,6 @@ respond([
         'total_prospectos' => $totalProspectos,
         'tasa_conversion' => $conversacionesTotales > 0 ? round($totalProspectos / $conversacionesTotales * 100, 1) : null,
         'sin_responder' => $sinResponder,
+        'por_dia' => $porDia,
     ],
 ]);

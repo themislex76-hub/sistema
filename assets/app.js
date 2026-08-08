@@ -3531,6 +3531,35 @@ function bindProspectoModalEvents(){
 // calidad del bot: todas las conversaciones, califiquen o no como
 // prospecto, con estadísticas y un visor de solo lectura de cada hilo.
 // ---------------------------------------------------------------
+// Barra por día (últimos 14 días) de mensajes entrantes de WhatsApp, para
+// comparar a simple vista los días de live contra los días normales.
+const DIAS_SEMANA_CORTO = ['dom','lun','mar','mié','jué','vié','sáb'];
+function actividadPorDiaHTML(porDia){
+  if(!porDia.length) return '';
+  const max = Math.max(1, ...porDia.map(d=>d.mensajes));
+  const hoy = new Date().toISOString().slice(0,10);
+  return `
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>Actividad de WhatsApp por día</h3><span class="count">últimos 14 días</span></div>
+    <div class="panel-body" style="padding:16px 18px;">
+      <div style="display:flex; align-items:flex-end; gap:6px; height:140px;">
+        ${porDia.map(d=>{
+          const fecha = new Date(d.dia + 'T00:00:00');
+          const alto = Math.round((d.mensajes / max) * 110) + (d.mensajes>0 ? 4 : 0);
+          const esHoy = d.dia === hoy;
+          return `
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;" title="${d.mensajes} mensaje(s), ${d.numeros} número(s), ${d.prospectos_nuevos} lead(s) nuevo(s)">
+            <div style="font-size:10.5px; color:var(--ink); font-weight:700; margin-bottom:2px;">${d.mensajes||''}</div>
+            <div style="width:100%; max-width:28px; height:${alto}px; background:${esHoy?'var(--ink)':'#b9c3d6'}; border-radius:4px 4px 0 0;"></div>
+            <div style="font-size:10px; color:var(--gray); margin-top:4px; text-align:center;">${DIAS_SEMANA_CORTO[fecha.getDay()]}<br>${fecha.getDate()}</div>
+          </div>`;
+        }).join("")}
+      </div>
+      <div style="font-size:11px; color:var(--gray); margin-top:10px;">Pasa el cursor sobre cada barra para ver el detalle del día (mensajes, números distintos y leads nuevos).</div>
+    </div>
+  </div>`;
+}
+
 function conversacionesHTML(){
   const s = CONVERSACIONES_STATS || {};
   const statsHTML = `
@@ -3545,7 +3574,8 @@ function conversacionesHTML(){
   <div class="notice" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px; margin-top:0;">
     <div>${REINTENTO_EN_PROGRESO ? escapeHTML(REINTENTO_PROGRESO_TXT) : `<strong>${s.sin_responder}</strong> conversación${s.sin_responder===1?'':'es'} se quedaron sin respuesta real (falló la IA) y ${s.sin_responder===1?'puede':'pueden'} reintentarse ahora.`}</div>
     <button class="btn" id="reintentarLoteBtn" ${REINTENTO_EN_PROGRESO?'disabled':''}>${REINTENTO_EN_PROGRESO ? 'Reintentando...' : 'Reintentar respuestas fallidas'}</button>
-  </div>` : ''}`;
+  </div>` : ''}
+  ${actividadPorDiaHTML(s.por_dia || [])}`;
   if(!CONVERSACIONES.length){
     return statsHTML + `<div class="panel"><div class="panel-body" style="padding:24px;">
       <div class="notice">Todavía no hay conversaciones registradas del bot de WhatsApp.</div>
