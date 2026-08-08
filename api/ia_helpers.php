@@ -467,7 +467,15 @@ function ia_llamar_claude(array $mensajes): ?array
         . ". Úsala siempre como referencia de \"hoy\" — nunca la calcules ni la asumas de otra forma, y nunca inventes ni redondees una fecha por tu cuenta.";
     $payload = [
         'model' => IA_MODEL,
-        'max_tokens' => 1500,
+        // Con 1500 se descubrió que el modelo a veces gasta TODO el límite
+        // "pensando" (thinking) antes de escribir una sola palabra de
+        // respuesta o llamar una herramienta — se queda sin espacio para
+        // contestar (stop_reason=max_tokens con 1500 thinking_tokens y 0 de
+        // texto real). Se sube el límite y se apaga el razonamiento
+        // extendido explícitamente: este bot necesita respuestas cortas de
+        // WhatsApp, no requiere ese razonamiento, y cuesta tokens de más.
+        'max_tokens' => 4096,
+        'thinking' => ['type' => 'disabled'],
         'system' => [
             ['type' => 'text', 'text' => $systemTexto, 'cache_control' => ['type' => 'ephemeral']],
         ],
