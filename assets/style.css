@@ -182,6 +182,7 @@ tbody tr:hover{background:var(--parchment);}
 }
 .modal-tabs button.active{color:var(--ink); border-bottom-color:var(--brass);}
 .modal-body{padding:22px 28px; max-height:60vh; overflow-y:auto;}
+.chat-scroll{max-height:340px; overflow-y:auto; scroll-behavior:smooth;}
 .grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px 24px;}
 .field{margin-bottom:2px;}
 .field label{display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--gray); margin-bottom:4px;}
@@ -327,6 +328,7 @@ tbody tr:hover{background:var(--parchment);}
   .modal{max-width:100%; margin:0; border-radius:0; min-height:100vh;}
   .overlay{padding:0;}
   .modal-body{max-height:none;}
+  .chat-scroll{max-height:none;}
   table{min-width:560px;}
 }
 @media (max-width:520px){

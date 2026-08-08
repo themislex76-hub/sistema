@@ -754,7 +754,7 @@ function ia_registrar_prospecto_atorado(PDO $pdo, string $telefono, ?array $lead
         $datosLead['resumen'] = $resumenFallback;
     }
     guardar_prospecto($pdo, $telefono, $nombre, $datosLead, true, true);
-    push_notificar_prospecto($pdo, null, 'Asesoría atorada, necesita ayuda', ($datosLead['nombre'] ?: $telefono) . ' — ' . $resumenFallback);
+    push_notificar_prospecto($pdo, null, 'Asesoría atorada, necesita ayuda', ($datosLead['nombre'] ?: $telefono) . ' — ' . $resumenFallback, '/sistema/?abrir=' . urlencode($telefono));
 }
 
 /**

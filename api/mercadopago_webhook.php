@@ -105,7 +105,8 @@ push_enviar_a_usuario(
     $pdo,
     (int)$cita['usuario_id'],
     '¡Pago confirmado!',
-    ($cita['nombre_cliente'] ?: $cita['telefono']) . ' — asesoría agendada para ' . $horarioTexto
+    ($cita['nombre_cliente'] ?: $cita['telefono']) . ' — asesoría agendada para ' . $horarioTexto,
+    '/sistema/?abrir=' . urlencode($cita['telefono'])
 );
 
 // Se agenda sola en el Google Calendar del abogado que le tocó la cita —

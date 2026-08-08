@@ -1,8 +1,8 @@
-const CACHE_NAME = 'ela-shell-v36';
+const CACHE_NAME = 'ela-shell-v37';
 const SHELL_FILES = [
   '/sistema/',
-  '/sistema/assets/style.css?v=4',
-  '/sistema/assets/app.js?v=35',
+  '/sistema/assets/style.css?v=5',
+  '/sistema/assets/app.js?v=36',
   '/sistema/manifest.json',
   '/sistema/assets/icons/icon-192.png',
   '/sistema/assets/icons/icon-512.png',
@@ -58,15 +58,20 @@ self.addEventListener('push', (event) => {
   );
 });
 
-// Al darle clic a la notificación, enfoca una pestaña ya abierta del
-// sistema si existe, o abre una nueva.
+// Al darle clic a la notificación, si ya hay una pestaña abierta del
+// sistema le avisa (por mensaje) que abra esa conversación específica y la
+// enfoca — así no hace falta buscarla a mano. Si no hay ninguna abierta,
+// abre una nueva ya apuntando directo a esa conversación.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = (event.notification.data && event.notification.data.url) || '/sistema/';
   event.waitUntil(
     self.clients.matchAll({type: 'window', includeUncontrolled: true}).then((clientList) => {
       for(const client of clientList){
-        if(client.url.includes('/sistema/') && 'focus' in client) return client.focus();
+        if(client.url.includes('/sistema/') && 'focus' in client){
+          client.postMessage({type: 'abrir-conversacion', url});
+          return client.focus();
+        }
       }
       if(self.clients.openWindow) return self.clients.openWindow(url);
     })

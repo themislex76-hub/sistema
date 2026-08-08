@@ -2108,6 +2108,43 @@ async function loadCitas(){
   }catch(e){ CITAS = []; }
 }
 
+// Al darle clic a una notificación push (nuevo mensaje/prospecto), en vez
+// de dejar al usuario a buscar manualmente quién escribió, se abre
+// directo esa conversación — funciona tanto si la pestaña ya estaba
+// abierta (mensaje del service worker, ver sw.js) como si se abrió una
+// nueva (parámetro ?abrir= en la URL, ver init()).
+async function abrirConversacionDesdeNotificacion(telefono){
+  if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
+  await loadProspectos();
+  const p = PROSPECTOS.find(x=>x.telefono===telefono);
+  if(p){
+    VIEW = 'prospectos';
+    render();
+    await loadProspectoMensajes(p.telefono);
+    abrirProspectoModal(p.id);
+    if(p.mensaje_nuevo){
+      p.mensaje_nuevo = false;
+      api('POST', 'prospectos_update.php', {id: p.id, marcar_visto: true}).catch(()=>{});
+    }
+    return;
+  }
+  if(CURRENT_USER.role === 'Administrador'){
+    await loadConversaciones();
+    const c = CONVERSACIONES.find(x=>x.telefono===telefono);
+    if(c){
+      VIEW = 'conversaciones';
+      render();
+      await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
+      abrirConversacionModal(telefono);
+      return;
+    }
+  }
+  // No se encontró todavía (la notificación llegó antes de que el dato
+  // esté listo) — al menos deja al usuario en la vista correcta.
+  VIEW = 'prospectos';
+  render();
+}
+
 async function loadProspectoMensajes(telefono){
   try{
     const d = await api('GET', 'prospectos_mensajes.php?telefono=' + encodeURIComponent(telefono));
@@ -3422,7 +3459,7 @@ function prospectoDetalleHTML(p){
         ${p.expediente_id ? `<span class="badge ok">Convertido en expediente ${escapeHTML(p.expediente_exp||'')}</span>` : `<button class="btn secondary" data-prospecto-convertir="${p.id}" style="font-size:11px; padding:6px 10px;">Convertir en expediente</button>`}
       </div>
       ${p.resumen_caso ? `<div class="notice" style="margin-bottom:14px;"><strong>Resumen del caso (según el bot):</strong> ${escapeHTML(p.resumen_caso)}</div>` : ""}
-      <div style="max-height:340px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px; background:var(--parchment);">
+      <div class="chat-scroll" style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px; background:var(--parchment);">
         ${PROSPECTO_MENSAJES.length ? PROSPECTO_MENSAJES.map(m=>`
           <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
             <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
@@ -3432,7 +3469,7 @@ function prospectoDetalleHTML(p){
           </div>`).join("") : `<div class="notice">Sin mensajes todavía.</div>`}
       </div>
       <div style="display:flex; gap:8px;">
-        <input type="text" id="prospectoRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+        <input type="text" id="prospectoRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:16px;">
         <button class="btn" id="prospectoEnviarBtn" data-telefono="${escapeHTML(p.telefono)}">Enviar</button>
       </div>
   `;
@@ -3523,6 +3560,16 @@ function bindProspectoModalEvents(){
         renderProspectoModal();
       }catch(err){ alert('No se pudo enviar: ' + err.message); prospectoEnviarBtn.disabled = false; }
     });
+    const prospectoRespuestaInput = document.getElementById('prospectoRespuestaInput');
+    if(prospectoRespuestaInput){
+      prospectoRespuestaInput.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){ e.preventDefault(); prospectoEnviarBtn.click(); }
+      });
+      // Deja el chat ya abajo del todo (mensaje más reciente) en vez de
+      // arriba, como en cualquier app de WhatsApp real.
+      const scroll = document.querySelector('.modal .chat-scroll');
+      if(scroll) scroll.scrollTop = scroll.scrollHeight;
+    }
   }
 }
 
@@ -3624,7 +3671,7 @@ function conversacionDetalleHTML(c){
         <div id="conversacionResumenTexto" style="font-size:13px; color:var(--ink); white-space:pre-wrap;">${r ? escapeHTML(r.resumen) : 'Sin generar todavía. Dale clic a "Generar resumen".'}</div>
         ${r ? `<div style="font-size:10.5px; color:var(--gray); margin-top:6px;">Generado el ${fmtFechaHora(r.generado_en)} con ${r.mensajes_contados} mensaje(s)${r.mensajes_contados !== c.total_mensajes ? ' — hay mensajes nuevos desde entonces, considera actualizarlo' : ''}.</div>` : ''}
       </div>
-      <div style="max-height:400px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:12px; background:var(--parchment);">
+      <div class="chat-scroll" style="border:1px solid var(--border); border-radius:8px; padding:12px; background:var(--parchment);">
         ${CONVERSACION_MENSAJES.length ? CONVERSACION_MENSAJES.map(m=>`
           <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
             <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
@@ -3665,6 +3712,8 @@ function renderConversacionModal(){
   document.getElementById('modalClose').addEventListener('click', cerrarConversacionModal);
   overlay.addEventListener('click', (e)=>{ if(e.target===overlay) cerrarConversacionModal(); });
   bindConversacionModalEvents();
+  const scroll = overlay.querySelector('.chat-scroll');
+  if(scroll) scroll.scrollTop = scroll.scrollHeight;
 }
 
 function bindConversacionModalEvents(){
@@ -3754,7 +3803,7 @@ async function abrirCitaConversacionModal(telefono, nombre){
       <div class="sub">${escapeHTML(telefono)}</div>
     </div>
     <div class="modal-body">
-      <div style="max-height:420px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:12px; background:var(--parchment);">
+      <div class="chat-scroll" style="border:1px solid var(--border); border-radius:8px; padding:12px; background:var(--parchment);">
         ${CONVERSACION_MENSAJES.length ? CONVERSACION_MENSAJES.map(m=>`
           <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
             <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
@@ -3768,6 +3817,8 @@ async function abrirCitaConversacionModal(telefono, nombre){
   document.getElementById('modalClose').addEventListener('click', closeModal);
   overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
   overlay.classList.add('show');
+  const scroll = overlay.querySelector('.chat-scroll');
+  if(scroll) scroll.scrollTop = scroll.scrollHeight;
 }
 
 // ---------------------------------------------------------------
@@ -6099,6 +6150,26 @@ async function init(){
     else if(googleParam === 'error_denegado') alert('Cancelaste el acceso a Google Calendar — no se conectó nada.');
     else alert('No se pudo conectar con Google Calendar. Intenta de nuevo.');
   }
+
+  // Se abrió la app desde una notificación push (ver sw.js) — abre directo
+  // esa conversación en vez de dejar al usuario en la pantalla general.
+  const abrirParam = new URLSearchParams(location.search).get('abrir');
+  if(abrirParam){
+    history.replaceState(null, '', location.pathname);
+    abrirConversacionDesdeNotificacion(abrirParam);
+  }
 }
 init();
+
+// La app ya estaba abierta en una pestaña y le dieron clic a una
+// notificación push — sw.js le avisa por mensaje para abrir esa
+// conversación ahí mismo, sin recargar ni abrir una pestaña nueva.
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('message', (event)=>{
+    if(event.data && event.data.type === 'abrir-conversacion' && event.data.url){
+      const telefono = new URL(event.data.url, location.origin).searchParams.get('abrir');
+      if(telefono) abrirConversacionDesdeNotificacion(telefono);
+    }
+  });
+}
 

@@ -51,7 +51,8 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
             $pdo,
             $prospecto['asignado_a'] !== null ? (int)$prospecto['asignado_a'] : null,
             'Nuevo mensaje de ' . ($prospecto['nombre'] ?: $telefono),
-            mb_strimwidth($texto, 0, 140, '…')
+            mb_strimwidth($texto, 0, 140, '…'),
+            '/sistema/?abrir=' . urlencode($telefono)
         );
     }
 
@@ -117,7 +118,7 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         // Si ya existía el prospecto, el aviso de "nuevo mensaje" de arriba
         // ya cubrió este caso — este es solo para un candidato nuevo.
         if (!$prospecto) {
-            push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono);
+            push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono, '/sistema/?abrir=' . urlencode($telefono));
         }
     }
 
@@ -187,7 +188,7 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
     if ($lead && $lead['tipo'] === 'despido') {
         $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
         if (!$prospecto) {
-            push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono);
+            push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono, '/sistema/?abrir=' . urlencode($telefono));
         }
         guardar_prospecto($pdo, $telefono, null, $lead);
     }
