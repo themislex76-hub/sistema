@@ -596,7 +596,10 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 );
                 $contenido = $calc !== null
                     ? json_encode($calc, JSON_UNESCAPED_UNICODE)
-                    : json_encode(['error' => 'Datos insuficientes o inválidos para calcular.'], JSON_UNESCAPED_UNICODE);
+                    : json_encode([
+                        'error' => 'Datos insuficientes o inválidos para calcular.',
+                        'instruccion' => 'NO vuelvas a llamar esta herramienta adivinando o inventando el dato que falta. En vez de eso, tu respuesta de texto en este mismo turno debe preguntarle directamente a la persona el dato específico que falta (fecha de ingreso, fecha de baja, salario diario/mensual, o si el despido es justificado o injustificado).',
+                    ], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'ofrecer_horarios_asesoria') {
                 $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead);
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
