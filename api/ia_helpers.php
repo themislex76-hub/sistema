@@ -539,6 +539,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     $lead = null;
     $texto = '';
     $maxRondas = 4;
+    $rondasResumen = [];
 
     for ($ronda = 0; $ronda < $maxRondas; $ronda++) {
         $data = ia_llamar_claude($mensajesActuales);
@@ -555,6 +556,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         }
 
         $toolUseBlocks = array_values(array_filter($bloques, fn($b) => ($b['type'] ?? '') === 'tool_use'));
+        $rondasResumen[] = 'ronda' . $ronda . '=[' . implode(',', array_map(fn($b) => $b['name'] ?? '?', $toolUseBlocks))
+            . ']' . (trim($textoRonda) !== '' ? '+texto' : '');
         if (!$toolUseBlocks) {
             // No llamó ninguna herramienta — $textoRonda es la respuesta final.
             break;
@@ -641,8 +644,23 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         // $maxRondas encadenando herramientas sin concluir. Se registra
         // aparte porque este caso no deja huella en ningún otro lado.
         file_put_contents(__DIR__ . '/ia_debug.log', date('c')
-            . " | [sin_texto] tel=$telefono | motivo=se agotaron $maxRondas rondas sin texto final\n", FILE_APPEND);
-        $texto = IA_FALLBACK_TEXTO;
+            . " | [sin_texto] tel=$telefono | motivo=se agotaron $maxRondas rondas sin texto final | "
+            . implode(' | ', $rondasResumen) . "\n", FILE_APPEND);
+
+        // Última oportunidad antes de rendirse: se le pide explícitamente
+        // que conteste por texto, sin usar ninguna herramienta más — para
+        // que el cliente reciba algo útil en vez del mensaje genérico.
+        $mensajesActuales[] = [
+            'role' => 'user',
+            'content' => '(Sistema: ya intentaste varias herramientas. Ahora SOLO contesta con texto normal, sin llamar ninguna herramienta, usando la información que ya tienes. Si te falta un dato, pregúntalo directo.)',
+        ];
+        $dataFinal = ia_llamar_claude($mensajesActuales);
+        if ($dataFinal !== null) {
+            [$textoFinal, , ] = ia_extraer_respuesta($dataFinal);
+            if (trim($textoFinal) !== '') $texto = $textoFinal;
+        }
+
+        if (trim($texto) === '') $texto = IA_FALLBACK_TEXTO;
     }
 
     return ['texto' => trim($texto), 'lead' => $lead];
