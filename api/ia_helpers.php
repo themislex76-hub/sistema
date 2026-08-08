@@ -644,7 +644,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         // $maxRondas encadenando herramientas sin concluir. Se registra
         // aparte porque este caso no deja huella en ningún otro lado.
         file_put_contents(__DIR__ . '/ia_debug.log', date('c')
-            . " | [sin_texto] tel=$telefono | motivo=se agotaron $maxRondas rondas sin texto final | "
+            . " | [sin_texto] tel=$telefono | rondas_usadas=" . count($rondasResumen) . "/$maxRondas | "
             . implode(' | ', $rondasResumen) . "\n", FILE_APPEND);
 
         // Última oportunidad antes de rendirse: se le pide explícitamente
@@ -660,7 +660,12 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             if (trim($textoFinal) !== '') $texto = $textoFinal;
         }
 
-        if (trim($texto) === '') $texto = IA_FALLBACK_TEXTO;
+        if (trim($texto) === '') {
+            file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+                . " | [sin_texto_final] tel=$telefono | stop_reason=" . ($dataFinal['stop_reason'] ?? 'null')
+                . " | raw=" . json_encode($dataFinal, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+            $texto = IA_FALLBACK_TEXTO;
+        }
     }
 
     return ['texto' => trim($texto), 'lead' => $lead];
