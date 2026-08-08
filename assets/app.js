@@ -3716,19 +3716,26 @@ function citasPanelHTML(forzar){
   const isAdmin = CURRENT_USER.role === 'Administrador';
   const CITA_ESTADO_BADGE = {confirmada:'ok', pendiente_pago:'warn'};
   const CITA_ESTADO_LABEL = {confirmada:'Pagada', pendiente_pago:'Esperando pago'};
+  const ahora = new Date();
+  const vencidas = CITAS.filter(c => new Date(`${c.fecha}T${c.hora_inicio}:00`) < ahora);
   return `
   <div class="panel">
     <div class="panel-head"><h3>Próximas asesorías agendadas</h3><span class="count">${CITAS.length}</span></div>
+    ${vencidas.length ? `<div class="notice" style="margin:0 16px 12px 16px;"><strong>${vencidas.length}</strong> ya pasó su hora y sigue sin marcarse como atendida — revisa si el cliente recibió su llamada.</div>` : ''}
     <div class="panel-body" style="padding:0;">
-      ${CITAS.length ? CITAS.map(c=>`
-      <div class="alert-row" style="align-items:flex-start; ${isAdmin?'cursor:pointer;':''}" ${isAdmin?`data-cita-telefono="${escapeHTML(c.telefono)}" data-cita-nombre="${escapeHTML(c.nombre_cliente || '')}"`:''}>
+      ${CITAS.length ? CITAS.map(c=>{
+        const vencida = new Date(`${c.fecha}T${c.hora_inicio}:00`) < ahora;
+        return `
+      <div class="alert-row" style="align-items:flex-start;">
         <span class="badge ${CITA_ESTADO_BADGE[c.estado]||'closed'}" style="flex-shrink:0; margin-top:1px;">${CITA_ESTADO_LABEL[c.estado]||c.estado}</span>
-        <div class="alert-info">
+        ${vencida ? '<span class="badge crit" style="flex-shrink:0; margin-top:1px;">¡Ya pasó!</span>' : ''}
+        <div class="alert-info" ${isAdmin?`data-cita-telefono="${escapeHTML(c.telefono)}" data-cita-nombre="${escapeHTML(c.nombre_cliente || '')}" style="cursor:pointer;"`:''}>
           <div class="name">${escapeHTML(c.texto)}</div>
           <div class="meta">${escapeHTML(c.nombre_cliente || c.telefono)} &middot; ${escapeHTML(c.telefono)} &middot; con ${escapeHTML(c.usuario_nombre)}</div>
         </div>
         <div style="flex-shrink:0; font-size:12px; color:var(--gray); text-align:right;">$${c.monto.toFixed(0)} MXN</div>
-      </div>`).join("") : '<div class="empty">Sin asesorías agendadas por ahora.</div>'}
+        <button class="btn secondary cita-atendida-btn" data-cita-id="${c.id}" style="flex-shrink:0; font-size:11px; padding:6px 10px;">Marcar atendida</button>
+      </div>`;}).join("") : '<div class="empty">Sin asesorías agendadas por ahora.</div>'}
     </div>
   </div>`;
 }
@@ -4425,6 +4432,21 @@ function bindViewBody(){
   document.querySelectorAll('[data-cita-telefono]').forEach(el=>{
     el.addEventListener('click', ()=>{
       abrirCitaConversacionModal(el.dataset.citaTelefono, el.dataset.citaNombre);
+    });
+  });
+  document.querySelectorAll('.cita-atendida-btn').forEach(el=>{
+    el.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const id = parseInt(el.dataset.citaId);
+      el.disabled = true;
+      try{
+        await api('POST', 'citas_marcar_atendida.php', {id});
+        await loadCitas();
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo marcar: ' + err.message);
+        el.disabled = false;
+      }
     });
   });
   const prospectosToggleDescartados = document.querySelector('[data-prospectos-toggle-descartados]');

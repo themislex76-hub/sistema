@@ -11,11 +11,15 @@ $usuario = require_login();
 citas_expirar_pendientes_vencidas(db());
 
 $pdo = db();
+// No se filtra por fecha: una cita pagada se queda visible hasta que
+// alguien la marque como atendida (ver citas_marcar_atendida.php), para
+// que ninguna se pierda de vista si el abogado no llegó a atenderla a
+// tiempo. El frontend resalta las que ya vencieron.
 $sql = "SELECT c.id, c.telefono, c.usuario_id, u.nombre AS usuario_nombre, c.fecha, c.hora_inicio, c.hora_fin,
-               c.estado, c.monto, c.nombre_cliente, c.creado_en, c.pagado_en
+               c.estado, c.atendida, c.monto, c.nombre_cliente, c.creado_en, c.pagado_en
         FROM citas_asesoria c
         JOIN usuarios u ON u.id = c.usuario_id
-        WHERE c.fecha >= CURDATE() AND c.estado IN ('confirmada', 'pendiente_pago')";
+        WHERE c.atendida = 0 AND c.estado IN ('confirmada', 'pendiente_pago')";
 $params = [];
 if ($usuario['rol'] !== 'administrador') {
     $sql .= ' AND c.usuario_id = :uid';
@@ -36,6 +40,7 @@ foreach ($stmt->fetchAll() as $r) {
         'hora_inicio' => substr($r['hora_inicio'], 0, 5),
         'hora_fin' => substr($r['hora_fin'], 0, 5),
         'estado' => $r['estado'],
+        'atendida' => (bool)$r['atendida'],
         'monto' => (float)$r['monto'],
         'nombre_cliente' => $r['nombre_cliente'],
         'texto' => citas_formatear_fecha_hora($r['fecha'], substr($r['hora_inicio'], 0, 5)),
