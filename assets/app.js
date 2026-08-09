@@ -58,6 +58,8 @@ let PROSPECTOS_MOSTRAR_DESCARTADOS = false; // los "Descartado" se esconden de l
 // prospecto o no, para poder revisar qué está contestando el bot.
 let CONVERSACIONES = [];
 let CONVERSACIONES_STATS = {};
+let RESUMENES_EJECUTIVOS = [];
+let RESUMEN_EJECUTIVO_GENERANDO = false;
 let CONVERSACION_ABIERTA = null; // teléfono de la conversación expandida
 let CONVERSACION_MENSAJES = [];
 let CONVERSACION_RESUMEN = null; // {resumen, mensajes_contados, generado_en} o null
@@ -2084,6 +2086,7 @@ async function refreshBootstrap(){
   }
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadConversaciones();
+    await loadResumenesEjecutivos();
   }
 }
 
@@ -2160,6 +2163,13 @@ async function loadConversaciones(){
     CONVERSACIONES = d.conversaciones;
     CONVERSACIONES_STATS = d.stats;
   }catch(e){ CONVERSACIONES = []; CONVERSACIONES_STATS = {}; }
+}
+
+async function loadResumenesEjecutivos(){
+  try{
+    const d = await api('GET', 'resumen_ejecutivo.php');
+    RESUMENES_EJECUTIVOS = d.resumenes;
+  }catch(e){ RESUMENES_EJECUTIVOS = []; }
 }
 
 async function loadConversacionMensajes(telefono){
@@ -2450,6 +2460,7 @@ function shellHTML(){
         <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
         <button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge">${prospectosNuevosCount()}</span>`:""}</button>
         ${isAdmin ? `<button data-v="conversaciones" class="${VIEW==='conversaciones'?'active':''}"><span class="ico">&#128269;</span> Conversaciones (WhatsApp)</button>` : ""}
+        ${isAdmin ? `<button data-v="resumen_ejecutivo" class="${VIEW==='resumen_ejecutivo'?'active':''}"><span class="ico">&#128202;</span> Resumen ejecutivo (bot)</button>` : ""}
         <div class="section-label">Referencia</div>
         <button data-v="manual" class="${VIEW==='manual'?'active':''}"><span class="ico">&#128218;</span> Manual de uso</button>
         <button data-v="cliente_preview" class="${VIEW==='cliente_preview'?'active':''}"><span class="ico">${ICONS.cliente}</span> Vista de portal cliente</button>
@@ -2490,6 +2501,7 @@ const VIEW_TITLES = {
   agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
   prospectos:["Prospectos (WhatsApp)", "Casos de despido en CDMX/Edomex captados por el asistente de IA en WhatsApp"],
   conversaciones:["Conversaciones (WhatsApp)", "Todas las conversaciones del bot, calificaran o no como prospecto — para revisar y perfeccionar sus respuestas"],
+  resumen_ejecutivo:["Resumen ejecutivo (bot)", "Temas más comunes, patrones y oportunidades detectadas en las conversaciones de WhatsApp"],
   formato_demanda:["Formato de demanda", "Plantilla de demanda y biblioteca de otras plantillas de escritos"],
   cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
   equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
@@ -2596,6 +2608,7 @@ function renderViewBody(){
   else if(VIEW==='agenda') el.innerHTML = agendaHTML();
   else if(VIEW==='prospectos') el.innerHTML = prospectosHTML();
   else if(VIEW==='conversaciones') el.innerHTML = conversacionesHTML();
+  else if(VIEW==='resumen_ejecutivo') el.innerHTML = resumenEjecutivoHTML();
   else if(VIEW==='formato_demanda') el.innerHTML = formatoDemandaHTML();
   else if(VIEW==='cliente_preview') el.innerHTML = clientePreviewHTML();
   else if(VIEW==='equipo') el.innerHTML = equipoHTML();
@@ -3650,6 +3663,86 @@ function conversacionesHTML(){
   `;
 }
 
+// ---------------------------------------------------------------
+// "Resumen ejecutivo (bot)" — análisis con IA de todas las conversaciones
+// de WhatsApp (temas comunes, por qué no califican, oportunidades), para
+// que el despacho (o quien lo asesore en optimizar el bot) lo lea directo
+// desde el sistema en vez de tener que pedirlo por fuera. Se guarda cada
+// uno generado para llevar historial.
+// ---------------------------------------------------------------
+// Conversión muy básica de markdown a HTML — el reporte lo redacta la IA
+// con # encabezados, **negritas** y guiones de lista; aquí solo se pinta
+// bien dentro del sistema (esto NO es el formato de WhatsApp, es un
+// reporte interno de solo lectura).
+function mdBasicoHTML(md){
+  const escapado = escapeHTML(md);
+  const lineas = escapado.split('\n');
+  let html = '';
+  let enLista = false;
+  for(const linea of lineas){
+    const esItem = /^\s*[-*]\s+/.test(linea);
+    if(esItem && !enLista){ html += '<ul style="margin:6px 0 10px 0; padding-left:20px;">'; enLista = true; }
+    if(!esItem && enLista){ html += '</ul>'; enLista = false; }
+    const conNegritas = linea.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    if(/^###\s+/.test(linea)) html += `<h4 style="margin:14px 0 6px 0; font-size:13.5px;">${conNegritas.replace(/^###\s+/,'')}</h4>`;
+    else if(/^##\s+/.test(linea)) html += `<h3 style="margin:16px 0 6px 0; font-size:15px; font-family:var(--serif);">${conNegritas.replace(/^##\s+/,'')}</h3>`;
+    else if(/^#\s+/.test(linea)) html += `<h2 style="margin:0 0 10px 0; font-size:17px; font-family:var(--serif);">${conNegritas.replace(/^#\s+/,'')}</h2>`;
+    else if(esItem) html += `<li style="font-size:13px; margin-bottom:4px;">${conNegritas.replace(/^\s*[-*]\s+/,'')}</li>`;
+    else if(linea.trim()==='') html += '<div style="height:6px;"></div>';
+    else html += `<div style="font-size:13px; margin-bottom:4px;">${conNegritas}</div>`;
+  }
+  if(enLista) html += '</ul>';
+  return html;
+}
+
+function resumenEjecutivoHTML(){
+  const ultimo = RESUMENES_EJECUTIVOS[0];
+  return `
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
+    <div style="font-size:12.5px; color:var(--gray);">${RESUMENES_EJECUTIVOS.length ? `Último generado: ${fmtFechaHora(ultimo.creado_en)} · ${ultimo.num_conversaciones} conversaciones` : 'Todavía no se ha generado ningún resumen.'}</div>
+    <button class="btn" id="resumenEjecutivoGenerarBtn" ${RESUMEN_EJECUTIVO_GENERANDO?'disabled':''}>${RESUMEN_EJECUTIVO_GENERANDO ? 'Generando... (puede tardar ~1 min)' : 'Generar nuevo resumen'}</button>
+  </div>
+  ${!RESUMENES_EJECUTIVOS.length ? `<div class="panel"><div class="panel-body" style="padding:24px;"><div class="notice">Dale clic a "Generar nuevo resumen" — la IA revisa todas las conversaciones recientes y arma un reporte de temas comunes, patrones y oportunidades.</div></div></div>` : ''}
+  ${RESUMENES_EJECUTIVOS.map((r,i)=>`
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-head"><h3>${i===0?'Más reciente':'Resumen anterior'} — ${fmtFechaHora(r.creado_en)}</h3>
+      <button class="btn secondary" data-resumen-copiar="${r.id}" style="font-size:11px; padding:6px 10px;">Copiar texto</button>
+    </div>
+    <div class="panel-body" style="padding:20px 24px;">${mdBasicoHTML(r.contenido)}</div>
+  </div>`).join("")}
+  `;
+}
+
+function bindResumenEjecutivoEvents(){
+  const generarBtn = document.getElementById('resumenEjecutivoGenerarBtn');
+  if(generarBtn){
+    generarBtn.addEventListener('click', async ()=>{
+      RESUMEN_EJECUTIVO_GENERANDO = true;
+      renderViewBody();
+      try{
+        await api('POST', 'resumen_ejecutivo.php', {});
+        await loadResumenesEjecutivos();
+      }catch(err){
+        alert('No se pudo generar el resumen: ' + err.message);
+      }
+      RESUMEN_EJECUTIVO_GENERANDO = false;
+      renderViewBody();
+    });
+  }
+  document.querySelectorAll('[data-resumen-copiar]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = parseInt(btn.dataset.resumenCopiar);
+      const r = RESUMENES_EJECUTIVOS.find(x=>x.id===id);
+      if(!r) return;
+      navigator.clipboard.writeText(r.contenido).then(()=>{
+        const original = btn.textContent;
+        btn.textContent = '¡Copiado!';
+        setTimeout(()=>{ btn.textContent = original; }, 1500);
+      }).catch(()=> alert('No se pudo copiar. Selecciona el texto manualmente.'));
+    });
+  });
+}
+
 // Detalle de una conversación — se muestra en un modal (ver
 // abrirConversacionModal/renderConversacionModal) para poder abrirlo con un
 // clic sin importar en qué parte de la lista esté la fila, sin tener que
@@ -4542,6 +4635,7 @@ function bindViewBody(){
       abrirConversacionModal(telefono);
     });
   });
+  bindResumenEjecutivoEvents();
   const reintentarLoteBtn = document.getElementById('reintentarLoteBtn');
   if(reintentarLoteBtn){
     reintentarLoteBtn.addEventListener('click', async ()=>{
