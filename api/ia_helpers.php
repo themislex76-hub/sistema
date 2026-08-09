@@ -639,12 +639,23 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     (float)($in['dias_vacaciones_anteriores'] ?? 0),
                     (float)($in['dias_salarios_devengados'] ?? 0)
                 );
-                $contenido = $calc !== null
-                    ? json_encode($calc, JSON_UNESCAPED_UNICODE)
-                    : json_encode([
+                if ($calc !== null) {
+                    $contenido = json_encode($calc, JSON_UNESCAPED_UNICODE);
+                    // Se registra el cálculo (aunque la persona nunca llegue a
+                    // decir "sí, quiero agendar") — es la señal más confiable
+                    // de que tiene un caso real y mostró interés, y se usa
+                    // para el seguimiento proactivo si se queda callada. Ver
+                    // cron_seguimiento_calculadora.php.
+                    $insCalc = $pdo->prepare(
+                        'INSERT INTO calculos_liquidacion (telefono, monto_total) VALUES (:t, :m)'
+                    );
+                    $insCalc->execute([':t' => $telefono, ':m' => $calc['total_estimado'] ?? null]);
+                } else {
+                    $contenido = json_encode([
                         'error' => 'Datos insuficientes o inválidos para calcular.',
                         'instruccion' => 'NO vuelvas a llamar esta herramienta adivinando o inventando el dato que falta. En vez de eso, tu respuesta de texto en este mismo turno debe preguntarle directamente a la persona el dato específico que falta (fecha de ingreso, fecha de baja, salario diario/mensual, o si el despido es justificado o injustificado).',
                     ], JSON_UNESCAPED_UNICODE);
+                }
             } elseif ($bloque['name'] === 'ofrecer_horarios_asesoria') {
                 $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead);
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
