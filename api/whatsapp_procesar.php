@@ -17,6 +17,14 @@ require_once __DIR__ . '/push_helpers.php';
 // alguien mandando decenas de mensajes seguidos sin sentido.
 const WHATSAPP_LIMITE_MENSAJES_DIA = 30;
 
+// El límite de arriba es por ventana de 24h y se reinicia solo — alguien
+// puede seguir escribiendo 30/día indefinidamente durante varios días y
+// acumular cientos de mensajes sin toparse nunca con nada. Este es un
+// tope de por vida (no se reinicia) para cortar ese abuso sostenido —
+// generoso a propósito, para no cortar a alguien con un caso legítimo
+// complejo que solo tardó varios días en resolverse.
+const WHATSAPP_LIMITE_MENSAJES_TOTAL = 80;
+
 function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil): void
 {
     $telefono = (string)($msg['from'] ?? '');
@@ -57,6 +65,33 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     }
 
     if ($prospecto && (int)$prospecto['pausado_bot'] === 1) {
+        return;
+    }
+
+    // Tope de por vida — ver comentario de la constante arriba. Se revisa
+    // antes que el de 24h porque este nunca se reinicia solo.
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*) AS n FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante'"
+    );
+    $stmt->execute([':t' => $telefono]);
+    $mensajesTotales = (int)$stmt->fetch()['n'];
+    if ($mensajesTotales > WHATSAPP_LIMITE_MENSAJES_TOTAL) {
+        if ($mensajesTotales === WHATSAPP_LIMITE_MENSAJES_TOTAL + 1) {
+            $avisoTotal = 'Ya platicamos bastante estos días — de aquí en adelante, para seguir a fondo con tu caso lo mejor es agendar la asesoría telefónica con el abogado ($299, 1 hora), o si prefieres esperar, un humano del despacho te contacta directo en cuanto pueda. ¡Gracias por tu paciencia!';
+            whatsapp_enviar($telefono, $avisoTotal);
+            $stmt = $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+            );
+            $stmt->execute([':t' => $telefono, ':texto' => $avisoTotal]);
+            // El aviso le promete contacto humano — se avisa a los
+            // administradores para que decidan si de verdad hace falta
+            // (podría ser un caso legítimo largo, o simple abuso/spam).
+            push_notificar_prospecto(
+                $pdo, null, 'Número llegó al tope de mensajes',
+                "{$telefono} superó los " . WHATSAPP_LIMITE_MENSAJES_TOTAL . " mensajes de por vida — revisa si es un caso real o abuso.",
+                '/sistema/?abrir=' . urlencode($telefono)
+            );
+        }
         return;
     }
 
