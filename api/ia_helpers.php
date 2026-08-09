@@ -221,10 +221,22 @@ fuera de eso, sin excepción.
   un abogado te contacte para ver si tu caso califica? Es sin costo y
   sin compromiso, nomás para que lo revisen." (NO prometas un horario ni
   "hoy mismo" — el contacto depende de la disponibilidad de agenda del
-  abogado, que tú no conoces). Además, si aplica, menciona la urgencia
-  real: el trabajador tiene solo 2 meses desde el despido para demandar
-  (Art. 518 LFT) — después de eso prescribe su derecho a reclamar. Es un
-  dato legal real, no lo uses si no aplica al caso.
+  abogado, que tú no conoces). Además, en cuanto tengas la fecha exacta
+  del despido, llama calcular_plazo_demanda (también con la fecha en que
+  presentó su solicitud de conciliación y/o la fecha de su Constancia de
+  No Conciliación, si ya las tiene) para saber EXACTAMENTE cuántos días le
+  quedan — nunca uses de memoria el dato genérico de "2 meses" una vez que
+  tengas la fecha real, siempre calcúlalo. Con el resultado:
+  · Si "vencido": dile con calidez pero con claridad que su plazo para
+    demandar el despido ya venció — igual ofrécele la asesoría de pago
+    para ver si hay otra opción legal, pero no le prometas el litigio
+    gratis como si el plazo siguiera abierto.
+  · Si "vigente" y le quedan MENOS de 7 días: sube la urgencia al máximo
+    — dile explícitamente que tiene muy poco tiempo y que necesita hablar
+    con el abogado HOY, no después.
+  · Si "vigente" con más días, o "pausado" (mientras dura su conciliación):
+    menciona la fecha o los días de forma natural, sin alarmismo
+    innecesario.
   MUY IMPORTANTE — urgencia extra sobre la conciliación: si la persona
   TODAVÍA NO ha ido al Centro de Conciliación (no ha iniciado trámite, o
   ya lo inició pero su audiencia sigue pendiente/agendada y no ha
@@ -464,6 +476,28 @@ const IA_TOOLS = [
             'required' => ['fecha_ingreso', 'fecha_baja', 'salario_diario', 'tipo'],
         ],
     ],
+    [
+        'name' => 'calcular_plazo_demanda',
+        'description' => 'Calcula (con las fechas reales, no de memoria) cuántos días le quedan a la persona para presentar su demanda de despido antes de que prescriba su derecho (Art. 518 LFT: 2 meses desde el despido), tomando en cuenta que el trámite de conciliación SUSPENDE ese plazo (no lo reinicia) mientras dura. Llama esta herramienta SIEMPRE que se hable de un despido real (no hipotético) y tengas al menos la fecha del despido — para poder avisarle con precisión si tiene poco tiempo o si ya se le venció, en vez de solo mencionar el dato genérico de "2 meses". Nunca calcules esto tú mismo ni redondees.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'fecha_despido' => [
+                    'type' => 'string',
+                    'description' => 'Fecha exacta del despido, formato YYYY-MM-DD.',
+                ],
+                'fecha_solicitud_conciliacion' => [
+                    'type' => 'string',
+                    'description' => 'Fecha en que presentó su solicitud de conciliación ante el Centro (YYYY-MM-DD), si ya la presentó. Cadena vacía si todavía no ha iniciado ningún trámite.',
+                ],
+                'fecha_fin_conciliacion' => [
+                    'type' => 'string',
+                    'description' => 'Fecha en que se emitió su Constancia de No Conciliación, o en que se dio por concluido el trámite (YYYY-MM-DD), si ya la tiene. Cadena vacía si el trámite de conciliación sigue en curso o no ha iniciado.',
+                ],
+            ],
+            'required' => ['fecha_despido'],
+        ],
+    ],
 ];
 
 // Fecha/hora real de México en español, para que la IA nunca tenga que
@@ -564,6 +598,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     }
     require_once $credentialsFile;
     require_once __DIR__ . '/liquidacion_calculadora.php';
+    require_once __DIR__ . '/prescripcion_calculadora.php';
     require_once __DIR__ . '/citas_helpers.php';
     require_once __DIR__ . '/mercadopago_helpers.php';
     require_once __DIR__ . '/prospectos_helpers.php';
@@ -576,7 +611,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // y, una vez elegido el horario, confirmar_horario_asesoria) sin
     // escribir texto todavía — por eso esto es un ciclo y no una sola
     // "segunda llamada", con un tope de rondas por seguridad.
-    $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria'];
+    $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria'];
     $mensajesActuales = $mensajes;
     $lead = null;
     $texto = '';
@@ -656,6 +691,15 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                         'instruccion' => 'NO vuelvas a llamar esta herramienta adivinando o inventando el dato que falta. En vez de eso, tu respuesta de texto en este mismo turno debe preguntarle directamente a la persona el dato específico que falta (fecha de ingreso, fecha de baja, salario diario/mensual, o si el despido es justificado o injustificado).',
                     ], JSON_UNESCAPED_UNICODE);
                 }
+            } elseif ($bloque['name'] === 'calcular_plazo_demanda') {
+                $plazo = calcular_plazo_demanda(
+                    (string)($in['fecha_despido'] ?? ''),
+                    trim((string)($in['fecha_solicitud_conciliacion'] ?? '')) ?: null,
+                    trim((string)($in['fecha_fin_conciliacion'] ?? '')) ?: null
+                );
+                $contenido = $plazo !== null
+                    ? json_encode($plazo, JSON_UNESCAPED_UNICODE)
+                    : json_encode(['error' => 'Fecha de despido inválida o faltante.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'ofrecer_horarios_asesoria') {
                 $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead);
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
