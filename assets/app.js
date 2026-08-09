@@ -3680,6 +3680,10 @@ function conversacionDetalleHTML(c){
             </div>
           </div>`).join("") : `<div class="notice">Sin mensajes.</div>`}
       </div>
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <input type="text" id="conversacionRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:16px;">
+        <button class="btn" id="conversacionEnviarBtn" data-telefono="${escapeHTML(c.telefono)}">Enviar</button>
+      </div>
   `;
 }
 
@@ -3752,6 +3756,30 @@ function bindConversacionModalEvents(){
         conversacionReintentarBtn.textContent = 'Reintentar esta conversación';
       }
     });
+  }
+  const conversacionEnviarBtn = document.getElementById('conversacionEnviarBtn');
+  if(conversacionEnviarBtn){
+    conversacionEnviarBtn.addEventListener('click', async ()=>{
+      const input = document.getElementById('conversacionRespuestaInput');
+      const texto = input.value.trim();
+      if(!texto) return;
+      const telefono = conversacionEnviarBtn.dataset.telefono;
+      conversacionEnviarBtn.disabled = true;
+      try{
+        await api('POST', 'prospectos_enviar.php', {telefono, texto});
+        await loadConversacionMensajes(telefono);
+        renderConversacionModal();
+      }catch(err){
+        alert('No se pudo enviar: ' + err.message);
+        conversacionEnviarBtn.disabled = false;
+      }
+    });
+    const conversacionRespuestaInput = document.getElementById('conversacionRespuestaInput');
+    if(conversacionRespuestaInput){
+      conversacionRespuestaInput.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){ e.preventDefault(); conversacionEnviarBtn.click(); }
+      });
+    }
   }
 }
 
