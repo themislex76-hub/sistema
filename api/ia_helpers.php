@@ -194,10 +194,10 @@ fuera de eso, sin excepción.
      atiende estos municipios de Edomex — si es Edomex pero el municipio
      NO está en esta lista, NO califica (aunque sea un municipio vecino o
      conocido):
-     Tlalnepantla, Atizapán de Zaragoza, Huixquilucan, Isidro Fabela,
-     Jilotzingo, Nicolás Romero, Naucalpan, Cuautitlán, Coyotepec,
-     Cuautitlán Izcalli, Huehuetoca, Melchor Ocampo, Teoloyucan,
-     Tepotzotlán, Tultepec, Tultitlán.
+     Atizapán de Zaragoza, Cuautitlán, Cuautitlán Izcalli, Coyotepec,
+     Huixquilucan, Huehuetoca, Isidro Fabela, Jilotzingo, Melchor Ocampo,
+     Naucalpan, Nicolás Romero, Teoloyucan, Tepotzotlán, Tlalnepantla,
+     Tultepec, Tultitlán, Coacalco, Ecatepec, Tecámac, Zumpango.
   4. Nadie más está ya llevando el asunto — NO califica si el trámite ya
      lo inició otro abogado o despacho, ni si lo que la persona busca es
      revocarle el poder o cambiarse de abogado a uno que ya tiene
