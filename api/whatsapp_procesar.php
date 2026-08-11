@@ -102,6 +102,15 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         return;
     }
 
+    // Indicador nativo de WhatsApp "escribiendo..." mientras se genera la
+    // respuesta — y punto de partida para medir cuánto tardó todo el
+    // proceso, para el retraso natural de abajo.
+    $messageId = (string)($msg['id'] ?? '');
+    if ($messageId !== '') {
+        whatsapp_marcar_leido_y_escribiendo($messageId);
+    }
+    $tiempoInicio = microtime(true);
+
     $stmt = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
     $stmt->execute([':t' => $telefono]);
     $historial = array_reverse($stmt->fetchAll());
@@ -139,6 +148,16 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         if (!$prospecto) {
             push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono, '/sistema/?abrir=' . urlencode($telefono));
         }
+    }
+
+    // Retraso natural: simula el tiempo que tardaría alguien en escribir
+    // la respuesta (~12 caracteres/segundo), restando lo que ya tardó la
+    // llamada a la IA — así no se siente como una respuesta instantánea
+    // de bot, sin hacer esperar de más si la IA ya tardó bastante.
+    $segundosDeseados = min(20, max(3, mb_strlen($respuesta) / 12));
+    $segundosFaltantes = $segundosDeseados - (microtime(true) - $tiempoInicio);
+    if ($segundosFaltantes > 0) {
+        usleep((int)($segundosFaltantes * 1_000_000));
     }
 
     whatsapp_enviar($telefono, $respuesta);
