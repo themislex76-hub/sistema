@@ -58,7 +58,11 @@ function whatsapp_marcar_leido_y_escribiendo(string $messageId): bool
     }
     require_once $credentialsFile;
 
-    $url = 'https://graph.facebook.com/v20.0/' . WHATSAPP_PHONE_ID . '/messages';
+    // El indicador de "escribiendo..." es una función más nueva de la Graph
+    // API que el envío de texto normal — v20.0 (la que usa whatsapp_enviar)
+    // puede no reconocer el campo typing_indicator, por eso aquí se usa una
+    // versión más reciente.
+    $url = 'https://graph.facebook.com/v23.0/' . WHATSAPP_PHONE_ID . '/messages';
     $payload = [
         'messaging_product' => 'whatsapp',
         'status' => 'read',
@@ -79,7 +83,13 @@ function whatsapp_marcar_leido_y_escribiendo(string $messageId): bool
     ]);
     $raw = curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
     curl_close($ch);
 
-    return $raw !== false && $status >= 200 && $status < 300;
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | [escribiendo] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return false;
+    }
+    return true;
 }
