@@ -49,6 +49,7 @@ export default {
           : null;
         for (const msg of value.messages || []) {
           mensajes.push({
+            id: msg.id || '',
             telefono: msg.from || '',
             tipo: msg.type || '',
             texto: msg.type === 'text' && msg.text ? (msg.text.body || '') : '',

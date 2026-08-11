@@ -46,6 +46,7 @@ $pdo = db();
 foreach ($mensajes as $m) {
     $nombrePerfil = isset($m['nombre']) && $m['nombre'] !== '' ? (string)$m['nombre'] : null;
     procesar_mensaje_entrante($pdo, [
+        'id' => (string)($m['id'] ?? ''),
         'from' => (string)($m['telefono'] ?? ''),
         'type' => (string)($m['tipo'] ?? ''),
         'text' => ['body' => (string)($m['texto'] ?? '')],
