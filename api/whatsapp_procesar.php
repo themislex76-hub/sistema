@@ -199,7 +199,12 @@ function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
     $stmt->execute([':t' => $telefono]);
     $prospecto = $stmt->fetch();
     if ($prospecto && (int)$prospecto['pausado_bot'] === 1) {
-        return ['ok' => false, 'motivo' => 'Un humano ya está atendiendo esta conversación.'];
+        // pausado_bot=1 no significa que alguien esté contestando en este
+        // momento — significa que ya es un prospecto real (normalmente un
+        // lead de despido) y el bot se hizo a un lado a propósito para que
+        // un abogado le dé seguimiento personal. Puede llevar ahí un rato
+        // sin que nadie lo haya visto todavía — revisar Prospectos (WhatsApp).
+        return ['ok' => false, 'motivo' => 'Ya es un prospecto registrado (bot pausado a propósito) — pendiente de seguimiento personal en Prospectos (WhatsApp), no de una respuesta automática.'];
     }
 
     $stmt = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
