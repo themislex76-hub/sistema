@@ -51,9 +51,11 @@ foreach ($telefonos as $telefono) {
     $r = reanudar_conversacion_fuera_horario($pdo, (string)$telefono);
     if ($r['ok']) {
         $contestados++;
+        echo "$telefono | CONTESTADO\n";
     } else {
         $omitidos++;
+        echo "$telefono | omitido | " . $r['motivo'] . "\n";
     }
 }
 
-echo count($telefonos) . " candidato(s), $contestados contestado(s), $omitidos omitido(s).\n";
+echo "\n" . count($telefonos) . " candidato(s), $contestados contestado(s), $omitidos omitido(s).\n";
