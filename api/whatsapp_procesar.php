@@ -79,6 +79,25 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         return;
     }
 
+    if (!dentro_de_horario_atencion()) {
+        $stmt = $pdo->prepare(
+            "SELECT creado_en FROM whatsapp_conversaciones
+             WHERE telefono = :t AND direccion = 'saliente' AND texto = :texto
+             ORDER BY id DESC LIMIT 1"
+        );
+        $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_FUERA_HORARIO]);
+        $ultimoAviso = $stmt->fetch();
+        $yaAvisado = $ultimoAviso && strtotime((string)$ultimoAviso['creado_en']) >= time() - 6 * 3600;
+        if (!$yaAvisado) {
+            whatsapp_enviar($telefono, WHATSAPP_MENSAJE_FUERA_HORARIO);
+            $stmt = $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+            );
+            $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_FUERA_HORARIO]);
+        }
+        return;
+    }
+
     // Ventana móvil de 24 horas (no por día de calendario) — cuenta el
     // mensaje que se acaba de insertar arriba.
     $stmt = $pdo->prepare(
