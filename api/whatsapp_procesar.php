@@ -187,6 +187,77 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
 }
 
+// Contesta automáticamente, en cuanto abre el horario de atención, la
+// pregunta de un cliente que se quedó sin respuesta real porque escribió
+// fuera de horario (solo recibió el aviso automático) — para que no se
+// quede colgado esperando hasta que él mismo vuelva a escribir. Pensada
+// para correr desde un Cron Job — ver cron_reanudar_horario.php.
+// Devuelve ['ok' => bool, 'motivo' => string].
+function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
+{
+    $stmt = $pdo->prepare('SELECT pausado_bot FROM prospectos WHERE telefono = :t LIMIT 1');
+    $stmt->execute([':t' => $telefono]);
+    $prospecto = $stmt->fetch();
+    if ($prospecto && (int)$prospecto['pausado_bot'] === 1) {
+        return ['ok' => false, 'motivo' => 'Un humano ya está atendiendo esta conversación.'];
+    }
+
+    $stmt = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
+    $stmt->execute([':t' => $telefono]);
+    $historial = array_reverse($stmt->fetchAll());
+    if (!$historial) {
+        return ['ok' => false, 'motivo' => 'No hay mensajes para este número.'];
+    }
+
+    // Quita el/los avisos automáticos de "fuera de horario" del final —
+    // no son parte real de la conversación, nada más se mandaron mientras
+    // estaba cerrado.
+    while ($historial && end($historial)['direccion'] === 'saliente' && end($historial)['texto'] === WHATSAPP_MENSAJE_FUERA_HORARIO) {
+        array_pop($historial);
+    }
+    if (!$historial) {
+        return ['ok' => false, 'motivo' => 'No queda nada pendiente que contestar.'];
+    }
+
+    $mensajesIA = [];
+    foreach ($historial as $h) {
+        $mensajesIA[] = [
+            'role' => $h['direccion'] === 'entrante' ? 'user' : 'assistant',
+            'content' => $h['texto'],
+        ];
+    }
+    if (!$mensajesIA || end($mensajesIA)['role'] !== 'user') {
+        return ['ok' => false, 'motivo' => 'No se encontró un mensaje del cliente pendiente de contestar.'];
+    }
+
+    $resultado = ia_responder_whatsapp($pdo, $mensajesIA, $telefono);
+    $respuesta = $resultado['texto'];
+    $lead = $resultado['lead'];
+
+    if ($respuesta === IA_FALLBACK_TEXTO) {
+        return ['ok' => false, 'motivo' => 'La IA no pudo contestar (revisa credenciales/saldo de Anthropic).'];
+    }
+
+    if ($lead && $lead['tipo'] === 'despido') {
+        $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
+        if (!$prospecto) {
+            push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono, '/sistema/?abrir=' . urlencode($telefono));
+        }
+        guardar_prospecto($pdo, $telefono, null, $lead);
+    }
+
+    if (!whatsapp_enviar($telefono, $respuesta)) {
+        return ['ok' => false, 'motivo' => 'No se pudo enviar el mensaje por WhatsApp (revisa whatsapp_send_debug.log — puede ser que ya pasaron más de 24h desde su último mensaje).'];
+    }
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+    );
+    $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
+
+    return ['ok' => true, 'motivo' => ''];
+}
+
 // Reintenta contestar una conversación cuyo último mensaje fue la
 // respuesta de emergencia (IA_FALLBACK_TEXTO) — típicamente porque en ese
 // momento la API de Claude falló (sin saldo, credencial inválida, etc.).
