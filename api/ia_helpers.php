@@ -510,6 +510,10 @@ const IA_TOOLS = [
                     'type' => 'number',
                     'description' => 'Días ya trabajados y no pagados antes de la baja (Art. 82 LFT) que la persona reporta. 0 si no aplica o no sabe.',
                 ],
+                'ubicacion' => [
+                    'type' => 'string',
+                    'description' => 'Estado, ciudad o municipio donde está la empresa/patrón, SOLO si ya se mencionó de forma natural en la conversación — NUNCA se lo preguntes solo para llenar este campo, es puramente informativo. Cadena vacía si no se sabe.',
+                ],
             ],
             'required' => ['fecha_ingreso', 'fecha_baja', 'salario_diario', 'tipo'],
         ],
@@ -544,6 +548,36 @@ const IA_TOOLS = [
 // horario de asesoría (se detectó una cita guardada con el año equivocado
 // por esto). citas_crear_pendiente() por sí sola no rechaza fechas
 // pasadas, así que además se revalida en ia_resultado_confirmar_horario().
+// Clasificación aproximada (para medir, no para calificar leads — esa
+// calificación real la hace la IA con criterio, ver registrar_lead_despido
+// en el prompt) de si un texto libre de ubicación cae dentro de la zona de
+// cobertura (CDMX + los municipios de Edomex que atiende el despacho).
+// Se usa solo para el conteo de cuántos calculos_liquidacion serían de
+// fuera de zona, de cara a decidir si vale la pena cobrar por la
+// calculadora a ese segmento. Devuelve 'dentro'|'fuera'|'desconocido'.
+function ia_clasificar_zona_cobertura(string $ubicacionTexto): string
+{
+    if (trim($ubicacionTexto) === '') {
+        return 'desconocido';
+    }
+    $texto = mb_strtolower($ubicacionTexto);
+    $texto = strtr($texto, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
+    $cubiertos = [
+        'cdmx', 'ciudad de mexico', 'df', 'distrito federal',
+        'atizapan', 'cuautitlan izcalli', 'cuautitlan', 'coyotepec',
+        'huixquilucan', 'huehuetoca', 'isidro fabela', 'jilotzingo',
+        'melchor ocampo', 'naucalpan', 'nicolas romero', 'teoloyucan',
+        'tepotzotlan', 'tlalnepantla', 'tultepec', 'tultitlan',
+        'coacalco', 'ecatepec', 'tecamac', 'zumpango',
+    ];
+    foreach ($cubiertos as $lugar) {
+        if (str_contains($texto, $lugar)) {
+            return 'dentro';
+        }
+    }
+    return 'fuera';
+}
+
 function ia_fecha_actual_es(): string
 {
     $dias = [1 => 'lunes', 2 => 'martes', 3 => 'miércoles', 4 => 'jueves', 5 => 'viernes', 6 => 'sábado', 7 => 'domingo'];
@@ -721,10 +755,16 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     // de que tiene un caso real y mostró interés, y se usa
                     // para el seguimiento proactivo si se queda callada. Ver
                     // cron_seguimiento_calculadora.php.
+                    $ubicacionTexto = trim((string)($in['ubicacion'] ?? ''));
                     $insCalc = $pdo->prepare(
-                        'INSERT INTO calculos_liquidacion (telefono, monto_total) VALUES (:t, :m)'
+                        'INSERT INTO calculos_liquidacion (telefono, monto_total, ubicacion_texto, zona) VALUES (:t, :m, :u, :z)'
                     );
-                    $insCalc->execute([':t' => $telefono, ':m' => $calc['total_estimado'] ?? null]);
+                    $insCalc->execute([
+                        ':t' => $telefono,
+                        ':m' => $calc['total_estimado'] ?? null,
+                        ':u' => $ubicacionTexto !== '' ? $ubicacionTexto : null,
+                        ':z' => ia_clasificar_zona_cobertura($ubicacionTexto),
+                    ]);
                 } else {
                     $contenido = json_encode([
                         'error' => 'Datos insuficientes o inválidos para calcular.',
