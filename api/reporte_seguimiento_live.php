@@ -51,21 +51,28 @@ foreach ($telefonos as $telefono) {
         $estado = 'Aún sin contestar';
     }
 
+    $stmtP = $pdo->prepare('SELECT tipo, estatus FROM prospectos WHERE telefono = :t LIMIT 1');
+    $stmtP->execute([':t' => $telefono]);
+    $prospecto = $stmtP->fetch();
+
     $filas[] = [
         'telefono' => $telefono,
         'ultimo_aviso' => $ultimoAviso,
         'respuesta_real' => $primeraRespuestaReal,
         'estado' => $estado,
+        'prospecto' => $prospecto ? ($prospecto['tipo'] . ' / ' . $prospecto['estatus']) : '—',
     ];
 }
 
 usort($filas, fn($a, $b) => strcmp((string)$b['ultimo_aviso'], (string)$a['ultimo_aviso']));
 
-$totSinContestar = 0; $totNoVolvio = 0; $totRetomo = 0;
+$totSinContestar = 0; $totNoVolvio = 0; $totRetomo = 0; $totNoVolvioPeroEsProspecto = 0;
 foreach ($filas as $f) {
     if ($f['estado'] === 'Aún sin contestar') $totSinContestar++;
-    elseif (str_contains($f['estado'], 'NO volvió')) $totNoVolvio++;
-    else $totRetomo++;
+    elseif (str_contains($f['estado'], 'NO volvió')) {
+        $totNoVolvio++;
+        if ($f['prospecto'] !== '—') $totNoVolvioPeroEsProspecto++;
+    } else $totRetomo++;
 }
 ?>
 <!doctype html>
@@ -89,11 +96,12 @@ th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; font-size:
 <div class="resumen">
   <p>Total: <b><?= count($filas) ?></b></p>
   <p class="pend">Aún sin contestar: <b><?= $totSinContestar ?></b></p>
-  <p class="mal">Contestados pero el cliente NO volvió a escribir: <b><?= $totNoVolvio ?></b></p>
+  <p class="mal">Contestados pero el cliente NO volvió a escribir: <b><?= $totNoVolvio ?></b>
+     (de esos, <b><?= $totNoVolvioPeroEsProspecto ?></b> ya quedaron registrados como prospecto de todos modos — no se perdieron)</p>
   <p class="ok">Contestados y el cliente retomó: <b><?= $totRetomo ?></b></p>
 </div>
 <table>
-<thead><tr><th>Teléfono</th><th>Último aviso automático</th><th>Respuesta real del bot</th><th>Estado</th></tr></thead>
+<thead><tr><th>Teléfono</th><th>Último aviso automático</th><th>Respuesta real del bot</th><th>Estado</th><th>¿Es prospecto?</th></tr></thead>
 <tbody>
 <?php foreach ($filas as $f): ?>
   <tr>
@@ -101,6 +109,7 @@ th, td { border: 1px solid #ccc; padding: 6px 10px; text-align: left; font-size:
     <td><?= htmlspecialchars((string)$f['ultimo_aviso']) ?></td>
     <td><?= htmlspecialchars((string)($f['respuesta_real'] ?? '—')) ?></td>
     <td class="<?= str_contains($f['estado'], 'retomó') ? 'ok' : (str_contains($f['estado'], 'NO volvió') ? 'mal' : 'pend') ?>"><?= htmlspecialchars($f['estado']) ?></td>
+    <td><?= htmlspecialchars($f['prospecto']) ?></td>
   </tr>
 <?php endforeach; ?>
 </tbody>
