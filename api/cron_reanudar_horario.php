@@ -27,16 +27,19 @@ if (!dentro_de_horario_atencion()) {
 
 $pdo = db();
 
-// Solo números cuyo ÚLTIMO mensaje registrado es el aviso automático de
-// fuera de horario — o sea, preguntaron algo y se quedaron sin respuesta
-// real. En cuanto se les conteste, este número deja de aparecer aquí solo
-// (el nuevo último mensaje ya no es el aviso).
+// Números donde el mensaje entrante más reciente es más nuevo que la
+// última respuesta REAL (cualquier "saliente" que no sea el aviso
+// automático) — o sea, tienen algo pendiente sin contestar de verdad. No
+// se puede usar solo "el último mensaje es el aviso": si el cliente
+// siguió escribiendo después del aviso (pasa seguido — sigue platicando
+// aunque nadie le conteste), el último mensaje ya sería suyo, no el
+// aviso, y se perdería su pregunta. En cuanto se le conteste de verdad,
+// este número deja de aparecer aquí solo.
 $stmt = $pdo->prepare(
-    "SELECT wc.telefono FROM whatsapp_conversaciones wc
-     INNER JOIN (
-         SELECT telefono, MAX(id) AS ultimo_id FROM whatsapp_conversaciones GROUP BY telefono
-     ) t ON t.ultimo_id = wc.id
-     WHERE wc.direccion = 'saliente' AND wc.texto = :texto"
+    "SELECT telefono FROM whatsapp_conversaciones
+     GROUP BY telefono
+     HAVING MAX(CASE WHEN direccion = 'entrante' THEN id ELSE 0 END) >
+            MAX(CASE WHEN direccion = 'saliente' AND texto <> :texto THEN id ELSE 0 END)"
 );
 $stmt->execute([':texto' => WHATSAPP_MENSAJE_FUERA_HORARIO]);
 $telefonos = $stmt->fetchAll(PDO::FETCH_COLUMN);

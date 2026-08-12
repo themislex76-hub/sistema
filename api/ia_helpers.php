@@ -560,7 +560,9 @@ function ia_llamar_claude(array $mensajes): ?array
     // siempre.
     $systemTexto = IA_SYSTEM_PROMPT
         . "\n\nFecha y hora actual real ahora mismo: " . ia_fecha_actual_es()
-        . ". Úsala siempre como referencia de \"hoy\" — nunca la calcules ni la asumas de otra forma, y nunca inventes ni redondees una fecha por tu cuenta.";
+        . ". Úsala siempre como referencia de \"hoy\" — nunca la calcules ni la asumas de otra forma, y nunca inventes ni redondees una fecha por tu cuenta."
+        . " Si saludas (buenos días/tardes/noches), básalo SIEMPRE en esta hora actual real, nunca en lo que haya"
+        . " dicho el cliente antes en la conversación — pudo haber pasado tiempo (incluso horas) desde su último mensaje.";
     $payload = [
         'model' => IA_MODEL,
         // Con 1500 se descubrió que el modelo a veces gasta TODO el límite
