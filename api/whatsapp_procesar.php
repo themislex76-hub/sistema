@@ -170,13 +170,28 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     }
 
     // Retraso natural: simula el tiempo que tardaría alguien en escribir
-    // la respuesta (~12 caracteres/segundo), restando lo que ya tardó la
-    // llamada a la IA — así no se siente como una respuesta instantánea
-    // de bot, sin hacer esperar de más si la IA ya tardó bastante.
-    $segundosDeseados = min(20, max(3, mb_strlen($respuesta) / 12));
+    // la respuesta (~9 caracteres/segundo, más lento que antes) más un
+    // poco de variación al azar (para que no se sienta calculado/idéntico
+    // siempre), restando lo que ya tardó la llamada a la IA. Tope duro de
+    // 28s: WhatsApp/Meta espera la confirmación del webhook en poco
+    // tiempo — pasarse mucho de ahí arriesga que reintente el mensaje y
+    // se duplique la respuesta, así que este es el máximo que se
+    // considera seguro dentro de este mecanismo (una espera mucho más
+    // larga y realista necesitaría contestar en segundo plano, no aquí).
+    $segundosBase = max(8, mb_strlen($respuesta) / 9) + random_int(-2, 3);
+    $segundosDeseados = min(28, max(6, $segundosBase));
     $segundosFaltantes = $segundosDeseados - (microtime(true) - $tiempoInicio);
     if ($segundosFaltantes > 0) {
-        usleep((int)($segundosFaltantes * 1_000_000));
+        // Si la espera pasa de 15s, se vuelve a activar el "escribiendo..."
+        // a la mitad — el indicador nativo de WhatsApp dura máximo 25s y,
+        // si no se renueva, desaparece antes de que llegue la respuesta.
+        if ($segundosFaltantes > 15 && $messageId !== '') {
+            usleep((int)(($segundosFaltantes - 15) * 1_000_000));
+            whatsapp_marcar_leido_y_escribiendo($messageId);
+            usleep(15 * 1_000_000);
+        } else {
+            usleep((int)($segundosFaltantes * 1_000_000));
+        }
     }
 
     whatsapp_enviar($telefono, $respuesta);
