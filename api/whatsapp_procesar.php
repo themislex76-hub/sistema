@@ -169,17 +169,15 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         }
     }
 
-    // Retraso natural: simula el tiempo que tardaría alguien en escribir
-    // la respuesta (~9 caracteres/segundo, más lento que antes) más un
-    // poco de variación al azar (para que no se sienta calculado/idéntico
-    // siempre), restando lo que ya tardó la llamada a la IA. Tope duro de
+    // Retraso natural antes de contestar: entre 20 y 28s (con variación
+    // al azar), restando lo que ya tardó la llamada a la IA. Tope duro de
     // 28s: WhatsApp/Meta espera la confirmación del webhook en poco
     // tiempo — pasarse mucho de ahí arriesga que reintente el mensaje y
     // se duplique la respuesta, así que este es el máximo que se
     // considera seguro dentro de este mecanismo (una espera mucho más
     // larga y realista necesitaría contestar en segundo plano, no aquí).
-    $segundosBase = max(8, mb_strlen($respuesta) / 9) + random_int(-2, 3);
-    $segundosDeseados = min(28, max(6, $segundosBase));
+    $segundosBase = max(20, mb_strlen($respuesta) / 9) + random_int(-1, 3);
+    $segundosDeseados = min(28, max(20, $segundosBase));
     $segundosFaltantes = $segundosDeseados - (microtime(true) - $tiempoInicio);
     if ($segundosFaltantes > 0) {
         // Si la espera pasa de 15s, se vuelve a activar el "escribiendo..."
