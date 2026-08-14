@@ -49,10 +49,34 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     $texto = trim((string)($msg['text']['body'] ?? ''));
     if ($texto === '') return;
 
-    $stmt = $pdo->prepare(
-        "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'entrante', :texto, 'ia')"
-    );
-    $stmt->execute([':t' => $telefono, ':texto' => $texto]);
+    // Deduplicación: Meta puede reintentar la entrega del mismo webhook si
+    // no le respondemos a tiempo (el retraso natural + el indicador de
+    // "escribiendo..." + la llamada a la IA pueden sumar varios segundos)
+    // — sin esto, cada reintento procesaba el mensaje de nuevo: gastaba IA
+    // de más y el cliente veía la misma respuesta repetida varias veces.
+    // Se detecta con un índice único sobre el id real del mensaje que
+    // manda Meta: si el INSERT choca porque ya existe, es un reintento
+    // del mismo mensaje, no uno nuevo — se corta aquí, antes de gastar
+    // nada de IA.
+    $messageId = (string)($msg['id'] ?? '');
+    if ($messageId !== '') {
+        try {
+            $stmt = $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por, whatsapp_message_id) VALUES (:t, 'entrante', :texto, 'ia', :mid)"
+            );
+            $stmt->execute([':t' => $telefono, ':texto' => $texto, ':mid' => $messageId]);
+        } catch (\PDOException $e) {
+            if ($e->getCode() === '23000') {
+                return;
+            }
+            throw $e;
+        }
+    } else {
+        $stmt = $pdo->prepare(
+            "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'entrante', :texto, 'ia')"
+        );
+        $stmt->execute([':t' => $telefono, ':texto' => $texto]);
+    }
 
     // Si ya hay un prospecto y el bot está pausado, un humano lleva el
     // caso: no autorespondemos, solo quedó guardado el mensaje para que
@@ -124,7 +148,6 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     // Indicador nativo de WhatsApp "escribiendo..." mientras se genera la
     // respuesta — y punto de partida para medir cuánto tardó todo el
     // proceso, para el retraso natural de abajo.
-    $messageId = (string)($msg['id'] ?? '');
     if ($messageId !== '') {
         whatsapp_marcar_leido_y_escribiendo($messageId);
     }
