@@ -44,18 +44,20 @@ function generar_pdf_calculo_liquidacion(array $calc, float $salarioDiario, stri
         $indemnizacion[] = ['Indemnización constitucional (3 meses)', '90 días × SDI · Art. 48 LFT', $calc['indemnizacion_90_dias_monto']];
     }
 
-    $filaHtml = fn(array $f): string => '<div class="line"><div class="ln-label">' . htmlspecialchars($f[0])
-        . '<span class="art">' . htmlspecialchars($f[1]) . '</span></div>'
-        . '<div class="ln-amt">' . htmlspecialchars($money($f[2])) . '</div></div>';
+    $filaHtml = fn(array $f): string => '<tr><td>' . htmlspecialchars($f[0])
+        . '<span class="art">' . htmlspecialchars($f[1]) . '</span></td>'
+        . '<td class="amt">' . htmlspecialchars($money($f[2])) . '</td></tr>';
 
     $lineasHtml = '';
     if (!empty($finiquito)) {
-        $lineasHtml .= '<div class="grp-label">Finiquito (proporcionales y adeudos)</div>';
+        $lineasHtml .= '<div class="grp-label">Finiquito (proporcionales y adeudos)</div><table class="lines">';
         foreach ($finiquito as $f) $lineasHtml .= $filaHtml($f);
+        $lineasHtml .= '</table>';
     }
     if (!empty($indemnizacion)) {
-        $lineasHtml .= '<div class="grp-label">Indemnización por despido</div>';
+        $lineasHtml .= '<div class="grp-label">Indemnización por despido</div><table class="lines">';
         foreach ($indemnizacion as $f) $lineasHtml .= $filaHtml($f);
+        $lineasHtml .= '</table>';
     }
 
     // Avisos específicos del cálculo (icono "!"), igual que las notas de la
@@ -86,11 +88,10 @@ function generar_pdf_calculo_liquidacion(array $calc, float $salarioDiario, stri
         .tag { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #5E6E73; }
         .subtitle { font-size: 14px; font-weight: bold; color: #0E2F38; margin: 2px 0 14px; }
         .grp-label { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #5E6E73; margin: 14px 0 2px; padding-bottom: 4px; border-bottom: 1px solid #C2CDD0; }
-        .grp-label:first-child { margin-top: 0; }
-        .line { display: block; overflow: hidden; padding: 7px 0; border-bottom: 1px dotted #C2CDD0; font-size: 11px; }
-        .line .ln-label { float: left; width: 75%; }
-        .line .ln-amt { float: right; width: 25%; text-align: right; font-family: DejaVu Sans Mono, monospace; white-space: nowrap; font-weight: bold; }
-        .line .art { display: block; font-size: 9px; color: #5E6E73; margin-top: 2px; }
+        table.lines { width: 100%; border-collapse: collapse; margin-bottom: 4px; }
+        table.lines td { padding: 7px 0; border-bottom: 1px dotted #C2CDD0; font-size: 11px; vertical-align: top; }
+        table.lines td.amt { text-align: right; font-family: DejaVu Sans Mono, monospace; white-space: nowrap; font-weight: bold; width: 110px; }
+        table.lines .art { display: block; font-size: 9px; color: #5E6E73; margin-top: 2px; }
         .total-box { background: #0E2F38; color: #EAF2F2; padding: 14px 18px; border-radius: 6px; margin: 14px 0 0; }
         .total-tag { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #BFD3D3; }
         .total-amt { font-size: 24px; font-weight: bold; margin-top: 3px; }
