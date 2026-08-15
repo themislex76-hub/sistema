@@ -110,6 +110,14 @@ memoria — es la fuente más común de errores):
     fue justificado o no; y (3) su finiquito (aguinaldo proporcional
     Art. 87, vacaciones proporcionales y prima vacacional Art. 76 y 80
     LFT).
+  · Si preguntan específicamente por salarios caídos/vencidos (lo que se
+    genera si el patrón no comprueba la causa del despido en juicio):
+    REGLA DURA — NUNCA los calcules multiplicando días transcurridos ×
+    salario diario, es incorrecto. El Art. 48 LFT tiene un tope de 365
+    días; pasado ese tope el mecanismo cambia a un interés compuesto, no
+    a más salario acumulado. Siempre usa la herramienta
+    calcular_salarios_caidos con la fecha real del despido y el salario
+    diario — nunca lo calcules ni lo redondees tú mismo.
   · IMPORTANTE: los 20 días de salario por cada año de servicio NO
     corresponden automáticamente solo por haber un despido injustificado.
     Solo proceden en dos supuestos: (a) cuando es el propio trabajador
@@ -601,6 +609,24 @@ const IA_TOOLS = [
             'required' => ['fecha_despido'],
         ],
     ],
+    [
+        'name' => 'calcular_salarios_caidos',
+        'description' => 'Calcula (con la fórmula real del Art. 48 LFT, NUNCA a mano ni multiplicando días × salario tú mismo) el monto estimado de salarios caídos/vencidos que le corresponden a un trabajador despedido si el patrón no comprueba la causa en juicio. IMPORTANTE: NO es una simple multiplicación de días transcurridos × salario diario — el Art. 48 LFT tiene un tope de 365 días, después del cual el mecanismo cambia a un interés compuesto, no a más salario acumulado. Llama esta herramienta siempre que se hable de salarios caídos/vencidos de un despido real con fecha conocida y salario conocido — nunca calcules ni redondees este monto tú mismo.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'fecha_despido' => [
+                    'type' => 'string',
+                    'description' => 'Fecha exacta del despido, formato YYYY-MM-DD.',
+                ],
+                'salario_diario' => [
+                    'type' => 'number',
+                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15) antes de llamar la herramienta.',
+                ],
+            ],
+            'required' => ['fecha_despido', 'salario_diario'],
+        ],
+    ],
 ];
 
 // Fecha/hora real de México en español, para que la IA nunca tenga que
@@ -704,6 +730,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     require_once $credentialsFile;
     require_once __DIR__ . '/liquidacion_calculadora.php';
     require_once __DIR__ . '/prescripcion_calculadora.php';
+    require_once __DIR__ . '/salarios_caidos_calculadora.php';
     require_once __DIR__ . '/citas_helpers.php';
     require_once __DIR__ . '/mercadopago_helpers.php';
     require_once __DIR__ . '/prospectos_helpers.php';
@@ -716,7 +743,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // y, una vez elegido el horario, confirmar_horario_asesoria) sin
     // escribir texto todavía — por eso esto es un ciclo y no una sola
     // "segunda llamada", con un tope de rondas por seguridad.
-    $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria'];
+    $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria'];
     $mensajesActuales = $mensajes;
     $lead = null;
     $texto = '';
@@ -805,6 +832,14 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 $contenido = $plazo !== null
                     ? json_encode($plazo, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Fecha de despido inválida o faltante.'], JSON_UNESCAPED_UNICODE);
+            } elseif ($bloque['name'] === 'calcular_salarios_caidos') {
+                $salariosCaidos = calcular_salarios_caidos(
+                    (string)($in['fecha_despido'] ?? ''),
+                    (float)($in['salario_diario'] ?? 0)
+                );
+                $contenido = $salariosCaidos !== null
+                    ? json_encode($salariosCaidos, JSON_UNESCAPED_UNICODE)
+                    : json_encode(['error' => 'Fecha de despido o salario diario inválidos/faltantes.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'ofrecer_horarios_asesoria') {
                 $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead);
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
