@@ -732,8 +732,12 @@ function ia_llamar_claude(array $mensajes): ?array
  * $telefono: número de WhatsApp de la conversación — lo necesitan las
  * herramientas de agendado para saber a nombre de quién apartar la cita.
  *
- * Devuelve ['texto' => string, 'lead' => null|['tipo','estado','nombre','resumen']].
- * tipo es 'despido' o 'asesoria_paga'.
+ * Devuelve ['texto' => string, 'lead' => null|['tipo','estado','nombre','resumen'],
+ * 'pdf_calculo' => null|['calc' => array, 'salario_diario' => float]].
+ * tipo es 'despido' o 'asesoria_paga'. pdf_calculo, cuando no es null, es
+ * el PDF formal del cálculo pendiente de mandar por WhatsApp — lo manda
+ * quien llama a esta función (whatsapp_procesar.php), DESPUÉS de la
+ * respuesta de texto y con su propio retraso, no aquí.
  */
 function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): array
 {
@@ -766,11 +770,16 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     $texto = '';
     $maxRondas = 4;
     $rondasResumen = [];
+    // Cálculo pendiente de mandar como PDF — se guarda aquí en vez de
+    // mandarlo al instante, para que whatsapp_procesar.php lo mande
+    // DESPUÉS de la respuesta de texto (con su propio retraso natural),
+    // no al mismo tiempo que se calculó.
+    $pdfCalculoPendiente = null;
 
     for ($ronda = 0; $ronda < $maxRondas; $ronda++) {
         $data = ia_llamar_claude($mensajesActuales);
         if ($data === null) {
-            return ['texto' => IA_FALLBACK_TEXTO, 'lead' => $lead];
+            return ['texto' => IA_FALLBACK_TEXTO, 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente];
         }
 
         [$textoRonda, $leadRonda, $bloques] = ia_extraer_respuesta($data);
@@ -835,11 +844,10 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     );
                     $insCalc->execute([':t' => $telefono, ':m' => $calc['total_estimado'] ?? null]);
 
-                    // Manda el PDF formal del cálculo (mismo diseño que la
-                    // calculadora del sitio) automáticamente por WhatsApp —
-                    // si falla, no interrumpe la respuesta de texto normal,
-                    // solo queda registrado en whatsapp_send_debug.log.
-                    whatsapp_enviar_pdf_calculo($telefono, $calc, (float)($in['salario_diario'] ?? 0));
+                    // El PDF formal (mismo diseño que la calculadora del
+                    // sitio) se manda después, junto con la respuesta de
+                    // texto, no aquí — ver el retorno de esta función.
+                    $pdfCalculoPendiente = ['calc' => $calc, 'salario_diario' => (float)($in['salario_diario'] ?? 0)];
                 } else {
                     $contenido = json_encode([
                         'error' => 'Datos insuficientes o inválidos para calcular.',
@@ -928,7 +936,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         }
     }
 
-    return ['texto' => trim($texto), 'lead' => $lead];
+    return ['texto' => trim($texto), 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente];
 }
 
 // URL pública del webhook de Mercado Pago — a donde Mercado Pago avisa

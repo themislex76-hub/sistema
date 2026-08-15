@@ -251,6 +251,16 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
     );
     $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
+
+    // El PDF del cálculo (si lo hubo) se manda AL FINAL, después del
+    // texto — nunca al mismo tiempo, para que no se sienta como un envío
+    // automatizado de golpe. Retraso corto (4-9s) en vez de otro de
+    // 20-28s completo: ya se esperó lo normal para el texto, esto es
+    // nada más la sensación de "ahora te mando el PDF".
+    if ($resultado['pdf_calculo'] !== null) {
+        usleep(random_int(4, 9) * 1_000_000);
+        whatsapp_enviar_pdf_calculo($telefono, $resultado['pdf_calculo']['calc'], $resultado['pdf_calculo']['salario_diario']);
+    }
 }
 
 // Contesta automáticamente, en cuanto abre el horario de atención, la
@@ -326,6 +336,11 @@ function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
     );
     $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
 
+    if ($resultado['pdf_calculo'] !== null) {
+        sleep(random_int(4, 9));
+        whatsapp_enviar_pdf_calculo($telefono, $resultado['pdf_calculo']['calc'], $resultado['pdf_calculo']['salario_diario']);
+    }
+
     return ['ok' => true, 'motivo' => ''];
 }
 
@@ -400,6 +415,11 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
         "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
     );
     $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
+
+    if ($resultado['pdf_calculo'] !== null) {
+        sleep(random_int(4, 9));
+        whatsapp_enviar_pdf_calculo($telefono, $resultado['pdf_calculo']['calc'], $resultado['pdf_calculo']['salario_diario']);
+    }
 
     return ['ok' => true, 'motivo' => ''];
 }
