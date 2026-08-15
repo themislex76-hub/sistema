@@ -27,29 +27,51 @@ function generar_pdf_calculo_liquidacion(array $calc, float $salarioDiario, stri
     $tipoTexto = $calc['tipo_despido'] === 'injustificado' ? 'DESPIDO INJUSTIFICADO' : 'DESPIDO JUSTIFICADO';
     $money = fn(float $v): string => '$' . number_format($v, 2);
 
-    $filas = [];
-    $filas[] = ['Aguinaldo proporcional', $calc['aguinaldo_dias'] . ' días · Art. 87 LFT', $calc['aguinaldo_monto']];
-    $filas[] = ['Vacaciones', $calc['vacaciones_dias'] . ' días · Arts. 76/79 LFT', $calc['vacaciones_monto']];
-    $filas[] = ['Prima vacacional', '25% sobre vacaciones · Art. 80 LFT', $calc['prima_vacacional_monto']];
-    $filas[] = ['Prima de antigüedad', '12 días × año, topada a 2 salarios mínimos · Art. 162 LFT', $calc['prima_antiguedad_monto']];
+    // Dos grupos, igual que la calculadora del sitio: finiquito
+    // (proporcionales y adeudos) e indemnización por despido, cada uno con
+    // su propio encabezado de grupo.
+    $finiquito = [];
     if ($calc['salarios_devengados_monto'] > 0) {
-        $filas[] = ['Salarios devengados no pagados', 'Días trabajados sin pagar antes de la baja · Art. 82 LFT', $calc['salarios_devengados_monto']];
+        $finiquito[] = ['Salarios devengados no pagados', 'Días trabajados sin pagar antes de la baja · Art. 82 LFT', $calc['salarios_devengados_monto']];
+    }
+    $finiquito[] = ['Aguinaldo proporcional', $calc['aguinaldo_dias'] . ' días · Art. 87 LFT', $calc['aguinaldo_monto']];
+    $finiquito[] = ['Vacaciones', $calc['vacaciones_dias'] . ' días · Arts. 76/79 LFT', $calc['vacaciones_monto']];
+    $finiquito[] = ['Prima vacacional', '25% sobre vacaciones · Art. 80 LFT', $calc['prima_vacacional_monto']];
+    $finiquito[] = ['Prima de antigüedad', '12 días × año, topada a 2 salarios mínimos · Art. 162 LFT', $calc['prima_antiguedad_monto']];
+
+    $indemnizacion = [];
+    if ($calc['indemnizacion_90_dias_monto'] > 0) {
+        $indemnizacion[] = ['Indemnización constitucional (3 meses)', '90 días × SDI · Art. 48 LFT', $calc['indemnizacion_90_dias_monto']];
+    }
+
+    $filaHtml = fn(array $f): string => '<div class="line"><div class="ln-label">' . htmlspecialchars($f[0])
+        . '<span class="art">' . htmlspecialchars($f[1]) . '</span></div>'
+        . '<div class="ln-amt">' . htmlspecialchars($money($f[2])) . '</div></div>';
+
+    $lineasHtml = '';
+    if (!empty($finiquito)) {
+        $lineasHtml .= '<div class="grp-label">Finiquito (proporcionales y adeudos)</div>';
+        foreach ($finiquito as $f) $lineasHtml .= $filaHtml($f);
+    }
+    if (!empty($indemnizacion)) {
+        $lineasHtml .= '<div class="grp-label">Indemnización por despido</div>';
+        foreach ($indemnizacion as $f) $lineasHtml .= $filaHtml($f);
+    }
+
+    // Avisos específicos del cálculo (icono "!"), igual que las notas de la
+    // calculadora del sitio — se muestran después de la caja de total.
+    $notas = [];
+    if (($calc['vacaciones_anteriores_dias_prescritos'] ?? 0) > 0) {
+        $notas[] = 'De los días de vacaciones de años anteriores que se reportaron, '
+            . htmlspecialchars((string)$calc['vacaciones_anteriores_dias_prescritos'])
+            . ' día(s) ya están prescritos (criterio SCJN 2a./J. 1/97: cada año prescribe 18 meses después de su aniversario) y no se incluyeron en este cálculo.';
     }
     if ($calc['indemnizacion_90_dias_monto'] > 0) {
-        $filas[] = ['Indemnización constitucional', '90 días de salario · Art. 48 LFT', $calc['indemnizacion_90_dias_monto']];
+        $notas[] = 'Cálculo para la etapa de conciliación. Si el asunto llega a sentencia (condena) se pueden generar además salarios caídos hasta por 12 meses y, en su caso, intereses (Art. 48 LFT).';
     }
-
-    $filasHtml = '';
-    foreach ($filas as $f) {
-        $filasHtml .= '<tr><td>' . htmlspecialchars($f[0]) . '<span class="art">' . htmlspecialchars($f[1]) . '</span></td>'
-            . '<td class="amt">' . htmlspecialchars($money($f[2])) . '</td></tr>';
-    }
-
-    $notaVacacionesPrescritas = '';
-    if (($calc['vacaciones_anteriores_dias_prescritos'] ?? 0) > 0) {
-        $notaVacacionesPrescritas = '<div class="disclaimer" style="margin-top:8px;"><p>De los días de vacaciones de años anteriores que se reportaron, '
-            . htmlspecialchars((string)$calc['vacaciones_anteriores_dias_prescritos'])
-            . ' día(s) ya están prescritos (criterio SCJN 2a./J. 1/97: cada año prescribe 18 meses después de su aniversario) y no se incluyeron en este cálculo.</p></div>';
+    $notasHtml = '';
+    foreach ($notas as $n) {
+        $notasHtml .= '<div class="note"><span class="nico">!</span><span>' . $n . '</span></div>';
     }
 
     $saludo = $nombre !== '' ? htmlspecialchars($nombre) : '';
@@ -63,14 +85,19 @@ function generar_pdf_calculo_liquidacion(array $calc, float $salarioDiario, stri
         .content { padding: 22px 30px 10px; }
         .tag { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #5E6E73; }
         .subtitle { font-size: 14px; font-weight: bold; color: #0E2F38; margin: 2px 0 14px; }
-        table.lines { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-        table.lines td { padding: 7px 0; border-bottom: 1px dotted #C2CDD0; font-size: 11px; vertical-align: top; }
-        table.lines td.amt { text-align: right; font-family: DejaVu Sans Mono, monospace; white-space: nowrap; font-weight: bold; width: 110px; }
-        table.lines .art { display: block; font-size: 9px; color: #5E6E73; margin-top: 2px; }
-        .total-box { background: #0E2F38; color: #EAF2F2; padding: 14px 18px; border-radius: 6px; margin: 8px 0 16px; }
+        .grp-label { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #5E6E73; margin: 14px 0 2px; padding-bottom: 4px; border-bottom: 1px solid #C2CDD0; }
+        .grp-label:first-child { margin-top: 0; }
+        .line { display: block; overflow: hidden; padding: 7px 0; border-bottom: 1px dotted #C2CDD0; font-size: 11px; }
+        .line .ln-label { float: left; width: 75%; }
+        .line .ln-amt { float: right; width: 25%; text-align: right; font-family: DejaVu Sans Mono, monospace; white-space: nowrap; font-weight: bold; }
+        .line .art { display: block; font-size: 9px; color: #5E6E73; margin-top: 2px; }
+        .total-box { background: #0E2F38; color: #EAF2F2; padding: 14px 18px; border-radius: 6px; margin: 14px 0 0; }
         .total-tag { font-size: 9px; letter-spacing: 1px; text-transform: uppercase; color: #BFD3D3; }
         .total-amt { font-size: 24px; font-weight: bold; margin-top: 3px; }
-        .meta-strip td { font-size: 9px; color: #5E6E73; padding-right: 24px; padding-bottom: 14px; }
+        .notes { margin-top: 12px; }
+        .note { padding: 9px 12px; background: #FBF3E6; border: 1px solid #EAD7B6; border-radius: 6px; font-size: 9.5px; color: #5A4B2E; margin-bottom: 6px; }
+        .note .nico { font-weight: bold; color: #9C6B2E; margin-right: 6px; }
+        .meta-strip td { font-size: 9px; color: #5E6E73; padding-right: 24px; padding-top: 14px; padding-bottom: 14px; }
         .meta-strip td b { display: block; font-size: 12px; color: #15252B; font-family: DejaVu Sans Mono, monospace; }
         .disclaimer { background: #FBF3E6; border: 1px solid #EAD7B6; border-radius: 6px; padding: 11px 14px; font-size: 9.5px; color: #5A4B2E; margin-top: 6px; }
         .disclaimer b { color: #9C6B2E; }
@@ -86,16 +113,17 @@ function generar_pdf_calculo_liquidacion(array $calc, float $salarioDiario, stri
     <div class="content">
         <div class="tag">' . htmlspecialchars($tipoTexto) . ' · ESTIMACIÓN' . ($saludo !== '' ? ' · ' . $saludo : '') . '</div>
         <div class="subtitle">Desglose de conceptos</div>
-        <table class="lines">' . $filasHtml . '</table>
+        ' . $lineasHtml . '
         <div class="total-box">
             <div class="total-tag">TOTAL ESTIMADO A PAGAR</div>
             <div class="total-amt">' . htmlspecialchars($money($calc['total_estimado'])) . ' MXN</div>
         </div>
+        <div class="notes">' . $notasHtml . '</div>
         <table class="meta-strip"><tr>
-            <td>Antigüedad<b>' . htmlspecialchars((string)$calc['antiguedad_anios']) . ' años</b></td>
-            <td>Salario diario usado<b>' . htmlspecialchars($money($salarioDiario)) . '</b></td>
+            <td>Antigüedad<b>' . htmlspecialchars($calc['antiguedad_texto'] ?? ((string)$calc['antiguedad_anios'] . ' años')) . '</b></td>
+            <td>Salario diario<b>' . htmlspecialchars($money($salarioDiario)) . '</b></td>
+            <td>SDI usado<b>' . htmlspecialchars($money($calc['sdi_usado'] ?? $salarioDiario)) . '</b></td>
         </tr></table>
-        ' . $notaVacacionesPrescritas . '
         <div class="disclaimer">
             <p><b>Esto es una estimación, no una asesoría jurídica ni un dictamen del despacho.</b> Se generó automáticamente a partir de los datos que compartiste por WhatsApp — no sustituye la revisión de tu expediente por un abogado.</p>
             <p>Los montos pueden variar por prestaciones contractuales superiores a la ley, los hechos concretos de tu caso, la información real que se confirme, y las resoluciones judiciales. Consulta a un abogado laboral de Expertos Laborales para confirmar tu caso concreto antes de tomar cualquier decisión.</p>

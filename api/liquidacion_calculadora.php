@@ -61,6 +61,24 @@ function max_vacaciones_anteriores_no_prescritas_lft(DateTimeImmutable $ing, Dat
     return $tot;
 }
 
+// Texto legible de antigüedad ("1 año, 6 meses, 17 días"), igual que
+// antigText(d) en la calculadora del sitio: descompone los días totales en
+// años (÷365), meses (÷30 del residuo) y días (residuo final).
+function antiguedad_texto_lft(int $diasTotales): string
+{
+    $anios = intdiv($diasTotales, 365);
+    $restoDias = $diasTotales % 365;
+    $meses = intdiv($restoDias, 30);
+    $dias = $restoDias % 30;
+
+    $partes = [];
+    if ($anios > 0) $partes[] = $anios . ' ' . ($anios === 1 ? 'año' : 'años');
+    if ($meses > 0) $partes[] = $meses . ' ' . ($meses === 1 ? 'mes' : 'meses');
+    if ($dias > 0 || empty($partes)) $partes[] = $dias . ' ' . ($dias === 1 ? 'día' : 'días');
+
+    return implode(', ', $partes);
+}
+
 function salario_minimo_diario_actual(PDO $pdo): float
 {
     $stmt = $pdo->prepare("SELECT valor FROM configuracion WHERE clave = 'salario_minimo_diario'");
@@ -134,13 +152,23 @@ function calcular_estimado_liquidacion(
 
     $totalFiniquito = $aguinaldoMonto + $vacacionesMonto + $primaVacacionalMonto + $primaAntiguedad + $salariosDevengadosMonto;
 
-    // Indemnización constitucional — 90 días de salario (Art. 48 LFT). Solo
+    // Salario Diario Integrado (SDI) — con los mismos mínimos de ley usados
+    // arriba (15 días de aguinaldo, 25% de prima vacacional), igual que
+    // recalcSdiSuggested() en la calculadora del sitio. La indemnización
+    // constitucional de 90 días (Art. 48 LFT) se paga con salario
+    // integrado, no con el salario diario simple.
+    $factorIntegracion = (365 + 15 + $vacEnt * 0.25) / 365;
+    $sdi = $salarioDiario * $factorIntegracion;
+
+    // Indemnización constitucional — 90 días de SDI (Art. 48 LFT). Solo
     // procede si el despido fue injustificado.
-    $indemnizacion90 = $tipo === 'injustificado' ? 90 * $salarioDiario : 0;
+    $indemnizacion90 = $tipo === 'injustificado' ? 90 * $sdi : 0;
     $total = $totalFiniquito + $indemnizacion90;
 
     return [
         'antiguedad_anios' => round($aniosDec, 2),
+        'antiguedad_texto' => antiguedad_texto_lft($antigDias),
+        'sdi_usado' => round($sdi, 2),
         'aguinaldo_dias' => round($aguinaldoDias, 1),
         'aguinaldo_monto' => round($aguinaldoMonto, 2),
         'vacaciones_dias' => round($vacacionesDias, 1),

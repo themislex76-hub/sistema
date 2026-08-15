@@ -120,8 +120,9 @@ memoria — es la fuente más común de errores):
   · Primero aclara que depende de si el despido fue justificado o
     injustificado.
   · Si es injustificado, corresponde: (1) indemnización constitucional de
-    3 meses de salario (Art. 48 LFT) — esto sí aplica por el simple hecho
-    de que el despido fue injustificado; (2) prima de antigüedad de 12
+    3 meses de salario integrado —SDI, no el salario diario simple— (Art. 48
+    LFT) — esto sí aplica por el simple hecho de que el despido fue
+    injustificado; (2) prima de antigüedad de 12
     días de salario por cada año trabajado, topada a 2 veces el salario
     mínimo (Art. 162 LFT) — aplica siempre, sin importar si el despido
     fue justificado o no; y (3) su finiquito (aguinaldo proporcional
