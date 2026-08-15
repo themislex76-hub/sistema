@@ -185,8 +185,6 @@ function whatsapp_enviar_documento(string $telefono, string $mediaId, string $no
 // la respuesta normal de texto que ya recibió el cliente.
 function whatsapp_enviar_pdf_calculo(string $telefono, array $calc, float $salarioDiario, string $nombre = ''): bool
 {
-    require_once __DIR__ . '/pdf_calculo_liquidacion.php';
-
     $carpetaTmp = __DIR__ . '/tmp';
     if (!is_dir($carpetaTmp)) {
         @mkdir($carpetaTmp, 0755, true);
@@ -194,6 +192,15 @@ function whatsapp_enviar_pdf_calculo(string $telefono, array $calc, float $salar
     $rutaTemporal = $carpetaTmp . '/calculo_' . bin2hex(random_bytes(8)) . '.pdf';
 
     try {
+        // require_once con un archivo que no existe es un error fatal de
+        // PHP que NO se puede atrapar con catch — se revisa a mano antes,
+        // para que si falta vendor/ (dompdf no instalado) quede
+        // registrado en vez de tumbar la petición completa en silencio.
+        $vendorAutoload = __DIR__ . '/vendor/autoload.php';
+        if (!file_exists($vendorAutoload)) {
+            throw new \RuntimeException('Falta api/vendor/ (dompdf no está instalado) — revisa que se haya subido y extraído la carpeta vendor completa.');
+        }
+        require_once __DIR__ . '/pdf_calculo_liquidacion.php';
         $pdfBytes = generar_pdf_calculo_liquidacion($calc, $salarioDiario, $nombre);
         file_put_contents($rutaTemporal, $pdfBytes);
 
@@ -202,6 +209,14 @@ function whatsapp_enviar_pdf_calculo(string $telefono, array $calc, float $salar
             return false;
         }
         return whatsapp_enviar_documento($telefono, $mediaId, 'Calculo_liquidacion_Expertos_Laborales.pdf');
+    } catch (\Throwable $e) {
+        // Cualquier error real (falta vendor/, falta una clase, permisos,
+        // etc.) se captura aquí en vez de tumbar la petición completa en
+        // silencio — así queda registrado el motivo exacto.
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | [pdf_calculo] excepcion=" . get_class($e) . ' | mensaje=' . $e->getMessage()
+            . ' | archivo=' . $e->getFile() . ':' . $e->getLine() . "\n", FILE_APPEND);
+        return false;
     } finally {
         @unlink($rutaTemporal);
     }
