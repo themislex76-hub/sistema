@@ -79,7 +79,7 @@ function generar_pdf_calculo_liquidacion(array $calc, float $salarioDiario, stri
         .footer { margin-top: 16px; font-size: 8.5px; color: #5E6E73; text-align: center; }
     </style></head><body>
     <div class="header">
-        <img src="' . PDF_LOGO_DATA_URI . '" style="height:40px;" />
+        <img src="' . PDF_LOGO_DATA_URI . '" style="height:56px;" />
         <div class="eyebrow">LEY FEDERAL DEL TRABAJO · VIGENTE ' . date('Y') . '</div>
         <div class="h1">Calculadora de finiquito y liquidación</div>
     </div>
