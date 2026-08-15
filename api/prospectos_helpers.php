@@ -19,7 +19,16 @@ declare(strict_types=1);
  * $reactivarEstatus=true vuelve a poner estatus='nuevo' aunque ya
  * estuviera "Descartado" o "Contactado" — se usa cuando de verdad hay algo
  * nuevo que requiere atención (se atoró el flujo, o se confirmó un pago),
- * para no dejar un caso real escondido bajo un estatus viejo.
+ * para no dejar un caso real escondido bajo un estatus viejo. En ese caso
+ * SÍ se vuelve a pausar el bot como siempre (se está reabriendo el caso a
+ * propósito).
+ *
+ * Si el prospecto YA está "Descartado" y esta llamada no es para
+ * reactivarlo (Reactivar=false), NO se toca pausado_bot aunque la
+ * conversación vuelva a calificar como despido — "descartado" es que el
+ * despacho no toma el litigio, no que se le deje de contestar a la
+ * persona (ver prospectosHTML() en app.js), así que el bot debe poder
+ * seguirle contestando normal si vuelve a escribir.
  */
 function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, array $lead, bool $forzarPausa = false, bool $reactivarEstatus = false): void
 {
@@ -27,6 +36,9 @@ function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, ar
     $estado = $lead['estado'] !== '' ? $lead['estado'] : null;
     $pausar = ($forzarPausa || $lead['tipo'] === 'despido') ? 1 : 0;
     $estatusUpdate = $reactivarEstatus ? "estatus = 'nuevo'," : '';
+    $pausadoUpdate = $reactivarEstatus
+        ? "IF(tipo = 'despido' OR VALUES(tipo) = 'despido' OR VALUES(pausado_bot) = 1, 1, pausado_bot)"
+        : "IF(estatus = 'descartado', pausado_bot, IF(tipo = 'despido' OR VALUES(tipo) = 'despido' OR VALUES(pausado_bot) = 1, 1, pausado_bot))";
     $stmt = $pdo->prepare(
         "INSERT INTO prospectos (telefono, tipo, nombre, estado_ubicacion, resumen_caso, pausado_bot)
          VALUES (:t, :tipo, :nombre, :estado, :resumen, :pausar)
@@ -36,7 +48,7 @@ function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, ar
            estado_ubicacion = COALESCE(VALUES(estado_ubicacion), estado_ubicacion),
            resumen_caso = VALUES(resumen_caso),
            {$estatusUpdate}
-           pausado_bot = IF(tipo = 'despido' OR VALUES(tipo) = 'despido' OR VALUES(pausado_bot) = 1, 1, pausado_bot)"
+           pausado_bot = {$pausadoUpdate}"
     );
     $stmt->execute([
         ':t' => $telefono,
