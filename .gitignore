@@ -8,6 +8,7 @@ api/mercadopago_credentials.php
 api/push_credentials.php
 api/vendor/
 api/tmp/
+api/*.log
 data/plantilla_demanda.docx
 data/documentos/
 data/plantillas/
