@@ -93,3 +93,116 @@ function whatsapp_marcar_leido_y_escribiendo(string $messageId): bool
     }
     return true;
 }
+
+// Sube un archivo a los servidores de Meta — paso obligatorio antes de
+// poder mandarlo como documento (WhatsApp no acepta el archivo directo
+// en el mismo mensaje). Devuelve el media_id, o null si falla.
+function whatsapp_subir_documento(string $rutaArchivo, string $nombreArchivo): ?string
+{
+    $credentialsFile = __DIR__ . '/whatsapp_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $url = 'https://graph.facebook.com/v23.0/' . WHATSAPP_PHONE_ID . '/media';
+    $payload = [
+        'messaging_product' => 'whatsapp',
+        'file' => new CURLFile($rutaArchivo, 'application/pdf', $nombreArchivo),
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . WHATSAPP_TOKEN],
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | [subir_documento] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+    $data = json_decode($raw, true);
+    return $data['id'] ?? null;
+}
+
+// Manda un documento ya subido (con su media_id) por WhatsApp.
+function whatsapp_enviar_documento(string $telefono, string $mediaId, string $nombreArchivo, string $caption = ''): bool
+{
+    $credentialsFile = __DIR__ . '/whatsapp_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        return false;
+    }
+    require_once $credentialsFile;
+
+    $url = 'https://graph.facebook.com/v23.0/' . WHATSAPP_PHONE_ID . '/messages';
+    $payload = [
+        'messaging_product' => 'whatsapp',
+        'to' => $telefono,
+        'type' => 'document',
+        'document' => [
+            'id' => $mediaId,
+            'filename' => $nombreArchivo,
+            'caption' => $caption,
+        ],
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . WHATSAPP_TOKEN,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | [enviar_documento] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return false;
+    }
+    return true;
+}
+
+// Genera el PDF de un cálculo de liquidación, lo sube y lo manda por
+// WhatsApp como documento — todo en un paso, con limpieza del archivo
+// temporal al final (se mande bien o falle). No lanza excepción si algo
+// falla (revisa whatsapp_send_debug.log): un PDF fallido no debe tumbar
+// la respuesta normal de texto que ya recibió el cliente.
+function whatsapp_enviar_pdf_calculo(string $telefono, array $calc, float $salarioDiario, string $nombre = ''): bool
+{
+    require_once __DIR__ . '/pdf_calculo_liquidacion.php';
+
+    $carpetaTmp = __DIR__ . '/tmp';
+    if (!is_dir($carpetaTmp)) {
+        @mkdir($carpetaTmp, 0755, true);
+    }
+    $rutaTemporal = $carpetaTmp . '/calculo_' . bin2hex(random_bytes(8)) . '.pdf';
+
+    try {
+        $pdfBytes = generar_pdf_calculo_liquidacion($calc, $salarioDiario, $nombre);
+        file_put_contents($rutaTemporal, $pdfBytes);
+
+        $mediaId = whatsapp_subir_documento($rutaTemporal, 'Calculo_liquidacion_Expertos_Laborales.pdf');
+        if ($mediaId === null) {
+            return false;
+        }
+        return whatsapp_enviar_documento($telefono, $mediaId, 'Calculo_liquidacion_Expertos_Laborales.pdf');
+    } finally {
+        @unlink($rutaTemporal);
+    }
+}

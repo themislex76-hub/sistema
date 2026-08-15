@@ -834,6 +834,12 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                         'INSERT INTO calculos_liquidacion (telefono, monto_total) VALUES (:t, :m)'
                     );
                     $insCalc->execute([':t' => $telefono, ':m' => $calc['total_estimado'] ?? null]);
+
+                    // Manda el PDF formal del cálculo (mismo diseño que la
+                    // calculadora del sitio) automáticamente por WhatsApp —
+                    // si falla, no interrumpe la respuesta de texto normal,
+                    // solo queda registrado en whatsapp_send_debug.log.
+                    whatsapp_enviar_pdf_calculo($telefono, $calc, (float)($in['salario_diario'] ?? 0));
                 } else {
                     $contenido = json_encode([
                         'error' => 'Datos insuficientes o inválidos para calcular.',
