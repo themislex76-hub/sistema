@@ -145,6 +145,36 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         return;
     }
 
+    // Si el cliente manda literalmente el mismo texto (no trivial) 3
+    // veces seguidas, es señal de que el texto no le está funcionando —
+    // seguir mandándolo a la IA solo repite la misma pregunta y gasta
+    // saldo sin avanzar. En vez de insistir, se pasa directo a un humano.
+    if (mb_strlen($texto) > 15) {
+        $stmt = $pdo->prepare(
+            "SELECT texto FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante' ORDER BY id DESC LIMIT 3"
+        );
+        $stmt->execute([':t' => $telefono]);
+        $ultimosTresEntrantes = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        if (count($ultimosTresEntrantes) === 3 && count(array_unique($ultimosTresEntrantes)) === 1) {
+            $mensajeAtorado = 'Veo que me escribiste lo mismo varias veces — para no hacerte perder más tiempo, mejor pido que un abogado del despacho te contacte directo y lo platiquen con calma. En breve te buscan. 🙏';
+            whatsapp_enviar($telefono, $mensajeAtorado);
+            $stmt = $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+            );
+            $stmt->execute([':t' => $telefono, ':texto' => $mensajeAtorado]);
+            guardar_prospecto($pdo, $telefono, $nombrePerfil, [
+                'tipo' => 'asesoria_paga',
+                'estado' => '',
+                'nombre' => '',
+                'resumen' => 'Conversación atorada: el cliente repitió el mismo mensaje varias veces sin que el bot lograra avanzar con las preguntas de calificación — contactar directo por teléfono. Último mensaje: ' . mb_strimwidth($texto, 0, 200, '…'),
+            ], true);
+            if (!$prospecto) {
+                push_notificar_prospecto($pdo, null, 'Conversación atorada — contactar directo', mb_strimwidth($texto, 0, 140, '…'), '/sistema/?abrir=' . urlencode($telefono));
+            }
+            return;
+        }
+    }
+
     // Indicador nativo de WhatsApp "escribiendo..." mientras se genera la
     // respuesta — y punto de partida para medir cuánto tardó todo el
     // proceso, para el retraso natural de abajo.
