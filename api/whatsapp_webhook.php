@@ -16,6 +16,14 @@ error_reporting(E_ALL);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
+// El límite de tiempo de ejecución por default del hosting (normalmente
+// 30s) no alcanza: el retraso natural antes de contestar (hasta 28s) más
+// el PDF del cálculo (retraso adicional + generarlo + subirlo a Meta) más
+// el tiempo real de la IA pueden sumar más que eso — y si PHP mata el
+// proceso a medias, el cliente se queda sin ninguna respuesta y no queda
+// ni rastro en los logs (es un error fatal, no capturable).
+set_time_limit(120);
+
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/ia_helpers.php';
 require_once __DIR__ . '/whatsapp_helpers.php';

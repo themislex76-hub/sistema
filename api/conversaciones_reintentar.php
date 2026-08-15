@@ -5,6 +5,11 @@ require_once __DIR__ . '/ia_helpers.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
 require_once __DIR__ . '/whatsapp_procesar.php';
 
+// Mismo motivo que en whatsapp_webhook.php/whatsapp_relay.php: el
+// retraso natural + el PDF del cálculo pueden sumar más que el límite de
+// ejecución por default del hosting.
+set_time_limit(120);
+
 // Reintenta las conversaciones que se quedaron con la respuesta de
 // emergencia (la IA falló, típicamente por falta de saldo en Anthropic).
 // GET  -> cuenta cuántas conversaciones son candidatas a reintento.
