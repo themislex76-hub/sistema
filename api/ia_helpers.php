@@ -594,7 +594,7 @@ const IA_TOOLS = [
                 ],
                 'dias_vacaciones_anteriores' => [
                     'type' => 'number',
-                    'description' => 'Días de vacaciones de años/periodos anteriores que la persona reporta que no disfrutó. 0 si no aplica o no sabe.',
+                    'description' => 'Días de vacaciones de años/periodos anteriores que la persona reporta que no disfrutó. 0 si no aplica o no sabe. La herramienta ya descuenta sola los que estén prescritos (no hace falta que tú calcules eso) — si el resultado trae "vacaciones_anteriores_dias_prescritos" mayor a 0, menciónaselo a la persona para explicar por qué el número final es menor a lo que reportó.',
                 ],
                 'dias_salarios_devengados' => [
                     'type' => 'number',

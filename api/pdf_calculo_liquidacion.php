@@ -45,6 +45,13 @@ function generar_pdf_calculo_liquidacion(array $calc, float $salarioDiario, stri
             . '<td class="amt">' . htmlspecialchars($money($f[2])) . '</td></tr>';
     }
 
+    $notaVacacionesPrescritas = '';
+    if (($calc['vacaciones_anteriores_dias_prescritos'] ?? 0) > 0) {
+        $notaVacacionesPrescritas = '<div class="disclaimer" style="margin-top:8px;"><p>De los días de vacaciones de años anteriores que se reportaron, '
+            . htmlspecialchars((string)$calc['vacaciones_anteriores_dias_prescritos'])
+            . ' día(s) ya están prescritos (criterio SCJN 2a./J. 1/97: cada año prescribe 18 meses después de su aniversario) y no se incluyeron en este cálculo.</p></div>';
+    }
+
     $saludo = $nombre !== '' ? htmlspecialchars($nombre) : '';
     $fechaGenerado = (new DateTimeImmutable())->format('d/m/Y H:i');
 
@@ -88,6 +95,7 @@ function generar_pdf_calculo_liquidacion(array $calc, float $salarioDiario, stri
             <td>Antigüedad<b>' . htmlspecialchars((string)$calc['antiguedad_anios']) . ' años</b></td>
             <td>Salario diario usado<b>' . htmlspecialchars($money($salarioDiario)) . '</b></td>
         </tr></table>
+        ' . $notaVacacionesPrescritas . '
         <div class="disclaimer">
             <p><b>Esto es una estimación, no una asesoría jurídica ni un dictamen del despacho.</b> Se generó automáticamente a partir de los datos que compartiste por WhatsApp — no sustituye la revisión de tu expediente por un abogado.</p>
             <p>Los montos pueden variar por prestaciones contractuales superiores a la ley, los hechos concretos de tu caso, la información real que se confirme, y las resoluciones judiciales. Consulta a un abogado laboral de Expertos Laborales para confirmar tu caso concreto antes de tomar cualquier decisión.</p>

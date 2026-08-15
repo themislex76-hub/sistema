@@ -36,6 +36,31 @@ function vac_dias_lft(int $y): float
     return $y <= 5 ? 10 + 2 * $y : 20 + 2 * (int)ceil(($y - 5) / 5);
 }
 
+// Máximo de días de vacaciones de años anteriores que NO están
+// prescritos, según el criterio de la Segunda Sala SCJN (2a./J. 1/97):
+// el año de prescripción del Art. 516 LFT corre a partir de que vence el
+// periodo de 6 meses del Art. 81 para tomarlas — en la práctica, cada
+// año de vacaciones no disfrutado deja de poder reclamarse 18 meses
+// después de su aniversario correspondiente. Recorre los aniversarios
+// del más reciente al más antiguo y se detiene en el primero que ya
+// pasó esa ventana de 18 meses (los anteriores a ese ya están todos
+// prescritos también). Misma lógica que maxVacNoPrescrito() en la
+// calculadora del sitio (assets del sitio web).
+function max_vacaciones_anteriores_no_prescritas_lft(DateTimeImmutable $ing, DateTimeImmutable $baj): float
+{
+    $cy = completed_years_lft($ing, $baj);
+    $tot = 0.0;
+    for ($i = $cy; $i >= 1; $i--) {
+        $aniversario = $ing->setDate((int)$ing->format('Y') + $i, (int)$ing->format('n'), (int)$ing->format('j'));
+        $limite = $aniversario->modify('+18 months');
+        if ($baj >= $limite) {
+            break;
+        }
+        $tot += vac_dias_lft($i);
+    }
+    return $tot;
+}
+
 function salario_minimo_diario_actual(PDO $pdo): float
 {
     $stmt = $pdo->prepare("SELECT valor FROM configuracion WHERE clave = 'salario_minimo_diario'");
@@ -86,7 +111,10 @@ function calcular_estimado_liquidacion(
     $diasCurso = (int)$anniv->diff($baj)->days;
     $vacEnt = vac_dias_lft($cy + 1);
     $vacacionesDiasProp = $vacEnt * ($diasCurso / 365);
-    $vacacionesDias = $vacacionesDiasProp + max(0, $diasVacacionesAnteriores);
+    $maxVacAnterioresNoPrescritas = max_vacaciones_anteriores_no_prescritas_lft($ing, $baj);
+    $vacAntDiasReconocidos = min(max(0, $diasVacacionesAnteriores), $maxVacAnterioresNoPrescritas);
+    $vacAntDiasPrescritos = max(0, $diasVacacionesAnteriores - $vacAntDiasReconocidos);
+    $vacacionesDias = $vacacionesDiasProp + $vacAntDiasReconocidos;
     $vacacionesMonto = $vacacionesDias * $salarioDiario;
 
     // Prima vacacional — mínimo 25% (Art. 80 LFT).
@@ -117,6 +145,7 @@ function calcular_estimado_liquidacion(
         'aguinaldo_monto' => round($aguinaldoMonto, 2),
         'vacaciones_dias' => round($vacacionesDias, 1),
         'vacaciones_monto' => round($vacacionesMonto, 2),
+        'vacaciones_anteriores_dias_prescritos' => round($vacAntDiasPrescritos, 1),
         'prima_vacacional_monto' => round($primaVacacionalMonto, 2),
         'prima_antiguedad_monto' => round($primaAntiguedad, 2),
         'salarios_devengados_monto' => round($salariosDevengadosMonto, 2),
@@ -124,6 +153,6 @@ function calcular_estimado_liquidacion(
         'indemnizacion_90_dias_monto' => round($indemnizacion90, 2),
         'total_estimado' => round($total, 2),
         'tipo_despido' => $tipo,
-        'nota' => 'Estimado con mínimos de ley (aguinaldo 15 días, prima vacacional 25%) y con los días de vacaciones anteriores/salarios devengados que la persona reportó — sin contar posibles pactos contractuales mayores. El monto real solo se confirma revisando el caso a detalle.',
+        'nota' => 'Estimado con mínimos de ley (aguinaldo 15 días, prima vacacional 25%) y con los días de vacaciones anteriores/salarios devengados que la persona reportó — sin contar posibles pactos contractuales mayores. Si reportó más días de vacaciones anteriores de los que ya no están prescritos (ver vacaciones_anteriores_dias_prescritos), solo se contaron los no prescritos, según el criterio SCJN 2a./J. 1/97 (18 meses desde cada aniversario). El monto real solo se confirma revisando el caso a detalle.',
     ];
 }
