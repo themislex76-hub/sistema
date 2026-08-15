@@ -77,7 +77,7 @@ function generar_pdf_calculo_liquidacion(array $calc, float $salarioDiario, stri
     }
 
     $saludo = $nombre !== '' ? htmlspecialchars($nombre) : '';
-    $fechaGenerado = (new DateTimeImmutable())->format('d/m/Y H:i');
+    $fechaGenerado = (new DateTimeImmutable('now', new DateTimeZone('America/Mexico_City')))->format('d/m/Y H:i');
 
     $html = '<!doctype html><html><head><meta charset="utf-8"><style>
         body { font-family: DejaVu Sans, sans-serif; color: #15252B; margin: 0; font-size: 12px; }
