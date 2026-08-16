@@ -17,21 +17,19 @@ require_once __DIR__ . '/push_helpers.php';
 // alguien mandando decenas de mensajes seguidos sin sentido.
 const WHATSAPP_LIMITE_MENSAJES_DIA = 30;
 
-// Horario de atención: lunes a sábado, 8:00-19:00 hora de Ciudad de México
+// Horario de atención: todos los días, 8:00-19:00 hora de Ciudad de México
 // (date_default_timezone_set ya se fija globalmente en db.php, que carga
 // antes que este archivo en la cadena de whatsapp_webhook.php). Domingo
-// cerrado todo el día. Fuera de este horario no se contesta como si un
-// humano estuviera despierto a las 3am — se manda un aviso de "fuera de
-// horario" genérico, igual que cualquier negocio, en vez de simular
-// presencia en tiempo real.
-const WHATSAPP_MENSAJE_FUERA_HORARIO = 'Gracias por escribir a Expertos Laborales Abogados. Te recordamos que nuestro horario de atención es de lunes a sábado de 8:00 am a 7:00 pm — en cuanto uno de nuestros abogados pueda, con gusto te contestamos.';
+// tiene el mismo horario que el resto de la semana — cerrarlo perdía leads
+// que escriben en fin de semana sin necesidad, ya que la IA no depende de
+// que haya un humano despierto para contestar bien. Fuera de este horario
+// (noche/madrugada) no se contesta como si alguien estuviera despierto a
+// las 3am — se manda un aviso de "fuera de horario" genérico, igual que
+// cualquier negocio, en vez de simular presencia en tiempo real.
+const WHATSAPP_MENSAJE_FUERA_HORARIO = 'Gracias por escribir a Expertos Laborales Abogados. Te recordamos que nuestro horario de atención es de 8:00 am a 7:00 pm — en cuanto uno de nuestros abogados pueda, con gusto te contestamos.';
 
 function dentro_de_horario_atencion(): bool
 {
-    $diaSemana = (int)date('N'); // 1=lunes ... 7=domingo
-    if ($diaSemana === 7) {
-        return false;
-    }
     $hora = (int)date('G');
     return $hora >= 8 && $hora < 19;
 }
