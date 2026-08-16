@@ -51,7 +51,7 @@ let CASES_DATA = []; // expedientes que devuelve la API (ya con meta anidada)
 let PROSPECTOS = []; // leads de despido CDMX/Edomex captados por el bot de WhatsApp
 let PROSPECTO_ABIERTO = null; // id del prospecto cuyo chat está abierto en el modal
 let PROSPECTO_MENSAJES = []; // historial de WhatsApp del prospecto abierto
-let PROSPECTOS_MOSTRAR_DESCARTADOS = false; // los "Descartado" se esconden de la lista por default
+let PROSPECTOS_MOSTRAR_ATENDIDOS = false; // solo se ve lo pendiente por atender por default (ver prospectosHTML)
 
 // Vista "Conversaciones (WhatsApp)" (solo Administrador) — control de
 // calidad del bot: TODAS las conversaciones, hayan calificado como
@@ -3423,12 +3423,18 @@ function prospectosHTML(){
       <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte un caso de despido en CDMX/Edomex, o a alguien interesado en la asesoría de pago, aparecerá aquí.</div>
     </div></div>`;
   }
-  // Un descartado se queda oculto siempre, incluso si escribe de nuevo —
-  // "descartado" es que el despacho no toma el litigio, no que haga falta
-  // que un humano lo revise; si escribe otra cosa el bot le sigue
-  // contestando solo (ver prospectos_update.php).
-  const visibles = PROSPECTOS.filter(p => PROSPECTOS_MOSTRAR_DESCARTADOS || p.estatus !== 'descartado');
-  const descartadosOcultos = PROSPECTOS.filter(p => p.estatus === 'descartado');
+  // Por default la lista solo muestra lo pendiente por atender: los
+  // "nuevo" y cualquiera con un mensaje sin leer (aunque ya esté
+  // contactado o convertido, si escribió algo nuevo sigue necesitando que
+  // alguien lo revise). En cuanto lo contactas, lo conviertes o lo
+  // descartas (y no tiene nada sin leer) se quita solo de la lista, para
+  // que no se acumulen los que ya se están atendiendo o ya se cerraron.
+  // "descartado" es que el despacho no toma el litigio, no que se deje de
+  // contestarle a la persona — el bot le sigue contestando solo (ver
+  // prospectos_update.php), por eso también puede reaparecer si escribe.
+  const esPendiente = p => p.estatus === 'nuevo' || (p.mensaje_nuevo && p.estatus !== 'descartado');
+  const visibles = PROSPECTOS.filter(p => PROSPECTOS_MOSTRAR_ATENDIDOS || esPendiente(p));
+  const atendidosOcultos = PROSPECTOS.filter(p => !esPendiente(p));
   return `
   <div class="panel">
     <div class="panel-head"><h3>Prospectos de WhatsApp</h3><span class="count">${visibles.length}</span></div>
@@ -3449,9 +3455,9 @@ function prospectosHTML(){
       </div>`).join("")}
     </div>
   </div>
-  ${descartadosOcultos.length ? `<div class="notice" style="max-width:100%;">${PROSPECTOS_MOSTRAR_DESCARTADOS
-    ? `Mostrando también los descartados. <button class="btn secondary" data-prospectos-toggle-descartados style="padding:4px 10px; font-size:11px; margin-left:6px;">Ocultarlos de nuevo</button>`
-    : `Hay ${descartadosOcultos.length} prospecto${descartadosOcultos.length===1?'':'s'} descartado${descartadosOcultos.length===1?'':'s'} oculto${descartadosOcultos.length===1?'':'s'}. <button class="btn secondary" data-prospectos-toggle-descartados style="padding:4px 10px; font-size:11px; margin-left:6px;">Mostrarlos</button>`}</div>` : ""}
+  ${atendidosOcultos.length ? `<div class="notice" style="max-width:100%;">${PROSPECTOS_MOSTRAR_ATENDIDOS
+    ? `Mostrando también los ya atendidos, convertidos y descartados. <button class="btn secondary" data-prospectos-toggle-atendidos style="padding:4px 10px; font-size:11px; margin-left:6px;">Ocultarlos de nuevo</button>`
+    : `Hay ${atendidosOcultos.length} prospecto${atendidosOcultos.length===1?'':'s'} ya contactado${atendidosOcultos.length===1?'':'s'}, convertido${atendidosOcultos.length===1?'':'s'} o descartado${atendidosOcultos.length===1?'':'s'} oculto${atendidosOcultos.length===1?'':'s'}. <button class="btn secondary" data-prospectos-toggle-atendidos style="padding:4px 10px; font-size:11px; margin-left:6px;">Mostrarlos</button>`}</div>` : ""}
   `;
 }
 
@@ -4729,10 +4735,10 @@ function bindViewBody(){
       }
     });
   });
-  const prospectosToggleDescartados = document.querySelector('[data-prospectos-toggle-descartados]');
-  if(prospectosToggleDescartados){
-    prospectosToggleDescartados.addEventListener('click', ()=>{
-      PROSPECTOS_MOSTRAR_DESCARTADOS = !PROSPECTOS_MOSTRAR_DESCARTADOS;
+  const prospectosToggleAtendidos = document.querySelector('[data-prospectos-toggle-atendidos]');
+  if(prospectosToggleAtendidos){
+    prospectosToggleAtendidos.addEventListener('click', ()=>{
+      PROSPECTOS_MOSTRAR_ATENDIDOS = !PROSPECTOS_MOSTRAR_ATENDIDOS;
       renderViewBody();
     });
   }
