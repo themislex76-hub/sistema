@@ -3600,22 +3600,63 @@ function actividadPorDiaHTML(porDia){
   const hoy = new Date().toISOString().slice(0,10);
   return `
   <div class="panel" style="margin-bottom:18px;">
-    <div class="panel-head"><h3>Actividad de WhatsApp por día</h3><span class="count">últimos 14 días</span></div>
+    <div class="panel-head"><h3>Actividad de WhatsApp por día</h3><span class="count">últimos 30 días</span></div>
     <div class="panel-body" style="padding:16px 18px;">
-      <div style="display:flex; align-items:flex-end; gap:6px; height:140px;">
+      <div style="display:flex; align-items:flex-end; gap:4px; height:140px;">
         ${porDia.map(d=>{
           const fecha = new Date(d.dia + 'T00:00:00');
           const alto = Math.round((d.mensajes / max) * 110) + (d.mensajes>0 ? 4 : 0);
           const esHoy = d.dia === hoy;
           return `
-          <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;" title="${d.mensajes} mensaje(s), ${d.numeros} número(s), ${d.prospectos_nuevos} lead(s) nuevo(s)">
-            <div style="font-size:10.5px; color:var(--ink); font-weight:700; margin-bottom:2px;">${d.mensajes||''}</div>
-            <div style="width:100%; max-width:28px; height:${alto}px; background:${esHoy?'var(--ink)':'#b9c3d6'}; border-radius:4px 4px 0 0;"></div>
-            <div style="font-size:10px; color:var(--gray); margin-top:4px; text-align:center;">${DIAS_SEMANA_CORTO[fecha.getDay()]}<br>${fecha.getDate()}</div>
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;" title="${d.mensajes} mensaje(s), ${d.numeros} número(s), ${d.prospectos_nuevos} propuesta(s), ${d.prospectos_contactados} contactado(s), ${d.prospectos_convertidos} convertido(s)">
+            <div style="font-size:10px; color:var(--ink); font-weight:700; margin-bottom:2px;">${d.mensajes||''}</div>
+            <div style="width:100%; max-width:20px; height:${alto}px; background:${esHoy?'var(--ink)':'#b9c3d6'}; border-radius:4px 4px 0 0;"></div>
+            <div style="font-size:9px; color:var(--gray); margin-top:4px; text-align:center;">${DIAS_SEMANA_CORTO[fecha.getDay()]}<br>${fecha.getDate()}</div>
           </div>`;
         }).join("")}
       </div>
-      <div style="font-size:11px; color:var(--gray); margin-top:10px;">Pasa el cursor sobre cada barra para ver el detalle del día (mensajes, números distintos y leads nuevos).</div>
+      <div style="font-size:11px; color:var(--gray); margin-top:10px;">Pasa el cursor sobre cada barra para ver el detalle del día (mensajes, números distintos, propuestas, contactados y convertidos).</div>
+    </div>
+  </div>
+  ${actividadPorDiaTablaHTML(porDia)}`;
+}
+
+// Tabla con el embudo exacto por fecha: cuántos WhatsApps se atendieron,
+// de esos cuántos se volvieron propuesta (prospecto nuevo), cuántos se
+// contactaron y cuántos se convirtieron a clientes — "contactados" y
+// "convertidos" son acumulativos (un convertido también cuenta como
+// contactado), igual que un embudo normal.
+function actividadPorDiaTablaHTML(porDia){
+  const filas = porDia.filter(d => d.numeros > 0 || d.prospectos_nuevos > 0).slice().reverse();
+  const totales = porDia.reduce((acc,d)=>({
+    numeros: acc.numeros + d.numeros,
+    nuevos: acc.nuevos + d.prospectos_nuevos,
+    contactados: acc.contactados + d.prospectos_contactados,
+    convertidos: acc.convertidos + d.prospectos_convertidos,
+  }), {numeros:0, nuevos:0, contactados:0, convertidos:0});
+  const pct = (num, den) => den > 0 ? Math.round(num/den*100) + '%' : '—';
+  return `
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>Embudo de WhatsApp por fecha</h3><span class="count">últimos 30 días</span></div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Fecha</th><th>WhatsApps atendidos</th><th>Propuestas</th><th>Contactados</th><th>Convertidos a clientes</th></tr></thead>
+      <tbody>${!filas.length ? `<tr><td colspan="5" class="empty">Sin actividad en los últimos 30 días.</td></tr>` : filas.map(d=>`
+        <tr>
+          <td>${fmtDate(d.dia)}</td>
+          <td>${d.numeros}</td>
+          <td>${d.prospectos_nuevos}</td>
+          <td>${d.prospectos_contactados}</td>
+          <td>${d.prospectos_convertidos}</td>
+        </tr>`).join("")}
+      </tbody>
+      ${filas.length ? `<tfoot><tr style="font-weight:700;">
+        <td>Total (30 días)</td>
+        <td>${totales.numeros}</td>
+        <td>${totales.nuevos} <span style="font-weight:400; color:var(--gray); font-size:11px;">(${pct(totales.nuevos, totales.numeros)} de atendidos)</span></td>
+        <td>${totales.contactados} <span style="font-weight:400; color:var(--gray); font-size:11px;">(${pct(totales.contactados, totales.nuevos)} de propuestas)</span></td>
+        <td>${totales.convertidos} <span style="font-weight:400; color:var(--gray); font-size:11px;">(${pct(totales.convertidos, totales.nuevos)} de propuestas)</span></td>
+      </tr></tfoot>` : ''}
+      </table>
     </div>
   </div>`;
 }

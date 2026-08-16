@@ -76,30 +76,38 @@ $sinResponder = (int)$sinResponderStmt->fetch()['n'];
 $conversacionesTotales = (int)($statsRow['conversaciones_totales'] ?? 0);
 $totalProspectos = (int)($statsRow['total_prospectos'] ?? 0);
 
-// Desglose por día (últimos 14 días) — para comparar a simple vista los
-// días de live contra los días normales.
+// Desglose por día (últimos 30 días) — para comparar a simple vista los
+// días de live contra los días normales, y para el embudo diario
+// (atendidos → propuestas → contactados → convertidos).
 $porDiaMensajes = $pdo->query(
     "SELECT DATE(creado_en) AS dia, COUNT(*) AS mensajes, COUNT(DISTINCT telefono) AS numeros
      FROM whatsapp_conversaciones
-     WHERE direccion = 'entrante' AND creado_en >= CURDATE() - INTERVAL 13 DAY
+     WHERE direccion = 'entrante' AND creado_en >= CURDATE() - INTERVAL 29 DAY
      GROUP BY DATE(creado_en)"
 )->fetchAll(PDO::FETCH_ASSOC | PDO::FETCH_UNIQUE);
 
+// "Contactados" incluye a los ya convertidos (llegar a "convertido" implica
+// que en algún momento se le contactó), igual que un embudo acumulativo.
 $porDiaProspectos = $pdo->query(
-    "SELECT DATE(creado_en) AS dia, COUNT(*) AS nuevos
+    "SELECT DATE(creado_en) AS dia,
+            COUNT(*) AS nuevos,
+            SUM(estatus IN ('contactado', 'convertido')) AS contactados,
+            SUM(estatus = 'convertido') AS convertidos
      FROM prospectos
-     WHERE creado_en >= CURDATE() - INTERVAL 13 DAY
+     WHERE creado_en >= CURDATE() - INTERVAL 29 DAY
      GROUP BY DATE(creado_en)"
 )->fetchAll(PDO::FETCH_ASSOC | PDO::FETCH_UNIQUE);
 
 $porDia = [];
-for ($i = 13; $i >= 0; $i--) {
+for ($i = 29; $i >= 0; $i--) {
     $dia = date('Y-m-d', strtotime("-{$i} days"));
     $porDia[] = [
         'dia' => $dia,
         'mensajes' => (int)($porDiaMensajes[$dia]['mensajes'] ?? 0),
         'numeros' => (int)($porDiaMensajes[$dia]['numeros'] ?? 0),
         'prospectos_nuevos' => (int)($porDiaProspectos[$dia]['nuevos'] ?? 0),
+        'prospectos_contactados' => (int)($porDiaProspectos[$dia]['contactados'] ?? 0),
+        'prospectos_convertidos' => (int)($porDiaProspectos[$dia]['convertidos'] ?? 0),
     ];
 }
 

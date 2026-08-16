@@ -156,6 +156,7 @@ thead th{
 tbody td{padding:12px 16px; border-bottom:1px solid #f0ece1; font-size:13px; vertical-align:middle;}
 tbody tr{cursor:pointer;}
 tbody tr:hover{background:var(--parchment);}
+tfoot td{padding:12px 16px; border-top:1.5px solid var(--border); font-size:13px; background:#faf8f2;}
 .exp-code{font-family:var(--mono); font-size:12px; color:var(--gray);}
 .abogado-tag{font-size:10.5px; color:var(--brass); font-weight:700;}
 
