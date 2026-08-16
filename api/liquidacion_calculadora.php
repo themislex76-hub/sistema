@@ -102,8 +102,12 @@ function calcular_estimado_liquidacion(
     float $salarioDiario,
     string $tipo,
     float $diasVacacionesAnteriores = 0,
-    float $diasSalariosDevengados = 0
+    float $diasSalariosDevengados = 0,
+    string $modo = 'despido'
 ): ?array {
+    if (!in_array($modo, ['despido', 'renuncia', 'rescision'], true)) {
+        $modo = 'despido';
+    }
     try {
         $ing = (new DateTimeImmutable($fechaIngreso))->setTime(0, 0);
         $baj = (new DateTimeImmutable($fechaBaja))->setTime(0, 0);
@@ -140,11 +144,14 @@ function calcular_estimado_liquidacion(
 
     // Prima de antigüedad — 12 días por año, con base topada a 2x el
     // salario mínimo diario vigente (Art. 162 LFT). Siempre procede en un
-    // despido, sin importar si fue justificado o injustificado.
+    // despido o rescisión, sin importar si el despido fue justificado o
+    // injustificado. En renuncia voluntaria SOLO procede con 15 años o más
+    // de servicio (Art. 162-III LFT).
     $salarioMinimo = salario_minimo_diario_actual($pdo);
     $topePrima = 2 * $salarioMinimo;
     $basePrima = min($salarioDiario, $topePrima);
-    $primaAntiguedad = 12 * $aniosDec * $basePrima;
+    $primaAntiguedadProcede = $modo !== 'renuncia' || $cy >= 15;
+    $primaAntiguedad = $primaAntiguedadProcede ? 12 * $aniosDec * $basePrima : 0.0;
 
     // Salarios devengados y no pagados (Art. 82 LFT) — días ya trabajados
     // que la persona reporta que no se le pagaron antes de la baja.
@@ -160,15 +167,29 @@ function calcular_estimado_liquidacion(
     $factorIntegracion = (365 + 15 + $vacEnt * 0.25) / 365;
     $sdi = $salarioDiario * $factorIntegracion;
 
-    // Indemnización constitucional — 90 días de SDI (Art. 48 LFT). Solo
-    // procede si el despido fue injustificado.
-    $indemnizacion90 = $tipo === 'injustificado' ? 90 * $sdi : 0;
-    $total = $totalFiniquito + $indemnizacion90;
+    // Indemnización — depende del modo:
+    // - despido injustificado (Art. 48 LFT): 90 días de SDI.
+    // - renuncia voluntaria: no hay indemnización.
+    // - rescisión por causa imputable al patrón, ejercida dentro de los 30
+    //   días (Arts. 51/52 LFT): 20 días por año de servicio (Art. 50-II)
+    //   más 90 días de SDI (Art. 50-III), igual que un despido injustificado.
+    $indemnizacion20 = 0.0;
+    $indemnizacion90 = 0.0;
+    if ($modo === 'despido' && $tipo === 'injustificado') {
+        $indemnizacion90 = 90 * $sdi;
+    } elseif ($modo === 'rescision') {
+        $indemnizacion20 = 20 * $aniosDec * $sdi;
+        $indemnizacion90 = 90 * $sdi;
+    }
+    $total = $totalFiniquito + $indemnizacion90 + $indemnizacion20;
 
     return [
+        'modo' => $modo,
         'antiguedad_anios' => round($aniosDec, 2),
+        'antiguedad_anios_completos' => $cy,
         'antiguedad_texto' => antiguedad_texto_lft($antigDias),
         'sdi_usado' => round($sdi, 2),
+        'prima_antiguedad_procede' => $primaAntiguedadProcede,
         'aguinaldo_dias' => round($aguinaldoDias, 1),
         'aguinaldo_monto' => round($aguinaldoMonto, 2),
         'vacaciones_dias' => round($vacacionesDias, 1),
@@ -178,6 +199,7 @@ function calcular_estimado_liquidacion(
         'prima_antiguedad_monto' => round($primaAntiguedad, 2),
         'salarios_devengados_monto' => round($salariosDevengadosMonto, 2),
         'total_finiquito' => round($totalFiniquito, 2),
+        'indemnizacion_20_dias_monto' => round($indemnizacion20, 2),
         'indemnizacion_90_dias_monto' => round($indemnizacion90, 2),
         'total_estimado' => round($total, 2),
         'tipo_despido' => $tipo,

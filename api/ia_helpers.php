@@ -140,24 +140,51 @@ memoria — es la fuente más común de errores):
     corresponden automáticamente solo por haber un despido injustificado.
     Solo proceden en dos supuestos: (a) cuando es el propio trabajador
     quien rescinde la relación laboral por una causa imputable al patrón
-    (despido indirecto), o (b) cuando, al final de un juicio, el patrón
-    se niega a reinstalar al trabajador. No los incluyas en la respuesta
-    general de un despido salvo que se dé alguno de esos dos supuestos.
+    (despido indirecto, ver "rescisión" abajo), o (b) cuando, al final de
+    un juicio, el patrón se niega a reinstalar al trabajador. No los
+    incluyas en la respuesta general de un despido salvo que se dé alguno
+    de esos dos supuestos.
   · Si es justificado (hubo una causa del Art. 47 LFT que se la
     comprobaron): solo corresponde el finiquito, sin indemnización.
-  · Si te piden calcular un monto estimado, antes de llamar la
-    herramienta calcular_estimado_liquidacion pregunta y reúne TODOS
-    estos datos (uno o varios mensajes, lo que haga falta): (1) fecha de
-    ingreso, (2) fecha de baja (o si aún no ha pasado el despido), (3)
-    salario diario o mensual (conviértelo tú a diario si te lo dan
-    mensual o quincenal), (4) si el despido es/sería justificado o
-    injustificado, (5) si le deben vacaciones de periodos/años anteriores
-    que no disfrutó (y cuántos días, si lo sabe), y (6) si le deben días
-    ya trabajados y no pagados (Art. 82 LFT) antes de la baja (y cuántos
-    días, si lo sabe). Los puntos 5 y 6 puedes dejarlos en 0 si la
-    persona dice que no aplica o no sabe. NUNCA calcules el monto tú
-    mismo "a mano" — siempre usa la herramienta para la aritmética real,
-    y luego redacta la respuesta final con el resultado que te devuelva.
+  · La herramienta calcular_estimado_liquidacion también calcula
+    RENUNCIA y RESCISIÓN, no solo despido — usa el parámetro "modo" para
+    decir cuál es el escenario real de la persona (nunca asumas "despido"
+    por default sin preguntar primero qué pasó):
+    - modo="despido": la persona fue despedida por el patrón (usa "tipo"
+      para decir si es/sería justificado o injustificado).
+    - modo="renuncia": la persona renunció por su propia voluntad, sin
+      que el patrón haya hecho nada indebido. Aquí NO hay indemnización,
+      y la prima de antigüedad SOLO procede si tiene 15 años o más de
+      servicio (Art. 162-III LFT) — la herramienta ya aplica esa regla
+      sola, no se la expliques de más si no aplica.
+    - modo="rescision": la persona se vio obligada a separarse de su
+      trabajo por una causa imputable al patrón (Art. 51 LFT — por
+      ejemplo no pagarle su salario, reducírselo, no darle condiciones
+      de seguridad, malos tratos, etc.), y lo hizo dentro de los 30 días
+      siguientes a que conoció esa causa (Art. 52 LFT). Pregúntale
+      explícitamente cuánto tiempo pasó entre que ocurrió/se dio cuenta
+      de la causa y el momento en que dejó de trabajar — si pasaron más
+      de 30 días, ese plazo ya venció y NO puede usar la rescisión (usa
+      modo="renuncia" en su lugar y explícale por qué). Si califica, la
+      herramienta calcula 20 días por año de servicio (Art. 50-II) más 3
+      meses de salario integrado (Art. 50-III), además de la prima de
+      antigüedad y el finiquito completo — es económicamente igual a un
+      despido injustificado, así que trátalo con la misma urgencia y
+      ofrécele igual el contacto con el abogado.
+  · Antes de llamar calcular_estimado_liquidacion, primero determina el
+    modo (pregúntale qué pasó si no es obvio del contexto) y luego reúne
+    TODOS estos datos (uno o varios mensajes, lo que haga falta): (1)
+    fecha de ingreso, (2) fecha de baja (o si aún no ha pasado, la fecha
+    de hoy), (3) salario diario o mensual (conviértelo tú a diario si te
+    lo dan mensual o quincenal), (4) si modo="despido", si es/sería
+    justificado o injustificado, (5) si le deben vacaciones de
+    periodos/años anteriores que no disfrutó (y cuántos días, si lo
+    sabe), y (6) si le deben días ya trabajados y no pagados (Art. 82
+    LFT) antes de la baja (y cuántos días, si lo sabe). Los puntos 5 y 6
+    puedes dejarlos en 0 si la persona dice que no aplica o no sabe.
+    NUNCA calcules el monto tú mismo "a mano" — siempre usa la
+    herramienta para la aritmética real, y luego redacta la respuesta
+    final con el resultado que te devuelva.
   · NUNCA recomiendes la calculadora del sitio web
     (expertoslaborales.com/calculadora) — eso ya quedó obsoleto. En vez
     de eso, cada vez que uses esta herramienta con éxito, automáticamente
@@ -589,17 +616,22 @@ const IA_TOOLS = [
     ],
     [
         'name' => 'calcular_estimado_liquidacion',
-        'description' => 'Calcula un estimado real (con las mismas fórmulas que la calculadora del sistema, no aproximado) de lo que le corresponde a la persona por su despido: finiquito y, si aplica, indemnización constitucional. Llama esta herramienta SOLO cuando ya tengas los datos necesarios — nunca inventes ni calcules el monto tú mismo.',
+        'description' => 'Calcula un estimado real (con las mismas fórmulas que la calculadora del sistema, no aproximado) de lo que le corresponde a la persona: finiquito y, si aplica, indemnización. Cubre tres escenarios distintos (ver "modo"): despido, renuncia voluntaria, y rescisión por causa imputable al patrón. Llama esta herramienta SOLO cuando ya tengas los datos necesarios — nunca inventes ni calcules el monto tú mismo.',
         'input_schema' => [
             'type' => 'object',
             'properties' => [
+                'modo' => [
+                    'type' => 'string',
+                    'enum' => ['despido', 'renuncia', 'rescision'],
+                    'description' => '"despido": el patrón despidió a la persona (usa "tipo" para justificado/injustificado). "renuncia": la persona renunció por su propia voluntad, sin causa imputable al patrón — no hay indemnización, y la prima de antigüedad solo procede con 15+ años de servicio. "rescision": la persona se vio obligada a separarse de su trabajo por una causa imputable al patrón (Art. 51 LFT), ejercida dentro de los 30 días siguientes a esa causa (Art. 52 LFT) — aquí SÍ hay indemnización: 20 días por año (Art. 50-II) más 3 meses de salario integrado (Art. 50-III).',
+                ],
                 'fecha_ingreso' => [
                     'type' => 'string',
                     'description' => 'Fecha de ingreso al trabajo, formato YYYY-MM-DD.',
                 ],
                 'fecha_baja' => [
                     'type' => 'string',
-                    'description' => 'Fecha de baja/despido, formato YYYY-MM-DD. Si todavía no lo despiden pero quiere saber qué le tocaría, usa la fecha de hoy.',
+                    'description' => 'Fecha de baja/despido/renuncia, formato YYYY-MM-DD. Si todavía no ha pasado pero quiere saber qué le tocaría, usa la fecha de hoy.',
                 ],
                 'salario_diario' => [
                     'type' => 'number',
@@ -608,7 +640,7 @@ const IA_TOOLS = [
                 'tipo' => [
                     'type' => 'string',
                     'enum' => ['justificado', 'injustificado'],
-                    'description' => 'Si el despido es o sería justificado o injustificado.',
+                    'description' => 'Solo se usa cuando modo="despido": si el despido es o sería justificado o injustificado. Si modo es "renuncia" o "rescision", pon "injustificado" (este campo se ignora en esos casos).',
                 ],
                 'dias_vacaciones_anteriores' => [
                     'type' => 'number',
@@ -619,7 +651,7 @@ const IA_TOOLS = [
                     'description' => 'Días ya trabajados y no pagados antes de la baja (Art. 82 LFT) que la persona reporta. 0 si no aplica o no sabe.',
                 ],
             ],
-            'required' => ['fecha_ingreso', 'fecha_baja', 'salario_diario', 'tipo'],
+            'required' => ['modo', 'fecha_ingreso', 'fecha_baja', 'salario_diario', 'tipo'],
         ],
     ],
     [
@@ -848,7 +880,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     (float)($in['salario_diario'] ?? 0),
                     (string)($in['tipo'] ?? 'injustificado'),
                     (float)($in['dias_vacaciones_anteriores'] ?? 0),
-                    (float)($in['dias_salarios_devengados'] ?? 0)
+                    (float)($in['dias_salarios_devengados'] ?? 0),
+                    (string)($in['modo'] ?? 'despido')
                 );
                 if ($calc !== null) {
                     $contenido = json_encode($calc, JSON_UNESCAPED_UNICODE);
