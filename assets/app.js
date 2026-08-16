@@ -52,6 +52,7 @@ let PROSPECTOS = []; // leads de despido CDMX/Edomex captados por el bot de What
 let PROSPECTO_ABIERTO = null; // id del prospecto cuyo chat está abierto en el modal
 let PROSPECTO_MENSAJES = []; // historial de WhatsApp del prospecto abierto
 let PROSPECTOS_MOSTRAR_ATENDIDOS = false; // solo se ve lo pendiente por atender por default (ver prospectosHTML)
+let PROSPECTOS_TAB = 'despido'; // pestaña activa en Prospectos: 'despido' o 'asesoria_paga'
 
 // Vista "Conversaciones (WhatsApp)" (solo Administrador) — control de
 // calidad del bot: TODAS las conversaciones, hayan calificado como
@@ -2122,6 +2123,7 @@ async function abrirConversacionDesdeNotificacion(telefono){
   const p = PROSPECTOS.find(x=>x.telefono===telefono);
   if(p){
     VIEW = 'prospectos';
+    PROSPECTOS_TAB = p.tipo;
     render();
     await loadProspectoMensajes(p.telefono);
     abrirProspectoModal(p.id);
@@ -3439,16 +3441,25 @@ function prospectosHTML(){
   // a una persona por nombre/teléfono la quiere encontrar sin importar su
   // estatus.
   const buscando = SEARCH_TERM.trim() !== '';
-  let base = PROSPECTOS;
+  let base = PROSPECTOS.filter(p => p.tipo === PROSPECTOS_TAB);
   if(buscando){
     const q = SEARCH_TERM.trim().toLowerCase();
     base = base.filter(p => (p.nombre||'').toLowerCase().includes(q) || (p.telefono||'').toLowerCase().includes(q));
   }
   const visibles = buscando ? base : base.filter(p => PROSPECTOS_MOSTRAR_ATENDIDOS || esPendiente(p));
   const atendidosOcultos = buscando ? [] : base.filter(p => !esPendiente(p));
-  return `
+
+  const pendientesDespido = PROSPECTOS.filter(p=>p.tipo==='despido' && esPendiente(p)).length;
+  const pendientesAsesoria = PROSPECTOS.filter(p=>p.tipo==='asesoria_paga' && esPendiente(p)).length;
+  const tabsHTML = `
+  <div style="display:flex; gap:8px; margin-bottom:16px;">
+    <button class="btn ${PROSPECTOS_TAB==='despido'?'':'secondary'}" data-prospectos-tab="despido" style="padding:8px 16px;">Despido (litigio) ${pendientesDespido>0?`<span class="nav-badge">${pendientesDespido}</span>`:""}</button>
+    <button class="btn ${PROSPECTOS_TAB==='asesoria_paga'?'':'secondary'}" data-prospectos-tab="asesoria_paga" style="padding:8px 16px;">Asesorías $299 ${pendientesAsesoria>0?`<span class="nav-badge">${pendientesAsesoria}</span>`:""}</button>
+  </div>`;
+
+  return tabsHTML + `
   <div class="panel">
-    <div class="panel-head"><h3>Prospectos de WhatsApp</h3><span class="count">${visibles.length}</span></div>
+    <div class="panel-head"><h3>${PROSPECTOS_TAB==='despido'?'Prospectos de despido':'Prospectos de asesoría paga'}</h3><span class="count">${visibles.length}</span></div>
     <div class="panel-body" style="padding:0;">
       ${!visibles.length ? `<div class="notice" style="margin:16px;">${buscando ? `Ningún prospecto coincide con "${escapeHTML(SEARCH_TERM.trim())}".` : 'No hay nada pendiente por atender ahora mismo.'}</div>` : visibles.map(p=>`
       <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${PROSPECTO_ABIERTO===p.id?'background:var(--parchment);':(p.mensaje_nuevo?'background:#fdf3e7;':'')}" data-prospecto-abrir="${p.id}">
@@ -4753,6 +4764,12 @@ function bindViewBody(){
       renderViewBody();
     });
   }
+  document.querySelectorAll('[data-prospectos-tab]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      PROSPECTOS_TAB = el.dataset.prospectosTab;
+      renderViewBody();
+    });
+  });
   document.querySelectorAll('[data-conversacion-abrir]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const telefono = el.dataset.conversacionAbrir;
