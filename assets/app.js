@@ -3433,13 +3433,24 @@ function prospectosHTML(){
   // contestarle a la persona — el bot le sigue contestando solo (ver
   // prospectos_update.php), por eso también puede reaparecer si escribe.
   const esPendiente = p => p.estatus === 'nuevo' || (p.mensaje_nuevo && p.estatus !== 'descartado');
-  const visibles = PROSPECTOS.filter(p => PROSPECTOS_MOSTRAR_ATENDIDOS || esPendiente(p));
-  const atendidosOcultos = PROSPECTOS.filter(p => !esPendiente(p));
+  // La casilla de búsqueda del topbar (nombre o teléfono) también aplica
+  // aquí — antes solo filtraba Expedientes (ver visibleCases()). Mientras
+  // se busca, se ignora el filtro de "solo pendientes": alguien que busca
+  // a una persona por nombre/teléfono la quiere encontrar sin importar su
+  // estatus.
+  const buscando = SEARCH_TERM.trim() !== '';
+  let base = PROSPECTOS;
+  if(buscando){
+    const q = SEARCH_TERM.trim().toLowerCase();
+    base = base.filter(p => (p.nombre||'').toLowerCase().includes(q) || (p.telefono||'').toLowerCase().includes(q));
+  }
+  const visibles = buscando ? base : base.filter(p => PROSPECTOS_MOSTRAR_ATENDIDOS || esPendiente(p));
+  const atendidosOcultos = buscando ? [] : base.filter(p => !esPendiente(p));
   return `
   <div class="panel">
     <div class="panel-head"><h3>Prospectos de WhatsApp</h3><span class="count">${visibles.length}</span></div>
     <div class="panel-body" style="padding:0;">
-      ${visibles.map(p=>`
+      ${!visibles.length ? `<div class="notice" style="margin:16px;">${buscando ? `Ningún prospecto coincide con "${escapeHTML(SEARCH_TERM.trim())}".` : 'No hay nada pendiente por atender ahora mismo.'}</div>` : visibles.map(p=>`
       <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${PROSPECTO_ABIERTO===p.id?'background:var(--parchment);':(p.mensaje_nuevo?'background:#fdf3e7;':'')}" data-prospecto-abrir="${p.id}">
         <span class="badge ${PROSPECTO_ESTATUS_BADGE[p.estatus]||'warn'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_ESTATUS_LABEL[p.estatus]||p.estatus}</span>
         <div class="alert-info">
