@@ -2137,6 +2137,7 @@ async function abrirConversacionDesdeNotificacion(telefono){
     if(c){
       VIEW = 'conversaciones';
       render();
+      if(!WA_EMBUDO) loadWhatsappEmbudo().then(renderViewBody);
       await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
       abrirConversacionModal(telefono);
       return;
@@ -2544,7 +2545,10 @@ function bindShell(){
   });
   if(backdropEl) backdropEl.addEventListener('click', closeMobileMenu);
   document.querySelectorAll('.nav button[data-v]').forEach(b=>{
-    b.addEventListener('click', ()=>{ VIEW = b.dataset.v; renderViewBody(); highlightNav(); closeMobileMenu(); });
+    b.addEventListener('click', ()=>{
+      VIEW = b.dataset.v; renderViewBody(); highlightNav(); closeMobileMenu();
+      if(VIEW==='conversaciones' && !WA_EMBUDO) loadWhatsappEmbudo().then(renderViewBody);
+    });
   });
   const pushNotifBtn = document.getElementById('pushNotifBtn');
   if(pushNotifBtn){
@@ -3085,7 +3089,7 @@ let INGRESOS_ABOGADO = 'todos';
 let INGRESOS_DESDE = '';
 let INGRESOS_HASTA = '';
 
-function rangoPeriodo(periodo){
+function rangoPeriodo(periodo, desdeCustom, hastaCustom){
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   const y = hoy.getFullYear(), m = hoy.getMonth();
   const pad = n=>String(n).padStart(2,'0');
@@ -3100,7 +3104,7 @@ function rangoPeriodo(periodo){
     return {desde: `${y}-01-01`, hasta: `${y}-12-31`};
   }
   if(periodo==='personalizado'){
-    return {desde: INGRESOS_DESDE || '0000-01-01', hasta: INGRESOS_HASTA || '9999-12-31'};
+    return {desde: (desdeCustom ?? INGRESOS_DESDE) || '0000-01-01', hasta: (hastaCustom ?? INGRESOS_HASTA) || '9999-12-31'};
   }
   return {desde:'0000-01-01', hasta:'9999-12-31'}; // 'todo'
 }
@@ -3617,16 +3621,61 @@ function actividadPorDiaHTML(porDia){
       </div>
       <div style="font-size:11px; color:var(--gray); margin-top:10px;">Pasa el cursor sobre cada barra para ver el detalle del día (mensajes, números distintos, propuestas, contactados y convertidos).</div>
     </div>
-  </div>
-  ${actividadPorDiaTablaHTML(porDia)}`;
+  </div>`;
+}
+
+// ---------- Embudo de WhatsApp por fecha (periodo elegible) ----------
+let WA_EMBUDO = null;
+let WA_EMBUDO_PERIODO = 'mes_actual';
+let WA_EMBUDO_DESDE = '';
+let WA_EMBUDO_HASTA = '';
+let WA_EMBUDO_CARGANDO = false;
+
+async function loadWhatsappEmbudo(){
+  WA_EMBUDO_CARGANDO = true;
+  try{
+    const rango = rangoPeriodo(WA_EMBUDO_PERIODO, WA_EMBUDO_DESDE, WA_EMBUDO_HASTA);
+    const d = await api('GET', 'whatsapp_embudo.php?desde=' + encodeURIComponent(rango.desde) + '&hasta=' + encodeURIComponent(rango.hasta));
+    WA_EMBUDO = d;
+  }catch(e){ WA_EMBUDO = null; }
+  WA_EMBUDO_CARGANDO = false;
 }
 
 // Tabla con el embudo exacto por fecha: cuántos WhatsApps se atendieron,
 // de esos cuántos se volvieron propuesta (prospecto nuevo), cuántos se
 // contactaron y cuántos se convirtieron a clientes — "contactados" y
 // "convertidos" son acumulativos (un convertido también cuenta como
-// contactado), igual que un embudo normal.
-function actividadPorDiaTablaHTML(porDia){
+// contactado), igual que un embudo normal. El periodo se elige con los
+// mismos chips que "Ingresos por periodo", jalando del servidor solo el
+// rango pedido (no depende de los 30 días fijos de la gráfica de arriba).
+function whatsappEmbudoHTML(){
+  const chips = [
+    ['mes_actual','Este mes'], ['mes_anterior','Mes anterior'], ['anio_actual','Este año'],
+    ['todo','Todo el histórico'], ['personalizado','Personalizado']
+  ];
+  const chipsHTML = `
+    <div class="filters" style="margin:0 0 12px;">
+      ${chips.map(([v,label])=>`<div class="chip ${WA_EMBUDO_PERIODO===v?'active':''}" data-embudo-periodo="${v}">${label}</div>`).join("")}
+    </div>
+    ${WA_EMBUDO_PERIODO==='personalizado' ? `
+    <div style="display:flex; gap:12px; align-items:end; margin-bottom:12px;">
+      <div class="field"><label>Desde</label><input type="date" id="embudoDesde" value="${WA_EMBUDO_DESDE}"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="embudoHasta" value="${WA_EMBUDO_HASTA}"></div>
+      <button class="btn" id="embudoAplicarBtn">Aplicar</button>
+    </div>` : ''}`;
+
+  if(WA_EMBUDO_CARGANDO || !WA_EMBUDO){
+    return `
+    <div class="panel" style="margin-bottom:18px;">
+      <div class="panel-head"><h3>Embudo de WhatsApp por fecha</h3></div>
+      <div class="panel-body" style="padding:16px 18px;">
+        ${chipsHTML}
+        <div class="notice" style="margin:0;">Cargando...</div>
+      </div>
+    </div>`;
+  }
+
+  const porDia = WA_EMBUDO.por_dia || [];
   const filas = porDia.filter(d => d.numeros > 0 || d.prospectos_nuevos > 0).slice().reverse();
   const totales = porDia.reduce((acc,d)=>({
     numeros: acc.numeros + d.numeros,
@@ -3635,12 +3684,14 @@ function actividadPorDiaTablaHTML(porDia){
     convertidos: acc.convertidos + d.prospectos_convertidos,
   }), {numeros:0, nuevos:0, contactados:0, convertidos:0});
   const pct = (num, den) => den > 0 ? Math.round(num/den*100) + '%' : '—';
+
   return `
   <div class="panel" style="margin-bottom:18px;">
-    <div class="panel-head"><h3>Embudo de WhatsApp por fecha</h3><span class="count">últimos 30 días</span></div>
+    <div class="panel-head"><h3>Embudo de WhatsApp por fecha</h3><span class="count">${fmtDate(WA_EMBUDO.desde)} – ${fmtDate(WA_EMBUDO.hasta)}</span></div>
+    <div class="panel-body" style="padding:16px 18px 0;">${chipsHTML}</div>
     <div class="panel-body" style="padding:0;">
       <table><thead><tr><th>Fecha</th><th>WhatsApps atendidos</th><th>Propuestas</th><th>Contactados</th><th>Convertidos a clientes</th></tr></thead>
-      <tbody>${!filas.length ? `<tr><td colspan="5" class="empty">Sin actividad en los últimos 30 días.</td></tr>` : filas.map(d=>`
+      <tbody>${!filas.length ? `<tr><td colspan="5" class="empty">Sin actividad en este periodo.</td></tr>` : filas.map(d=>`
         <tr>
           <td>${fmtDate(d.dia)}</td>
           <td>${d.numeros}</td>
@@ -3650,7 +3701,7 @@ function actividadPorDiaTablaHTML(porDia){
         </tr>`).join("")}
       </tbody>
       ${filas.length ? `<tfoot><tr style="font-weight:700;">
-        <td>Total (30 días)</td>
+        <td>Total del periodo</td>
         <td>${totales.numeros}</td>
         <td>${totales.nuevos} <span style="font-weight:400; color:var(--gray); font-size:11px;">(${pct(totales.nuevos, totales.numeros)} de atendidos)</span></td>
         <td>${totales.contactados} <span style="font-weight:400; color:var(--gray); font-size:11px;">(${pct(totales.contactados, totales.nuevos)} de propuestas)</span></td>
@@ -3676,7 +3727,8 @@ function conversacionesHTML(){
     <div>${REINTENTO_EN_PROGRESO ? escapeHTML(REINTENTO_PROGRESO_TXT) : `<strong>${s.sin_responder}</strong> conversación${s.sin_responder===1?'':'es'} se quedaron sin respuesta real (falló la IA) y ${s.sin_responder===1?'puede':'pueden'} reintentarse ahora.`}</div>
     <button class="btn" id="reintentarLoteBtn" ${REINTENTO_EN_PROGRESO?'disabled':''}>${REINTENTO_EN_PROGRESO ? 'Reintentando...' : 'Reintentar respuestas fallidas'}</button>
   </div>` : ''}
-  ${actividadPorDiaHTML(s.por_dia || [])}`;
+  ${actividadPorDiaHTML(s.por_dia || [])}
+  ${whatsappEmbudoHTML()}`;
   if(!CONVERSACIONES.length){
     return statsHTML + `<div class="panel"><div class="panel-body" style="padding:24px;">
       <div class="notice">Todavía no hay conversaciones registradas del bot de WhatsApp.</div>
@@ -4463,6 +4515,21 @@ function bindViewBody(){
   document.querySelectorAll('.chip[data-periodo]').forEach(el=>{
     el.addEventListener('click', ()=>{ INGRESOS_PERIODO = el.dataset.periodo; renderViewBody(); });
   });
+  document.querySelectorAll('.chip[data-embudo-periodo]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      WA_EMBUDO_PERIODO = el.dataset.embudoPeriodo;
+      if(WA_EMBUDO_PERIODO !== 'personalizado') loadWhatsappEmbudo().then(renderViewBody);
+      else renderViewBody();
+    });
+  });
+  const embudoAplicarBtn = document.getElementById('embudoAplicarBtn');
+  if(embudoAplicarBtn){
+    embudoAplicarBtn.addEventListener('click', ()=>{
+      WA_EMBUDO_DESDE = document.getElementById('embudoDesde').value;
+      WA_EMBUDO_HASTA = document.getElementById('embudoHasta').value;
+      loadWhatsappEmbudo().then(renderViewBody);
+    });
+  }
   const ingresosAbogadoSelect = document.getElementById('ingresosAbogadoSelect');
   if(ingresosAbogadoSelect){
     ingresosAbogadoSelect.addEventListener('change', ()=>{
