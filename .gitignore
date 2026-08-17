@@ -13,3 +13,7 @@ data/plantilla_demanda.docx
 data/documentos/
 data/plantillas/
 .DS_Store
+robots/*/config.js
+robots/*/node_modules/
+robots/*/procesados_*.json
+robots/*/*.log
