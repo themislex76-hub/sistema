@@ -2502,7 +2502,7 @@ const VIEW_TITLES = {
   exito:["Tasa de éxito", "Qué tan seguido se resuelven los asuntos a favor del trabajador"],
   manual:["Manual de uso", "Guía paso a paso del sistema"],
   agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
-  prospectos:["Prospectos (WhatsApp)", "Casos de despido en CDMX/Edomex captados por el asistente de IA en WhatsApp"],
+  prospectos:["Prospectos (WhatsApp)", "Casos de despido, asesorías de pago y despachos interesados en Control de Expedientes, captados por el asistente de IA en WhatsApp"],
   conversaciones:["Conversaciones (WhatsApp)", "Todas las conversaciones del bot, calificaran o no como prospecto — para revisar y perfeccionar sus respuestas"],
   resumen_ejecutivo:["Resumen ejecutivo (bot)", "Temas más comunes, patrones y oportunidades detectadas en las conversaciones de WhatsApp"],
   formato_demanda:["Formato de demanda", "Plantilla de demanda y biblioteca de otras plantillas de escritos"],
@@ -3416,8 +3416,8 @@ let AGENDA_TAB = 'general';
 
 const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
 const PROSPECTO_ESTATUS_BADGE = {nuevo:'crit', contactado:'warn', descartado:'closed', convertido:'ok'};
-const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesoría $299'};
-const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida'};
+const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesoría $299', control_expedientes:'Control de Expedientes'};
+const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida', control_expedientes:'ok'};
 
 function prospectosHTML(){
   if(!PROSPECTOS.length){
@@ -3451,15 +3451,18 @@ function prospectosHTML(){
 
   const pendientesDespido = PROSPECTOS.filter(p=>p.tipo==='despido' && esPendiente(p)).length;
   const pendientesAsesoria = PROSPECTOS.filter(p=>p.tipo==='asesoria_paga' && esPendiente(p)).length;
+  const pendientesControlExp = PROSPECTOS.filter(p=>p.tipo==='control_expedientes' && esPendiente(p)).length;
   const tabsHTML = `
-  <div style="display:flex; gap:8px; margin-bottom:16px;">
+  <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
     <button class="btn ${PROSPECTOS_TAB==='despido'?'':'secondary'}" data-prospectos-tab="despido" style="padding:8px 16px;">Despido (litigio) ${pendientesDespido>0?`<span class="nav-badge">${pendientesDespido}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='asesoria_paga'?'':'secondary'}" data-prospectos-tab="asesoria_paga" style="padding:8px 16px;">Asesorías $299 ${pendientesAsesoria>0?`<span class="nav-badge">${pendientesAsesoria}</span>`:""}</button>
+    <button class="btn ${PROSPECTOS_TAB==='control_expedientes'?'':'secondary'}" data-prospectos-tab="control_expedientes" style="padding:8px 16px;">Control de Expedientes ${pendientesControlExp>0?`<span class="nav-badge">${pendientesControlExp}</span>`:""}</button>
   </div>`;
 
+  const TITULOS_TAB = {despido:'Prospectos de despido', asesoria_paga:'Prospectos de asesoría paga', control_expedientes:'Despachos interesados en Control de Expedientes'};
   return tabsHTML + `
   <div class="panel">
-    <div class="panel-head"><h3>${PROSPECTOS_TAB==='despido'?'Prospectos de despido':'Prospectos de asesoría paga'}</h3><span class="count">${visibles.length}</span></div>
+    <div class="panel-head"><h3>${TITULOS_TAB[PROSPECTOS_TAB]}</h3><span class="count">${visibles.length}</span></div>
     <div class="panel-body" style="padding:0;">
       ${!visibles.length ? `<div class="notice" style="margin:16px;">${buscando ? `Ningún prospecto coincide con "${escapeHTML(SEARCH_TERM.trim())}".` : 'No hay nada pendiente por atender ahora mismo.'}</div>` : visibles.map(p=>`
       <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${PROSPECTO_ABIERTO===p.id?'background:var(--parchment);':(p.mensaje_nuevo?'background:#fdf3e7;':'')}" data-prospecto-abrir="${p.id}">

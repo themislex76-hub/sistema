@@ -42,6 +42,39 @@ expresiones coloquiales. CORTO (puede ser 3-8 líneas si hace falta
 explicar la regla legal con precisión, estilo WhatsApp, nunca un ensayo
 largo).
 
+SITUACIÓN ESPECIAL — alguien pregunta por "Control de Expedientes" (el
+sistema/software para despachos), no por su propio problema laboral:
+pasa cuando alguien escribe mencionando "Control de Expedientes",
+"sistema para despachos", "el software que vi en su página" o algo
+parecido — normalmente porque le llegó desde la landing de venta
+(controldeexpedientes.mx) o porque es abogado/dueño de otro despacho
+interesado en contratarlo, NO un trabajador con un problema laboral. En
+cuanto detectes esto, cambia de contexto por completo para el resto de
+esa conversación: ya no eres el asistente de asesoría laboral para
+trabajadores, eres quien vende Control de Expedientes a otros
+despachos — no le apliques ninguna de las demás reglas de este prompt
+(despido, asesoría de pago, Apartado A/B, etc.) a esta conversación.
+Qué es: un sistema para despachos de derecho laboral (no solo
+despidos — también rescisión, riesgo de trabajo, designación de
+beneficiarios y prestaciones en general) que calcula automáticamente el
+plazo de prescripción de cada expediente según el Título Décimo de la
+LFT, revisa solo los boletines judiciales del Poder Judicial de la
+Federación, la CDMX y el Estado de México, permite subir documentos
+desde el celular con recorte automático, da reportes de tasa de éxito e
+ingresos, y deja que el cliente del despacho vea el avance de su caso
+sin llamar. Cuesta $600 MXN al mes por despacho, sin límite de usuarios
+ni de expedientes, con 30 días de prueba gratuita y sin pedir tarjeta
+para empezar — se cancela cuando quieran. Contesta sus preguntas con
+esos datos, con el mismo tono directo y profesional, sin venta forzada.
+Si muestra interés real en empezar (pide la prueba, pregunta cómo darse
+de alta, dice que sí le interesa — no solo por preguntar qué es), llama
+registrar_interes_control_expedientes y dile que puede registrar su
+despacho directo en controldeexpedientes.mx (ahí hay un botón para
+"Registrar despacho") o que alguien del equipo le puede ayudar a darlo
+de alta si prefiere. Si pregunta algo que no sabes (facturación fiscal,
+integración con otro sistema, etc.), sé honesto de que no tienes ese
+dato y que alguien del equipo se lo confirma — nunca inventes.
+
 Al saludar o presentarte, nunca uses frases como "soy el asistente
 virtual de Expertos Laborales", "soy el asistente de Expertos Laborales"
 ni nada parecido — ninguna variante de "asistente", "bot", "IA", etc. —
@@ -580,6 +613,24 @@ const IA_TOOLS = [
                 'resumen' => [
                     'type' => 'string',
                     'description' => 'Resumen breve (1-2 líneas) de su duda/tema laboral, para que el abogado sepa de qué le va a hablar al agendar.',
+                ],
+            ],
+            'required' => ['resumen'],
+        ],
+    ],
+    [
+        'name' => 'registrar_interes_control_expedientes',
+        'description' => 'Registra que la persona es un despacho o abogado interesado en contratar el sistema Control de Expedientes para SU despacho — no es un trabajador con un problema laboral. Solo se usa cuando muestra interés real (pide la prueba, pregunta cómo darse de alta, confirma que quiere contratarlo), no solo porque preguntó qué es.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'nombre' => [
+                    'type' => 'string',
+                    'description' => 'Nombre de la persona si lo mencionó, o cadena vacía si no.',
+                ],
+                'resumen' => [
+                    'type' => 'string',
+                    'description' => 'Resumen breve (1-2 líneas): nombre del despacho si lo dijo, y qué necesita o preguntó, para que el equipo sepa de qué hablarle al darle seguimiento.',
                 ],
             ],
             'required' => ['resumen'],
@@ -1125,16 +1176,21 @@ function ia_extraer_respuesta(array $data): array
     foreach ($bloques as $bloque) {
         if (($bloque['type'] ?? '') === 'text') {
             $texto .= $bloque['text'];
-        } elseif (($bloque['type'] ?? '') === 'tool_use' && in_array($bloque['name'] ?? '', ['registrar_lead_despido', 'registrar_interes_asesoria_paga'], true)) {
+        } elseif (($bloque['type'] ?? '') === 'tool_use' && in_array($bloque['name'] ?? '', ['registrar_lead_despido', 'registrar_interes_asesoria_paga', 'registrar_interes_control_expedientes'], true)) {
             $input = $bloque['input'] ?? [];
+            $tipoPorHerramienta = [
+                'registrar_lead_despido' => 'despido',
+                'registrar_interes_asesoria_paga' => 'asesoria_paga',
+                'registrar_interes_control_expedientes' => 'control_expedientes',
+            ];
             $nuevoLead = [
-                'tipo' => $bloque['name'] === 'registrar_lead_despido' ? 'despido' : 'asesoria_paga',
+                'tipo' => $tipoPorHerramienta[$bloque['name']],
                 'estado' => (string)($input['estado'] ?? ''),
                 'nombre' => (string)($input['nombre'] ?? ''),
                 'resumen' => (string)($input['resumen'] ?? ''),
             ];
-            // Si Claude llama ambas herramientas en el mismo turno, el lead
-            // de despido (más valioso: litigio) manda sobre el de asesoría paga.
+            // Si Claude llama más de una herramienta en el mismo turno, el
+            // lead de despido (más valioso: litigio) manda sobre los demás.
             if ($lead === null || $nuevoLead['tipo'] === 'despido') {
                 $lead = $nuevoLead;
             }
