@@ -3957,6 +3957,14 @@ function conversacionDetalleHTML(c){
         ${c.expediente_id ? `<span class="badge ok">Convertido en expediente</span>` : ""}
         ${c.fallo ? `<span class="badge crit">La IA no pudo contestar el último mensaje</span> <button class="btn secondary" id="conversacionReintentarBtn" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:5px 10px;">Reintentar esta conversación</button>` : ""}
       </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+        ${!c.prospecto_tipo ? `
+          <button class="btn secondary" data-marcar-prospecto="despido" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 12px;">Marcar como prospecto de despido</button>
+          <button class="btn secondary" data-marcar-prospecto="asesoria_paga" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 12px;">Marcar como asesoría de pago</button>
+        ` : (!c.expediente_id && c.prospecto_estatus !== 'nuevo' ? `
+          <button class="btn secondary" data-marcar-prospecto="${escapeHTML(c.prospecto_tipo)}" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 12px;">Reactivar como pendiente en Prospectos</button>
+        ` : "")}
+      </div>
       <div style="background:var(--parchment); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px;">
           <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray);">Resumen (IA) — para revisar cómo va contestando el bot</div>
@@ -4032,6 +4040,24 @@ function bindConversacionModalEvents(){
       }
     });
   }
+  document.querySelectorAll('[data-marcar-prospecto]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const telefono = btn.dataset.telefono;
+      const tipo = btn.dataset.marcarProspecto;
+      const textoOriginal = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+      try{
+        await api('POST', 'conversaciones_marcar_prospecto.php', {telefono, tipo});
+        await loadConversaciones();
+        renderConversacionModal();
+      }catch(err){
+        alert('No se pudo marcar el prospecto: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = textoOriginal;
+      }
+    });
+  });
   const conversacionReintentarBtn = document.getElementById('conversacionReintentarBtn');
   if(conversacionReintentarBtn){
     conversacionReintentarBtn.addEventListener('click', async ()=>{
