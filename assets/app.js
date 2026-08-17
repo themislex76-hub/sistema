@@ -1,12 +1,16 @@
 // =====================================================================
 // Expertos Laborales Abogados — Sistema de Gestión de Litigios Laborales
 // Marco legal: Ley Federal del Trabajo (México), vigente. Cómputo del
-// plazo de prescripción del Art. 518 LFT conforme a la jurisprudencia
-// de la Segunda Sala de la SCJN (tesis 2028593): dos meses de calendario
-// completos y continuos, contados a partir del día siguiente a la
-// separación, suspendidos durante el procedimiento de conciliación
-// (Art. 684-B / 521 fracc. III LFT) y reanudados al día siguiente de
-// la constancia de no conciliación.
+// plazo de prescripción según el Título Décimo LFT, en días naturales
+// exactos contados a partir del día siguiente al hecho generador (ver
+// TIPO_ASUNTO_PLAZOS): despido, Art. 518 LFT, 60 días, conforme a la
+// jurisprudencia de la Segunda Sala de la SCJN (tesis 2028593); rescisión
+// —el trabajador se separa por causa imputable al patrón—, Art. 517 LFT,
+// 30 días; riesgo de trabajo y beneficiarios, Art. 519 LFT, 730 días; el
+// resto de las prestaciones, Art. 516 LFT, 365 días. Todos los plazos se
+// suspenden durante el procedimiento de conciliación (Art. 684-B / 521
+// fracc. III LFT) y se reanudan al día siguiente de la constancia de no
+// conciliación.
 // =====================================================================
 
 // =====================================================================
@@ -95,7 +99,78 @@ const STATUS_OPCIONES = [
   'Tribunal Federal Edomex',
 ];
 
+// Catálogo fijo de tipos de asunto y sus plazos de prescripción, en días
+// naturales exactos: Art. 518 LFT (despido, 60 días), Art. 517 LFT
+// (rescisión — el trabajador se separa por causa imputable al patrón, 30
+// días), Art. 519 LFT (riesgo de trabajo y beneficiarios, 730 días) y
+// Art. 516 LFT (regla general para el resto de las prestaciones, 365
+// días) — ver computePrescripcion().
+const TIPO_ASUNTO_DESPIDO = 'Despido';
+const TIPO_ASUNTO_PRESTACIONES = 'Prestaciones';
+const TIPO_ASUNTO_OTRO = 'Otro';
+const TIPO_ASUNTO_OPCIONES = [
+  TIPO_ASUNTO_DESPIDO,
+  'Rescisión (Art. 51 LFT)',
+  'Riesgo de trabajo',
+  'Designación de beneficiarios',
+  TIPO_ASUNTO_PRESTACIONES,
+];
+const TIPO_ASUNTO_PLAZOS = {
+  'Despido': {dias: 60, articulo: 'Art. 518 LFT'},
+  'Rescisión (Art. 51 LFT)': {dias: 30, articulo: 'Art. 517 LFT'},
+  'Riesgo de trabajo': {dias: 730, articulo: 'Art. 519 LFT'},
+  'Designación de beneficiarios': {dias: 730, articulo: 'Art. 519 LFT'},
+  'Prestaciones': {dias: 365, articulo: 'Art. 516 LFT'},
+};
+// Los expedientes ya existentes, capturados antes de que se agregara este
+// campo, no tienen tipo_asunto — como el sistema solo manejaba despido
+// hasta ahora, se asume ese tipo por defecto para no alterar el plazo que
+// ya se les venía calculando. Un tipo escrito a mano (opción "Otro") que
+// no está en el catálogo usa la regla general de un año (Art. 516 LFT),
+// por ser el plazo por default de cualquier acción de trabajo sin un
+// artículo especial que le aplique.
+function tipoAsuntoPlazo(kase){
+  if(!kase.tipo_asunto) return TIPO_ASUNTO_PLAZOS[TIPO_ASUNTO_DESPIDO];
+  return TIPO_ASUNTO_PLAZOS[kase.tipo_asunto] || TIPO_ASUNTO_PLAZOS[TIPO_ASUNTO_PRESTACIONES];
+}
+
+// Select del catálogo fijo + "Otro" con texto libre. El <select> y el
+// <input> de texto NO llevan la clase edit-field (para que saveCamposBtn
+// no los lea directo) — el que de verdad se guarda es el <input type=
+// hidden> que ambos actualizan vía bindTipoAsuntoField().
+function tipoAsuntoFieldHTML(actual){
+  const esCatalogo = actual !== '' && TIPO_ASUNTO_OPCIONES.includes(actual);
+  const esOtro = actual !== '' && !esCatalogo;
+  return `
+    <input type="hidden" class="edit-field" data-field="tipo_asunto" id="tipoAsuntoHidden" value="${escapeHTML(actual)}">
+    <select id="tipoAsuntoSelect" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+      <option value="">— Sin definir —</option>
+      ${TIPO_ASUNTO_OPCIONES.map(o=>`<option value="${escapeHTML(o)}" ${actual===o?'selected':''}>${escapeHTML(o)}</option>`).join("")}
+      <option value="${TIPO_ASUNTO_OTRO}" ${esOtro?'selected':''}>Otro (especifica)</option>
+    </select>
+    <input type="text" id="tipoAsuntoOtroInput" placeholder="Especifica el tipo de asunto" value="${esOtro?escapeHTML(actual):''}" style="width:100%; margin-top:8px; ${esOtro?'':'display:none;'}">
+  `;
+}
+function bindTipoAsuntoField(){
+  const sel = document.getElementById('tipoAsuntoSelect');
+  const otro = document.getElementById('tipoAsuntoOtroInput');
+  const hidden = document.getElementById('tipoAsuntoHidden');
+  if(!sel || !otro || !hidden) return;
+  sel.addEventListener('change', ()=>{
+    if(sel.value === TIPO_ASUNTO_OTRO){
+      otro.style.display = '';
+      otro.focus();
+      hidden.value = otro.value;
+    } else {
+      otro.style.display = 'none';
+      hidden.value = sel.value;
+    }
+  });
+  otro.addEventListener('input', ()=>{ hidden.value = otro.value; });
+}
+
 const EDITABLE_FIELDS = [
+  {key:'tipo_asunto', label:'Tipo de asunto', type:'tipo_asunto'},
   {key:'actor', label:'Nombre del actor (trabajador)'},
   {key:'curp', label:'CURP del actor'},
   {key:'telefono', label:'Teléfono'},
@@ -862,24 +937,26 @@ function computeLiquidacion(kase){
 function computePrescripcion(kase){
   const fb = parseDate(kase.fecha_baja);
   if(!fb) return null;
-  const PLAZO_DIAS = 60;
-  const start = addDaysDate(fb, 1); // corre a partir del día siguiente a la separación
+  const plazo = tipoAsuntoPlazo(kase);
+  const start = addDaysDate(fb, 1); // corre a partir del día siguiente al hecho generador
+
+  // Vencimiento sin contar la suspensión por conciliación: días naturales
+  // exactos según el tipo de asunto (ver TIPO_ASUNTO_PLAZOS).
+  const naiveDeadline = addDaysDate(start, plazo.dias - 1);
 
   const {inicio, constancia} = fechasConciliacionEfectivas(kase);
   const ci = parseDate(inicio);
   const today = new Date(); today.setHours(0,0,0,0);
 
-  let deadline, suspensionDays = 0;
+  // Los días que el asunto pasó en conciliación no cuentan para el plazo —
+  // basta con recorrer el vencimiento "sin suspensión" hacia adelante
+  // exactamente esos días.
+  let deadline = naiveDeadline, suspensionDays = 0;
   if(ci){
     const cf = parseDate(constancia);
     const suspEnd = cf ? cf : today; // si aún no hay constancia, estimado provisional a hoy
-    const diasCorridosAntes = Math.max(0, daysBetween(start, ci)); // días de "start" a "ci-1", ya corridos
     suspensionDays = Math.max(0, daysBetween(ci, suspEnd) + 1); // ci..suspEnd, ambos inclusive, no cuentan
-    const reanuda = addDaysDate(suspEnd, 1);
-    const diasRestantes = Math.max(1, PLAZO_DIAS - diasCorridosAntes);
-    deadline = addDaysDate(reanuda, diasRestantes - 1);
-  } else {
-    deadline = addDaysDate(start, PLAZO_DIAS - 1);
+    deadline = addDaysDate(naiveDeadline, suspensionDays);
   }
   // Si concluye en día inhábil (sáb/dom), se traslada al día hábil siguiente (simplificación:
   // no incorpora el calendario oficial de días inhábiles de cada Tribunal/Centro, solo fines de semana).
@@ -888,7 +965,7 @@ function computePrescripcion(kase){
 
   const daysLeft = daysBetween(today, deadline);
   return {
-    start, deadline, suspensionDays, daysLeft, adjustedForWeekend,
+    start, deadline, suspensionDays, daysLeft, adjustedForWeekend, plazo,
     enConciliacion: !!(ci && !kase.fecha_constancia)
   };
 }
@@ -931,7 +1008,7 @@ const ETAPAS_DEF = [
   {key:'conciliacion_segundo_citatorio', label:'Conciliación prejudicial (Segundo citatorio)', fundamento:'Art. 684-B LFT', conHora:true},
   {key:'conciliacion_convenio', label:'Convenio', fundamento:'Acuerdo entre las partes ante el Centro de Conciliación'},
   {key:'constancia_no_conciliacion', label:'Constancia de no conciliación recibida', fundamento:'Arts. 684-C y 521-III LFT', plazoDesdeEtapa:'conciliacion_solicitada', plazoDias:45, plazoTipo:'naturales', plazoLabel:'La conciliación dura hasta 45 días naturales (Art. 684-C LFT)'},
-  {key:'demanda_presentada', label:'Demanda presentada ante el Tribunal', fundamento:'Art. 871 LFT', plazoLabel:'Debe presentarse antes de que venza la prescripción (Art. 518 LFT — ver pestaña Prescripción)'},
+  {key:'demanda_presentada', label:'Demanda presentada ante el Tribunal', fundamento:'Art. 871 LFT', plazoLabel:'Debe presentarse antes de que venza la prescripción (ver pestaña Prescripción)'},
   {key:'prevencion', label:'Prevención (el Tribunal previno por defectos u omisiones en la demanda)', fundamento:'Art. 873 LFT', plazoDesdeEtapa:'demanda_presentada', plazoDias:3, plazoTipo:'habiles', plazoLabel:'Solo aplica si el Tribunal previno la demanda; el actor debe desahogarla dentro de los 3 días siguientes a la notificación (Art. 873 LFT). Si no hubo prevención, deja esta etapa en blanco y continúa con "Demanda admitida".'},
   {key:'demanda_admitida', label:'Demanda admitida', fundamento:'Art. 873 LFT', plazoDesdeEtapa:'demanda_presentada', plazoDias:3, plazoTipo:'habiles', plazoLabel:'El Tribunal admite dentro de los 3 días siguientes a que se le turne, o a que se desahogue la prevención si la hubo (Art. 873 LFT)'},
   {key:'emplazamiento', label:'Emplazamiento a la demandada realizado', fundamento:'Art. 873-A LFT', plazoDesdeEtapa:'demanda_admitida', plazoDias:5, plazoTipo:'habiles', plazoLabel:'El Tribunal emplaza dentro de los 5 días siguientes a la admisión (Art. 873-A LFT)'},
@@ -1289,8 +1366,8 @@ function montoConvenio(kase){
   return extractMonto(kase.ultima_nota);
 }
 
-// Etapa procesal real del asunto — determina si la prescripción del Art. 518 LFT
-// sigue corriendo o ya quedó superada por otro evento (demanda presentada,
+// Etapa procesal real del asunto — determina si la prescripción sigue
+// corriendo o ya quedó superada por otro evento (demanda presentada,
 // convenio alcanzado, cierre del asunto).
 function caseStage(kase){
   const s = (kase.status||"").toLowerCase();
@@ -1310,7 +1387,7 @@ function caseStage(kase){
 }
 
 // Solo estas etapas mantienen vivo el riesgo de que corra (o siga corriendo) el
-// plazo de prescripción del Art. 518 LFT.
+// plazo de prescripción.
 function isPrescripcionRelevant(kase){
   const st = caseStage(kase);
   return st === "activo" || st === "constancia_demanda";
@@ -2495,7 +2572,7 @@ function shellHTML(){
 const VIEW_TITLES = {
   tablero:["Tablero general", "Panorama de todos los asuntos activos y alertas críticas"],
   expedientes:["Expedientes", "Consulta, filtra y administra cada asunto"],
-  alertas:["Alertas de prescripción", "Cómputo conforme al Art. 518 de la Ley Federal del Trabajo"],
+  alertas:["Alertas de prescripción", "Cómputo conforme al Título Décimo de la Ley Federal del Trabajo, según el tipo de cada asunto"],
   cobros:["Cobros de convenios", "Seguimiento de pagos pactados en convenios de conciliación"],
   ingresos:["Ingresos por periodo", "Cuánto se ha cobrado, agrupado por el periodo que elijas"],
   demandados:["Empresas demandadas", "Qué demandados se repiten, cuánto han pagado y qué tanto negocian"],
@@ -2724,7 +2801,7 @@ function tableroHTML(){
     </div>
   </div>` : ""}
   <div class="panel">
-    <div class="panel-head"><h3>Prioridad de prescripción</h3><span class="count">Art. 518 LFT &middot; solo asuntos sin demanda ni convenio</span></div>
+    <div class="panel-head"><h3>Prioridad de prescripción</h3><span class="count">Título Décimo LFT &middot; solo asuntos sin demanda ni convenio</span></div>
     <div class="panel-body">
       ${withAlert.length ? withAlert.map(x=>alertRowHTML(x.k, x.p, x.lvl)).join("") : `<div class="empty">Sin asuntos con riesgo de prescripción pendiente. Los que ya tienen demanda presentada o convenio no corren este riesgo.</div>`}
     </div>
@@ -2772,7 +2849,7 @@ function alertRowHTML(k, p, lvl){
     ${ringSVG(p.daysLeft, lvl)}
     <div class="alert-info">
       <div class="name">${escapeHTML(k.actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(k.demandado,36))}</div>
-      <div class="meta">Vence: ${fmtDate(dateToISO(p.deadline))} &middot; ${constanciaTxt} &middot; ${assignedLawyer(k)}</div>
+      <div class="meta">Vence: ${fmtDate(dateToISO(p.deadline))} &middot; ${p.plazo.articulo} &middot; ${constanciaTxt} &middot; ${assignedLawyer(k)}</div>
     </div>
     <span class="badge ${lvl}">${labelMap[lvl] || lvl}</span>
   </div>`;
@@ -3359,10 +3436,10 @@ function buildAgendaEntries(){
     });
   });
 
-  // Vencimientos de prescripción (Art. 518 LFT)
+  // Vencimientos de prescripción (Título Décimo LFT, según tipo de asunto)
   cases.filter(isPrescripcionRelevant).forEach(k=>{
     const p = computePrescripcion(k);
-    if(p) entries.push({tipo:'prescripcion', fecha: dateToISO(p.deadline), k, label:`Vence plazo de prescripción — Art. 518 LFT (${p.daysLeft} día(s))`, action:'demanda'});
+    if(p) entries.push({tipo:'prescripcion', fecha: dateToISO(p.deadline), k, label:`Vence plazo de prescripción — ${p.plazo.articulo} (${p.daysLeft} día(s))`, action:'demanda'});
   });
 
   // Amparos
@@ -4241,7 +4318,7 @@ function agendaHTML(){
     <div class="panel-head"><h3>Próximos eventos</h3><span class="count">${proximas.length}</span></div>
     <div class="panel-body">${proximas.length? proximas.map(row).join("") : '<div class="empty">Sin eventos programados. Agrega pagos, amparos, pendientes o marca etapas desde la ficha de cada asunto.</div>'}</div>
   </div>
-  <div class="notice" style="max-width:100%;">Esta agenda combina: pagos de convenios pendientes de cobro, vencimientos del plazo de prescripción del Art. 518 LFT, términos de amparo directo (Art. 17 Ley de Amparo, 15 días hábiles), pendientes que registres manualmente (objeciones, audiencias, desahogos) y avisos de posible atraso frente a los plazos del procedimiento ordinario laboral (Arts. 873 y 873-A LFT). Usa el botón de cada fila para marcarlo cumplido y que deje de aparecer como pendiente. Verifica siempre el calendario oficial de días inhábiles del Tribunal correspondiente.</div>
+  <div class="notice" style="max-width:100%;">Esta agenda combina: pagos de convenios pendientes de cobro, vencimientos del plazo de prescripción (Título Décimo LFT, según el tipo de cada asunto), términos de amparo directo (Art. 17 Ley de Amparo, 15 días hábiles), pendientes que registres manualmente (objeciones, audiencias, desahogos) y avisos de posible atraso frente a los plazos del procedimiento ordinario laboral (Arts. 873 y 873-A LFT). Usa el botón de cada fila para marcarlo cumplido y que deje de aparecer como pendiente. Verifica siempre el calendario oficial de días inhábiles del Tribunal correspondiente.</div>
   `;
 }
 
@@ -5241,7 +5318,7 @@ function modalTabContent(k,p,meta){
     ${(()=>{ const pago = proximoPago(k); return pago ? `<div class="legal-box" style="border-left-color:var(--green); margin-bottom:14px;"><strong>&#128176; Pago programado:</strong> ${fmtDate(pago.fecha)}${pago.monto!=null? ' — '+fmtMoney(pago.monto) : ' — monto sin capturar'}. Esto también le aparece a tu cliente en su portal.</div>` : ''; })()}
     ${det ? `<div class="legal-box" style="border-left-color:var(--amber); margin-bottom:14px;"><strong>&#9888; Sin movimiento en ${det.dias} días.</strong> Última actividad registrada el ${fmtDate(det.ultima)}. Vale la pena revisar en qué quedó este asunto y darle seguimiento.</div>` : ''}
     ${est ? `<div class="legal-box" style="border-left-color:var(--red); margin-bottom:14px;"><strong>&#9888; Posible atraso.</strong> Se esperaba "${escapeHTML(est.siguiente)}" desde el ${fmtDate(dateToISO(est.expected))} (${est.diasAtraso} día(s) de atraso) y no se ha registrado.</div>` : ''}
-    ${pAlerta ? `<div class="legal-box" style="border-left-color:${pAlerta.daysLeft<=10?'var(--red)':'var(--amber)'}; margin-bottom:14px;"><strong>Prescripción (Art. 518 LFT):</strong> vence el ${fmtDate(dateToISO(pAlerta.deadline))} — ${pAlerta.daysLeft} día(s) restantes.</div>` : ''}
+    ${pAlerta ? `<div class="legal-box" style="border-left-color:${pAlerta.daysLeft<=10?'var(--red)':'var(--amber)'}; margin-bottom:14px;"><strong>Prescripción (${pAlerta.plazo.articulo}):</strong> vence el ${fmtDate(dateToISO(pAlerta.deadline))} — ${pAlerta.daysLeft} día(s) restantes.</div>` : ''}
     <div class="divider"></div>
     <div class="grid2">
       <div class="field"><label>Puesto</label><div class="v">${escapeHTML(k.puesto||'—')}</div></div>
@@ -5447,6 +5524,8 @@ function modalTabContent(k,p,meta){
           <label>${escapeHTML(f.label)}</label>
           ${f.type==='date' ?
             `<input type="date" class="edit-field" data-field="${f.key}" value="${k[f.key]||''}">` :
+            f.type==='tipo_asunto' ?
+            tipoAsuntoFieldHTML(k.tipo_asunto!=null ? String(k.tipo_asunto) : '') :
             f.type==='select' ?
             (()=>{
               const actual = k[f.key]!=null ? String(k[f.key]) : '';
@@ -5595,7 +5674,7 @@ function modalTabContent(k,p,meta){
     ${estancado ? `<div class="legal-box" style="border-left-color:var(--red); margin-bottom:16px;">
       <strong>&#9888; Este asunto podría estar atorado.</strong> Última etapa registrada: "${escapeHTML(estancado.ultima)}". Debió haberse registrado "${escapeHTML(estancado.siguiente)}" antes del ${fmtDate(dateToISO(estancado.expected))} (${estancado.diasAtraso} día(s) de atraso). Verifica el estado real ante el Tribunal.
     </div>` : ''}
-    <div class="notice" style="margin-bottom:14px;">Marca cada etapa conforme vaya ocurriendo. Al registrar "Demanda presentada" el sistema deja de contar la prescripción del Art. 518 LFT para este asunto automáticamente. En las audiencias puedes capturar la fecha en que están agendadas aunque todavía no se celebren — eso es lo que le aparece a tu cliente como "próxima audiencia".</div>
+    <div class="notice" style="margin-bottom:14px;">Marca cada etapa conforme vaya ocurriendo. Al registrar "Demanda presentada" el sistema deja de contar la prescripción de este asunto automáticamente. En las audiencias puedes capturar la fecha en que están agendadas aunque todavía no se celebren — eso es lo que le aparece a tu cliente como "próxima audiencia".</div>
     ${ETAPAS_DEF.map(def=>{
       const val = k_etapa_valor(meta, def.key);
       const esAudiencia = def.key==='audiencia_preliminar' || def.key==='audiencia_juicio';
@@ -5745,6 +5824,7 @@ async function iniciarCropArchivo(file, esMulti){
 
 function bindModalTabEvents(){
   bindTribunalFieldEvents();
+  bindTipoAsuntoField();
   const subirDocumentoBtn = document.getElementById('subirDocumentoBtn');
   if(subirDocumentoBtn){
     subirDocumentoBtn.addEventListener('click', async ()=>{

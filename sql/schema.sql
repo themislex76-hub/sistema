@@ -47,6 +47,11 @@ CREATE TABLE usuarios (
 CREATE TABLE expedientes (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   exp VARCHAR(60) NULL,
+  -- Catálogo fijo (ver TIPO_ASUNTO_OPCIONES en assets/app.js) que define
+  -- qué plazo de prescripción de la LFT le corresponde a cada expediente.
+  -- NULL en registros viejos se trata como "Despido" (Art. 518), que es
+  -- lo único que manejaba el sistema antes de este campo.
+  tipo_asunto VARCHAR(150) NULL,
   status VARCHAR(150) NULL,
   instancia VARCHAR(255) NULL,
   ultima_nota TEXT NULL,
