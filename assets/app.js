@@ -4844,8 +4844,24 @@ function bindViewBody(){
     });
   });
   document.querySelectorAll('[data-cita-telefono]').forEach(el=>{
-    el.addEventListener('click', ()=>{
-      abrirCitaConversacionModal(el.dataset.citaTelefono, el.dataset.citaNombre);
+    el.addEventListener('click', async ()=>{
+      // Una cita agendada casi siempre tiene un prospecto detrás (se creó
+      // al mostrar interés en la asesoría) — se abre ese modal completo
+      // (resumen del caso, cambiar estatus, turnar, enviar mensaje) en vez
+      // del visor de solo lectura, para no tener que ir a buscarlo aparte
+      // en "Prospectos (WhatsApp)". Si por alguna razón no hay prospecto
+      // para ese teléfono, se cae de vuelta al visor simple de siempre.
+      const p = PROSPECTOS.find(x=>x.telefono===el.dataset.citaTelefono);
+      if(p){
+        await loadProspectoMensajes(p.telefono);
+        abrirProspectoModal(p.id);
+        if(p.mensaje_nuevo){
+          p.mensaje_nuevo = false;
+          api('POST', 'prospectos_update.php', {id: p.id, marcar_visto: true}).catch(()=>{});
+        }
+      } else {
+        abrirCitaConversacionModal(el.dataset.citaTelefono, el.dataset.citaNombre);
+      }
     });
   });
   document.querySelectorAll('.cita-atendida-btn').forEach(el=>{
