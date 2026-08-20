@@ -26,11 +26,18 @@ function calcular_plazo_demanda(string $fechaDespido, ?string $fechaSolicitudCon
     }
     $ahora = $hoy !== null ? new DateTimeImmutable($hoy) : new DateTimeImmutable();
 
-    // Se usa 60 días fijos (no "de fecha a fecha" mes calendario, que a
-    // veces da 61-62 días según qué meses abarque) — a propósito, para
-    // quedar siempre del lado conservador y nunca decirle a alguien que le
-    // quedan más días de los que en realidad tiene.
-    $limiteOriginal = $despido->modify('+60 days');
+    // El plazo de "2 meses" (Art. 518 LFT) puede interpretarse como 60 días
+    // naturales fijos, o como 2 meses de fecha a fecha (Art. 1180 Código
+    // Civil Federal, supletorio) — y estas dos formas NO siempre coinciden:
+    // según qué meses abarquen, el conteo de fecha a fecha puede dar de 59
+    // a 62 días, así que ninguna de las dos por sí sola es siempre la más
+    // corta. Para quedar SIEMPRE del lado conservador (nunca decirle a
+    // alguien que le quedan más días de los que en realidad tiene bajo
+    // cualquiera de las dos lecturas), se calculan ambas fechas límite y se
+    // usa la que venza PRIMERO.
+    $limite60Dias = $despido->modify('+60 days');
+    $limiteDosMeses = $despido->modify('+2 months');
+    $limiteOriginal = min($limite60Dias, $limiteDosMeses);
 
     // No inició trámite de conciliación todavía — el plazo corre normal
     // desde el despido.
