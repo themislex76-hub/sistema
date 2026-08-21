@@ -62,16 +62,13 @@ async function buscarTesisRecientes(page) {
   await page.goto(URL_BUSQUEDA, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
 
-  // Intenta buscar sin escribir nada (para traer TODO, filtrado despues
-  // solo por materia) -- si el sitio exige texto, esto puede no traer
-  // resultados; en ese caso el aviso de la corrida lo va a dejar ver.
-  const botonBuscar = page.locator('button:has(svg), [role="button"]').filter({ hasText: '' }).first();
-  try {
-    await page.getByPlaceholder(/Introduzca alguna palabra/i).press('Enter');
-  } catch (e) {
-    console.log('No se pudo enviar la busqueda vacia con Enter: ' + e.message);
-  }
-  await page.waitForTimeout(2000);
+  // La pantalla inicial trae un boton "Ver todo" junto a la caja de
+  // busqueda -- lleva directo al listado completo (todas las materias,
+  // todas las epocas e instancias, que ya vienen todas marcadas por
+  // default) sin tener que escribir ningun termino. De ahi se filtra por
+  // Materia = Laboral, que solo aparece ya adentro del listado.
+  await page.getByRole('button', { name: 'Ver todo' }).click();
+  await page.waitForTimeout(2500);
 
   await aplicarFiltroMateriaLaboral(page);
 
