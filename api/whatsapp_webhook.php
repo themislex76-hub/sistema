@@ -16,6 +16,17 @@ error_reporting(E_ALL);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
+// Todo el flujo (varias rondas de IA + el retraso natural de 20-28s + el
+// del PDF) puede tardar más de lo que Meta espera por la respuesta del
+// webhook. Sin esto, en cuanto Meta se desconecta por tardanza PHP mata el
+// script a la mitad -- normalmente justo antes de llegar al envío del PDF
+// del cálculo, que es el último paso y el que más tarda en llegar. Con
+// esto el proceso sigue corriendo hasta terminar aunque Meta ya se haya
+// desconectado, y set_time_limit evita que el límite por defecto del
+// hosting (típicamente 30s) lo corte tampoco.
+ignore_user_abort(true);
+set_time_limit(120);
+
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/ia_helpers.php';
 require_once __DIR__ . '/whatsapp_helpers.php';

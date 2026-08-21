@@ -15,6 +15,13 @@ error_reporting(E_ALL);
 ini_set('display_errors', '0');
 ini_set('log_errors', '1');
 
+// Mismo motivo que en whatsapp_webhook.php: el puente de Cloudflare (o el
+// hosting) puede desconectarse antes de que termine todo el flujo (IA +
+// retraso natural + envío del PDF del cálculo) -- sin esto PHP mata el
+// script a la mitad, normalmente justo antes de mandar el PDF.
+ignore_user_abort(true);
+set_time_limit(120);
+
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/ia_helpers.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
