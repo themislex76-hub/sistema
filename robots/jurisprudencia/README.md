@@ -48,8 +48,23 @@ completo (la terminal lo muestra) y compártelo para ajustarlo.
 
 1. Entra al buscador de tesis del Semanario Judicial, filtra por materia
    "Laboral" y ordena por fecha de publicación más reciente.
-2. Para cada tesis que no haya visto antes (guarda un registro en
-   `procesados_jurisprudencia.json`, en esta misma carpeta, para no
+2. Recorre el listado **página por página** (no solo la primera), hasta
+   agotarlo. Para cada tesis que no haya visto antes (guarda un registro
+   en `procesados_jurisprudencia.json`, en esta misma carpeta, para no
    repetir trabajo), entra a su ficha completa y saca el texto íntegro.
-3. Manda todas las tesis nuevas al sistema (`jurisprudencia_ingest.php`),
-   que las guarda en una tabla nueva (`jurisprudencia_tesis`).
+3. Manda las tesis nuevas al sistema (`jurisprudencia_ingest.php`) en
+   lotes de 25, guardando el avance sobre la marcha — si algo se
+   interrumpe a medio camino, no se pierde lo ya procesado.
+
+### ⏱️ La primera corrida puede tardar horas — es normal
+
+Como la biblioteca empieza vacía, la primera vez que corras el robot va a
+recorrer **todo el historial** de tesis en materia laboral (miles), no
+solo las más recientes — si no, el buscador con IA no tendría con qué
+trabajar. Con miles de fichas que visitar una por una, esto puede tardar
+varias horas. Déjalo correr sin cerrar la ventana; la consola va
+mostrando el progreso página por página y tesis por tesis.
+
+Las corridas siguientes (una vez a la semana) sí son rápidas: en cuanto
+el robot llega a una página del listado donde ya conoce todas las tesis,
+se detiene ahí — no vuelve a recorrer el historial completo cada semana.

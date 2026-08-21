@@ -10,6 +10,12 @@
 // usa un navegador automatizado como el robot de Edomex, no peticiones
 // HTTP simples como el de CDMX. Pensado para correr una vez por semana.
 //
+// Recorre el listado completo pagina por pagina, no solo la primera. La
+// primera corrida (biblioteca vacia) trae asi todo el historial de tesis
+// laborales -- puede tardar horas. Las corridas siguientes son rapidas:
+// en cuanto una pagina entera no aporta tesis nuevas, se detiene ahi (ver
+// buscarTesisRecientes).
+//
 // IMPORTANTE -- primera corrida: es muy probable que algun selector no
 // funcione a la primera (el sitio nunca se probo en vivo desde aqui,
 // solo se revisaron capturas de pantalla). Si truena, manda el mensaje
@@ -77,39 +83,11 @@ async function aplicarFiltroMateriaLaboral(page) {
   await page.waitForTimeout(1500);
 }
 
-async function buscarTesisRecientes(page) {
-  await page.goto(URL_BUSQUEDA, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1500);
-
-  // La pantalla inicial trae un boton "Ver todo" junto a la caja de
-  // busqueda -- lleva directo al listado completo (todas las materias,
-  // todas las epocas e instancias, que ya vienen todas marcadas por
-  // default) sin tener que escribir ningun termino. De ahi se filtra por
-  // Materia = Laboral, que solo aparece ya adentro del listado.
-  // El texto visible es "Ver todo", pero existe duplicado en el HTML (una
-  // version de escritorio y otra de movil, la que no se ve sigue estando
-  // en el DOM) -- el boton de escritorio tiene como nombre accesible real
-  // "Realizar busqueda", que es lo que lo identifica sin ambiguedad.
-  await page.getByRole('button', { name: 'Realizar búsqueda' }).click();
-  await page.waitForTimeout(2500);
-
-  await aplicarFiltroMateriaLaboral(page);
-
-  // Ordena por fecha de publicacion mas reciente -- ya suele venir asi por
-  // default, pero se fuerza por si acaso.
-  try {
-    await page.locator('text=/Ordenar por/i').locator('..').locator('select, [role="combobox"]').first().click();
-    await page.waitForTimeout(500);
-    await page.getByText(/Fecha de publicaci[oó]n \(reciente/i).click();
-    await page.waitForTimeout(1500);
-  } catch (e) {
-    console.log('No se pudo forzar el orden por fecha reciente (puede que ya viniera asi): ' + e.message);
-  }
-
+// Lee las tarjetas de resultado visibles en la pagina actual del listado
+// (sin paginar) -- se usa una vez por cada pagina que recorre buscarTesisRecientes.
+async function leerTarjetasPaginaActual(page) {
   const tarjetas = page.locator('text=/Registro digital:\\s*\\d+/');
   const total = await tarjetas.count();
-  console.log(total + ' resultado(s) visibles en la primera pagina.');
-
   const resultados = [];
   for (let i = 0; i < total; i++) {
     const bloque = tarjetas.nth(i).locator('..');
@@ -133,6 +111,114 @@ async function buscarTesisRecientes(page) {
   return resultados;
 }
 
+// Intenta avanzar el listado a la siguiente pagina. Devuelve true si avanzo,
+// false si ya no hay mas paginas (boton ausente, deshabilitado, o no se
+// encontro con ninguno de los selectores conocidos) -- en ese caso se
+// asume que se llego al final del listado, no que algo tronó.
+async function avanzarSiguientePagina(page) {
+  const candidatos = [
+    page.getByRole('button', { name: /siguiente|next/i }),
+    page.locator('button[aria-label*="iguiente" i]'),
+    page.locator('button.mat-paginator-navigation-next'),
+  ];
+  for (const candidato of candidatos) {
+    const boton = candidato.first();
+    if (await boton.count() === 0) continue;
+    if (!(await boton.isVisible().catch(() => false))) continue;
+    if (await boton.isDisabled().catch(() => true)) return false;
+    await boton.click().catch(() => {});
+    await page.waitForTimeout(1500);
+    return true;
+  }
+  return false;
+}
+
+// Si el listado permite elegir cuantos resultados mostrar por pagina, se
+// pone el maximo disponible -- reduce el numero de "siguiente" que hay que
+// dar para recorrer el historial completo. No es grave si no lo encuentra
+// (el sitio pudo cambiar ese control, o no existir): sigue con lo que ya
+// venia por default.
+async function maximizarResultadosPorPagina(page) {
+  try {
+    const selector = page.locator('text=/por p[aá]gina/i').locator('..').locator('select, [role="combobox"]').first();
+    if (await selector.count() === 0) return;
+    await selector.click();
+    await page.waitForTimeout(500);
+    const opciones = page.locator('[role="option"], option');
+    const n = await opciones.count();
+    if (n === 0) return;
+    await opciones.nth(n - 1).click();
+    await page.waitForTimeout(1500);
+  } catch (e) {
+    console.log('No se pudo ajustar resultados por pagina (se sigue con el default): ' + e.message);
+  }
+}
+
+async function buscarTesisRecientes(page, procesados) {
+  await page.goto(URL_BUSQUEDA, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
+
+  // La pantalla inicial trae un boton "Ver todo" junto a la caja de
+  // busqueda -- lleva directo al listado completo (todas las materias,
+  // todas las epocas e instancias, que ya vienen todas marcadas por
+  // default) sin tener que escribir ningun termino. De ahi se filtra por
+  // Materia = Laboral, que solo aparece ya adentro del listado.
+  // El texto visible es "Ver todo", pero existe duplicado en el HTML (una
+  // version de escritorio y otra de movil, la que no se ve sigue estando
+  // en el DOM) -- el boton de escritorio tiene como nombre accesible real
+  // "Realizar busqueda", que es lo que lo identifica sin ambiguedad.
+  await page.getByRole('button', { name: 'Realizar búsqueda' }).click();
+  await page.waitForTimeout(2500);
+
+  await aplicarFiltroMateriaLaboral(page);
+
+  // Ordena por fecha de publicacion mas reciente -- ya suele venir asi por
+  // default, pero se fuerza por si acaso. Es indispensable para que el
+  // "paro anticipado" de abajo tenga sentido (si no viniera ordenado de lo
+  // mas nuevo a lo mas viejo, parar en la primera tesis ya conocida podria
+  // saltarse tesis nuevas que aparecieran despues en el listado).
+  try {
+    await page.locator('text=/Ordenar por/i').locator('..').locator('select, [role="combobox"]').first().click();
+    await page.waitForTimeout(500);
+    await page.getByText(/Fecha de publicaci[oó]n \(reciente/i).click();
+    await page.waitForTimeout(1500);
+  } catch (e) {
+    console.log('No se pudo forzar el orden por fecha reciente (puede que ya viniera asi): ' + e.message);
+  }
+
+  await maximizarResultadosPorPagina(page);
+
+  const resultados = [];
+  const vistos = new Set();
+  let pagina = 1;
+  const MAX_PAGINAS = 2000; // limite de seguridad, muy por encima de lo esperable
+  while (pagina <= MAX_PAGINAS) {
+    const enPagina = await leerTarjetasPaginaActual(page);
+    let nuevosEnPagina = 0;
+    for (const r of enPagina) {
+      if (vistos.has(r.registro)) continue;
+      vistos.add(r.registro);
+      resultados.push(r);
+      if (!procesados.has(r.registro)) nuevosEnPagina++;
+    }
+    console.log('  Pagina ' + pagina + ': ' + enPagina.length + ' tesis (' + nuevosEnPagina + ' nueva(s) sin procesar).');
+
+    // Corrida inicial (biblioteca vacia): esto nunca se cumple, asi que
+    // recorre el historial completo. Corridas siguientes: en cuanto una
+    // pagina entera no aporta nada nuevo, se asume (dado el orden por fecha
+    // reciente) que de ahi en adelante todo es ya conocido, y no hace falta
+    // seguir avanzando semana tras semana por miles de tesis viejas.
+    if (pagina > 1 && nuevosEnPagina === 0 && enPagina.length > 0) break;
+
+    const avanzo = await avanzarSiguientePagina(page);
+    if (!avanzo) break;
+    pagina++;
+  }
+
+  console.log(resultados.length + ' resultado(s) revisados en total (' + pagina + ' pagina(s)).');
+  return resultados;
+}
+
 async function obtenerDetalleTesis(page, registro) {
   await page.goto(BASE + '/detalle/tesis/' + registro, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1000);
@@ -153,18 +239,26 @@ async function reportarTesis(lote) {
   });
 }
 
+// Se manda en lotes (no todo junto hasta el final) por dos razones: en una
+// corrida grande (primera vez, historial completo) un solo POST con miles
+// de tesis con texto completo podria exceder los limites de tamano del
+// servidor, y si algo se interrumpe a medio camino no se pierde el avance
+// ya guardado.
+const TAMANO_LOTE = 25;
+
 async function main() {
   console.log(new Date().toISOString(), 'Iniciando revision de jurisprudencia laboral...');
   const procesados = cargarProcesados();
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
+  let totalGuardadas = 0;
   try {
-    const resultados = await buscarTesisRecientes(page);
+    const resultados = await buscarTesisRecientes(page, procesados);
     const nuevos = resultados.filter(r => r.registro && !procesados.has(r.registro));
     console.log(nuevos.length + ' tesis nueva(s) sin procesar de ' + resultados.length + ' revisadas.');
 
-    const lote = [];
+    let lote = [];
     for (const r of nuevos) {
       console.log('  Descargando detalle de la tesis ' + r.registro + '...');
       try {
@@ -178,12 +272,25 @@ async function main() {
         procesados.add(r.registro);
       } catch (e) {
         console.log('    No se pudo leer el detalle: ' + e.message);
+        continue;
+      }
+
+      if (lote.length >= TAMANO_LOTE) {
+        await reportarTesis(lote);
+        totalGuardadas += lote.length;
+        console.log('  -> ' + lote.length + ' tesis guardada(s) (' + totalGuardadas + ' en total hasta ahora).');
+        lote = [];
+        guardarProcesados(procesados);
       }
     }
 
     if (lote.length) {
       await reportarTesis(lote);
-      console.log(lote.length + ' tesis nueva(s) guardada(s) en la biblioteca.');
+      totalGuardadas += lote.length;
+    }
+
+    if (totalGuardadas) {
+      console.log(totalGuardadas + ' tesis nueva(s) guardada(s) en la biblioteca.');
     } else {
       console.log('Nada nuevo que guardar esta vez.');
     }
