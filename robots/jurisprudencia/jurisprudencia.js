@@ -49,12 +49,31 @@ function parseFechaPublicacion(texto) {
   return m[3] + '-' + mes + '-' + m[1].padStart(2, '0');
 }
 
+// El sitio es una app Angular que duplica varios controles en el HTML (una
+// version de escritorio y otra de movil -- la que no se usa sigue
+// presente pero oculta con CSS), lo que revienta los locators por texto
+// exacto con "strict mode violation: resolved to 2 elements". Esta
+// funcion elige, de todos los que coincidan con el texto, el primero que
+// de verdad este visible en pantalla.
+async function clickTextoVisible(page, texto, exact = true) {
+  const candidatos = page.getByText(texto, { exact });
+  const n = await candidatos.count();
+  for (let i = 0; i < n; i++) {
+    const el = candidatos.nth(i);
+    if (await el.isVisible().catch(() => false)) {
+      await el.click();
+      return;
+    }
+  }
+  throw new Error('No se encontro ningun elemento visible con el texto "' + texto + '" (' + n + ' candidato(s) en el DOM).');
+}
+
 async function aplicarFiltroMateriaLaboral(page) {
   // El panel de filtros a la izquierda tiene un acordeon "Materia" -- se
   // abre, se marca la casilla "Laboral", y el listado se filtra solo.
-  await page.getByText('Materia', { exact: true }).click();
+  await clickTextoVisible(page, 'Materia');
   await page.waitForTimeout(800);
-  await page.getByText('Laboral', { exact: true }).click();
+  await clickTextoVisible(page, 'Laboral');
   await page.waitForTimeout(1500);
 }
 
@@ -67,7 +86,11 @@ async function buscarTesisRecientes(page) {
   // todas las epocas e instancias, que ya vienen todas marcadas por
   // default) sin tener que escribir ningun termino. De ahi se filtra por
   // Materia = Laboral, que solo aparece ya adentro del listado.
-  await page.getByText('Ver todo', { exact: true }).click();
+  // El texto visible es "Ver todo", pero existe duplicado en el HTML (una
+  // version de escritorio y otra de movil, la que no se ve sigue estando
+  // en el DOM) -- el boton de escritorio tiene como nombre accesible real
+  // "Realizar busqueda", que es lo que lo identifica sin ambiguedad.
+  await page.getByRole('button', { name: 'Realizar búsqueda' }).click();
   await page.waitForTimeout(2500);
 
   await aplicarFiltroMateriaLaboral(page);
