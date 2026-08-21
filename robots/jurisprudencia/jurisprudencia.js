@@ -67,7 +67,7 @@ async function buscarTesisRecientes(page) {
   // todas las epocas e instancias, que ya vienen todas marcadas por
   // default) sin tener que escribir ningun termino. De ahi se filtra por
   // Materia = Laboral, que solo aparece ya adentro del listado.
-  await page.getByRole('button', { name: 'Ver todo' }).click();
+  await page.getByText('Ver todo', { exact: true }).click();
   await page.waitForTimeout(2500);
 
   await aplicarFiltroMateriaLaboral(page);
