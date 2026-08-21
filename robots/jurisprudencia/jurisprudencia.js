@@ -112,21 +112,33 @@ async function leerTarjetasPaginaActual(page) {
 }
 
 // Intenta avanzar el listado a la siguiente pagina. Devuelve true si avanzo,
-// false si ya no hay mas paginas (boton ausente, deshabilitado, o no se
-// encontro con ninguno de los selectores conocidos) -- en ese caso se
-// asume que se llego al final del listado, no que algo tronó.
-async function avanzarSiguientePagina(page) {
+// false si ya no hay mas paginas -- en ese caso se asume que se llego al
+// final del listado, no que algo tronó.
+//
+// El paginador de este sitio NO es un boton "Siguiente" -- es una fila de
+// numeros de pagina clicables (1, 2, 3, 4...) mas flechas de
+// primera/ultima pagina en los extremos. Por eso se navega dando clic
+// directo al numero de la pagina que sigue (paginaActual + 1), buscandolo
+// solo entre botones/enlaces (para no toparse por accidente con ese mismo
+// numero suelto en el texto de alguna tesis). Si ese numero no aparece
+// visible (p.ej. el paginador solo muestra una ventana de numeros cercanos
+// y no se corrio como se esperaba), se intenta como respaldo con las
+// flechas de avance por si el sitio cambia de diseño.
+async function avanzarSiguientePagina(page, paginaActual) {
+  const siguienteNumero = String(paginaActual + 1);
   const candidatos = [
+    page.getByRole('button', { name: siguienteNumero, exact: true }),
+    page.getByRole('link', { name: siguienteNumero, exact: true }),
     page.getByRole('button', { name: /siguiente|next/i }),
     page.locator('button[aria-label*="iguiente" i]'),
     page.locator('button.mat-paginator-navigation-next'),
   ];
   for (const candidato of candidatos) {
-    const boton = candidato.first();
-    if (await boton.count() === 0) continue;
-    if (!(await boton.isVisible().catch(() => false))) continue;
-    if (await boton.isDisabled().catch(() => true)) return false;
-    await boton.click().catch(() => {});
+    const el = candidato.first();
+    if (await el.count() === 0) continue;
+    if (!(await el.isVisible().catch(() => false))) continue;
+    if (await el.isDisabled().catch(() => false)) continue;
+    await el.click().catch(() => {});
     await page.waitForTimeout(1500);
     return true;
   }
@@ -210,7 +222,7 @@ async function buscarTesisRecientes(page, procesados) {
     // seguir avanzando semana tras semana por miles de tesis viejas.
     if (pagina > 1 && nuevosEnPagina === 0 && enPagina.length > 0) break;
 
-    const avanzo = await avanzarSiguientePagina(page);
+    const avanzo = await avanzarSiguientePagina(page, pagina);
     if (!avanzo) break;
     pagina++;
   }
