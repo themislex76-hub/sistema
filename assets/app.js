@@ -3842,11 +3842,22 @@ function conversacionesHTML(){
       <div class="notice">Todavía no hay conversaciones registradas del bot de WhatsApp.</div>
     </div></div>`;
   }
+  // El buscador del topbar (nombre, teléfono, o texto del último mensaje)
+  // no filtraba nada en esta vista — se conectó aquí, igual que ya
+  // filtraba en Expedientes y Prospectos.
+  const buscando = SEARCH_TERM.trim() !== '';
+  const q = SEARCH_TERM.trim().toLowerCase();
+  const lista = buscando
+    ? CONVERSACIONES.filter(c =>
+        (c.telefono||'').toLowerCase().includes(q) ||
+        (c.prospecto_nombre||'').toLowerCase().includes(q) ||
+        (c.ultimo_texto||'').toLowerCase().includes(q))
+    : CONVERSACIONES;
   return statsHTML + `
   <div class="panel">
-    <div class="panel-head"><h3>Todas las conversaciones</h3><span class="count">${CONVERSACIONES.length}</span></div>
+    <div class="panel-head"><h3>Todas las conversaciones</h3><span class="count">${lista.length}</span></div>
     <div class="panel-body" style="padding:0;">
-      ${CONVERSACIONES.map(c=>{
+      ${!lista.length ? `<div class="notice" style="margin:16px;">Ninguna conversación coincide con "${escapeHTML(SEARCH_TERM.trim())}".</div>` : lista.map(c=>{
         const calificado = !!c.prospecto_tipo;
         return `
       <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${CONVERSACION_ABIERTA===c.telefono?'background:var(--parchment);':''}" data-conversacion-abrir="${escapeHTML(c.telefono)}">
