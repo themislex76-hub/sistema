@@ -10,11 +10,15 @@
 // usa un navegador automatizado como el robot de Edomex, no peticiones
 // HTTP simples como el de CDMX. Pensado para correr una vez por semana.
 //
-// Recorre el listado completo pagina por pagina, no solo la primera. La
-// primera corrida (biblioteca vacia) trae asi todo el historial de tesis
-// laborales -- puede tardar horas. Las corridas siguientes son rapidas:
-// en cuanto una pagina entera no aporta tesis nuevas, se detiene ahi (ver
-// buscarTesisRecientes).
+// Recorre el listado completo pagina por pagina, no solo la primera, y
+// marca tambien las epocas mas viejas (8a a 5a) que el sitio no
+// selecciona por default. La primera corrida (biblioteca vacia) trae asi
+// todo el historial de tesis laborales -- puede tardar horas. Las
+// corridas siguientes son rapidas: en cuanto una pagina entera no aporta
+// tesis nuevas, se detiene ahi (ver buscarTesisRecientes) -- a menos que
+// se corra con el argumento --completo (node jurisprudencia.js --completo),
+// que desactiva ese atajo y fuerza una recorrida de todo el listado. Hace
+// falta usar --completo si se agregan mas filtros/epocas en el futuro.
 //
 // IMPORTANTE -- primera corrida: es muy probable que algun selector no
 // funcione a la primera (el sitio nunca se probo en vivo desde aqui,
@@ -72,6 +76,30 @@ async function clickTextoVisible(page, texto, exact = true) {
     }
   }
   throw new Error('No se encontro ningun elemento visible con el texto "' + texto + '" (' + n + ' candidato(s) en el DOM).');
+}
+
+// La pantalla inicial trae una tabla de "epocas" (12a a 5a) con una
+// casilla por cada combinacion valida de epoca/instancia -- por default
+// solo vienen marcadas las epocas mas recientes (12a a 9a); las mas
+// viejas (8a, 7a, 6a, 5a) quedan sin marcar, y si no se corrige aqui el
+// robot nunca trae ese historial (se queda solo con tesis de los ultimos
+// anos). Cada casilla sin marcar muestra junto su etiqueta visible ("8a.
+// Epoca", etc, repetida una vez por instancia aplicable) -- se le da clic
+// a todas las que aparezcan de cada epoca vieja.
+async function seleccionarEpocasAntiguas(page) {
+  const epocas = ['8a. Época', '7a. Época', '6a. Época', '5a. Época'];
+  for (const etiqueta of epocas) {
+    const candidatos = page.getByText(etiqueta, { exact: true });
+    const n = await candidatos.count();
+    for (let i = 0; i < n; i++) {
+      const el = candidatos.nth(i);
+      if (await el.isVisible().catch(() => false)) {
+        await el.click().catch(() => {});
+        await page.waitForTimeout(200);
+      }
+    }
+  }
+  await page.waitForTimeout(500);
 }
 
 async function aplicarFiltroMateriaLaboral(page) {
@@ -166,15 +194,17 @@ async function maximizarResultadosPorPagina(page) {
   }
 }
 
-async function buscarTesisRecientes(page, procesados) {
+async function buscarTesisRecientes(page, procesados, modoCompleto) {
   await page.goto(URL_BUSQUEDA, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
 
+  await seleccionarEpocasAntiguas(page);
+
   // La pantalla inicial trae un boton "Ver todo" junto a la caja de
   // busqueda -- lleva directo al listado completo (todas las materias,
-  // todas las epocas e instancias, que ya vienen todas marcadas por
-  // default) sin tener que escribir ningun termino. De ahi se filtra por
-  // Materia = Laboral, que solo aparece ya adentro del listado.
+  // todas las epocas e instancias que hayan quedado marcadas) sin tener
+  // que escribir ningun termino. De ahi se filtra por Materia = Laboral,
+  // que solo aparece ya adentro del listado.
   // El texto visible es "Ver todo", pero existe duplicado en el HTML (una
   // version de escritorio y otra de movil, la que no se ve sigue estando
   // en el DOM) -- el boton de escritorio tiene como nombre accesible real
@@ -220,7 +250,9 @@ async function buscarTesisRecientes(page, procesados) {
     // pagina entera no aporta nada nuevo, se asume (dado el orden por fecha
     // reciente) que de ahi en adelante todo es ya conocido, y no hace falta
     // seguir avanzando semana tras semana por miles de tesis viejas.
-    if (pagina > 1 && nuevosEnPagina === 0 && enPagina.length > 0) break;
+    // Con --completo se desactiva este atajo (ver mas abajo por que hace
+    // falta a veces incluso con la biblioteca no vacia).
+    if (!modoCompleto && pagina > 1 && nuevosEnPagina === 0 && enPagina.length > 0) break;
 
     const avanzo = await avanzarSiguientePagina(page, pagina);
     if (!avanzo) break;
@@ -258,15 +290,26 @@ async function reportarTesis(lote) {
 // ya guardado.
 const TAMANO_LOTE = 25;
 
+// --completo fuerza una recorrida de todo el listado sin el atajo de parar
+// en cuanto una pagina ya sea toda conocida. Hace falta corerlo asi al
+// menos una vez cada vez que cambia lo que se busca (p.ej. se agregan
+// epocas nuevas al filtro) -- si no, el atajo se dispara en la primera
+// pagina ya conocida (las tesis recientes, que siempre salen primero) y
+// nunca llega a las tesis "nuevas para el filtro" que quedan mas atras en
+// el listado. En corridas normales (sin el flag) no hace falta: una vez
+// que la biblioteca ya tiene el historial completo para el filtro actual,
+// el atajo es seguro y hace las corridas semanales rapidas.
+const MODO_COMPLETO = process.argv.includes('--completo');
+
 async function main() {
-  console.log(new Date().toISOString(), 'Iniciando revision de jurisprudencia laboral...');
+  console.log(new Date().toISOString(), 'Iniciando revision de jurisprudencia laboral...' + (MODO_COMPLETO ? ' (modo completo, sin atajos)' : ''));
   const procesados = cargarProcesados();
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
   let totalGuardadas = 0;
   try {
-    const resultados = await buscarTesisRecientes(page, procesados);
+    const resultados = await buscarTesisRecientes(page, procesados, MODO_COMPLETO);
     const nuevos = resultados.filter(r => r.registro && !procesados.has(r.registro));
     console.log(nuevos.length + ' tesis nueva(s) sin procesar de ' + resultados.length + ' revisadas.');
 

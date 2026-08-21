@@ -68,3 +68,29 @@ mostrando el progreso página por página y tesis por tesis.
 Las corridas siguientes (una vez a la semana) sí son rápidas: en cuanto
 el robot llega a una página del listado donde ya conoce todas las tesis,
 se detiene ahí — no vuelve a recorrer el historial completo cada semana.
+
+### `node jurisprudencia.js --completo`
+
+El listado del Semanario Judicial trae por default marcadas solo las
+épocas más recientes (12a a 9a); el robot marca también las más viejas
+(8a a 5a) antes de buscar, para no perderse ese historial.
+
+El atajo de "parar en cuanto una página ya sea toda conocida" asume que
+las tesis nuevas siempre aparecen primero (orden por fecha reciente) — lo
+cual deja de ser cierto justo después de agregar un filtro nuevo (como
+cuando se agregaron las épocas viejas): las tesis "nuevas para el filtro"
+quedan mezcladas más atrás en el listado, detrás de miles de tesis
+recientes que el robot ya conoce, y el atajo pararía antes de llegar a
+ellas.
+
+Por eso, cada vez que se cambie qué se busca (se agregue una época,
+instancia, etc. al filtro), hay que correr **una vez** con:
+
+```
+node jurisprudencia.js --completo
+```
+
+Esto desactiva el atajo y fuerza una recorrida de todo el listado
+(tardará como la primera corrida). Una vez que termine, las corridas
+normales (`node jurisprudencia.js`, sin el argumento) vuelven a ser
+rápidas.
