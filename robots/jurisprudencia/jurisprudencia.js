@@ -194,6 +194,22 @@ async function maximizarResultadosPorPagina(page) {
   }
 }
 
+// Corre una promesa con un limite de tiempo -- si se pasa, la rechaza en
+// vez de dejarla colgada para siempre. Playwright ya pone limite a cada
+// accion individual (clicks, etc.), pero por si alguna combinacion se
+// queda esperando de verdad (el sitio se atora, deja de responder, etc.)
+// esto es la ultima salvaguarda para que el robot nunca se quede pegado
+// sin avisar.
+function conLimiteTiempo(promesa, ms, etiqueta) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Se tardo mas de ' + Math.round(ms / 1000) + 's en: ' + etiqueta)), ms);
+    promesa.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
+}
+
 async function buscarTesisRecientes(page, procesados, modoCompleto) {
   await page.goto(URL_BUSQUEDA, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1500);
@@ -234,8 +250,22 @@ async function buscarTesisRecientes(page, procesados, modoCompleto) {
   const vistos = new Set();
   let pagina = 1;
   const MAX_PAGINAS = 2000; // limite de seguridad, muy por encima de lo esperable
+  // Si algun paso se queda atorado mas de esto (el sitio deja de responder,
+  // se atora en alguna animacion, etc.), se toma una foto de lo que se ve
+  // en ese momento (debug_pagina_atascada.png, en esta misma carpeta) y se
+  // corta el listado ahi -- mejor eso que quedarse pegado para siempre sin
+  // avisar. Con la foto se puede diagnosticar que fue.
+  const LIMITE_POR_PASO_MS = 60000;
   while (pagina <= MAX_PAGINAS) {
-    const enPagina = await leerTarjetasPaginaActual(page);
+    let enPagina;
+    try {
+      enPagina = await conLimiteTiempo(leerTarjetasPaginaActual(page), LIMITE_POR_PASO_MS, 'leer la pagina ' + pagina);
+    } catch (e) {
+      console.log('  ' + e.message + ' -- se toma una captura (debug_pagina_atascada.png) y se corta el listado aqui.');
+      await page.screenshot({ path: require('path').join(__dirname, 'debug_pagina_atascada.png'), fullPage: true }).catch(() => {});
+      break;
+    }
+
     let nuevosEnPagina = 0;
     for (const r of enPagina) {
       if (vistos.has(r.registro)) continue;
@@ -254,7 +284,14 @@ async function buscarTesisRecientes(page, procesados, modoCompleto) {
     // falta a veces incluso con la biblioteca no vacia).
     if (!modoCompleto && pagina > 1 && nuevosEnPagina === 0 && enPagina.length > 0) break;
 
-    const avanzo = await avanzarSiguientePagina(page, pagina);
+    let avanzo;
+    try {
+      avanzo = await conLimiteTiempo(avanzarSiguientePagina(page, pagina), LIMITE_POR_PASO_MS, 'avanzar de la pagina ' + pagina);
+    } catch (e) {
+      console.log('  ' + e.message + ' -- se toma una captura (debug_pagina_atascada.png) y se corta el listado aqui.');
+      await page.screenshot({ path: require('path').join(__dirname, 'debug_pagina_atascada.png'), fullPage: true }).catch(() => {});
+      break;
+    }
     if (!avanzo) break;
     pagina++;
   }
