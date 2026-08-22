@@ -281,7 +281,7 @@ function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
         return ['ok' => false, 'motivo' => 'Ya es un prospecto registrado (bot pausado a propósito) — pendiente de seguimiento personal en Prospectos (WhatsApp), no de una respuesta automática.'];
     }
 
-    $stmt = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
+    $stmt = $pdo->prepare('SELECT direccion, texto, creado_en FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
     $stmt->execute([':t' => $telefono]);
     $historial = array_reverse($stmt->fetchAll());
     if (!$historial) {
@@ -296,6 +296,25 @@ function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
     }
     if (!$historial) {
         return ['ok' => false, 'motivo' => 'No queda nada pendiente que contestar.'];
+    }
+
+    // WhatsApp/Meta rechaza mandar un mensaje libre si ya pasaron más de 24h
+    // desde el último mensaje del cliente -- sin este freno, un número que
+    // quedó así (por lo que sea nunca se le contestó a tiempo) se queda
+    // "atorado" para siempre: cada corrida de este cron (cada 15-30 min, sin
+    // parar) volvía a llamar a la IA completa (prompt grande, hasta 4
+    // rondas) para terminar fallando el envío de todas formas, sin nunca
+    // resolverse -- un gasto real que solo crecía con cada número nuevo que
+    // caía en esta trampa. Se corta ANTES de gastar nada en la IA.
+    $ultimoEntrante = null;
+    for ($i = count($historial) - 1; $i >= 0; $i--) {
+        if ($historial[$i]['direccion'] === 'entrante') {
+            $ultimoEntrante = $historial[$i]['creado_en'];
+            break;
+        }
+    }
+    if ($ultimoEntrante !== null && (time() - strtotime($ultimoEntrante)) > 23 * 3600) {
+        return ['ok' => false, 'motivo' => 'Ya pasaron más de 23h desde el último mensaje del cliente -- WhatsApp ya no deja mandar un mensaje libre. No se llamó a la IA.'];
     }
 
     $mensajesIA = [];
