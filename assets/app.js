@@ -2587,7 +2587,7 @@ const VIEW_TITLES = {
   demandados:["Empresas demandadas", "Qué demandados se repiten, cuánto han pagado y qué tanto negocian"],
   exito:["Tasa de éxito", "Qué tan seguido se resuelven los asuntos a favor del trabajador"],
   manual:["Manual de uso", "Guía paso a paso del sistema"],
-  jurisprudencia:["Jurisprudencia", "Busca en la biblioteca de tesis de la SCJN — la IA responde solo con tesis reales guardadas aquí, nunca inventadas"],
+  jurisprudencia:["Jurisprudencia", "Describe los hechos de tu caso y encuentra las tesis de la SCJN que de verdad aplican — la IA responde solo con tesis reales guardadas aquí, nunca inventadas"],
   agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
   prospectos:["Prospectos (WhatsApp)", "Casos de despido, asesorías de pago y despachos interesados en Control de Expedientes, captados por el asistente de IA en WhatsApp"],
   conversaciones:["Conversaciones (WhatsApp)", "Todas las conversaciones del bot, calificaran o no como prospecto — para revisar y perfeccionar sus respuestas"],
@@ -3971,8 +3971,8 @@ function jurisprudenciaHTML(){
   return `
   <div class="panel" style="margin-bottom:16px;">
     <div class="panel-body" style="padding:20px 24px;">
-      <div class="notice" style="margin-bottom:14px;">Busca en la biblioteca de tesis y jurisprudencia laboral de la SCJN, compartida entre todos los despachos. La IA responde citando solo tesis reales guardadas aquí — nunca inventa una.</div>
-      <textarea id="jurisprudenciaPreguntaInput" placeholder="Escribe tu pregunta o el tema que buscas (ej. &quot;indemnización por riesgo de trabajo con incapacidad parcial permanente&quot;)..." style="width:100%; min-height:80px; padding:11px 13px; border:1px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; resize:vertical;">${escapeHTML(JURISPRUDENCIA_PREGUNTA)}</textarea>
+      <div class="notice" style="margin-bottom:14px;">Describe los hechos de tu caso (no hace falta que sea una pregunta) y la IA busca en la biblioteca de tesis y jurisprudencia laboral de la SCJN, compartida entre todos los despachos, cuáles de verdad aplican a ese caso concreto — citando solo tesis reales guardadas aquí, nunca inventa una.</div>
+      <textarea id="jurisprudenciaPreguntaInput" placeholder="Describe los hechos de tu caso, entre más detalle mejor (ej. &quot;el trabajador fue despedido pero el patrón argumenta que ya no se presentó a trabajar, sin haberle dado ningún aviso de rescisión por escrito&quot;)..." style="width:100%; min-height:110px; padding:11px 13px; border:1px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; resize:vertical;">${escapeHTML(JURISPRUDENCIA_PREGUNTA)}</textarea>
       <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:10px;">
         <span style="font-size:11.5px; color:var(--gray);">Ctrl+Enter para buscar</span>
         <button class="btn" id="jurisprudenciaBuscarBtn" ${JURISPRUDENCIA_CARGANDO?'disabled':''}>${JURISPRUDENCIA_CARGANDO ? 'Buscando... (puede tardar unos segundos)' : 'Buscar'}</button>
@@ -3982,7 +3982,7 @@ function jurisprudenciaHTML(){
   </div>
   ${r ? `
   <div class="panel" style="margin-bottom:16px;">
-    <div class="panel-head"><h3>Respuesta</h3></div>
+    <div class="panel-head"><h3>Análisis del caso</h3></div>
     <div class="panel-body" style="padding:20px 24px;">${mdBasicoHTML(r.respuesta)}</div>
   </div>
   ${r.tesis.length ? `

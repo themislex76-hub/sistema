@@ -19,8 +19,8 @@ require_csrf();
 
 $in = json_input();
 $pregunta = trim((string)($in['pregunta'] ?? ''));
-if ($pregunta === '') fail('Escribe tu pregunta.', 400);
-if (mb_strlen($pregunta) > 800) fail('La pregunta es demasiado larga.', 400);
+if ($pregunta === '') fail('Describe los hechos del caso.', 400);
+if (mb_strlen($pregunta) > 2000) fail('La descripción es demasiado larga.', 400);
 
 $credentialsFile = __DIR__ . '/anthropic_credentials.php';
 if (!file_exists($credentialsFile)) fail('Falta anthropic_credentials.php.', 500);
@@ -62,21 +62,26 @@ function jurisprudencia_llamar_claude(array $payload): string
     return trim($texto);
 }
 
-// Paso 1: convertir la pregunta (lenguaje natural, con palabras muy
-// comunes en cualquier tesis laboral -- "trabajador", "despedido",
-// "patrón") en 4-8 términos jurídicos precisos. Buscar con la pregunta
-// completa tal cual daba resultados pobres: MATCH...AGAINST en modo
-// natural le resta peso a las palabras que aparecen en casi todas las
-// tesis, así que con una pregunta larga casi no le quedaban palabras
-// realmente distintivas con las que discriminar.
+// Paso 1: un abogado describe los HECHOS de un caso real (no una pregunta
+// de tema) -- lleno de palabras que aparecen en casi cualquier tesis
+// laboral ("trabajador", "despedido", "patrón"). Buscar con el texto tal
+// cual daba resultados pobres: MATCH...AGAINST en modo natural le resta
+// peso a esas palabras tan comunes, así que con una descripción larga casi
+// no quedaban términos realmente distintivos con los que discriminar. Este
+// paso identifica las figuras/controversias jurídicas concretas que esos
+// hechos plantean (puede haber varias a la vez en un mismo caso) y las
+// convierte en términos de búsqueda.
 $palabrasClave = jurisprudencia_llamar_claude([
     'model' => IA_MODEL,
-    'max_tokens' => 100,
+    'max_tokens' => 120,
     'thinking' => ['type' => 'disabled'],
-    'system' => 'Convierte la pregunta de un abogado laboralista mexicano en 4 a 8 términos/frases jurídicas '
-        . 'precisas para buscar en un motor de búsqueda de texto sobre jurisprudencia y tesis de la SCJN '
-        . '(ej. "abandono de empleo", "aviso de rescisión", "prescripción despido injustificado"). Responde '
-        . 'ÚNICAMENTE con los términos separados por espacios, sin numerarlos, sin explicación, sin comillas.',
+    'system' => 'Un abogado laboralista mexicano te describe los HECHOS de un caso real (no es una pregunta de '
+        . 'tema general). Identifica las figuras y controversias jurídicas concretas que esos hechos plantean '
+        . '-- puede haber más de una a la vez (ej. un despido donde el patrón alega abandono de empleo puede '
+        . 'implicar a la vez: abandono de empleo, carga de la prueba del despido, aviso de rescisión, '
+        . 'prescripción). Conviértelas en 4 a 10 términos/frases jurídicas precisas para buscar en un motor de '
+        . 'búsqueda de texto sobre jurisprudencia y tesis de la SCJN. Responde ÚNICAMENTE con los términos '
+        . 'separados por espacios, sin numerarlos, sin explicación, sin comillas.',
     'messages' => [['role' => 'user', 'content' => $pregunta]],
 ]);
 if ($palabrasClave === '') $palabrasClave = $pregunta;
@@ -94,7 +99,7 @@ $stmt = $pdo->prepare(
      FROM jurisprudencia_tesis
      WHERE MATCH(rubro, texto_completo) AGAINST (:q2 IN NATURAL LANGUAGE MODE)
      ORDER BY relevancia DESC
-     LIMIT 10'
+     LIMIT 12'
 );
 $stmt->execute([':q1' => $palabrasClave, ':q2' => $palabrasClave]);
 $candidatas = $stmt->fetchAll();
@@ -126,21 +131,26 @@ $texto = jurisprudencia_llamar_claude([
     'max_tokens' => 2000,
     'thinking' => ['type' => 'disabled'],
     'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado del '
-        . 'despacho te hace una pregunta y te doy, junto con ella, una lista de tesis/jurisprudencia de la SCJN '
-        . 'que una búsqueda de texto encontró como posiblemente relacionadas -- la búsqueda es por palabras, así '
-        . 'que ALGUNAS de estas tesis pueden en realidad no aplicar a la pregunta. Tu trabajo: '
-        . "1) De la lista que te doy, identifica cuáles tesis SÍ aplican de verdad a la pregunta.\n"
-        . "2) Redacta una respuesta clara en español explicando cómo aplican, citando siempre el número de "
-        . "registro digital y el rubro de cada tesis que uses.\n"
-        . "3) Si NINGUNA de las tesis que te doy aplica realmente, dilo con claridad en vez de forzar una "
-        . "relación que no existe.\n"
+        . 'despacho te describe los HECHOS de un caso real (no es una pregunta de tema general) y te doy, junto '
+        . 'con ellos, una lista de tesis/jurisprudencia de la SCJN que una búsqueda de texto encontró como '
+        . 'posiblemente relacionadas -- la búsqueda es por palabras, así que ALGUNAS de estas tesis pueden en '
+        . 'realidad no aplicar al caso. Tu trabajo: '
+        . "1) De la lista que te doy, identifica cuáles tesis SÍ aplican de verdad a los hechos de este caso "
+        . "concreto (no basta que compartan tema general -- deben servirle de verdad para resolverlo o "
+        . "argumentarlo).\n"
+        . "2) Para cada una que SÍ aplique, explica en español claro y concreto cómo se conecta con los hechos "
+        . "específicos del caso -- qué le aporta al abogado (un argumento a su favor, un criterio sobre cómo "
+        . "computar un plazo, cómo se distribuye la carga de la prueba, etc.), citando siempre el número de "
+        . "registro digital y el rubro.\n"
+        . "3) Si NINGUNA de las tesis que te doy aplica realmente a este caso, dilo con claridad en vez de "
+        . "forzar una relación que no existe.\n"
         . "4) NUNCA menciones, cites, ni inventes una tesis que no esté en la lista que te doy -- son las únicas "
         . "que existen para efectos de esta respuesta. Si hace falta más contexto (fechas, datos del caso) para "
         . "orientar mejor, puedes pedirlo, pero primero da la mejor respuesta posible con lo que ya tienes.\n"
         . 'Sé directo y concreto -- le hablas a un abogado, no hace falta explicar conceptos básicos de derecho laboral.',
     'messages' => [[
         'role' => 'user',
-        'content' => "Pregunta: {$pregunta}\n\nTesis encontradas por la búsqueda:\n\n{$contexto}",
+        'content' => "Hechos del caso: {$pregunta}\n\nTesis encontradas por la búsqueda:\n\n{$contexto}",
     ]],
 ]);
 if ($texto === '') fail('La IA no devolvió texto.', 502);
