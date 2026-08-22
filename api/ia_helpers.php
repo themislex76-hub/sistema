@@ -881,6 +881,33 @@ function ia_fecha_actual_es(): string
         . ' de ' . $ahora->format('Y') . ', ' . $ahora->format('H:i') . ' (hora de Ciudad de México)';
 }
 
+// Agrega un breakpoint de caché al ÚLTIMO bloque de contenido del último
+// mensaje — así, además del bloque grande de system+tools (ver más abajo),
+// también se reutiliza en caché el historial de la conversación en sí. Esto
+// ayuda en dos casos: (1) dentro del mismo ciclo de "rondas" de
+// ia_responder_whatsapp, cuando Claude encadena una herramienta tras otra,
+// cada ronda reenvía el historial que acaba de crecer — sin esto, esa parte
+// se pagaba completa cada ronda; (2) entre mensajes seguidos de la misma
+// conversación de WhatsApp (la persona contesta rápido), el historial
+// previo se reutiliza en vez de recontarse. No muta $mensajes — regresa una
+// copia, porque ia_responder_whatsapp sigue usando el arreglo original para
+// las siguientes rondas.
+function ia_con_cache_en_ultimo_mensaje(array $mensajes): array
+{
+    if (!$mensajes) return $mensajes;
+    $ultimoIdx = array_key_last($mensajes);
+    $contenido = $mensajes[$ultimoIdx]['content'];
+    // El contenido de un mensaje puede venir como texto simple (turnos
+    // normales de usuario) o ya como arreglo de bloques (turnos con
+    // tool_use/tool_result) — cache_control solo se puede poner sobre un
+    // bloque, así que el texto simple se envuelve en uno.
+    $bloques = is_string($contenido) ? [['type' => 'text', 'text' => $contenido]] : $contenido;
+    $ultimoBloqueIdx = array_key_last($bloques);
+    $bloques[$ultimoBloqueIdx]['cache_control'] = ['type' => 'ephemeral'];
+    $mensajes[$ultimoIdx]['content'] = $bloques;
+    return $mensajes;
+}
+
 /**
  * Llama a la API de mensajes de Claude con el historial de mensajes dado.
  * Devuelve el arreglo decodificado de la respuesta, o null si falló.
@@ -890,9 +917,15 @@ function ia_llamar_claude(array $mensajes): ?array
     // El system prompt y las tools son fijos — se mandan idénticos en cada
     // llamada. Poner cache_control en el bloque de system cachea tools+system
     // juntos (tools se renderiza antes que system en la solicitud a la API),
-    // así que solo hace falta un breakpoint aquí. La primera llamada de cada
-    // ventana de caché (5 min) paga el precio normal; las siguientes pagan
-    // ~10% de esa parte del prompt en vez de 100%.
+    // así que solo hace falta un breakpoint aquí. TTL de 1 hora (en vez del
+    // default de 5 min): entre un mensaje de WhatsApp y el siguiente (de
+    // cualquier conversación, el caché es compartido entre todas) suele
+    // pasar más de 5 minutos casi siempre, así que el default expiraba el
+    // caché antes de que sirviera de nada la mayor parte del día — con 1h
+    // se reutiliza muchas más veces (el bloque de system+tools es grande,
+    // así que ahorra bastante), aunque cada escritura cueste el doble.
+    // La primera llamada de cada ventana paga el precio normal; las
+    // siguientes pagan ~10% de esa parte del prompt en vez de 100%.
     // La fecha/hora va en un SEGUNDO bloque de system, DESPUÉS del
     // breakpoint de caché y sin cache_control propio — el caché solo cubre
     // el prefijo hasta el último breakpoint, así que este bloque puede
@@ -916,11 +949,11 @@ function ia_llamar_claude(array $mensajes): ?array
         'max_tokens' => 4096,
         'thinking' => ['type' => 'disabled'],
         'system' => [
-            ['type' => 'text', 'text' => IA_SYSTEM_PROMPT, 'cache_control' => ['type' => 'ephemeral']],
+            ['type' => 'text', 'text' => IA_SYSTEM_PROMPT, 'cache_control' => ['type' => 'ephemeral', 'ttl' => '1h']],
             ['type' => 'text', 'text' => $fechaTexto],
         ],
         'tools' => IA_TOOLS,
-        'messages' => $mensajes,
+        'messages' => ia_con_cache_en_ultimo_mensaje($mensajes),
     ];
 
     $ch = curl_init('https://api.anthropic.com/v1/messages');
