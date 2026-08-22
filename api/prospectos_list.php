@@ -28,7 +28,11 @@ $sql = "SELECT p.*, e.exp AS expediente_exp, u.nombre AS asignado_nombre,
                (SELECT w.texto FROM whatsapp_conversaciones w
                 WHERE w.telefono = p.telefono ORDER BY w.id DESC LIMIT 1) AS ultimo_mensaje_texto,
                (SELECT w.direccion FROM whatsapp_conversaciones w
-                WHERE w.telefono = p.telefono ORDER BY w.id DESC LIMIT 1) AS ultimo_mensaje_direccion
+                WHERE w.telefono = p.telefono ORDER BY w.id DESC LIMIT 1) AS ultimo_mensaje_direccion,
+               EXISTS(
+                 SELECT 1 FROM citas_asesoria c
+                 WHERE c.telefono = p.telefono AND c.estado = 'confirmada'
+               ) AS tiene_asesoria_confirmada
         FROM prospectos p
         LEFT JOIN expedientes e ON e.id = p.expediente_id
         LEFT JOIN usuarios u ON u.id = p.asignado_a"
@@ -62,6 +66,7 @@ foreach ($stmt->fetchAll() as $r) {
         'ultima_actividad' => $r['ultima_actividad'] ?? $r['actualizado_en'],
         'ultimo_mensaje_texto' => $r['ultimo_mensaje_texto'],
         'ultimo_mensaje_direccion' => $r['ultimo_mensaje_direccion'],
+        'tiene_asesoria_confirmada' => (bool)$r['tiene_asesoria_confirmada'],
     ];
 }
 

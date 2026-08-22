@@ -3518,7 +3518,13 @@ function prospectosHTML(){
   // a una persona por nombre/teléfono la quiere encontrar sin importar su
   // estatus.
   const buscando = SEARCH_TERM.trim() !== '';
-  let base = PROSPECTOS.filter(p => p.tipo === PROSPECTOS_TAB);
+  // Un prospecto de despido que YA pagó y agendó su asesoría de $299 (pasa
+  // cuando alguien primero calificó como despido y luego también pagó la
+  // asesoría) se queda con tipo='despido' a propósito (nunca se degrada,
+  // ver guardar_prospecto en prospectos_helpers.php) — pero mostrarlo aquí
+  // solo confunde la pestaña de litigio con algo que ya se está manejando
+  // por Agenda general. Se oculta de esta lista, no se pierde el dato.
+  let base = PROSPECTOS.filter(p => p.tipo === PROSPECTOS_TAB && !(PROSPECTOS_TAB === 'despido' && p.tiene_asesoria_confirmada));
   if(buscando){
     const q = SEARCH_TERM.trim().toLowerCase();
     base = base.filter(p => (p.nombre||'').toLowerCase().includes(q) || (p.telefono||'').toLowerCase().includes(q));
@@ -3526,7 +3532,7 @@ function prospectosHTML(){
   const visibles = buscando ? base : base.filter(p => PROSPECTOS_MOSTRAR_ATENDIDOS || esPendiente(p));
   const atendidosOcultos = buscando ? [] : base.filter(p => !esPendiente(p));
 
-  const pendientesDespido = PROSPECTOS.filter(p=>p.tipo==='despido' && esPendiente(p)).length;
+  const pendientesDespido = PROSPECTOS.filter(p=>p.tipo==='despido' && !p.tiene_asesoria_confirmada && esPendiente(p)).length;
   const pendientesAsesoria = PROSPECTOS.filter(p=>p.tipo==='asesoria_paga' && esPendiente(p)).length;
   const pendientesControlExp = PROSPECTOS.filter(p=>p.tipo==='control_expedientes' && esPendiente(p)).length;
   const tabsHTML = `
