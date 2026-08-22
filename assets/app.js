@@ -3966,6 +3966,44 @@ function bindResumenEjecutivoEvents(){
   });
 }
 
+// Arma el texto completo de una tesis (para el botón "Copiar", tanto en la
+// lista como en el modal) -- listo para pegar en un escrito.
+function jurisprudenciaTextoParaCopiar(registro){
+  const t = ((JURISPRUDENCIA_RESULTADO && JURISPRUDENCIA_RESULTADO.tesis) || []).find(x=>x.registro_digital===registro);
+  if(!t) return '';
+  const meta = [t.instancia, t.epoca, t.fecha_publicacion ? ('Publicación: '+t.fecha_publicacion) : null].filter(Boolean).join(' · ');
+  return `[Registro digital: ${t.registro_digital}]\n${t.rubro}\n${meta}\n\n${t.texto_completo}`;
+}
+
+function copiarTesisAlPortapapeles(registro, btn){
+  const texto = jurisprudenciaTextoParaCopiar(registro);
+  if(!texto) return;
+  navigator.clipboard.writeText(texto).then(()=>{
+    if(!btn) return;
+    const original = btn.textContent;
+    btn.textContent = '¡Copiado!';
+    setTimeout(()=>{ btn.textContent = original; }, 1500);
+  }).catch(()=> alert('No se pudo copiar. Selecciona el texto manualmente.'));
+}
+
+// La respuesta de la IA menciona cada tesis por su registro digital (se le
+// pide explícitamente en el prompt) -- esta función convierte esos números,
+// donde aparezcan dentro del texto ya convertido a HTML, en una liga que
+// abre esa tesis directo (mismo modal que "Ver texto completo"), para no
+// tener que bajar hasta el final a buscarla.
+function jurisprudenciaVincularRegistros(html, listaTesis){
+  let resultado = html;
+  const vistos = new Set();
+  (listaTesis||[]).forEach(t=>{
+    const num = String(t.registro_digital);
+    if(vistos.has(num)) return;
+    vistos.add(num);
+    const re = new RegExp('\\b' + num + '\\b', 'g');
+    resultado = resultado.replace(re, `<a href="javascript:void(0)" data-jurisprudencia-ver="${num}" style="color:var(--brass-dim); font-weight:700; text-decoration:underline; cursor:pointer;" title="Ver esta tesis">${num}</a>`);
+  });
+  return resultado;
+}
+
 function jurisprudenciaHTML(){
   const r = JURISPRUDENCIA_RESULTADO;
   return `
@@ -3983,7 +4021,7 @@ function jurisprudenciaHTML(){
   ${r ? `
   <div class="panel" style="margin-bottom:16px;">
     <div class="panel-head"><h3>Análisis del caso</h3></div>
-    <div class="panel-body" style="padding:20px 24px;">${mdBasicoHTML(r.respuesta)}</div>
+    <div class="panel-body" style="padding:20px 24px;">${jurisprudenciaVincularRegistros(mdBasicoHTML(r.respuesta), r.tesis)}</div>
   </div>
   ${r.tesis.length ? `
   <div class="panel">
@@ -3994,6 +4032,7 @@ function jurisprudenciaHTML(){
         <div style="font-size:13px; font-weight:600; margin-bottom:4px;">${escapeHTML(t.rubro)}</div>
         <div style="font-size:11.5px; color:var(--gray); margin-bottom:6px;">Registro digital: ${t.registro_digital} · ${escapeHTML(t.instancia||'—')} · ${escapeHTML(t.epoca||'—')}${t.fecha_publicacion?(' · Publicación: '+escapeHTML(t.fecha_publicacion)):''}</div>
         <button class="btn secondary" data-jurisprudencia-ver="${t.registro_digital}" style="font-size:11px; padding:5px 10px;">Ver texto completo</button>
+        <button class="btn secondary" data-jurisprudencia-copiar="${t.registro_digital}" style="font-size:11px; padding:5px 10px;">Copiar</button>
       </div>`).join("")}
     </div>
   </div>` : ''}
@@ -4031,6 +4070,9 @@ function bindJurisprudenciaEvents(){
   document.querySelectorAll('[data-jurisprudencia-ver]').forEach(btn=>{
     btn.addEventListener('click', ()=> abrirJurisprudenciaTesisModal(parseInt(btn.dataset.jurisprudenciaVer)));
   });
+  document.querySelectorAll('[data-jurisprudencia-copiar]').forEach(btn=>{
+    btn.addEventListener('click', ()=> copiarTesisAlPortapapeles(parseInt(btn.dataset.jurisprudenciaCopiar), btn));
+  });
 }
 
 // Texto completo de una tesis consultada — en un modal, igual que el resto
@@ -4055,9 +4097,13 @@ function renderJurisprudenciaTesisModal(){
       <h2>${escapeHTML(t.rubro)}</h2>
       <div class="sub">Registro digital: ${t.registro_digital} · ${escapeHTML(t.instancia||'—')} · ${escapeHTML(t.epoca||'—')}</div>
     </div>
-    <div class="modal-body" style="white-space:pre-wrap; font-size:13px; line-height:1.5; padding:20px 24px;">${escapeHTML(t.texto_completo)}</div>
+    <div class="modal-body" style="padding:20px 24px;">
+      <button class="btn secondary" id="jurisprudenciaModalCopiarBtn" style="font-size:11px; padding:6px 12px; margin-bottom:14px;">Copiar tesis</button>
+      <div style="white-space:pre-wrap; font-size:13px; line-height:1.5;">${escapeHTML(t.texto_completo)}</div>
+    </div>
   </div>`;
   document.getElementById('modalClose').addEventListener('click', cerrarJurisprudenciaTesisModal);
+  document.getElementById('jurisprudenciaModalCopiarBtn').addEventListener('click', (e)=> copiarTesisAlPortapapeles(t.registro_digital, e.target));
 }
 
 // Detalle de una conversación — se muestra en un modal (ver
