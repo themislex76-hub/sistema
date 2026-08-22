@@ -84,8 +84,8 @@ foreach ($calculos as $c) {
         }
     } elseif ($c['segundo_seguimiento_en'] === null && $minutosSilencio >= 1200 && $minutosSilencio < 1440) {
         $mensaje = $montoTxt
-            ? "Última oportunidad de platicarlo hoy: sigues a tiempo de que el abogado revise tu caso y cómo recuperar los {$montoTxt} que calculamos — ¿lo agendamos?"
-            : "Última oportunidad de platicarlo hoy: ¿agendamos tu asesoría con el abogado para revisar tu caso a fondo?";
+            ? "¡Hola de nuevo! Sigo por aquí para cuando gustes — según lo que calculamos, podrías recuperar cerca de {$montoTxt}. Nomás avísame y te agendo la asesoría con el abogado, sin compromiso."
+            : "¡Hola de nuevo! Sigo por aquí para cuando gustes platicar tu caso con el abogado a fondo — nomás avísame y te agendo la asesoría, sin compromiso.";
         if (whatsapp_enviar($c['telefono'], $mensaje)) {
             $enviados2++;
             $pdo->prepare('UPDATE calculos_liquidacion SET segundo_seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $c['id']]);
