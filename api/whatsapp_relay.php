@@ -48,6 +48,29 @@ if ($sent === '' || !hash_equals(WHATSAPP_RELAY_KEY, $sent)) {
 $in = json_decode((string)file_get_contents('php://input'), true) ?: [];
 $mensajes = $in['mensajes'] ?? [];
 
+// El puente de Cloudflare (scripts/cloudflare_worker_whatsapp.js) espera
+// (await) esta respuesta antes de contestarle a Meta — si el
+// procesamiento real (llamada a la IA + el retraso natural de 20-28s)
+// tarda de más, Meta puede darse por vencido y REINTENTAR mandar el mismo
+// mensaje, lo que antes causaba que la IA contestara el mismo mensaje
+// varias veces (se detectó en producción: la misma pregunta contestada
+// 2-3 veces, con respuestas distintas entre sí). Por eso se responde AQUÍ
+// MISMO, de inmediato, y el procesamiento real sigue corriendo después en
+// segundo plano (fastcgi_finish_request corta la conexión con el cliente
+// pero el script PHP sigue vivo — ignore_user_abort de arriba evita que
+// lo maten a la mitad).
+http_response_code(200);
+echo 'OK';
+if (function_exists('fastcgi_finish_request')) {
+    fastcgi_finish_request();
+} else {
+    // Sin PHP-FPM no hay una forma tan limpia de cortar la conexión y
+    // seguir corriendo — se manda como mejor esfuerzo. No es tan
+    // confiable como fastcgi_finish_request, pero es mejor que nada.
+    if (ob_get_level() > 0) { ob_end_flush(); }
+    flush();
+}
+
 $pdo = db();
 
 foreach ($mensajes as $m) {
@@ -59,6 +82,5 @@ foreach ($mensajes as $m) {
         'text' => ['body' => (string)($m['texto'] ?? '')],
     ], $nombrePerfil);
 }
-
-http_response_code(200);
-echo 'OK';
+// La respuesta ya se mandó arriba, antes de procesar — no hay nada más
+// que responder aquí, el script solo termina de correr en silencio.

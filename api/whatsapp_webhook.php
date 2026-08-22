@@ -68,6 +68,30 @@ if ($firmaRecibida === '' || !hash_equals($firmaEsperada, $firmaRecibida)) {
     exit;
 }
 
+// Meta espera una confirmación rápida de este webhook (unos segundos) — si
+// no le llega a tiempo, REINTENTA mandar el mismo mensaje, y cada
+// reintento volvía a entrar aquí y a gastar una llamada completa de IA
+// para el mismo mensaje (se detectó en producción: la misma pregunta del
+// cliente contestada 2-3 veces, con respuestas distintas y hasta cálculos
+// con montos distintos entre sí). El procesamiento real (llamada a la IA,
+// posibles varias rondas, más el retraso natural de 20-28s) tarda mucho
+// más que ese margen. La solución: confirmarle a Meta AHORA MISMO, antes
+// de procesar nada, y dejar que el procesamiento real siga corriendo
+// después en segundo plano (fastcgi_finish_request corta la conexión con
+// el cliente pero el script PHP sigue vivo — ignore_user_abort de arriba
+// evita que lo maten a la mitad).
+http_response_code(200);
+echo 'EVENT_RECEIVED';
+if (function_exists('fastcgi_finish_request')) {
+    fastcgi_finish_request();
+} else {
+    // Sin PHP-FPM no hay una forma tan limpia de cortar la conexión y
+    // seguir corriendo — se manda como mejor esfuerzo. No es tan
+    // confiable como fastcgi_finish_request, pero es mejor que nada.
+    if (ob_get_level() > 0) { ob_end_flush(); }
+    flush();
+}
+
 $data = json_decode($raw, true) ?: [];
 $pdo = db();
 
@@ -96,6 +120,5 @@ foreach (($data['entry'] ?? []) as $entry) {
         }
     }
 }
-
-http_response_code(200);
-echo 'EVENT_RECEIVED';
+// La respuesta a Meta ya se mandó arriba, antes de procesar — no hay nada
+// más que responder aquí, el script solo termina de correr en silencio.

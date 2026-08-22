@@ -70,6 +70,19 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
             throw $e;
         }
     } else {
+        // Sin id (no debería pasar con un mensaje real de Meta, pero por
+        // si acaso) — se aplica un dedup de respaldo por contenido: si el
+        // mensaje entrante más reciente de este mismo teléfono, hace
+        // segundos, tiene el texto EXACTO, es casi seguro un reintento
+        // duplicado (nadie manda el mismo párrafo largo dos veces
+        // seguidas en cuestión de segundos), no un mensaje nuevo.
+        $chkDup = $pdo->prepare(
+            "SELECT id FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante' AND texto = :texto AND creado_en >= :desde ORDER BY id DESC LIMIT 1"
+        );
+        $chkDup->execute([':t' => $telefono, ':texto' => $texto, ':desde' => date('Y-m-d H:i:s', time() - 30)]);
+        if ($chkDup->fetch()) {
+            return;
+        }
         $stmt = $pdo->prepare(
             "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'entrante', :texto, 'ia')"
         );
