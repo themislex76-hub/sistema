@@ -33,7 +33,7 @@ require_csrf();
 // afinado y respuesta final) y puede tardar bastante más que una petición
 // normal del sistema -- sin esto, el límite de tiempo por defecto del
 // hosting compartido (típicamente 30s) corta el script a la mitad.
-set_time_limit(420);
+set_time_limit(480);
 
 $in = json_input();
 $pregunta = trim((string)($in['pregunta'] ?? ''));
@@ -76,6 +76,15 @@ function jurisprudencia_llamar_claude(array $payload, int $timeoutSegundos = 60)
     $texto = '';
     foreach (($data['content'] ?? []) as $bloque) {
         if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    // Diagnóstico: con thinking activado, es posible que se le acabe el
+    // límite de tokens "pensando" y no le quede espacio para el texto
+    // visible -- stop_reason='max_tokens' confirma justo eso, en vez de
+    // dejarlo como un misterio de "la IA no devolvió texto".
+    if (trim($texto) === '') {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [jurisprudencia_buscar] texto vacio | stop_reason=" . ($data['stop_reason'] ?? '?')
+            . " | usage=" . json_encode($data['usage'] ?? [], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
     }
     return trim($texto);
 }
@@ -314,7 +323,12 @@ $contexto = implode("\n\n---\n\n", $bloques);
 
 $texto = jurisprudencia_llamar_claude([
     'model' => IA_MODEL,
-    'max_tokens' => 4000,
+    // Generoso a propósito: con hasta 10 tesis completas de contexto y la
+    // instrucción de detectar contradicciones entre ellas, el razonamiento
+    // puede consumir bastantes tokens antes de llegar a escribir la
+    // respuesta visible -- ya pasó una vez que se quedó sin espacio y
+    // devolvió texto vacío.
+    'max_tokens' => 10000,
     // Aquí también importa que razone con cuidado, no solo en la selección:
     // cuando dos tesis tocan el mismo punto pero una es más reciente o de
     // mayor jerarquía (Pleno > Salas > Tribunales Colegiados), hay que
@@ -356,7 +370,7 @@ $texto = jurisprudencia_llamar_claude([
         'role' => 'user',
         'content' => "Hechos del caso: {$pregunta}\n\nTesis aplicables:\n\n{$contexto}",
     ]],
-], 120);
+], 200);
 if ($texto === '') fail('La IA no devolvió texto.', 502);
 
 // Se manda el texto_completo entero (sin el recorte que sí se le aplicó a
