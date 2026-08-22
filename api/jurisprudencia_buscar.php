@@ -132,6 +132,15 @@ function jurisprudencia_llamar_claude_paralelo(array $payloadsPorClave, int $tim
                 if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
             }
             $resultados[$clave] = trim($texto);
+            // Diagnóstico de caché: cache_read_input_tokens en 0 en corridas
+            // repetidas dentro de la misma hora significaría que el caché no
+            // está funcionando (algo en el prompt cambia byte por byte cada
+            // vez) -- con esto se puede confirmar sin adivinar.
+            $u = $data['usage'] ?? [];
+            file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+                . " | [jurisprudencia_buscar parte=$clave] cache_read=" . ($u['cache_read_input_tokens'] ?? 0)
+                . " cache_write=" . ($u['cache_creation_input_tokens'] ?? 0)
+                . " input_sin_cache=" . ($u['input_tokens'] ?? 0) . "\n", FILE_APPEND);
         } else {
             file_put_contents(__DIR__ . '/ia_debug.log', date('c')
                 . " | [jurisprudencia_buscar parte=$clave] status=$status | body=" . mb_substr((string)$raw, 0, 500) . "\n", FILE_APPEND);
@@ -208,29 +217,43 @@ $totalPartes = count($partes);
 // velocidad. Al ser cada parte mucho mas chica que el catalogo completo
 // (~700 lineas, no 4000+), el razonamiento aqui es mucho mas barato que
 // activarlo sobre el catalogo entero.
+// Caché de precios (1 hora): el system prompt de cada parte y el trozo del
+// catálogo que le toca son EXACTAMENTE los mismos, búsqueda tras búsqueda,
+// mientras la biblioteca no cambie (el robot solo la actualiza una vez por
+// semana) -- es la porción más grande de tokens de toda la búsqueda, así
+// que cachearla es donde más se nota. Los hechos del caso (lo único que
+// cambia) van en un bloque aparte, después del que se cachea, para no
+// invalidar nada. TTL de 1h (no el de 5 min por default) porque entre una
+// búsqueda y la siguiente del mismo abogado fácil pasan más de 5 minutos.
 $payloadsPartes = [];
 foreach ($partes as $i => $lineasParte) {
+    $systemParte = 'Un abogado laboralista mexicano te describe los HECHOS de un caso real (no es una pregunta '
+        . 'de tema general). Te doy UNA PARTE (parte ' . ($i + 1) . ' de ' . $totalPartes . ') del catálogo '
+        . 'de la biblioteca de tesis y jurisprudencia laboral de la SCJN con la que cuenta el despacho -- '
+        . 'cada línea es "registro digital: rubro". Es normal y está bien que en esta parte no haya ninguna '
+        . 'tesis aplicable (las demás partes se revisan por separado, en paralelo). Revisa esta parte '
+        . 'completa, línea por línea y con cuidado real (son cientos de líneas parecidas entre sí -- no la '
+        . 'hagas por encima, es fácil que a una lectura rápida se le escape justo la más relevante), con '
+        . 'criterio jurídico real (no coincidencia de palabras sueltas), e identifica hasta 5 tesis DE ESTA '
+        . 'PARTE que de verdad podrían aplicar a los hechos del caso -- ante la duda de si aplica, inclúyela '
+        . '(se van a revisar de nuevo después con más detalle). Un mismo caso puede plantear varias figuras '
+        . 'jurídicas a la vez (ej. un despido donde el patrón alega abandono de empleo puede implicar a la '
+        . 'vez: abandono de empleo, carga de la prueba del despido, aviso de rescisión, prescripción). '
+        . 'Responde con una última línea que empiece exactamente con "REGISTROS:" seguido de los números de '
+        . 'registro digital separados por comas, o "REGISTROS: NINGUNA" si ninguna de esta parte aplica.';
     $payloadsPartes[$i] = [
         'model' => IA_MODEL,
         'max_tokens' => 3000,
         'thinking' => ['type' => 'adaptive'],
-        'system' => 'Un abogado laboralista mexicano te describe los HECHOS de un caso real (no es una pregunta '
-            . 'de tema general). Te doy UNA PARTE (parte ' . ($i + 1) . ' de ' . $totalPartes . ') del catálogo '
-            . 'de la biblioteca de tesis y jurisprudencia laboral de la SCJN con la que cuenta el despacho -- '
-            . 'cada línea es "registro digital: rubro". Es normal y está bien que en esta parte no haya ninguna '
-            . 'tesis aplicable (las demás partes se revisan por separado, en paralelo). Revisa esta parte '
-            . 'completa, línea por línea y con cuidado real (son cientos de líneas parecidas entre sí -- no la '
-            . 'hagas por encima, es fácil que a una lectura rápida se le escape justo la más relevante), con '
-            . 'criterio jurídico real (no coincidencia de palabras sueltas), e identifica hasta 5 tesis DE ESTA '
-            . 'PARTE que de verdad podrían aplicar a los hechos del caso -- ante la duda de si aplica, inclúyela '
-            . '(se van a revisar de nuevo después con más detalle). Un mismo caso puede plantear varias figuras '
-            . 'jurídicas a la vez (ej. un despido donde el patrón alega abandono de empleo puede implicar a la '
-            . 'vez: abandono de empleo, carga de la prueba del despido, aviso de rescisión, prescripción). '
-            . 'Responde con una última línea que empiece exactamente con "REGISTROS:" seguido de los números de '
-            . 'registro digital separados por comas, o "REGISTROS: NINGUNA" si ninguna de esta parte aplica.',
+        'system' => [
+            ['type' => 'text', 'text' => $systemParte, 'cache_control' => ['type' => 'ephemeral', 'ttl' => '1h']],
+        ],
         'messages' => [[
             'role' => 'user',
-            'content' => "Hechos del caso: {$pregunta}\n\nParte del catálogo:\n\n" . implode("\n", $lineasParte),
+            'content' => [
+                ['type' => 'text', 'text' => "Parte del catálogo:\n\n" . implode("\n", $lineasParte), 'cache_control' => ['type' => 'ephemeral', 'ttl' => '1h']],
+                ['type' => 'text', 'text' => "Hechos del caso: {$pregunta}"],
+            ],
         ]],
     ];
 }
@@ -334,7 +357,11 @@ $texto = jurisprudencia_llamar_claude([
     // mayor jerarquía (Pleno > Salas > Tribunales Colegiados), hay que
     // notarlo y priorizarlo -- no tratarlas como si pesaran igual.
     'thinking' => ['type' => 'adaptive'],
-    'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado del '
+    // Este system prompt es siempre el mismo (no cambia con el caso ni con
+    // las tesis) -- se cachea igual que en la fase anterior, aunque aquí el
+    // ahorro es menor (es un texto mucho más chico que el catálogo).
+    'system' => [['type' => 'text', 'cache_control' => ['type' => 'ephemeral', 'ttl' => '1h'], 'text' =>
+        'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado del '
         . 'despacho te describe los HECHOS de un caso real y te doy, junto con ellos, el texto completo de las '
         . 'tesis de la SCJN que ya se identificaron como aplicables a ese caso (una revisión previa del catálogo '
         . 'completo de la biblioteca ya descartó las que no aplican -- todas las que ves aquí SÍ tienen relación '
@@ -366,6 +393,7 @@ $texto = jurisprudencia_llamar_claude([
         . "únicas que existen para efectos de esta respuesta. No repitas el rubro completo de cada tesis (ya se "
         . "ve aparte en pantalla) -- ve directo a cómo aplica. Nada de introducciones ni cierres genéricos fuera "
         . "de estas dos secciones.",
+    ]],
     'messages' => [[
         'role' => 'user',
         'content' => "Hechos del caso: {$pregunta}\n\nTesis aplicables:\n\n{$contexto}",
