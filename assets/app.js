@@ -4020,19 +4020,24 @@ function jurisprudenciaHTML(){
   </div>
   ${r ? `
   <div class="panel" style="margin-bottom:16px;">
-    <div class="panel-head"><h3>Análisis del caso</h3></div>
+    <div class="panel-head"><h3>Análisis del caso</h3>
+      <button class="btn secondary" id="jurisprudenciaCopiarAnalisisBtn" style="font-size:11px; padding:6px 10px;">Copiar análisis</button>
+    </div>
     <div class="panel-body" style="padding:20px 24px;">${jurisprudenciaVincularRegistros(mdBasicoHTML(r.respuesta), r.tesis)}</div>
   </div>
   ${r.tesis.length ? `
   <div class="panel">
     <div class="panel-head"><h3>Tesis consultadas (${r.tesis.length})</h3></div>
     <div class="panel-body" style="padding:6px 24px;">
-      ${r.tesis.map(t=>`
-      <div style="padding:12px 0; border-bottom:1px solid var(--border);">
-        <div style="font-size:13px; font-weight:600; margin-bottom:4px;">${escapeHTML(t.rubro)}</div>
-        <div style="font-size:11.5px; color:var(--gray); margin-bottom:6px;">Registro digital: ${t.registro_digital} · ${escapeHTML(t.instancia||'—')} · ${escapeHTML(t.epoca||'—')}${t.fecha_publicacion?(' · Publicación: '+escapeHTML(t.fecha_publicacion)):''}</div>
-        <button class="btn secondary" data-jurisprudencia-ver="${t.registro_digital}" style="font-size:11px; padding:5px 10px;">Ver texto completo</button>
-        <button class="btn secondary" data-jurisprudencia-copiar="${t.registro_digital}" style="font-size:11px; padding:5px 10px;">Copiar</button>
+      ${r.tesis.map((t,i)=>`
+      <div style="padding:12px 0; border-bottom:1px solid var(--border); display:flex; gap:12px;">
+        <div style="flex-shrink:0; width:22px; height:22px; border-radius:50%; background:${i===0?'var(--brass)':'var(--parchment)'}; color:${i===0?'#fff':'var(--gray)'}; font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; margin-top:1px;">${i+1}</div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:13px; font-weight:600; margin-bottom:4px;">${escapeHTML(t.rubro)} ${i===0?'<span class="badge ok" style="font-size:10px; margin-left:4px;">Más aplicable</span>':''}</div>
+          <div style="font-size:11.5px; color:var(--gray); margin-bottom:6px;">Registro digital: ${t.registro_digital} · ${escapeHTML(t.instancia||'—')} · ${escapeHTML(t.epoca||'—')}${t.fecha_publicacion?(' · Publicación: '+escapeHTML(t.fecha_publicacion)):''}</div>
+          <button class="btn secondary" data-jurisprudencia-ver="${t.registro_digital}" style="font-size:11px; padding:5px 10px;">Ver texto completo</button>
+          <button class="btn secondary" data-jurisprudencia-copiar="${t.registro_digital}" style="font-size:11px; padding:5px 10px;">Copiar</button>
+        </div>
       </div>`).join("")}
     </div>
   </div>` : ''}
@@ -4073,6 +4078,17 @@ function bindJurisprudenciaEvents(){
   document.querySelectorAll('[data-jurisprudencia-copiar]').forEach(btn=>{
     btn.addEventListener('click', ()=> copiarTesisAlPortapapeles(parseInt(btn.dataset.jurisprudenciaCopiar), btn));
   });
+  const copiarAnalisisBtn = document.getElementById('jurisprudenciaCopiarAnalisisBtn');
+  if(copiarAnalisisBtn){
+    copiarAnalisisBtn.addEventListener('click', ()=>{
+      if(!JURISPRUDENCIA_RESULTADO) return;
+      navigator.clipboard.writeText(JURISPRUDENCIA_RESULTADO.respuesta).then(()=>{
+        const original = copiarAnalisisBtn.textContent;
+        copiarAnalisisBtn.textContent = '¡Copiado!';
+        setTimeout(()=>{ copiarAnalisisBtn.textContent = original; }, 1500);
+      }).catch(()=> alert('No se pudo copiar. Selecciona el texto manualmente.'));
+    });
+  }
 }
 
 // Texto completo de una tesis consultada — en un modal, igual que el resto

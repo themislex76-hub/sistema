@@ -312,17 +312,25 @@ $texto = jurisprudencia_llamar_claude([
         . 'despacho te describe los HECHOS de un caso real y te doy, junto con ellos, el texto completo de las '
         . 'tesis de la SCJN que ya se identificaron como aplicables a ese caso (una revisión previa del catálogo '
         . 'completo de la biblioteca ya descartó las que no aplican -- todas las que ves aquí SÍ tienen relación '
-        . 'real con el caso). Tu trabajo: '
-        . "1) Para cada tesis, explica en español claro y concreto cómo se conecta con los hechos específicos "
-        . "del caso -- qué le aporta al abogado (un argumento a su favor, un criterio sobre cómo computar un "
-        . "plazo, cómo se distribuye la carga de la prueba, etc.), citando siempre el número de registro digital "
-        . "y el rubro.\n"
-        . "2) Si al leer el texto completo de alguna te das cuenta de que en realidad no aplica tan bien como "
-        . "parecía por el título, puedes decirlo -- no estás obligado a forzar todas.\n"
-        . "3) Cierra con una conclusión práctica y breve de cómo usar esto en el caso.\n"
-        . "4) NUNCA menciones, cites, ni inventes una tesis que no esté en la lista que te doy -- son las únicas "
-        . "que existen para efectos de esta respuesta.\n"
-        . 'Sé directo y concreto -- le hablas a un abogado, no hace falta explicar conceptos básicos de derecho laboral.',
+        . 'real con el caso). Le hablas a alguien ocupado que va a leer esto por encima antes de entrar a una '
+        . 'audiencia o redactar un escrito -- la estructura importa tanto como el contenido. Responde SIEMPRE '
+        . "con este formato exacto, en este orden:\n\n"
+        . "## Conclusión\n"
+        . "2 a 4 líneas, directo al grano: qué le conviene hacer o argumentar al abogado con este caso, dado lo "
+        . "que dicen las tesis aplicables. Esto es lo primero (y a veces lo único) que va a leer -- que valga la "
+        . "pena por sí solo.\n\n"
+        . "## Tesis aplicables\n"
+        . "Una subsección por cada tesis, en este orden exacto: `### [registro digital] — [versión corta del "
+        . "rubro, máximo ~12 palabras]`, seguido de 2-4 líneas explicando en español claro y concreto cómo se "
+        . "conecta ESA tesis con los hechos específicos del caso -- qué le aporta al abogado (un argumento a su "
+        . "favor, un criterio sobre cómo computar un plazo, cómo se distribuye la carga de la prueba, etc.), no "
+        . "un resumen genérico de qué dice la tesis. Si al leer el texto completo de alguna te das cuenta de que "
+        . "en realidad no aplica tan bien como parecía por el título, dilo ahí mismo -- no estás obligado a "
+        . "forzar todas.\n\n"
+        . "Reglas: NUNCA menciones, cites, ni inventes una tesis que no esté en la lista que te doy -- son las "
+        . "únicas que existen para efectos de esta respuesta. No repitas el rubro completo de cada tesis (ya se "
+        . "ve aparte en pantalla) -- ve directo a cómo aplica. Nada de introducciones ni cierres genéricos fuera "
+        . "de estas dos secciones.",
     'messages' => [[
         'role' => 'user',
         'content' => "Hechos del caso: {$pregunta}\n\nTesis aplicables:\n\n{$contexto}",
