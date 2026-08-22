@@ -25,11 +25,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Método no permitido.', 405);
 require_login();
 require_csrf();
 
-// Esta búsqueda manda a la IA miles de títulos de tesis y puede tardar
-// bastante más que una petición normal del sistema -- sin esto, el límite
-// de tiempo por defecto del hosting compartido (típicamente 30s) corta el
-// script a la mitad.
-set_time_limit(150);
+// Esta búsqueda manda a la IA miles de títulos de tesis (con razonamiento
+// extendido, para no perder de vista ninguna línea) y puede tardar bastante
+// más que una petición normal del sistema -- sin esto, el límite de tiempo
+// por defecto del hosting compartido (típicamente 30s) corta el script a
+// la mitad.
+set_time_limit(360);
 
 $in = json_input();
 $pregunta = trim((string)($in['pregunta'] ?? ''));
@@ -104,28 +105,53 @@ foreach ($titulos as $t) {
 }
 $listadoTexto = implode("\n", $listado);
 
+// Con miles de líneas casi todas parecidas entre sí, una pasada "rápida"
+// (thinking desactivado) se le puede pasar por alto una línea concreta a
+// media lista -- se detectó justo eso en pruebas reales (una tesis con el
+// nombre de la dependencia LITERAL en el rubro, no encontrada). Activar
+// razonamiento adaptativo le da margen para revisar la lista con cuidado
+// en vez de una lectura superficial -- tarda más, pero para esto importa
+// más la exactitud que la velocidad.
 $seleccion = jurisprudencia_llamar_claude([
     'model' => IA_MODEL,
-    'max_tokens' => 400,
-    'thinking' => ['type' => 'disabled'],
+    // Generoso a propósito: revisar linea por linea unas 4000+ lineas del
+    // catalogo con cuidado real (no una lectura superficial) puede
+    // consumir bastantes tokens de razonamiento antes de llegar a la
+    // respuesta final -- si se corta a la mitad, se pierde el "REGISTROS:"
+    // final y la busqueda falla por completo.
+    'max_tokens' => 16000,
+    'thinking' => ['type' => 'adaptive'],
     'system' => 'Un abogado laboralista mexicano te describe los HECHOS de un caso real (no es una pregunta de '
         . 'tema general). Te doy, a continuación, el catálogo COMPLETO de la biblioteca de tesis y jurisprudencia '
         . 'laboral de la SCJN con la que cuenta el despacho -- cada línea es "registro digital: rubro". Revisa '
-        . 'TODO el catálogo con criterio jurídico real (no busques coincidencia de palabras sueltas) e identifica '
-        . 'hasta 10 tesis que de verdad aplican a los hechos de este caso concreto -- que le sirvan de verdad al '
-        . 'abogado para resolverlo o argumentarlo, no solo que compartan tema general. Un mismo caso puede '
-        . 'plantear varias figuras jurídicas a la vez (ej. un despido donde el patrón alega abandono de empleo '
-        . 'puede implicar a la vez: abandono de empleo, carga de la prueba del despido, aviso de rescisión, '
-        . 'prescripción) -- considera todas las que apliquen. Responde ÚNICAMENTE con los números de registro '
-        . 'digital de las tesis que sí aplican, separados por comas, en orden de qué tan aplicable es cada una '
-        . '(la más aplicable primero). Si ninguna aplica de verdad, responde exactamente: NINGUNA.',
+        . 'TODO el catálogo, línea por línea y con cuidado (son miles de líneas muy parecidas entre sí -- no lo '
+        . 'hagas por encima, es fácil que a una lectura rápida se le escape justo la línea más relevante), con '
+        . 'criterio jurídico real (no busques coincidencia de palabras sueltas) e identifica hasta 10 tesis que '
+        . 'de verdad aplican a los hechos de este caso concreto -- que le sirvan de verdad al abogado para '
+        . 'resolverlo o argumentarlo, no solo que compartan tema general. Un mismo caso puede plantear varias '
+        . 'figuras jurídicas a la vez (ej. un despido donde el patrón alega abandono de empleo puede implicar a '
+        . 'la vez: abandono de empleo, carga de la prueba del despido, aviso de rescisión, prescripción) -- '
+        . 'considera todas las que apliquen. Al final de tu revisión, responde con una última línea que empiece '
+        . 'exactamente con "REGISTROS:" seguido de los números de registro digital de las tesis que sí aplican, '
+        . 'separados por comas, en orden de qué tan aplicable es cada una (la más aplicable primero). Si ninguna '
+        . 'aplica de verdad, esa última línea debe decir exactamente "REGISTROS: NINGUNA".',
     'messages' => [[
         'role' => 'user',
         'content' => "Hechos del caso: {$pregunta}\n\nCatálogo completo de la biblioteca:\n\n{$listadoTexto}",
     ]],
-], 180);
+], 280);
 
-preg_match_all('/\d+/', $seleccion, $m);
+// Se toma solo lo que venga después de "REGISTROS:" (la última que
+// aparezca, por si la palabra se menciona antes de la línea final) -- así
+// no se confunden números de otras tesis que la IA haya mencionado de
+// pasada en su análisis. Si por algún motivo no sigue el formato pedido,
+// se cae en buscar números en todo el texto como respaldo.
+$posRegistros = mb_strripos($seleccion, 'REGISTROS:');
+$listaNumeros = $posRegistros !== false
+    ? mb_substr($seleccion, $posRegistros + mb_strlen('REGISTROS:'))
+    : $seleccion;
+
+preg_match_all('/\d+/', $listaNumeros, $m);
 $registrosElegidos = [];
 foreach ($m[0] as $numStr) {
     $num = (int)$numStr;
