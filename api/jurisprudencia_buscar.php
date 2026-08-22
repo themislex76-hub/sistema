@@ -33,7 +33,7 @@ require_csrf();
 // afinado y respuesta final) y puede tardar bastante más que una petición
 // normal del sistema -- sin esto, el límite de tiempo por defecto del
 // hosting compartido (típicamente 30s) corta el script a la mitad.
-set_time_limit(360);
+set_time_limit(420);
 
 $in = json_input();
 $pregunta = trim((string)($in['pregunta'] ?? ''));
@@ -192,25 +192,33 @@ $TAMANO_PARTE = 700;
 $partes = array_chunk($listado, $TAMANO_PARTE);
 $totalPartes = count($partes);
 
+// thinking activado aquí a propósito: con thinking desactivado, en pruebas
+// reales esta fase se le siguió pasando por alto la tesis mas puntual del
+// caso (misma falla que la version anterior, de una sola pasada) -- para
+// investigacion juridica real, la exactitud pesa mas que el costo o la
+// velocidad. Al ser cada parte mucho mas chica que el catalogo completo
+// (~700 lineas, no 4000+), el razonamiento aqui es mucho mas barato que
+// activarlo sobre el catalogo entero.
 $payloadsPartes = [];
 foreach ($partes as $i => $lineasParte) {
     $payloadsPartes[$i] = [
         'model' => IA_MODEL,
-        'max_tokens' => 700,
-        'thinking' => ['type' => 'disabled'],
+        'max_tokens' => 3000,
+        'thinking' => ['type' => 'adaptive'],
         'system' => 'Un abogado laboralista mexicano te describe los HECHOS de un caso real (no es una pregunta '
             . 'de tema general). Te doy UNA PARTE (parte ' . ($i + 1) . ' de ' . $totalPartes . ') del catálogo '
             . 'de la biblioteca de tesis y jurisprudencia laboral de la SCJN con la que cuenta el despacho -- '
             . 'cada línea es "registro digital: rubro". Es normal y está bien que en esta parte no haya ninguna '
             . 'tesis aplicable (las demás partes se revisan por separado, en paralelo). Revisa esta parte '
-            . 'completa, línea por línea, con criterio jurídico real (no coincidencia de palabras sueltas), e '
-            . 'identifica hasta 5 tesis DE ESTA PARTE que de verdad podrían aplicar a los hechos del caso -- '
-            . 'ante la duda de si aplica, inclúyela (se van a revisar de nuevo después con más detalle). Un '
-            . 'mismo caso puede plantear varias figuras jurídicas a la vez (ej. un despido donde el patrón '
-            . 'alega abandono de empleo puede implicar a la vez: abandono de empleo, carga de la prueba del '
-            . 'despido, aviso de rescisión, prescripción). Responde con una última línea que empiece '
-            . 'exactamente con "REGISTROS:" seguido de los números de registro digital separados por comas, o '
-            . '"REGISTROS: NINGUNA" si ninguna de esta parte aplica.',
+            . 'completa, línea por línea y con cuidado real (son cientos de líneas parecidas entre sí -- no la '
+            . 'hagas por encima, es fácil que a una lectura rápida se le escape justo la más relevante), con '
+            . 'criterio jurídico real (no coincidencia de palabras sueltas), e identifica hasta 5 tesis DE ESTA '
+            . 'PARTE que de verdad podrían aplicar a los hechos del caso -- ante la duda de si aplica, inclúyela '
+            . '(se van a revisar de nuevo después con más detalle). Un mismo caso puede plantear varias figuras '
+            . 'jurídicas a la vez (ej. un despido donde el patrón alega abandono de empleo puede implicar a la '
+            . 'vez: abandono de empleo, carga de la prueba del despido, aviso de rescisión, prescripción). '
+            . 'Responde con una última línea que empiece exactamente con "REGISTROS:" seguido de los números de '
+            . 'registro digital separados por comas, o "REGISTROS: NINGUNA" si ninguna de esta parte aplica.',
         'messages' => [[
             'role' => 'user',
             'content' => "Hechos del caso: {$pregunta}\n\nParte del catálogo:\n\n" . implode("\n", $lineasParte),
@@ -218,7 +226,7 @@ foreach ($partes as $i => $lineasParte) {
     ];
 }
 
-$resultadosPartes = jurisprudencia_llamar_claude_paralelo($payloadsPartes, 100);
+$resultadosPartes = jurisprudencia_llamar_claude_paralelo($payloadsPartes, 150);
 
 $candidatosUnion = [];
 foreach ($resultadosPartes as $textoParte) {
@@ -306,8 +314,12 @@ $contexto = implode("\n\n---\n\n", $bloques);
 
 $texto = jurisprudencia_llamar_claude([
     'model' => IA_MODEL,
-    'max_tokens' => 2000,
-    'thinking' => ['type' => 'disabled'],
+    'max_tokens' => 4000,
+    // Aquí también importa que razone con cuidado, no solo en la selección:
+    // cuando dos tesis tocan el mismo punto pero una es más reciente o de
+    // mayor jerarquía (Pleno > Salas > Tribunales Colegiados), hay que
+    // notarlo y priorizarlo -- no tratarlas como si pesaran igual.
+    'thinking' => ['type' => 'adaptive'],
     'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado del '
         . 'despacho te describe los HECHOS de un caso real y te doy, junto con ellos, el texto completo de las '
         . 'tesis de la SCJN que ya se identificaron como aplicables a ese caso (una revisión previa del catálogo '
@@ -327,6 +339,15 @@ $texto = jurisprudencia_llamar_claude([
         . "un resumen genérico de qué dice la tesis. Si al leer el texto completo de alguna te das cuenta de que "
         . "en realidad no aplica tan bien como parecía por el título, dilo ahí mismo -- no estás obligado a "
         . "forzar todas.\n\n"
+        . "IMPORTANTE sobre jurisprudencia que evoluciona: revisa con cuidado si dos o más de las tesis tocan "
+        . "exactamente el mismo punto de derecho desde ángulos distintos o incluso contradictorios (pasa seguido "
+        . "-- un criterio nuevo sustituye o contradice a uno viejo, o un tribunal colegiado resuelve distinto "
+        . "que otro). En ese caso: (a) identifica cuál es jerárquicamente superior (Pleno/Salas de la SCJN pesa "
+        . "más que Plenos Regionales, que pesa más que Tribunales Colegiados) o más reciente si son del mismo "
+        . "nivel, (b) básate en esa para la Conclusión y dilo EXPLÍCITAMENTE en su subsección (\"esta tesis es "
+        . "la que rige porque es más reciente/de mayor jerarquía que la tesis X\"), y (c) menciona la tensión "
+        . "en la subsección de la tesis más vieja/débil, para que el abogado la conozca aunque no sea la que "
+        . "sigas. Nunca elijas en silencio entre dos tesis que se contradicen sin explicar por qué.\n\n"
         . "Reglas: NUNCA menciones, cites, ni inventes una tesis que no esté en la lista que te doy -- son las "
         . "únicas que existen para efectos de esta respuesta. No repitas el rubro completo de cada tesis (ya se "
         . "ve aparte en pantalla) -- ve directo a cómo aplica. Nada de introducciones ni cierres genéricos fuera "
@@ -335,7 +356,7 @@ $texto = jurisprudencia_llamar_claude([
         'role' => 'user',
         'content' => "Hechos del caso: {$pregunta}\n\nTesis aplicables:\n\n{$contexto}",
     ]],
-]);
+], 120);
 if ($texto === '') fail('La IA no devolvió texto.', 502);
 
 // Se manda el texto_completo entero (sin el recorte que sí se le aplicó a
