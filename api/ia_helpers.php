@@ -892,12 +892,15 @@ function ia_llamar_claude(array $mensajes): ?array
     // juntos (tools se renderiza antes que system en la solicitud a la API),
     // así que solo hace falta un breakpoint aquí. La primera llamada de cada
     // ventana de caché (5 min) paga el precio normal; las siguientes pagan
-    // ~10% de esa parte del prompt en vez de 100%. Al pegarle la fecha de
-    // hoy al final, el caché se invalida una vez al día (cuando cambia la
-    // fecha) en vez de cada 5 minutos — sigue aprovechando el caché casi
-    // siempre.
-    $systemTexto = IA_SYSTEM_PROMPT
-        . "\n\nFecha y hora actual real ahora mismo: " . ia_fecha_actual_es()
+    // ~10% de esa parte del prompt en vez de 100%.
+    // La fecha/hora va en un SEGUNDO bloque de system, DESPUÉS del
+    // breakpoint de caché y sin cache_control propio — el caché solo cubre
+    // el prefijo hasta el último breakpoint, así que este bloque puede
+    // cambiar en cada llamada (incluye minutos) sin invalidar el caché del
+    // bloque anterior. Antes estaba pegada al mismo bloque cacheado, lo que
+    // rompía el caché en cada llamada (el texto cambia cada minuto, no una
+    // vez al día como decía este comentario originalmente).
+    $fechaTexto = "Fecha y hora actual real ahora mismo: " . ia_fecha_actual_es()
         . ". Úsala siempre como referencia de \"hoy\" — nunca la calcules ni la asumas de otra forma, y nunca inventes ni redondees una fecha por tu cuenta."
         . " Si saludas (buenos días/tardes/noches), básalo SIEMPRE en esta hora actual real, nunca en lo que haya"
         . " dicho el cliente antes en la conversación — pudo haber pasado tiempo (incluso horas) desde su último mensaje.";
@@ -913,7 +916,8 @@ function ia_llamar_claude(array $mensajes): ?array
         'max_tokens' => 4096,
         'thinking' => ['type' => 'disabled'],
         'system' => [
-            ['type' => 'text', 'text' => $systemTexto, 'cache_control' => ['type' => 'ephemeral']],
+            ['type' => 'text', 'text' => IA_SYSTEM_PROMPT, 'cache_control' => ['type' => 'ephemeral']],
+            ['type' => 'text', 'text' => $fechaTexto],
         ],
         'tools' => IA_TOOLS,
         'messages' => $mensajes,
