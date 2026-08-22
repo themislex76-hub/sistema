@@ -8,14 +8,28 @@ require_once __DIR__ . '/ia_helpers.php'; // solo para reusar la constante IA_MO
 // biblioteca de tesis (jurisprudencia_tesis) es compartida entre todos los
 // despachos del sistema, no se divide por despacho.
 //
-// POST { pregunta }: busca en la biblioteca las tesis mas relacionadas por
-// texto (MySQL FULLTEXT), y le pide a la IA que redacte una respuesta
-// usando SOLO esas tesis -- nunca puede inventar una tesis ni citar un
-// registro que no venga en la lista que se le manda, porque son las unicas
-// que conoce.
+// POST { pregunta }: el abogado describe los HECHOS de un caso real. En vez
+// de que MySQL intente adivinar cuáles tesis son candidatas por coincidencia
+// de palabras (un intento anterior con FULLTEXT dio resultados pobres: la
+// biblioteca abunda en las mismas palabras -- "trabajador", "despedido" --
+// en casi cualquier tesis, y la redacción exacta de un abogado rara vez
+// coincide con la redacción exacta de un rubro), aquí se le manda a Claude
+// el TÍTULO de TODAS las tesis de la biblioteca (unos miles, pero solo el
+// rubro, no el texto completo, así que cabe perfecto en la ventana de
+// contexto de 1M tokens del modelo) y es la IA la que decide, con criterio
+// jurídico real, cuáles aplican de verdad al caso. Solo hasta ahí se pide
+// el texto completo de las que sí aplican, para la respuesta final. Nunca
+// puede citar una tesis que no esté en la biblioteca, porque son las
+// únicas que se le muestran en algún momento del proceso.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Método no permitido.', 405);
 require_login();
 require_csrf();
+
+// Esta búsqueda manda a la IA miles de títulos de tesis y puede tardar
+// bastante más que una petición normal del sistema -- sin esto, el límite
+// de tiempo por defecto del hosting compartido (típicamente 30s) corta el
+// script a la mitad.
+set_time_limit(150);
 
 $in = json_input();
 $pregunta = trim((string)($in['pregunta'] ?? ''));
@@ -26,10 +40,11 @@ $credentialsFile = __DIR__ . '/anthropic_credentials.php';
 if (!file_exists($credentialsFile)) fail('Falta anthropic_credentials.php.', 500);
 require_once $credentialsFile;
 
-// Llamada minima reusada dos veces en este archivo (extraer palabras clave
-// y, mas abajo, redactar la respuesta final) -- evita repetir el mismo
-// bloque de curl dos veces.
-function jurisprudencia_llamar_claude(array $payload): string
+// Llamada mínima reusada dos veces en este archivo (elegir tesis candidatas
+// y, más abajo, redactar la respuesta final) -- evita repetir el mismo
+// bloque de curl dos veces. $timeoutSegundos es más alto para la primera
+// llamada (manda miles de títulos) que para la segunda.
+function jurisprudencia_llamar_claude(array $payload, int $timeoutSegundos = 60): string
 {
     $ch = curl_init('https://api.anthropic.com/v1/messages');
     curl_setopt_array($ch, [
@@ -41,7 +56,7 @@ function jurisprudencia_llamar_claude(array $payload): string
             'content-type: application/json',
         ],
         CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
-        CURLOPT_TIMEOUT => 60,
+        CURLOPT_TIMEOUT => $timeoutSegundos,
     ]);
     $raw = curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -62,53 +77,92 @@ function jurisprudencia_llamar_claude(array $payload): string
     return trim($texto);
 }
 
-// Paso 1: un abogado describe los HECHOS de un caso real (no una pregunta
-// de tema) -- lleno de palabras que aparecen en casi cualquier tesis
-// laboral ("trabajador", "despedido", "patrón"). Buscar con el texto tal
-// cual daba resultados pobres: MATCH...AGAINST en modo natural le resta
-// peso a esas palabras tan comunes, así que con una descripción larga casi
-// no quedaban términos realmente distintivos con los que discriminar. Este
-// paso identifica las figuras/controversias jurídicas concretas que esos
-// hechos plantean (puede haber varias a la vez en un mismo caso) y las
-// convierte en términos de búsqueda.
-$palabrasClave = jurisprudencia_llamar_claude([
-    'model' => IA_MODEL,
-    'max_tokens' => 120,
-    'thinking' => ['type' => 'disabled'],
-    'system' => 'Un abogado laboralista mexicano te describe los HECHOS de un caso real (no es una pregunta de '
-        . 'tema general). Identifica las figuras y controversias jurídicas concretas que esos hechos plantean '
-        . '-- puede haber más de una a la vez (ej. un despido donde el patrón alega abandono de empleo puede '
-        . 'implicar a la vez: abandono de empleo, carga de la prueba del despido, aviso de rescisión, '
-        . 'prescripción). Conviértelas en 4 a 10 términos/frases jurídicas precisas para buscar en un motor de '
-        . 'búsqueda de texto sobre jurisprudencia y tesis de la SCJN. Responde ÚNICAMENTE con los términos '
-        . 'separados por espacios, sin numerarlos, sin explicación, sin comillas.',
-    'messages' => [['role' => 'user', 'content' => $pregunta]],
-]);
-if ($palabrasClave === '') $palabrasClave = $pregunta;
-
 $pdo = db();
 
-// IN NATURAL LANGUAGE MODE, pero ya con los términos precisos del paso 1
-// en vez de la pregunta completa -- cada palabra pesa como término
-// distintivo real, no se diluye entre puras palabras comunes. :q se manda
-// dos veces (SELECT + WHERE) porque PDO no deja reusar un named
-// placeholder dos veces en modo no emulado.
-$stmt = $pdo->prepare(
-    'SELECT registro_digital, instancia, epoca, numero_tesis, tipo, materias, rubro, texto_completo, fecha_publicacion,
-            MATCH(rubro, texto_completo) AGAINST (:q1 IN NATURAL LANGUAGE MODE) AS relevancia
-     FROM jurisprudencia_tesis
-     WHERE MATCH(rubro, texto_completo) AGAINST (:q2 IN NATURAL LANGUAGE MODE)
-     ORDER BY relevancia DESC
-     LIMIT 12'
+// Paso 1: se listan TODOS los títulos de la biblioteca (registro + rubro,
+// nunca el texto completo en este paso) y se le pide a Claude que revise
+// esa lista entera contra los hechos del caso -- criterio jurídico real,
+// no coincidencia de palabras. Límite de seguridad muy por encima de lo
+// esperable, por si la biblioteca crece mucho más de lo previsto.
+$stmtTitulos = $pdo->query(
+    'SELECT registro_digital, rubro FROM jurisprudencia_tesis ORDER BY registro_digital LIMIT 20000'
 );
-$stmt->execute([':q1' => $palabrasClave, ':q2' => $palabrasClave]);
-$candidatas = $stmt->fetchAll();
-
-if (!$candidatas) {
+$titulos = $stmtTitulos->fetchAll();
+if (!$titulos) {
     respond([
-        'respuesta' => 'No encontré tesis en la biblioteca relacionadas con tu pregunta. Intenta describirla con otras palabras, o puede que todavía no se haya cargado jurisprudencia sobre ese tema específico.',
+        'respuesta' => 'La biblioteca de jurisprudencia todavía está vacía -- no hay tesis cargadas todavía.',
         'tesis' => [],
     ]);
+}
+
+$registrosValidos = [];
+$listado = [];
+foreach ($titulos as $t) {
+    $reg = (int)$t['registro_digital'];
+    $registrosValidos[$reg] = true;
+    $listado[] = $reg . ': ' . mb_strimwidth((string)$t['rubro'], 0, 300, '…');
+}
+$listadoTexto = implode("\n", $listado);
+
+$seleccion = jurisprudencia_llamar_claude([
+    'model' => IA_MODEL,
+    'max_tokens' => 400,
+    'thinking' => ['type' => 'disabled'],
+    'system' => 'Un abogado laboralista mexicano te describe los HECHOS de un caso real (no es una pregunta de '
+        . 'tema general). Te doy, a continuación, el catálogo COMPLETO de la biblioteca de tesis y jurisprudencia '
+        . 'laboral de la SCJN con la que cuenta el despacho -- cada línea es "registro digital: rubro". Revisa '
+        . 'TODO el catálogo con criterio jurídico real (no busques coincidencia de palabras sueltas) e identifica '
+        . 'hasta 10 tesis que de verdad aplican a los hechos de este caso concreto -- que le sirvan de verdad al '
+        . 'abogado para resolverlo o argumentarlo, no solo que compartan tema general. Un mismo caso puede '
+        . 'plantear varias figuras jurídicas a la vez (ej. un despido donde el patrón alega abandono de empleo '
+        . 'puede implicar a la vez: abandono de empleo, carga de la prueba del despido, aviso de rescisión, '
+        . 'prescripción) -- considera todas las que apliquen. Responde ÚNICAMENTE con los números de registro '
+        . 'digital de las tesis que sí aplican, separados por comas, en orden de qué tan aplicable es cada una '
+        . '(la más aplicable primero). Si ninguna aplica de verdad, responde exactamente: NINGUNA.',
+    'messages' => [[
+        'role' => 'user',
+        'content' => "Hechos del caso: {$pregunta}\n\nCatálogo completo de la biblioteca:\n\n{$listadoTexto}",
+    ]],
+], 180);
+
+preg_match_all('/\d+/', $seleccion, $m);
+$registrosElegidos = [];
+foreach ($m[0] as $numStr) {
+    $num = (int)$numStr;
+    // Solo se aceptan números que de verdad estén en el catálogo que se le
+    // mandó -- protege contra que la IA "invente" o transcriba mal un
+    // registro que no existe.
+    if (isset($registrosValidos[$num]) && !in_array($num, $registrosElegidos, true)) {
+        $registrosElegidos[] = $num;
+    }
+    if (count($registrosElegidos) >= 10) break;
+}
+
+if (!$registrosElegidos) {
+    respond([
+        'respuesta' => 'Revisé el catálogo completo de la biblioteca y no encontré ninguna tesis que aplique de verdad a los hechos de este caso. Puede que todavía no se haya cargado jurisprudencia sobre este tema específico, o que el caso no tenga un criterio de la SCJN directamente aplicable.',
+        'tesis' => [],
+    ]);
+}
+
+// Paso 2: ya con la lista corta (hasta 10) de tesis que sí aplican, se trae
+// el texto completo de cada una y se le pide a Claude que redacte la
+// respuesta final explicando cómo se conecta cada una con los hechos.
+$placeholders = implode(',', array_fill(0, count($registrosElegidos), '?'));
+$stmtDetalle = $pdo->prepare(
+    "SELECT registro_digital, instancia, epoca, numero_tesis, tipo, materias, rubro, texto_completo, fecha_publicacion
+     FROM jurisprudencia_tesis WHERE registro_digital IN ($placeholders)"
+);
+$stmtDetalle->execute($registrosElegidos);
+$porRegistro = [];
+foreach ($stmtDetalle->fetchAll() as $t) {
+    $porRegistro[(int)$t['registro_digital']] = $t;
+}
+// Se preserva el orden de relevancia que dio la IA en el paso 1, no el
+// orden en que la consulta SQL devolvió las filas.
+$candidatas = [];
+foreach ($registrosElegidos as $reg) {
+    if (isset($porRegistro[$reg])) $candidatas[] = $porRegistro[$reg];
 }
 
 // Se manda el texto completo de cada candidata recortado -- ya trae de
@@ -131,26 +185,23 @@ $texto = jurisprudencia_llamar_claude([
     'max_tokens' => 2000,
     'thinking' => ['type' => 'disabled'],
     'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado del '
-        . 'despacho te describe los HECHOS de un caso real (no es una pregunta de tema general) y te doy, junto '
-        . 'con ellos, una lista de tesis/jurisprudencia de la SCJN que una búsqueda de texto encontró como '
-        . 'posiblemente relacionadas -- la búsqueda es por palabras, así que ALGUNAS de estas tesis pueden en '
-        . 'realidad no aplicar al caso. Tu trabajo: '
-        . "1) De la lista que te doy, identifica cuáles tesis SÍ aplican de verdad a los hechos de este caso "
-        . "concreto (no basta que compartan tema general -- deben servirle de verdad para resolverlo o "
-        . "argumentarlo).\n"
-        . "2) Para cada una que SÍ aplique, explica en español claro y concreto cómo se conecta con los hechos "
-        . "específicos del caso -- qué le aporta al abogado (un argumento a su favor, un criterio sobre cómo "
-        . "computar un plazo, cómo se distribuye la carga de la prueba, etc.), citando siempre el número de "
-        . "registro digital y el rubro.\n"
-        . "3) Si NINGUNA de las tesis que te doy aplica realmente a este caso, dilo con claridad en vez de "
-        . "forzar una relación que no existe.\n"
+        . 'despacho te describe los HECHOS de un caso real y te doy, junto con ellos, el texto completo de las '
+        . 'tesis de la SCJN que ya se identificaron como aplicables a ese caso (una revisión previa del catálogo '
+        . 'completo de la biblioteca ya descartó las que no aplican -- todas las que ves aquí SÍ tienen relación '
+        . 'real con el caso). Tu trabajo: '
+        . "1) Para cada tesis, explica en español claro y concreto cómo se conecta con los hechos específicos "
+        . "del caso -- qué le aporta al abogado (un argumento a su favor, un criterio sobre cómo computar un "
+        . "plazo, cómo se distribuye la carga de la prueba, etc.), citando siempre el número de registro digital "
+        . "y el rubro.\n"
+        . "2) Si al leer el texto completo de alguna te das cuenta de que en realidad no aplica tan bien como "
+        . "parecía por el título, puedes decirlo -- no estás obligado a forzar todas.\n"
+        . "3) Cierra con una conclusión práctica y breve de cómo usar esto en el caso.\n"
         . "4) NUNCA menciones, cites, ni inventes una tesis que no esté en la lista que te doy -- son las únicas "
-        . "que existen para efectos de esta respuesta. Si hace falta más contexto (fechas, datos del caso) para "
-        . "orientar mejor, puedes pedirlo, pero primero da la mejor respuesta posible con lo que ya tienes.\n"
+        . "que existen para efectos de esta respuesta.\n"
         . 'Sé directo y concreto -- le hablas a un abogado, no hace falta explicar conceptos básicos de derecho laboral.',
     'messages' => [[
         'role' => 'user',
-        'content' => "Hechos del caso: {$pregunta}\n\nTesis encontradas por la búsqueda:\n\n{$contexto}",
+        'content' => "Hechos del caso: {$pregunta}\n\nTesis aplicables:\n\n{$contexto}",
     ]],
 ]);
 if ($texto === '') fail('La IA no devolvió texto.', 502);
