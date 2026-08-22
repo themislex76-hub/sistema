@@ -979,7 +979,24 @@ function ia_llamar_claude(array $mensajes): ?array
         return null;
     }
 
-    return json_decode($raw, true);
+    $data = json_decode($raw, true);
+
+    // Log temporal para medir si los cambios de caché de arriba (TTL de 1h,
+    // breakpoint en el historial de mensajes) de verdad están funcionando en
+    // producción — sin esto no hay forma de saberlo salvo "a ojo". Ver
+    // debug_ver_cache_stats.php para leerlo ya resumido. Se puede borrar
+    // este log (y esa página) una vez confirmado que el caché funciona bien
+    // y ya no hace falta seguir midiéndolo.
+    $uso = $data['usage'] ?? [];
+    if ($uso) {
+        file_put_contents(__DIR__ . '/ia_cache_stats.log', date('c')
+            . " | cache_read=" . (int)($uso['cache_read_input_tokens'] ?? 0)
+            . " | cache_creation=" . (int)($uso['cache_creation_input_tokens'] ?? 0)
+            . " | input=" . (int)($uso['input_tokens'] ?? 0)
+            . " | output=" . (int)($uso['output_tokens'] ?? 0) . "\n", FILE_APPEND);
+    }
+
+    return $data;
 }
 
 /**
