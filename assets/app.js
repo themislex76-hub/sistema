@@ -3546,13 +3546,16 @@ function prospectosHTML(){
         <span class="badge ${PROSPECTO_ESTATUS_BADGE[p.estatus]||'warn'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_ESTATUS_LABEL[p.estatus]||p.estatus}</span>
         <div class="alert-info">
           <div class="name" style="${p.mensaje_nuevo?'font-weight:700;':''}">${escapeHTML(p.nombre || 'Sin nombre')} <span style="color:var(--gray); font-weight:400;">&middot; ${escapeHTML(p.estado_ubicacion||'sin estado')}</span></div>
-          <div class="meta" style="${p.mensaje_nuevo?'color:var(--ink); font-weight:600;':''}">${escapeHTML(p.telefono)} &middot; ${escapeHTML(truncate(p.resumen_caso||'',90))}</div>
+          <div class="meta" style="${p.mensaje_nuevo?'color:var(--ink); font-weight:600;':''}">${escapeHTML(p.telefono)}</div>
+          ${p.resumen_caso ? `<div style="font-size:12px; color:var(--ink); margin-top:4px; white-space:normal; overflow-wrap:break-word;">${escapeHTML(p.resumen_caso)}</div>` : ''}
+          ${p.ultimo_mensaje_texto ? `<div style="font-size:11.5px; color:var(--gray); margin-top:4px; white-space:normal; overflow-wrap:break-word; font-style:italic;">${p.ultimo_mensaje_direccion==='entrante'?'Cliente':'Bot/Tú'}: "${escapeHTML(truncate(p.ultimo_mensaje_texto,220))}" &middot; ${fmtFechaHora(p.ultima_actividad)}</div>` : ''}
         </div>
         <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'closed'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
         <span class="badge ${p.asignado_nombre?'ok':'warn'}" style="flex-shrink:0; margin-top:1px;">${p.asignado_nombre ? escapeHTML(p.asignado_nombre) : 'Sin turnar'}</span>
         <div style="flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:5px; min-width:34px;">
           <div style="font-size:11px; color:var(--gray);">${fmtFechaHora(p.ultima_actividad || p.actualizado_en)}</div>
           ${p.mensajes_sin_leer > 0 ? `<span style="background:#25D366; color:#fff; border-radius:999px; min-width:20px; height:20px; padding:0 6px; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; line-height:1;">${p.mensajes_sin_leer > 99 ? '99+' : p.mensajes_sin_leer}</span>` : ''}
+          ${p.estatus !== 'descartado' ? `<button class="btn secondary" data-prospecto-descartar-rapido="${p.id}" style="padding:3px 8px; font-size:10.5px; white-space:nowrap;">Descartar</button>` : ''}
         </div>
       </div>`).join("")}
     </div>
@@ -4852,6 +4855,22 @@ function bindViewBody(){
       if(p.mensaje_nuevo){
         p.mensaje_nuevo = false;
         api('POST', 'prospectos_update.php', {id, marcar_visto: true}).catch(()=>{});
+      }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-descartar-rapido]').forEach(el=>{
+    el.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      if(!confirm('¿Descartar este prospecto? El bot le sigue contestando normal si vuelve a escribir — esto solo indica que el despacho no toma el caso.')) return;
+      const id = parseInt(el.dataset.prospectoDescartarRapido);
+      el.disabled = true;
+      try{
+        await api('POST', 'prospectos_update.php', {id, estatus: 'descartado'});
+        await loadProspectos();
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo descartar: ' + err.message);
+        el.disabled = false;
       }
     });
   });

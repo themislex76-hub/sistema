@@ -24,7 +24,11 @@ $sql = "SELECT p.*, e.exp AS expediente_exp, u.nombre AS asignado_nombre,
                 WHERE w.telefono = p.telefono) AS ultima_actividad,
                (SELECT COUNT(*) FROM whatsapp_conversaciones w
                 WHERE w.telefono = p.telefono AND w.direccion = 'entrante'
-                  AND w.creado_en > COALESCE(p.visto_en, '1970-01-01')) AS mensajes_sin_leer
+                  AND w.creado_en > COALESCE(p.visto_en, '1970-01-01')) AS mensajes_sin_leer,
+               (SELECT w.texto FROM whatsapp_conversaciones w
+                WHERE w.telefono = p.telefono ORDER BY w.id DESC LIMIT 1) AS ultimo_mensaje_texto,
+               (SELECT w.direccion FROM whatsapp_conversaciones w
+                WHERE w.telefono = p.telefono ORDER BY w.id DESC LIMIT 1) AS ultimo_mensaje_direccion
         FROM prospectos p
         LEFT JOIN expedientes e ON e.id = p.expediente_id
         LEFT JOIN usuarios u ON u.id = p.asignado_a"
@@ -56,6 +60,8 @@ foreach ($stmt->fetchAll() as $r) {
         'creado_en' => $r['creado_en'],
         'actualizado_en' => $r['actualizado_en'],
         'ultima_actividad' => $r['ultima_actividad'] ?? $r['actualizado_en'],
+        'ultimo_mensaje_texto' => $r['ultimo_mensaje_texto'],
+        'ultimo_mensaje_direccion' => $r['ultimo_mensaje_direccion'],
     ];
 }
 
