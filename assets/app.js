@@ -4248,6 +4248,7 @@ function citasPanelHTML(forzar){
         </div>
         <div style="flex-shrink:0; font-size:12px; color:var(--gray); text-align:right;">$${c.monto.toFixed(0)} MXN</div>
         <button class="btn secondary cita-atendida-btn" data-cita-id="${c.id}" style="flex-shrink:0; font-size:11px; padding:6px 10px;">Marcar atendida</button>
+        <button class="btn secondary cita-cancelar-btn" data-cita-id="${c.id}" style="flex-shrink:0; font-size:11px; padding:6px 10px; color:var(--red); border-color:var(--red);">Cancelar</button>
       </div>`;}).join("") : '<div class="empty">Sin asesorías agendadas por ahora.</div>'}
     </div>
   </div>`;
@@ -4991,6 +4992,22 @@ function bindViewBody(){
         renderViewBody();
       }catch(err){
         alert('No se pudo marcar: ' + err.message);
+        el.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll('.cita-cancelar-btn').forEach(el=>{
+    el.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      if(!confirm('¿Cancelar esta asesoría? El horario se libera de inmediato para que alguien más lo pueda apartar. Esto no avisa nada al cliente por WhatsApp — si hace falta, escríbele tú directo.')) return;
+      const id = parseInt(el.dataset.citaId);
+      el.disabled = true;
+      try{
+        await api('POST', 'citas_cancelar.php', {id});
+        await loadCitas();
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo cancelar: ' + err.message);
         el.disabled = false;
       }
     });
