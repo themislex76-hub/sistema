@@ -58,6 +58,14 @@ let PROSPECTO_MENSAJES = []; // historial de WhatsApp del prospecto abierto
 let PROSPECTOS_MOSTRAR_ATENDIDOS = false; // solo se ve lo pendiente por atender por default (ver prospectosHTML)
 let PROSPECTOS_TAB = 'despido'; // pestaña activa en Prospectos: 'despido' o 'asesoria_paga'
 
+// Vista "Jurisprudencia" — buscador con IA sobre la biblioteca de tesis de
+// la SCJN (compartida entre todos los despachos, ver jurisprudencia_tesis).
+let JURISPRUDENCIA_PREGUNTA = '';
+let JURISPRUDENCIA_CARGANDO = false;
+let JURISPRUDENCIA_ERROR = '';
+let JURISPRUDENCIA_RESULTADO = null; // {respuesta, tesis:[...]}
+let JURISPRUDENCIA_TESIS_ABIERTA = null; // registro_digital mostrado en el modal de texto completo
+
 // Vista "Conversaciones (WhatsApp)" (solo Administrador) — control de
 // calidad del bot: TODAS las conversaciones, hayan calificado como
 // prospecto o no, para poder revisar qué está contestando el bot.
@@ -2543,6 +2551,7 @@ function shellHTML(){
         ${isAdmin ? `<button data-v="resumen_ejecutivo" class="${VIEW==='resumen_ejecutivo'?'active':''}"><span class="ico">&#128202;</span> Resumen ejecutivo (bot)</button>` : ""}
         <div class="section-label">Referencia</div>
         <button data-v="manual" class="${VIEW==='manual'?'active':''}"><span class="ico">&#128218;</span> Manual de uso</button>
+        <button data-v="jurisprudencia" class="${VIEW==='jurisprudencia'?'active':''}"><span class="ico">&#9878;</span> Jurisprudencia</button>
         <button data-v="cliente_preview" class="${VIEW==='cliente_preview'?'active':''}"><span class="ico">${ICONS.cliente}</span> Vista de portal cliente</button>
         <button data-v="mi_cuenta" class="${VIEW==='mi_cuenta'?'active':''}"><span class="ico">&#128100;</span> Mi cuenta</button>
         ${isAdmin ? `<button data-v="equipo" class="${VIEW==='equipo'?'active':''}"><span class="ico">${ICONS.equipo}</span> Equipo</button>` : ""}
@@ -2578,6 +2587,7 @@ const VIEW_TITLES = {
   demandados:["Empresas demandadas", "Qué demandados se repiten, cuánto han pagado y qué tanto negocian"],
   exito:["Tasa de éxito", "Qué tan seguido se resuelven los asuntos a favor del trabajador"],
   manual:["Manual de uso", "Guía paso a paso del sistema"],
+  jurisprudencia:["Jurisprudencia", "Busca en la biblioteca de tesis de la SCJN — la IA responde solo con tesis reales guardadas aquí, nunca inventadas"],
   agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
   prospectos:["Prospectos (WhatsApp)", "Casos de despido, asesorías de pago y despachos interesados en Control de Expedientes, captados por el asistente de IA en WhatsApp"],
   conversaciones:["Conversaciones (WhatsApp)", "Todas las conversaciones del bot, calificaran o no como prospecto — para revisar y perfeccionar sus respuestas"],
@@ -2688,6 +2698,7 @@ function renderViewBody(){
   else if(VIEW==='demandados') el.innerHTML = demandadosHTML();
   else if(VIEW==='exito') el.innerHTML = tasaExitoHTML();
   else if(VIEW==='manual') el.innerHTML = manualHTML();
+  else if(VIEW==='jurisprudencia') el.innerHTML = jurisprudenciaHTML();
   else if(VIEW==='agenda') el.innerHTML = agendaHTML();
   else if(VIEW==='prospectos') el.innerHTML = prospectosHTML();
   else if(VIEW==='conversaciones') el.innerHTML = conversacionesHTML();
@@ -3955,6 +3966,100 @@ function bindResumenEjecutivoEvents(){
   });
 }
 
+function jurisprudenciaHTML(){
+  const r = JURISPRUDENCIA_RESULTADO;
+  return `
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-body" style="padding:20px 24px;">
+      <div class="notice" style="margin-bottom:14px;">Busca en la biblioteca de tesis y jurisprudencia laboral de la SCJN, compartida entre todos los despachos. La IA responde citando solo tesis reales guardadas aquí — nunca inventa una.</div>
+      <textarea id="jurisprudenciaPreguntaInput" placeholder="Escribe tu pregunta o el tema que buscas (ej. &quot;indemnización por riesgo de trabajo con incapacidad parcial permanente&quot;)..." style="width:100%; min-height:80px; padding:11px 13px; border:1px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; resize:vertical;">${escapeHTML(JURISPRUDENCIA_PREGUNTA)}</textarea>
+      <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:10px;">
+        <span style="font-size:11.5px; color:var(--gray);">Ctrl+Enter para buscar</span>
+        <button class="btn" id="jurisprudenciaBuscarBtn" ${JURISPRUDENCIA_CARGANDO?'disabled':''}>${JURISPRUDENCIA_CARGANDO ? 'Buscando... (puede tardar unos segundos)' : 'Buscar'}</button>
+      </div>
+      ${JURISPRUDENCIA_ERROR ? `<div class="notice" style="margin-top:12px; border-color:var(--red); color:var(--red);">${escapeHTML(JURISPRUDENCIA_ERROR)}</div>` : ''}
+    </div>
+  </div>
+  ${r ? `
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-head"><h3>Respuesta</h3></div>
+    <div class="panel-body" style="padding:20px 24px;">${mdBasicoHTML(r.respuesta)}</div>
+  </div>
+  ${r.tesis.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>Tesis consultadas (${r.tesis.length})</h3></div>
+    <div class="panel-body" style="padding:6px 24px;">
+      ${r.tesis.map(t=>`
+      <div style="padding:12px 0; border-bottom:1px solid var(--border);">
+        <div style="font-size:13px; font-weight:600; margin-bottom:4px;">${escapeHTML(t.rubro)}</div>
+        <div style="font-size:11.5px; color:var(--gray); margin-bottom:6px;">Registro digital: ${t.registro_digital} · ${escapeHTML(t.instancia||'—')} · ${escapeHTML(t.epoca||'—')}${t.fecha_publicacion?(' · Publicación: '+escapeHTML(t.fecha_publicacion)):''}</div>
+        <button class="btn secondary" data-jurisprudencia-ver="${t.registro_digital}" style="font-size:11px; padding:5px 10px;">Ver texto completo</button>
+      </div>`).join("")}
+    </div>
+  </div>` : ''}
+  ` : ''}
+  `;
+}
+
+async function buscarJurisprudencia(){
+  const input = document.getElementById('jurisprudenciaPreguntaInput');
+  const pregunta = (input ? input.value : JURISPRUDENCIA_PREGUNTA).trim();
+  if(!pregunta) return;
+  JURISPRUDENCIA_PREGUNTA = pregunta;
+  JURISPRUDENCIA_CARGANDO = true;
+  JURISPRUDENCIA_ERROR = '';
+  renderViewBody();
+  try{
+    JURISPRUDENCIA_RESULTADO = await api('POST', 'jurisprudencia_buscar.php', {pregunta});
+  }catch(err){
+    JURISPRUDENCIA_ERROR = err.message;
+    JURISPRUDENCIA_RESULTADO = null;
+  }
+  JURISPRUDENCIA_CARGANDO = false;
+  renderViewBody();
+}
+
+function bindJurisprudenciaEvents(){
+  const buscarBtn = document.getElementById('jurisprudenciaBuscarBtn');
+  if(buscarBtn) buscarBtn.addEventListener('click', buscarJurisprudencia);
+  const input = document.getElementById('jurisprudenciaPreguntaInput');
+  if(input){
+    input.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); buscarJurisprudencia(); }
+    });
+  }
+  document.querySelectorAll('[data-jurisprudencia-ver]').forEach(btn=>{
+    btn.addEventListener('click', ()=> abrirJurisprudenciaTesisModal(parseInt(btn.dataset.jurisprudenciaVer)));
+  });
+}
+
+// Texto completo de una tesis consultada — en un modal, igual que el resto
+// del sistema, para no perder la respuesta de la IA ni la lista de abajo.
+function abrirJurisprudenciaTesisModal(registro){
+  JURISPRUDENCIA_TESIS_ABIERTA = registro;
+  renderJurisprudenciaTesisModal();
+  document.getElementById('modalOverlay').classList.add('show');
+}
+function cerrarJurisprudenciaTesisModal(){
+  document.getElementById('modalOverlay').classList.remove('show');
+  document.getElementById('modalOverlay').innerHTML = "";
+  JURISPRUDENCIA_TESIS_ABIERTA = null;
+}
+function renderJurisprudenciaTesisModal(){
+  const t = ((JURISPRUDENCIA_RESULTADO && JURISPRUDENCIA_RESULTADO.tesis) || []).find(x=>x.registro_digital===JURISPRUDENCIA_TESIS_ABIERTA);
+  if(!t) return;
+  const overlay = document.getElementById('modalOverlay');
+  overlay.innerHTML = `<div class="modal" style="max-width:720px;">
+    <div class="modal-head">
+      <button class="close" id="modalClose">&times;</button>
+      <h2>${escapeHTML(t.rubro)}</h2>
+      <div class="sub">Registro digital: ${t.registro_digital} · ${escapeHTML(t.instancia||'—')} · ${escapeHTML(t.epoca||'—')}</div>
+    </div>
+    <div class="modal-body" style="white-space:pre-wrap; font-size:13px; line-height:1.5; padding:20px 24px;">${escapeHTML(t.texto_completo)}</div>
+  </div>`;
+  document.getElementById('modalClose').addEventListener('click', cerrarJurisprudenciaTesisModal);
+}
+
 // Detalle de una conversación — se muestra en un modal (ver
 // abrirConversacionModal/renderConversacionModal) para poder abrirlo con un
 // clic sin importar en qué parte de la lista esté la fila, sin tener que
@@ -4911,6 +5016,7 @@ function bindViewBody(){
     });
   });
   bindResumenEjecutivoEvents();
+  bindJurisprudenciaEvents();
   const reintentarLoteBtn = document.getElementById('reintentarLoteBtn');
   if(reintentarLoteBtn){
     reintentarLoteBtn.addEventListener('click', async ()=>{
