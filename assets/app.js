@@ -68,6 +68,14 @@ let RESUMEN_EJECUTIVO_GENERANDO = false;
 let CONVERSACION_ABIERTA = null; // teléfono de la conversación expandida
 let CONVERSACION_MENSAJES = [];
 let CONVERSACION_RESUMEN = null; // {resumen, mensajes_contados, generado_en} o null
+
+// Actualización automática (como WhatsApp Web): cada POLL_MS se revisa si
+// hay mensajes/prospectos nuevos, sin que alguien tenga que recargar la
+// página. Solo corre mientras hay sesión y la pestaña está visible (evita
+// gastar llamadas de más si la dejan abierta en segundo plano toda la
+// noche). Ver iniciarPolling()/pollActualizaciones() más abajo.
+const POLL_MS = 8000;
+let POLL_TIMER = null;
 let REINTENTO_EN_PROGRESO = false; // true mientras corre el reintento en lote de respuestas fallidas
 let REINTENTO_PROGRESO_TXT = "";
 let ACTIVE_CASE = null;
@@ -2266,6 +2274,100 @@ async function loadConversacionResumen(telefono){
   }catch(e){ CONVERSACION_RESUMEN = null; }
 }
 
+// Vuelve a dibujar un modal (chat de Prospecto o Conversación) sin borrar
+// lo que el usuario ya llevaba escrito en la respuesta pendiente — sin
+// esto, cada actualización automática (ver pollActualizaciones) le
+// borraría el mensaje a medio escribir justo cuando le llega algo nuevo.
+function renderizarModalPreservandoInput(inputId, renderFn){
+  const inputPrevio = document.getElementById(inputId);
+  const valorPrevio = inputPrevio ? inputPrevio.value : '';
+  const teniaFoco = !!inputPrevio && document.activeElement === inputPrevio;
+  renderFn();
+  if(!valorPrevio) return;
+  const inputNuevo = document.getElementById(inputId);
+  if(!inputNuevo) return;
+  inputNuevo.value = valorPrevio;
+  if(teniaFoco){
+    inputNuevo.focus();
+    inputNuevo.setSelectionRange(valorPrevio.length, valorPrevio.length);
+  }
+}
+
+// Refleja en vivo el número de prospectos pendientes en el menú lateral
+// (el mismo dato que ya calcula prospectosNuevosCount()), sin tener que
+// redibujar todo el shell — eso resetearía cualquier otra cosa abierta.
+function actualizarBadgeProspectosSidebar(){
+  const btn = document.querySelector('[data-v="prospectos"]');
+  if(!btn) return;
+  const n = prospectosNuevosCount();
+  let badge = document.getElementById('navBadgeProspectos');
+  if(n > 0){
+    if(!badge){
+      badge = document.createElement('span');
+      badge.className = 'nav-badge';
+      badge.id = 'navBadgeProspectos';
+      btn.appendChild(badge);
+    }
+    badge.textContent = n;
+  } else if(badge){
+    badge.remove();
+  }
+}
+
+// Actualización automática, como WhatsApp Web: revisa cada POLL_MS si hay
+// prospectos/conversaciones/mensajes nuevos y los pinta solos, sin que
+// alguien tenga que recargar la página. Se detiene solo si no hay sesión
+// o la pestaña está en segundo plano (document.hidden) — no tiene caso
+// gastar llamadas al servidor si nadie está viendo la pantalla. Cualquier
+// error de red se ignora en silencio (no tiene sentido interrumpir con un
+// alert() cada 8 segundos si hay un hipo de conexión).
+async function pollActualizaciones(){
+  if(!CURRENT_USER || CURRENT_USER.role === 'cliente' || document.hidden) return;
+  try{
+    const prospectosAntes = JSON.stringify(PROSPECTOS);
+    await loadProspectos();
+    if(VIEW === 'prospectos' && JSON.stringify(PROSPECTOS) !== prospectosAntes){
+      const y = window.scrollY;
+      renderViewBody();
+      window.scrollTo(0, y);
+    }
+    actualizarBadgeProspectosSidebar();
+
+    if(VIEW === 'conversaciones'){
+      const conversacionesAntes = JSON.stringify(CONVERSACIONES);
+      await loadConversaciones();
+      if(JSON.stringify(CONVERSACIONES) !== conversacionesAntes){
+        const y = window.scrollY;
+        renderViewBody();
+        window.scrollTo(0, y);
+      }
+    }
+
+    if(PROSPECTO_ABIERTO !== null){
+      const p = PROSPECTOS.find(x=>x.id===PROSPECTO_ABIERTO);
+      if(p){
+        const mensajesAntes = JSON.stringify(PROSPECTO_MENSAJES);
+        await loadProspectoMensajes(p.telefono);
+        if(JSON.stringify(PROSPECTO_MENSAJES) !== mensajesAntes){
+          renderizarModalPreservandoInput('prospectoRespuestaInput', renderProspectoModal);
+        }
+      }
+    }
+    if(CONVERSACION_ABIERTA !== null){
+      const mensajesAntes = JSON.stringify(CONVERSACION_MENSAJES);
+      await loadConversacionMensajes(CONVERSACION_ABIERTA);
+      if(JSON.stringify(CONVERSACION_MENSAJES) !== mensajesAntes){
+        renderizarModalPreservandoInput('conversacionRespuestaInput', renderConversacionModal);
+      }
+    }
+  }catch(e){ /* silencioso: un hipo de red no debe interrumpir cada 8s */ }
+}
+
+function iniciarPolling(){
+  if(POLL_TIMER) return;
+  POLL_TIMER = setInterval(pollActualizaciones, POLL_MS);
+}
+
 function fmtFechaHora(s){
   if(!s) return "—";
   const d = new Date(String(s).replace(' ', 'T'));
@@ -2466,6 +2568,7 @@ function bindGate(){
       CURRENT_USER = {id:data.user.id, name:data.user.nombre, email:data.user.email, role:mapRol(data.user.rol)};
       VIEW = "tablero"; GATE_ERROR = '';
       await refreshBootstrap();
+      iniciarPolling();
       render();
     }catch(err){ GATE_ERROR = err.message; render(); }
   });
@@ -2538,7 +2641,7 @@ function shellHTML(){
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
         <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
-        <button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge">${prospectosNuevosCount()}</span>`:""}</button>
+        <button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge" id="navBadgeProspectos">${prospectosNuevosCount()}</span>`:""}</button>
         ${isAdmin ? `<button data-v="conversaciones" class="${VIEW==='conversaciones'?'active':''}"><span class="ico">&#128269;</span> Conversaciones (WhatsApp)</button>` : ""}
         ${isAdmin ? `<button data-v="resumen_ejecutivo" class="${VIEW==='resumen_ejecutivo'?'active':''}"><span class="ico">&#128202;</span> Resumen ejecutivo (bot)</button>` : ""}
         <div class="section-label">Referencia</div>
@@ -3637,6 +3740,8 @@ function renderProspectoModal(){
   document.getElementById('modalClose').addEventListener('click', cerrarProspectoModal);
   overlay.addEventListener('click', (e)=>{ if(e.target===overlay) cerrarProspectoModal(); });
   bindProspectoModalEvents();
+  const scroll = overlay.querySelector('.chat-scroll');
+  if(scroll) scroll.scrollTop = scroll.scrollHeight;
 }
 
 function bindProspectoModalEvents(){
@@ -6580,6 +6685,7 @@ async function init(){
         CURRENT_USER = {id:data.user.id, name:data.user.nombre, email:data.user.email, role:mapRol(data.user.rol)};
         await refreshBootstrap();
         await loadPlantillaDocx();
+        iniciarPolling();
       }
     }
   }catch(e){ /* no hay sesión activa: se queda en la pantalla de acceso */ }
