@@ -217,14 +217,13 @@ $totalPartes = count($partes);
 // velocidad. Al ser cada parte mucho mas chica que el catalogo completo
 // (~700 lineas, no 4000+), el razonamiento aqui es mucho mas barato que
 // activarlo sobre el catalogo entero.
-// Caché de precios (1 hora): el system prompt de cada parte y el trozo del
-// catálogo que le toca son EXACTAMENTE los mismos, búsqueda tras búsqueda,
-// mientras la biblioteca no cambie (el robot solo la actualiza una vez por
-// semana) -- es la porción más grande de tokens de toda la búsqueda, así
-// que cachearla es donde más se nota. Los hechos del caso (lo único que
-// cambia) van en un bloque aparte, después del que se cachea, para no
-// invalidar nada. TTL de 1h (no el de 5 min por default) porque entre una
-// búsqueda y la siguiente del mismo abogado fácil pasan más de 5 minutos.
+// Caché QUITADO a propósito (se probó y se revirtió): con TTL de 1h, el
+// caché solo sale a cuenta con 3+ búsquedas dentro de la misma hora
+// (escribir cuesta 2x, leer 0.1x). Con el plan real de uso (pocas
+// búsquedas gratis al día por despacho), casi nunca se iba a llegar a esas
+// 3 búsquedas seguidas -- en la práctica, cada búsqueda pagaba el DOBLE
+// sin nunca alcanzar a leer el caché que acababa de escribir. Sin caché,
+// se paga precio normal (1x) siempre, que ya es más barato que eso.
 $payloadsPartes = [];
 foreach ($partes as $i => $lineasParte) {
     $systemParte = 'Un abogado laboralista mexicano te describe los HECHOS de un caso real (no es una pregunta '
@@ -245,15 +244,10 @@ foreach ($partes as $i => $lineasParte) {
         'model' => IA_MODEL,
         'max_tokens' => 3000,
         'thinking' => ['type' => 'adaptive'],
-        'system' => [
-            ['type' => 'text', 'text' => $systemParte, 'cache_control' => ['type' => 'ephemeral', 'ttl' => '1h']],
-        ],
+        'system' => $systemParte,
         'messages' => [[
             'role' => 'user',
-            'content' => [
-                ['type' => 'text', 'text' => "Parte del catálogo:\n\n" . implode("\n", $lineasParte), 'cache_control' => ['type' => 'ephemeral', 'ttl' => '1h']],
-                ['type' => 'text', 'text' => "Hechos del caso: {$pregunta}"],
-            ],
+            'content' => "Hechos del caso: {$pregunta}\n\nParte del catálogo:\n\n" . implode("\n", $lineasParte),
         ]],
     ];
 }
@@ -357,11 +351,7 @@ $texto = jurisprudencia_llamar_claude([
     // mayor jerarquía (Pleno > Salas > Tribunales Colegiados), hay que
     // notarlo y priorizarlo -- no tratarlas como si pesaran igual.
     'thinking' => ['type' => 'adaptive'],
-    // Este system prompt es siempre el mismo (no cambia con el caso ni con
-    // las tesis) -- se cachea igual que en la fase anterior, aunque aquí el
-    // ahorro es menor (es un texto mucho más chico que el catálogo).
-    'system' => [['type' => 'text', 'cache_control' => ['type' => 'ephemeral', 'ttl' => '1h'], 'text' =>
-        'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado del '
+    'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado del '
         . 'despacho te describe los HECHOS de un caso real y te doy, junto con ellos, el texto completo de las '
         . 'tesis de la SCJN que ya se identificaron como aplicables a ese caso (una revisión previa del catálogo '
         . 'completo de la biblioteca ya descartó las que no aplican -- todas las que ves aquí SÍ tienen relación '
@@ -393,7 +383,6 @@ $texto = jurisprudencia_llamar_claude([
         . "únicas que existen para efectos de esta respuesta. No repitas el rubro completo de cada tesis (ya se "
         . "ve aparte en pantalla) -- ve directo a cómo aplica. Nada de introducciones ni cierres genéricos fuera "
         . "de estas dos secciones.",
-    ]],
     'messages' => [[
         'role' => 'user',
         'content' => "Hechos del caso: {$pregunta}\n\nTesis aplicables:\n\n{$contexto}",
