@@ -92,7 +92,7 @@ function jurisprudencia_expandir_terminos(string $pregunta): string
     $u = $data['usage'] ?? [];
     file_put_contents(__DIR__ . '/ia_debug.log', date('c')
         . " | [jurisprudencia_buscar expandir_terminos] input=" . ($u['input_tokens'] ?? 0)
-        . " | output=" . ($u['output_tokens'] ?? 0) . "\n", FILE_APPEND);
+        . " | output=" . ($u['output_tokens'] ?? 0) . " | terminos=" . trim($texto) . "\n", FILE_APPEND);
     return trim($texto);
 }
 
