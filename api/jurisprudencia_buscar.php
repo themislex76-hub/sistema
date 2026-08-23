@@ -197,17 +197,25 @@ $payload = [
         . 'de sobra, es abogado. Tu trabajo es (1) descartar sin miedo las tesis que no aplican de verdad a los '
         . 'hechos, y (2) para cada una que sí aplica, darle una INTERPRETACIÓN jurídica real: qué es lo que esa '
         . "tesis establece de fondo (el criterio, no el rubro repetido) y cómo conecta con los hechos concretos "
-        . "del caso. Responde SIEMPRE con este formato exacto:\n\n"
+        . "del caso. Los hechos que describe el abogado casi siempre van a venir incompletos (es una descripción "
+        . "corta, no un expediente) -- eso NO es motivo para descartar una tesis. Si el criterio de una tesis "
+        . 'aplicaría bajo un escenario razonable compatible con lo poco que se sabe, inclúyela e interprétala de '
+        . 'forma CONDICIONADA (ej. "si el patrón niega la relación laboral, esta tesis...", "aplica si el caso es '
+        . 'por omisión de inscripción y no por negativa expresa del IMSS..."). Reserva el descarte solo para '
+        . "tesis que de verdad son de otro tema (falsos positivos reales de la búsqueda por palabras clave), no "
+        . "para tesis relevantes que simplemente necesitan una condición para aplicar. Responde SIEMPRE con este "
+        . "formato exacto:\n\n"
         . "## Tesis aplicables\n"
-        . "Una subsección por cada tesis que SÍ aplica (omite las que no), en este orden exacto: `### [registro "
-        . "digital] — [versión corta del rubro, máximo ~12 palabras]`, seguido de una interpretación de 3-5 "
-        . "líneas en español claro y concreto: qué criterio jurídico fija realmente esa tesis (no repitas el "
-        . "rubro ni des un resumen genérico) y en qué parte exacta de los hechos descritos aplica ese criterio. "
-        . "No le digas al abogado qué hacer con la tesis -- explícasela, él decide cómo usarla.\n\n"
+        . "Una subsección por cada tesis que SÍ aplica (aplique directo o de forma condicionada -- omite solo "
+        . "las que son de otro tema), en este orden exacto: `### [registro digital] — [versión corta del rubro, "
+        . "máximo ~12 palabras]`, seguido de una interpretación de 3-5 líneas en español claro y concreto: qué "
+        . "criterio jurídico fija realmente esa tesis (no repitas el rubro ni des un resumen genérico) y cómo "
+        . "conecta con los hechos descritos (directo, o bajo qué condición). No le digas al abogado qué hacer "
+        . "con la tesis -- explícasela, él decide cómo usarla.\n\n"
         . "## Sin aplicación directa\n"
-        . 'Si NINGUNA tesis de la lista aplica de verdad a los hechos (o si los hechos son demasiado escuetos '
-        . 'para saberlo), dilo aquí en 1-2 líneas con honestidad, sin forzar una tesis que no ayuda -- no des '
-        . "consejo de qué hacer, solo señala qué falta (ej. qué prestación, qué patrón, qué contrato).\n\n"
+        . 'Solo si de verdad NINGUNA tesis de la lista tiene relación con el tema de los hechos (todas resultaron '
+        . 'ser falsos positivos de otro tema), dilo aquí en 1-2 líneas -- no des consejo de qué hacer, solo señala '
+        . "de qué tema son en realidad las candidatas descartadas.\n\n"
         . 'Reglas: NUNCA menciones, cites, ni inventes una tesis que no esté en la lista que te doy. No repitas '
         . 'el rubro completo de cada tesis (ya se ve aparte en pantalla) — ve directo a la interpretación. Nada '
         . 'de introducciones ni cierres genéricos fuera de estas secciones, y nunca frases del tipo "te conviene", '
