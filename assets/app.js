@@ -4129,8 +4129,9 @@ function jurisprudenciaHTML(){
       <textarea id="jurisprudenciaPreguntaInput" placeholder="Describe los hechos de tu caso, entre más detalle mejor (ej. &quot;el trabajador fue despedido pero el patrón argumenta que ya no se presentó a trabajar, sin haberle dado ningún aviso de rescisión por escrito&quot;)..." style="width:100%; min-height:110px; padding:11px 13px; border:1px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; resize:vertical;">${escapeHTML(JURISPRUDENCIA_PREGUNTA)}</textarea>
       <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:10px;">
         <span style="font-size:11.5px; color:var(--gray);">Ctrl+Enter para buscar</span>
-        <button class="btn" id="jurisprudenciaBuscarBtn" ${JURISPRUDENCIA_CARGANDO?'disabled':''}>${JURISPRUDENCIA_CARGANDO ? 'Buscando...' : 'Buscar'}</button>
+        <button class="btn" id="jurisprudenciaBuscarBtn" ${JURISPRUDENCIA_CARGANDO?'disabled':''}>${JURISPRUDENCIA_CARGANDO ? 'Buscando <span class="loading-dots"><span></span><span></span><span></span></span>' : 'Buscar'}</button>
       </div>
+      ${JURISPRUDENCIA_CARGANDO ? `<div class="notice" style="margin-top:12px; display:flex; align-items:center; gap:10px;"><span class="loading-dots" style="color:var(--brass);"><span></span><span></span><span></span></span> Revisando la biblioteca de tesis y armando el análisis, puede tardar unos segundos…</div>` : ''}
       ${JURISPRUDENCIA_ERROR ? `<div class="notice" style="margin-top:12px; border-color:var(--red); color:var(--red);">${escapeHTML(JURISPRUDENCIA_ERROR)}</div>` : ''}
     </div>
   </div>
