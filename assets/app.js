@@ -4125,7 +4125,7 @@ function jurisprudenciaHTML(){
   return `
   <div class="panel" style="margin-bottom:16px;">
     <div class="panel-body" style="padding:20px 24px;">
-      <div class="notice" style="margin-bottom:14px;">Describe los hechos concretos de tu caso (quién es el patrón, qué prestación o problema hay, qué pasó) — entre más específico, mejor. También puedes hacer una pregunta jurídica directa (ej. "¿el Servicio Postal es Apartado A o B?"). No necesitas usar términos legales exactos: el sistema los traduce automáticamente antes de buscar. La IA revisa la biblioteca de tesis y jurisprudencia laboral de la SCJN, compartida entre todos los despachos, y cita solo tesis reales guardadas aquí — nunca inventa una.</div>
+      <div class="notice" style="margin-bottom:14px;">Describe los hechos concretos de tu caso (quién es el patrón, qué prestación o problema hay, qué pasó) — evita preguntas muy generales, entre más específico mejor. Solo cita tesis reales de esta biblioteca, nunca inventa una.</div>
       <textarea id="jurisprudenciaPreguntaInput" placeholder="Describe los hechos de tu caso, entre más detalle mejor (ej. &quot;el trabajador fue despedido pero el patrón argumenta que ya no se presentó a trabajar, sin haberle dado ningún aviso de rescisión por escrito&quot;)..." style="width:100%; min-height:110px; padding:11px 13px; border:1px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; resize:vertical;">${escapeHTML(JURISPRUDENCIA_PREGUNTA)}</textarea>
       <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:10px;">
         <span style="font-size:11.5px; color:var(--gray);">Ctrl+Enter para buscar</span>
