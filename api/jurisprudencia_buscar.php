@@ -98,27 +98,52 @@ function jurisprudencia_expandir_terminos(string $pregunta): string
 
 $terminosExpandidos = jurisprudencia_expandir_terminos($pregunta);
 // Si este paso falla por cualquier motivo (red, la IA no contestó, etc.),
-// no se tumba la búsqueda -- simplemente se sigue solo con el texto
+// simplemente no hay términos que sumar y se sigue solo con el texto
 // original del abogado, como antes de este cambio.
-$textoBusqueda = $terminosExpandidos !== '' ? ($pregunta . ' ' . $terminosExpandidos) : $pregunta;
 
 $pdo = db();
 
 // Paso 1 (gratis, instantáneo): candidatas por búsqueda de texto normal de
-// MySQL sobre el rubro (el título) de cada tesis, ordenadas por qué tanto
-// coinciden sus palabras (ya incluyendo los términos expandidos del Paso 0)
-// con los hechos del caso. Requiere el índice FULLTEXT ft_rubro — ver
-// sql/migraciones/031_jurisprudencia_fulltext_rubro.sql.
-$stmtCandidatas = $pdo->prepare(
-    "SELECT registro_digital, instancia, epoca, numero_tesis, materias, rubro, texto_completo, fecha_publicacion,
-            MATCH(rubro) AGAINST (:q IN NATURAL LANGUAGE MODE) AS relevancia
-     FROM jurisprudencia_tesis
-     WHERE MATCH(rubro) AGAINST (:q2 IN NATURAL LANGUAGE MODE)
-     ORDER BY relevancia DESC
-     LIMIT 20"
-);
-$stmtCandidatas->execute([':q' => $textoBusqueda, ':q2' => $textoBusqueda]);
-$candidatas = $stmtCandidatas->fetchAll();
+// MySQL sobre el rubro (el título) de cada tesis. Requiere el índice
+// FULLTEXT ft_rubro — ver sql/migraciones/031_jurisprudencia_fulltext_rubro.sql.
+//
+// Importante: el texto original y los términos expandidos del Paso 0 se
+// buscan CADA UNO POR SEPARADO (no concatenados en una sola consulta) y
+// luego se juntan los resultados sin duplicar. Se probó concatenarlos en
+// un solo MATCH ... AGAINST() y salió peor -- MySQL en NATURAL LANGUAGE
+// MODE no exige que coincidan todas las palabras, solo suma puntos por
+// cada una que aparezca, así que meter 10 términos de golpe hacía que
+// tesis que no tenían nada que ver con el caso real (pero sí coincidían
+// en varios términos sueltos como "aguinaldo" + "prima vacacional" +
+// "artículo 84") le ganaran en relevancia a la tesis correcta, que solo
+// coincidía fuerte en un término específico ("vales de despensa"). Buscar
+// cada texto aparte y unir resultados deja que el texto original siga
+// encontrando lo que ya encontraba bien, y los términos expandidos solo
+// SUMAN candidatas nuevas para preguntas genéricas, nunca le quitan lugar
+// a las que ya iban a aparecer.
+function jurisprudencia_buscar_candidatas(PDO $pdo, string $texto): array
+{
+    if (trim($texto) === '') return [];
+    $stmt = $pdo->prepare(
+        "SELECT registro_digital, instancia, epoca, numero_tesis, materias, rubro, texto_completo, fecha_publicacion,
+                MATCH(rubro) AGAINST (:q IN NATURAL LANGUAGE MODE) AS relevancia
+         FROM jurisprudencia_tesis
+         WHERE MATCH(rubro) AGAINST (:q2 IN NATURAL LANGUAGE MODE)
+         ORDER BY relevancia DESC
+         LIMIT 20"
+    );
+    $stmt->execute([':q' => $texto, ':q2' => $texto]);
+    return $stmt->fetchAll();
+}
+
+$candidatas = jurisprudencia_buscar_candidatas($pdo, $pregunta);
+$yaIncluidas = array_column($candidatas, 'registro_digital');
+foreach (jurisprudencia_buscar_candidatas($pdo, $terminosExpandidos) as $t) {
+    if (!in_array($t['registro_digital'], $yaIncluidas, true)) {
+        $candidatas[] = $t;
+        $yaIncluidas[] = $t['registro_digital'];
+    }
+}
 
 if (!$candidatas) {
     respond([
