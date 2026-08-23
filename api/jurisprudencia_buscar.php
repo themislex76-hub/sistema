@@ -221,6 +221,12 @@ $payload = [
         . "tesis que de verdad son de otro tema (falsos positivos reales de la búsqueda por palabras clave), no "
         . "para tesis relevantes que simplemente necesitan una condición para aplicar. Responde SIEMPRE con este "
         . "formato exacto:\n\n"
+        . "## En resumen\n"
+        . '1-2 líneas, SOLO si de las tesis aplicables se desprende un dato o criterio jurídico puntual y '
+        . 'objetivo que responda directo a lo que se preguntó (ej. "Sepomex está regido por el Apartado A, con '
+        . 'competencia del TFCA"). Esto es un DATO, no una recomendación -- nunca uses "conviene", "deberías", '
+        . '"lo mejor es". Si los hechos son una narración de caso (no una pregunta puntual de sí/no o de dato '
+        . "concreto) y no hay un solo dato objetivo que resumir, omite esta sección por completo (no la fuerces).\n\n"
         . "## Tesis aplicables\n"
         . "Una subsección por cada tesis que SÍ aplica (aplique directo o de forma condicionada -- omite solo "
         . "las que son de otro tema), en este orden exacto: `### [registro digital] — [versión corta del rubro, "
