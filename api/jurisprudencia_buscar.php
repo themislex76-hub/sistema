@@ -53,12 +53,25 @@ function jurisprudencia_expandir_terminos(string $pregunta): string
         'model' => IA_MODEL,
         'max_tokens' => 200,
         'thinking' => ['type' => 'disabled'],
-        'system' => 'Un abogado laboralista mexicano te describe, en lenguaje coloquial, los hechos de un caso. '
-            . 'Tu única tarea es dar de 5 a 10 términos o frases jurídicas (en español, materia laboral mexicana) '
-            . 'que probablemente aparezcan en el RUBRO (título) de una tesis o jurisprudencia real de la SCJN '
-            . 'sobre ese tema -- sinónimos técnicos, nombres de instituciones/figuras jurídicas, artículos de la '
-            . 'LFT si aplica, etc. Responde SOLO con los términos separados por comas, sin numerar, sin explicar '
-            . 'nada, sin repetir el texto original tal cual.',
+        'system' => 'Un abogado laboralista mexicano te describe, en lenguaje coloquial, los hechos de un caso '
+            . 'real. Tu única tarea es traducir esa descripción a los términos y frases jurídicas EXACTAS con '
+            . 'las que probablemente esté redactado el RUBRO (título) de una tesis o jurisprudencia real de la '
+            . "SCJN sobre ese tema.\n\n"
+            . "Reglas:\n"
+            . "- Da de 5 a 8 términos o frases, ordenados del más específico/probable al más general.\n"
+            . '- Usa nombres técnicos reales de figuras e instituciones jurídicas laborales mexicanas (ej. '
+            . '"presunción de relación laboral", "sustitución patronal", "responsabilidad solidaria", "falta de '
+            . 'inscripción ante el IMSS"), no descripciones genéricas de lo que pasó.'
+            . "\n"
+            . '- Evita términos sueltos demasiado amplios que por sí solos aparecen en cientos de tesis de temas '
+            . 'no relacionados (ej. nunca des solo "prestaciones", "salario" o "seguridad social" sueltos) -- si '
+            . 'hace falta un concepto así de amplio, combínalo con lo específico del caso en la misma frase (ej. '
+            . '"prestaciones de seguridad social por riesgo de trabajo", no "prestaciones de seguridad social").'
+            . "\n"
+            . '- Si el caso apunta claramente a un artículo específico de la LFT o la LSS, inclúyelo (ej. '
+            . "\"artículo 47 LFT\").\n"
+            . '- No repitas el texto original tal cual ni des explicaciones. Responde SOLO con los términos '
+            . 'separados por comas, sin numerar.',
         'messages' => [['role' => 'user', 'content' => "Hechos del caso: {$pregunta}"]],
     ];
     $ch = curl_init('https://api.anthropic.com/v1/messages');
