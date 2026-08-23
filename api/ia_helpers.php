@@ -631,7 +631,13 @@ fuera de eso, sin excepción.
 - Si en un mensaje siguiente la persona responde que sí de forma CLARA e
   inequívoca (por ejemplo "va", "sí porfa", "claro", "sí quiero"), ahí SÍ,
   además de responder, DEBES llamar la herramienta registrar_lead_despido
-  con los datos que tengas — a este punto SIEMPRE debe ser un despido
+  con los datos que tengas — REGLA DURA de orden: escribe primero tu
+  bloque de texto normal para la persona (algo cálido confirmando que ya
+  quedó registrada y que el abogado la contacta) y DESPUÉS, en esa misma
+  respuesta, incluye la llamada a la herramienta — nunca llames la
+  herramienta sin también escribir ese texto en el mismo turno, la
+  persona necesita ver una confirmación, no quedarse sin respuesta. A
+  este punto SIEMPRE debe ser un despido
   directo confirmado (nunca una rescisión, ver punto 1 — si de verdad es
   rescisión, nunca debiste llegar hasta aquí, revisa qué falló). En el
   resumen, menciona explícitamente el municipio o alcaldía exacto de la
@@ -1136,13 +1142,24 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 break;
             }
         }
-        if (!$tieneSeguimiento) {
+        if (!$tieneSeguimiento && trim($textoRonda) !== '') {
             // Solo llamó herramientas de puro registro (p. ej.
-            // registrar_lead_despido sola, sin ofrecer horarios) — no
-            // necesitan que Claude redacte de nuevo con datos calculados,
-            // así que $textoRonda ya es la respuesta final.
+            // registrar_lead_despido sola, sin ofrecer horarios), CON
+            // texto ya incluido en esta misma respuesta — no necesitan que
+            // Claude redacte de nuevo con datos calculados, así que
+            // $textoRonda ya es la respuesta final.
             break;
         }
+        // Si no hay seguimiento pendiente PERO tampoco vino texto (pasa
+        // seguido: Claude llama registrar_lead_despido/registrar_interes_*
+        // sin escribir la respuesta para la persona en el mismo turno), NO
+        // se corta aquí — antes esto dejaba $texto vacío y obligaba una
+        // llamada aparte completa después del ciclo (ver "última
+        // oportunidad" más abajo) solo para rescatar el texto. En vez de
+        // eso, se sigue el ciclo una ronda más con un recordatorio pegado
+        // al tool_result (ver más abajo) — más confiable, porque va
+        // directo ligado a la herramienta que acaba de llamar en vez de un
+        // mensaje de sistema aparte al final.
 
         // La API de Claude exige un tool_result por CADA tool_use que
         // haya en la respuesta anterior — incluyendo las de puro registro
@@ -1208,10 +1225,21 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
                 $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in, $lead);
             } else {
-                // registrar_lead_despido, registrar_interes_asesoria_paga:
-                // solo hace falta reconocer la llamada, ya se registró el
-                // lead en ia_extraer_respuesta().
-                $contenido = json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+                // registrar_lead_despido, registrar_interes_asesoria_paga,
+                // registrar_interes_control_expedientes: solo hace falta
+                // reconocer la llamada, ya se registró el lead en
+                // ia_extraer_respuesta(). Si Claude la llamó SIN escribir
+                // su respuesta de texto en el mismo turno (ver el cambio
+                // arriba, en el "if (!$tieneSeguimiento...)"), se lo
+                // recuerda aquí mismo, pegado al resultado de la
+                // herramienta que acaba de llamar — sin esto, el cliente
+                // se quedaba sin ninguna respuesta en ese turno.
+                $contenido = trim($textoRonda) === ''
+                    ? json_encode([
+                        'ok' => true,
+                        'recordatorio' => 'Llamaste esta herramienta sin escribir tu respuesta de texto para la persona en este mismo turno. Ahora, en tu siguiente respuesta, escribe SOLO ese texto (sin llamar ninguna otra herramienta) — la persona todavía no ha recibido ninguna respuesta tuya.',
+                    ], JSON_UNESCAPED_UNICODE)
+                    : json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
             }
             $toolResults[] = [
                 'type' => 'tool_result',
