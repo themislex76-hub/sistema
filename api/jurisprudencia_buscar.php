@@ -3,7 +3,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/ia_helpers.php'; // solo para reusar la constante IA_MODEL
 
-// Buscador de jurisprudencia laboral — versión barata en 2 pasos,
+// Buscador de jurisprudencia laboral — versión barata en 3 pasos,
 // disponible para cualquier usuario con sesión (la biblioteca de tesis es
 // compartida entre todos los despachos, no se divide por despacho).
 //
@@ -15,14 +15,16 @@ require_once __DIR__ . '/ia_helpers.php'; // solo para reusar la constante IA_MO
 // instantánea) y solo le pide a Claude que analice ese puñado ya
 // preseleccionado, sin razonamiento extendido — mucho más barato.
 //
-// Contrapartida real: la precisión del primer paso depende de que las
-// palabras que use el abogado coincidan con las del rubro/tesis — no es
-// una búsqueda semántica de verdad (si describe el caso con puras
-// palabras distintas a como está redactada la tesis, puede no aparecer
-// como candidata). Si con uso real se ve que se le escapan tesis
-// relevantes por esto, el siguiente paso sería usar embeddings en vez de
-// FULLTEXT para esa primera etapa — pero eso es otro proveedor/costo
-// aparte, se evalúa solo si de verdad hace falta.
+// Paso 0 — expandir términos (barato, ~1-2 centavos): traduce la
+// descripción coloquial del abogado a términos jurídicos probables antes
+// de buscar (ver jurisprudencia_expandir_terminos) — sin esto, preguntas
+// tan normales como "cómo se integra el salario" no encontraban la tesis
+// general del tema, solo resoluciones muy específicas que compartían la
+// palabra "salario" pero no el concepto. Esto no es búsqueda semántica de
+// verdad (si el abogado y la tesis usan vocabulario MUY distinto, puede
+// seguir sin aparecer) — si con uso real se ve que sigue sin bastar, el
+// siguiente paso sería usar embeddings en vez de FULLTEXT, pero eso es
+// otro proveedor/costo aparte, se evalúa solo si de verdad hace falta.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Método no permitido.', 405);
 require_login();
 require_csrf();
@@ -32,12 +34,75 @@ $pregunta = trim((string)($in['pregunta'] ?? ''));
 if ($pregunta === '') fail('Describe los hechos del caso.', 400);
 if (mb_strlen($pregunta) > 2000) fail('La descripción es demasiado larga.', 400);
 
+$credentialsFile = __DIR__ . '/anthropic_credentials.php';
+if (!file_exists($credentialsFile)) fail('Falta anthropic_credentials.php.', 500);
+require_once $credentialsFile;
+
+// Paso 0 (barato, ~1-2 centavos): antes de buscar, se le pide a Claude que
+// traduzca los hechos del caso (lenguaje coloquial del abogado) a los
+// TÉRMINOS jurídicos con los que probablemente está redactado el rubro de
+// la tesis real -- sin esto, una pregunta tan normal como "cómo se integra
+// el salario" no encontraba la tesis general del tema (Art. 84 LFT), solo
+// resoluciones muy específicas que sí compartían la palabra "salario"
+// pero no el concepto general. El texto original del abogado NO se
+// descarta -- los términos se agregan aparte, para no perder ninguna
+// palabra específica que ya haya usado bien.
+function jurisprudencia_expandir_terminos(string $pregunta): string
+{
+    $payload = [
+        'model' => IA_MODEL,
+        'max_tokens' => 200,
+        'thinking' => ['type' => 'disabled'],
+        'system' => 'Un abogado laboralista mexicano te describe, en lenguaje coloquial, los hechos de un caso. '
+            . 'Tu única tarea es dar de 5 a 10 términos o frases jurídicas (en español, materia laboral mexicana) '
+            . 'que probablemente aparezcan en el RUBRO (título) de una tesis o jurisprudencia real de la SCJN '
+            . 'sobre ese tema -- sinónimos técnicos, nombres de instituciones/figuras jurídicas, artículos de la '
+            . 'LFT si aplica, etc. Responde SOLO con los términos separados por comas, sin numerar, sin explicar '
+            . 'nada, sin repetir el texto original tal cual.',
+        'messages' => [['role' => 'user', 'content' => "Hechos del caso: {$pregunta}"]],
+    ];
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($raw === false || $status !== 200) return '';
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $u = $data['usage'] ?? [];
+    file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+        . " | [jurisprudencia_buscar expandir_terminos] input=" . ($u['input_tokens'] ?? 0)
+        . " | output=" . ($u['output_tokens'] ?? 0) . "\n", FILE_APPEND);
+    return trim($texto);
+}
+
+$terminosExpandidos = jurisprudencia_expandir_terminos($pregunta);
+// Si este paso falla por cualquier motivo (red, la IA no contestó, etc.),
+// no se tumba la búsqueda -- simplemente se sigue solo con el texto
+// original del abogado, como antes de este cambio.
+$textoBusqueda = $terminosExpandidos !== '' ? ($pregunta . ' ' . $terminosExpandidos) : $pregunta;
+
 $pdo = db();
 
 // Paso 1 (gratis, instantáneo): candidatas por búsqueda de texto normal de
 // MySQL sobre el rubro (el título) de cada tesis, ordenadas por qué tanto
-// coinciden sus palabras con los hechos del caso. Requiere el índice
-// FULLTEXT ft_rubro — ver sql/migraciones/031_jurisprudencia_fulltext_rubro.sql.
+// coinciden sus palabras (ya incluyendo los términos expandidos del Paso 0)
+// con los hechos del caso. Requiere el índice FULLTEXT ft_rubro — ver
+// sql/migraciones/031_jurisprudencia_fulltext_rubro.sql.
 $stmtCandidatas = $pdo->prepare(
     "SELECT registro_digital, instancia, epoca, numero_tesis, materias, rubro, texto_completo, fecha_publicacion,
             MATCH(rubro) AGAINST (:q IN NATURAL LANGUAGE MODE) AS relevancia
@@ -46,7 +111,7 @@ $stmtCandidatas = $pdo->prepare(
      ORDER BY relevancia DESC
      LIMIT 20"
 );
-$stmtCandidatas->execute([':q' => $pregunta, ':q2' => $pregunta]);
+$stmtCandidatas->execute([':q' => $textoBusqueda, ':q2' => $textoBusqueda]);
 $candidatas = $stmtCandidatas->fetchAll();
 
 if (!$candidatas) {
@@ -55,10 +120,6 @@ if (!$candidatas) {
         'tesis' => [],
     ]);
 }
-
-$credentialsFile = __DIR__ . '/anthropic_credentials.php';
-if (!file_exists($credentialsFile)) fail('Falta anthropic_credentials.php.', 500);
-require_once $credentialsFile;
 
 // Paso 2 (barato): una sola llamada a Claude, sin razonamiento extendido,
 // que revisa SOLO estas ≤20 candidatas ya preseleccionadas (no las 4,080)
