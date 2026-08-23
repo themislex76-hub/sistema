@@ -155,7 +155,7 @@ function jurisprudencia_buscar_candidatas(PDO $pdo, string $texto): array
 {
     if (trim($texto) === '') return [];
     $stmt = $pdo->prepare(
-        'SELECT registro_digital, instancia, epoca, numero_tesis, rubro, texto_completo, fecha_publicacion,
+        'SELECT registro_digital, instancia, epoca, numero_tesis, tipo, rubro, texto_completo, fecha_publicacion,
                 MATCH(rubro) AGAINST (:q IN NATURAL LANGUAGE MODE) AS relevancia
          FROM jurisprudencia_tesis
          WHERE MATCH(rubro) AGAINST (:q2 IN NATURAL LANGUAGE MODE)
@@ -194,8 +194,9 @@ $bloques = [];
 foreach ($candidatas as $t) {
     $bloques[] = "[Registro digital: {$t['registro_digital']}]\n"
         . "Rubro: {$t['rubro']}\n"
-        . 'Instancia: ' . ($t['instancia'] ?: '(sin dato)') . ' | Época: ' . ($t['epoca'] ?: '(sin dato)')
-        . ' | Tesis: ' . ($t['numero_tesis'] ?: '(sin dato)') . ' | Publicación: ' . ($t['fecha_publicacion'] ?: '(sin dato)') . "\n"
+        . 'Instancia: ' . ($t['instancia'] ?: '(sin dato)') . ' | Tipo: ' . ($t['tipo'] ?: '(sin dato)')
+        . ' | Época: ' . ($t['epoca'] ?: '(sin dato)') . ' | Tesis: ' . ($t['numero_tesis'] ?: '(sin dato)')
+        . ' | Publicación: ' . ($t['fecha_publicacion'] ?: '(sin dato)') . "\n"
         . 'Texto: ' . mb_strimwidth((string)$t['texto_completo'], 0, 1200, '…');
 }
 $contexto = implode("\n\n---\n\n", $bloques);
@@ -219,14 +220,24 @@ $payload = [
         . 'forma CONDICIONADA (ej. "si el patrón niega la relación laboral, esta tesis...", "aplica si el caso es '
         . 'por omisión de inscripción y no por negativa expresa del IMSS..."). Reserva el descarte solo para '
         . "tesis que de verdad son de otro tema (falsos positivos reales de la búsqueda por palabras clave), no "
-        . "para tesis relevantes que simplemente necesitan una condición para aplicar. Responde SIEMPRE con este "
-        . "formato exacto:\n\n"
+        . "para tesis relevantes que simplemente necesitan una condición para aplicar. "
+        . 'IMPORTANTE sobre jerarquía: cada tesis trae su "Tipo" (Jurisprudencia = obligatoria, por reiteración o '
+        . 'resolución de contradicción; Tesis Aislada = orientadora, NO obligatoria) y su "Instancia" (Pleno > '
+        . 'Salas > Plenos Regionales / Tribunales Colegiados, en ese orden de peso). Cuando dos o más candidatas '
+        . 'tratan EXACTAMENTE el mismo punto jurídico y llegan a conclusiones distintas o contradictorias entre '
+        . 'sí, NUNCA las presentes como si ambas aplicaran por igual -- identifica cuál es la que de verdad '
+        . 'controla (mayor jerarquía de tipo e instancia; si son del mismo nivel, la más reciente que resuelva '
+        . 'expresamente el punto de la anterior) y dilo explícitamente en la interpretación de la que sí aplica '
+        . '(ej. "esta jurisprudencia, por ser posterior y obligatoria, supera el criterio de la tesis aislada '
+        . '[registro] que sostenía lo contrario"). No te quedes solo con la coincidencia por palabras clave para '
+        . 'decidir cuál mencionar como aplicable -- si hay conflicto entre candidatas, resuélvelo con este '
+        . "criterio antes de escribir la interpretación. Responde SIEMPRE con este formato exacto:\n\n"
         . "## En resumen\n"
-        . '1-2 líneas, SOLO si de las tesis aplicables se desprende un dato o criterio jurídico puntual y '
-        . 'objetivo que responda directo a lo que se preguntó (ej. "Sepomex está regido por el Apartado A, con '
-        . 'competencia del TFCA"). Esto es un DATO, no una recomendación -- nunca uses "conviene", "deberías", '
-        . '"lo mejor es". Si los hechos son una narración de caso (no una pregunta puntual de sí/no o de dato '
-        . "concreto) y no hay un solo dato objetivo que resumir, omite esta sección por completo (no la fuerces).\n\n"
+        . '1-2 líneas, SOLO si de las tesis aplicables (ya resuelto cualquier conflicto de jerarquía) se '
+        . 'desprende un dato o criterio jurídico puntual y objetivo que responda directo a lo que se preguntó. '
+        . 'Esto es un DATO, no una recomendación -- nunca uses "conviene", "deberías", "lo mejor es". Si los '
+        . 'hechos son una narración de caso (no una pregunta puntual de sí/no o de dato concreto) y no hay un '
+        . "solo dato objetivo que resumir, omite esta sección por completo (no la fuerces).\n\n"
         . "## Tesis aplicables\n"
         . "Una subsección por cada tesis que SÍ aplica (aplique directo o de forma condicionada -- omite solo "
         . "las que son de otro tema), en este orden exacto: `### [registro digital] — [versión corta del rubro, "
@@ -293,6 +304,7 @@ $tesisConsultadas = array_map(static function ($t) {
         'registro_digital' => (int)$t['registro_digital'],
         'rubro' => $t['rubro'],
         'instancia' => $t['instancia'],
+        'tipo' => $t['tipo'],
         'epoca' => $t['epoca'],
         'numero_tesis' => $t['numero_tesis'],
         'fecha_publicacion' => $t['fecha_publicacion'],
