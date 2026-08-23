@@ -249,6 +249,18 @@ async function buscarTesisRecientes(page, procesados, modoCompleto) {
   const resultados = [];
   const vistos = new Set();
   let pagina = 1;
+  let paginasVaciasSeguidas = 0;
+  // Cuántas páginas SEGUIDAS sin nada nuevo hacen falta para asumir que ya
+  // se llegó al final de lo nuevo y parar. Antes bastaba con UNA sola
+  // página vacía -- pero el "forzar orden por fecha reciente" de arriba
+  // puede fallar en silencio (solo un console.log, sin abortar la
+  // corrida) si el sitio cambia ese selector, y sin ese orden garantizado
+  // una sola página sin nada nuevo no prueba que TODO lo de después ya sea
+  // conocido (empates de fecha, reordenamientos, etc. pueden intercalar
+  // una tesis vieja-pero-nueva-para-nosotros entre páginas ya conocidas).
+  // Exigir varias seguidas reduce el riesgo de saltarse tesis reales sin
+  // perder el ahorro de las corridas semanales normales.
+  const PAGINAS_VACIAS_PARA_PARAR = 3;
   const MAX_PAGINAS = 2000; // limite de seguridad, muy por encima de lo esperable
   // Si algun paso se queda atorado mas de esto (el sitio deja de responder,
   // se atora en alguna animacion, etc.), se toma una foto de lo que se ve
@@ -276,13 +288,16 @@ async function buscarTesisRecientes(page, procesados, modoCompleto) {
     console.log('  Pagina ' + pagina + ': ' + enPagina.length + ' tesis (' + nuevosEnPagina + ' nueva(s) sin procesar).');
 
     // Corrida inicial (biblioteca vacia): esto nunca se cumple, asi que
-    // recorre el historial completo. Corridas siguientes: en cuanto una
-    // pagina entera no aporta nada nuevo, se asume (dado el orden por fecha
-    // reciente) que de ahi en adelante todo es ya conocido, y no hace falta
-    // seguir avanzando semana tras semana por miles de tesis viejas.
+    // recorre el historial completo. Corridas siguientes: en cuanto varias
+    // paginas SEGUIDAS no aportan nada nuevo, se asume (dado el orden por
+    // fecha reciente) que de ahi en adelante todo es ya conocido, y no hace
+    // falta seguir avanzando semana tras semana por miles de tesis viejas.
     // Con --completo se desactiva este atajo (ver mas abajo por que hace
     // falta a veces incluso con la biblioteca no vacia).
-    if (!modoCompleto && pagina > 1 && nuevosEnPagina === 0 && enPagina.length > 0) break;
+    if (enPagina.length > 0) {
+      paginasVaciasSeguidas = nuevosEnPagina === 0 ? paginasVaciasSeguidas + 1 : 0;
+    }
+    if (!modoCompleto && pagina > 1 && paginasVaciasSeguidas >= PAGINAS_VACIAS_PARA_PARAR) break;
 
     let avanzo;
     try {
