@@ -75,8 +75,14 @@ function jurisprudencia_expandir_terminos(string $pregunta): string
     ]);
     $raw = curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
     curl_close($ch);
-    if ($raw === false || $status !== 200) return '';
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [jurisprudencia_buscar expandir_terminos] FALLÓ status=$status | curl=$curlError | body="
+            . mb_strimwidth((string)$raw, 0, 500, '…') . "\n", FILE_APPEND);
+        return '';
+    }
 
     $data = json_decode($raw, true);
     $texto = '';
