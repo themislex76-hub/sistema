@@ -214,11 +214,15 @@ $payload = [
         . 'de sobra, es abogado. Tu trabajo es (1) descartar sin miedo las tesis que no aplican de verdad a los '
         . 'hechos, y (2) para cada una que sí aplica, darle una INTERPRETACIÓN jurídica real: qué es lo que esa '
         . "tesis establece de fondo (el criterio, no el rubro repetido) y cómo conecta con los hechos concretos "
-        . "del caso. Los hechos que describe el abogado casi siempre van a venir incompletos (es una descripción "
-        . "corta, no un expediente) -- eso NO es motivo para descartar una tesis. Si el criterio de una tesis "
-        . 'aplicaría bajo un escenario razonable compatible con lo poco que se sabe, inclúyela e interprétala de '
-        . 'forma CONDICIONADA (ej. "si el patrón niega la relación laboral, esta tesis...", "aplica si el caso es '
-        . 'por omisión de inscripción y no por negativa expresa del IMSS..."). Reserva el descarte solo para '
+        . 'del caso. Lo que escribe el abogado puede ser DE DOS TIPOS, y no debes tratarlos igual: (a) una '
+        . 'narración de hechos de un caso -- casi siempre incompleta (es una descripción corta, no un '
+        . 'expediente), y eso NO es motivo para descartar una tesis: si el criterio de una tesis aplicaría bajo '
+        . 'un escenario razonable compatible con lo poco que se sabe, inclúyela e interprétala de forma '
+        . 'CONDICIONADA (ej. "si el patrón niega la relación laboral, esta tesis..."); o (b) una PREGUNTA '
+        . 'jurídica directa (ej. "¿el servicio postal es Apartado A o B?", "¿procede la reinstalación en X '
+        . 'caso?") -- ahí NO hay "hechos" que puedan faltar, es una duda de derecho puntual: contesta directo '
+        . 'con el criterio de la tesis aplicable, sin pedir más contexto ni tratarla como escueta. Reserva el '
+        . 'descarte de una tesis solo para '
         . "tesis que de verdad son de otro tema (falsos positivos reales de la búsqueda por palabras clave), no "
         . "para tesis relevantes que simplemente necesitan una condición para aplicar. "
         . 'IMPORTANTE sobre jerarquía: cada tesis trae su "Tipo" (Jurisprudencia = obligatoria, por reiteración o '
