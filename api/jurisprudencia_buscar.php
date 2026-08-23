@@ -1,7 +1,12 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/config.php';
-require_once __DIR__ . '/ia_helpers.php'; // solo para reusar la constante IA_MODEL
+
+// Haiku 4.5 en vez de Sonnet 5 para las dos llamadas de este buscador
+// (expandir términos y analizar candidatas) -- ambas son tareas acotadas
+// (dar términos, interpretar tesis ya preseleccionadas) que no necesitan
+// el modelo más caro, y el Paso 2 es ~90% del costo total de la búsqueda.
+const JURISPRUDENCIA_MODELO_BARATO = 'claude-haiku-4-5-20251001';
 
 // Buscador de jurisprudencia laboral — versión barata en 3 pasos,
 // disponible para cualquier usuario con sesión (la biblioteca de tesis es
@@ -34,20 +39,7 @@ $pregunta = trim((string)($in['pregunta'] ?? ''));
 if ($pregunta === '') fail('Describe los hechos del caso.', 400);
 if (mb_strlen($pregunta) > 2000) fail('La descripción es demasiado larga.', 400);
 
-// Límite del piloto: 5 búsquedas al día, compartidas entre todo el
-// despacho (no por abogado individual) -- ver sql/migraciones/032. Se
-// revisa y se cuenta ANTES de gastar nada en la IA, para no cobrar una
-// búsqueda que de todos modos se va a rechazar.
-const JURISPRUDENCIA_LIMITE_DIARIO = 5;
 $pdo = db();
-$pdo->prepare('INSERT INTO jurisprudencia_uso_diario (fecha, busquedas) VALUES (CURDATE(), 0)
-               ON DUPLICATE KEY UPDATE fecha = fecha')->execute();
-$usadasHoy = (int)$pdo->query('SELECT busquedas FROM jurisprudencia_uso_diario WHERE fecha = CURDATE()')->fetchColumn();
-if ($usadasHoy >= JURISPRUDENCIA_LIMITE_DIARIO) {
-    fail('Ya se usaron las ' . JURISPRUDENCIA_LIMITE_DIARIO . ' búsquedas gratis de jurisprudencia de hoy para '
-        . 'el despacho. Se reinicia mañana.', 429);
-}
-$pdo->prepare('UPDATE jurisprudencia_uso_diario SET busquedas = busquedas + 1 WHERE fecha = CURDATE()')->execute();
 
 $credentialsFile = __DIR__ . '/anthropic_credentials.php';
 if (!file_exists($credentialsFile)) fail('Falta anthropic_credentials.php.', 500);
@@ -65,7 +57,7 @@ require_once $credentialsFile;
 function jurisprudencia_expandir_terminos(string $pregunta): string
 {
     $payload = [
-        'model' => IA_MODEL,
+        'model' => JURISPRUDENCIA_MODELO_BARATO,
         'max_tokens' => 200,
         'thinking' => ['type' => 'disabled'],
         'system' => 'Un abogado laboralista mexicano te describe, en lenguaje coloquial, los hechos de un caso '
@@ -147,19 +139,36 @@ $terminosExpandidos = jurisprudencia_expandir_terminos($pregunta);
 // encontrando lo que ya encontraba bien, y los términos expandidos solo
 // SUMAN candidatas nuevas para preguntas genéricas, nunca le quitan lugar
 // a las que ya iban a aparecer.
+// Tope de candidatas por lado (texto original / términos expandidos) y
+// filtro de relevancia -- bajados de 20 a 15 y con piso de relevancia,
+// para no mandarle al Paso 2 cola larga de coincidencias débiles que solo
+// suben el costo sin aportar (el Paso 2 es ~90% del costo de la búsqueda,
+// y su input crece directo con cuántas candidatas se le mandan). El piso
+// es RELATIVO a la mejor coincidencia de esa misma búsqueda (no un número
+// fijo) porque la escala de relevancia de MySQL varía mucho según cuántos
+// términos tenga el texto buscado -- un piso fijo sería demasiado
+// agresivo con textos cortos y demasiado laxo con textos largos.
+const JURISPRUDENCIA_CANDIDATAS_POR_LADO = 15;
+const JURISPRUDENCIA_RELEVANCIA_MINIMA_RELATIVA = 0.10;
+
 function jurisprudencia_buscar_candidatas(PDO $pdo, string $texto): array
 {
     if (trim($texto) === '') return [];
     $stmt = $pdo->prepare(
-        "SELECT registro_digital, instancia, epoca, numero_tesis, materias, rubro, texto_completo, fecha_publicacion,
+        'SELECT registro_digital, instancia, epoca, numero_tesis, rubro, texto_completo, fecha_publicacion,
                 MATCH(rubro) AGAINST (:q IN NATURAL LANGUAGE MODE) AS relevancia
          FROM jurisprudencia_tesis
          WHERE MATCH(rubro) AGAINST (:q2 IN NATURAL LANGUAGE MODE)
          ORDER BY relevancia DESC
-         LIMIT 20"
+         LIMIT ' . JURISPRUDENCIA_CANDIDATAS_POR_LADO
     );
     $stmt->execute([':q' => $texto, ':q2' => $texto]);
-    return $stmt->fetchAll();
+    $filas = $stmt->fetchAll();
+    if (!$filas) return [];
+
+    $mejorRelevancia = (float)$filas[0]['relevancia'];
+    $piso = $mejorRelevancia * JURISPRUDENCIA_RELEVANCIA_MINIMA_RELATIVA;
+    return array_values(array_filter($filas, static fn($f) => (float)$f['relevancia'] >= $piso));
 }
 
 $candidatas = jurisprudencia_buscar_candidatas($pdo, $pregunta);
@@ -179,7 +188,7 @@ if (!$candidatas) {
 }
 
 // Paso 2 (barato): una sola llamada a Claude, sin razonamiento extendido,
-// que revisa SOLO estas ≤20 candidatas ya preseleccionadas (no las 4,080)
+// que revisa SOLO estas ≤30 candidatas ya preseleccionadas (no las 4,080)
 // y descarta con criterio jurídico las que no aplican de verdad.
 $bloques = [];
 foreach ($candidatas as $t) {
@@ -191,14 +200,8 @@ foreach ($candidatas as $t) {
 }
 $contexto = implode("\n\n---\n\n", $bloques);
 
-// PRUEBA TEMPORAL de costo: este Paso 2 es ~90% del costo de la búsqueda
-// (candidatas=40 mete mucho contexto). Se prueba aquí con Haiku 4.5 (~1/3
-// del precio de Sonnet 5) para ver si el criterio jurídico se sostiene lo
-// suficiente -- si la calidad se nota peor con casos reales, revertir a
-// IA_MODEL (Sonnet 5).
-$modeloPaso2 = 'claude-haiku-4-5-20251001';
 $payload = [
-    'model' => $modeloPaso2,
+    'model' => JURISPRUDENCIA_MODELO_BARATO,
     'max_tokens' => 3000,
     'thinking' => ['type' => 'disabled'],
     'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado del '
