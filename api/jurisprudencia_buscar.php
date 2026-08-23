@@ -178,8 +178,14 @@ foreach ($candidatas as $t) {
 }
 $contexto = implode("\n\n---\n\n", $bloques);
 
+// PRUEBA TEMPORAL de costo: este Paso 2 es ~90% del costo de la búsqueda
+// (candidatas=40 mete mucho contexto). Se prueba aquí con Haiku 4.5 (~1/3
+// del precio de Sonnet 5) para ver si el criterio jurídico se sostiene lo
+// suficiente -- si la calidad se nota peor con casos reales, revertir a
+// IA_MODEL (Sonnet 5).
+$modeloPaso2 = 'claude-haiku-4-5-20251001';
 $payload = [
-    'model' => IA_MODEL,
+    'model' => $modeloPaso2,
     'max_tokens' => 3000,
     'thinking' => ['type' => 'disabled'],
     'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado del '
