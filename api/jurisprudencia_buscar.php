@@ -34,6 +34,21 @@ $pregunta = trim((string)($in['pregunta'] ?? ''));
 if ($pregunta === '') fail('Describe los hechos del caso.', 400);
 if (mb_strlen($pregunta) > 2000) fail('La descripción es demasiado larga.', 400);
 
+// Límite del piloto: 5 búsquedas al día, compartidas entre todo el
+// despacho (no por abogado individual) -- ver sql/migraciones/032. Se
+// revisa y se cuenta ANTES de gastar nada en la IA, para no cobrar una
+// búsqueda que de todos modos se va a rechazar.
+const JURISPRUDENCIA_LIMITE_DIARIO = 5;
+$pdo = db();
+$pdo->prepare('INSERT INTO jurisprudencia_uso_diario (fecha, busquedas) VALUES (CURDATE(), 0)
+               ON DUPLICATE KEY UPDATE fecha = fecha')->execute();
+$usadasHoy = (int)$pdo->query('SELECT busquedas FROM jurisprudencia_uso_diario WHERE fecha = CURDATE()')->fetchColumn();
+if ($usadasHoy >= JURISPRUDENCIA_LIMITE_DIARIO) {
+    fail('Ya se usaron las ' . JURISPRUDENCIA_LIMITE_DIARIO . ' búsquedas gratis de jurisprudencia de hoy para '
+        . 'el despacho. Se reinicia mañana.', 429);
+}
+$pdo->prepare('UPDATE jurisprudencia_uso_diario SET busquedas = busquedas + 1 WHERE fecha = CURDATE()')->execute();
+
 $credentialsFile = __DIR__ . '/anthropic_credentials.php';
 if (!file_exists($credentialsFile)) fail('Falta anthropic_credentials.php.', 500);
 require_once $credentialsFile;
@@ -113,8 +128,6 @@ $terminosExpandidos = jurisprudencia_expandir_terminos($pregunta);
 // Si este paso falla por cualquier motivo (red, la IA no contestó, etc.),
 // simplemente no hay términos que sumar y se sigue solo con el texto
 // original del abogado, como antes de este cambio.
-
-$pdo = db();
 
 // Paso 1 (gratis, instantáneo): candidatas por búsqueda de texto normal de
 // MySQL sobre el rubro (el título) de cada tesis. Requiere el índice
