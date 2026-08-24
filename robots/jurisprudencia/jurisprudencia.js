@@ -59,6 +59,25 @@ function parseFechaPublicacion(texto) {
   return m[3] + '-' + mes + '-' + m[1].padStart(2, '0');
 }
 
+// La fecha de la TARJETA del listado (arriba) falla seguido en tesis viejas
+// -- el listado no siempre trae la etiqueta "Publicación:" en el mismo
+// formato para épocas antiguas, así que muchas tesis se guardaban sin
+// fecha (se detectó porque, tras bajar miles de tesis viejas, la fecha más
+// vieja guardada en la base de datos seguía siendo de 2013 -- osea que
+// casi ninguna tesis pre-2013 traía fecha real). La página de DETALLE de
+// cada tesis, en cambio, siempre trae al final la misma frase fija sin
+// importar la época: "Esta tesis se publicó el [día] DD de MES de YYYY...".
+// Se usa un regex específico a esa frase (no el genérico de arriba) para
+// no toparse por accidente con alguna otra fecha mencionada en el cuerpo
+// de la tesis (fechas de ejecutorias, notas, citas a otras tesis, etc.).
+function parseFechaPublicacionDetalle(texto) {
+  const m = /publicó el \S+\s+(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})/i.exec(texto || '');
+  if (!m) return null;
+  const mes = MESES[m[2].toLowerCase()];
+  if (!mes) return null;
+  return m[3] + '-' + mes + '-' + m[1].padStart(2, '0');
+}
+
 // El sitio es una app Angular que duplica varios controles en el HTML (una
 // version de escritorio y otra de movil -- la que no se usa sigue
 // presente pero oculta con CSS), lo que revienta los locators por texto
@@ -325,8 +344,9 @@ async function obtenerDetalleTesis(page, registro) {
   const numeroTesis = /Tesis:\s*([^\n]+)/.exec(texto)?.[1]?.trim() || '';
   const materias = /Materia\(s\):\s*([^\n]+)/.exec(texto)?.[1]?.trim() || '';
   const tipo = /Tipo:\s*([^\n]+)/.exec(texto)?.[1]?.trim() || '';
+  const fechaDetalle = parseFechaPublicacionDetalle(texto);
 
-  return { instancia, epoca, numero_tesis: numeroTesis, materias, tipo, texto_completo: texto };
+  return { instancia, epoca, numero_tesis: numeroTesis, materias, tipo, texto_completo: texto, fecha_detalle: fechaDetalle };
 }
 
 async function reportarTesis(lote) {
@@ -373,8 +393,11 @@ async function main() {
         lote.push({
           registro_digital: r.registro,
           rubro: r.rubro,
-          fecha_publicacion: r.fecha,
           ...detalle,
+          // La fecha de la página de detalle (fecha_detalle) es más confiable que
+          // la de la tarjeta del listado -- se usa como fuente principal, con la
+          // del listado (r.fecha) solo de respaldo si por algo no se pudo leer.
+          fecha_publicacion: detalle.fecha_detalle || r.fecha,
         });
         procesados.add(r.registro);
       } catch (e) {
