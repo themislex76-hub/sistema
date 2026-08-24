@@ -107,16 +107,36 @@ async function clickTextoVisible(page, texto, exact = true) {
 // a todas las que aparezcan de cada epoca vieja.
 async function seleccionarEpocasAntiguas(page) {
   const epocas = ['8a. Época', '7a. Época', '6a. Época', '5a. Época'];
+  // Antes esto fallaba en TOTAL silencio si las casillas no estaban visibles
+  // todavia cuando corria (el sitio tarda en cargar esa seccion, o cambio de
+  // estructura) -- la corrida seguia sin avisar, solo con las epocas
+  // recientes del default, y nunca se notaba hasta que alguien comparaba el
+  // total contra el sitio real. Ahora se cuenta y se reporta cada caso, para
+  // que un fallo aqui se vea de inmediato en la consola en vez de descubrirse
+  // semanas despues.
+  const marcadas = [];
+  const noEncontradas = [];
   for (const etiqueta of epocas) {
     const candidatos = page.getByText(etiqueta, { exact: true });
     const n = await candidatos.count();
+    let seMarco = false;
     for (let i = 0; i < n; i++) {
       const el = candidatos.nth(i);
       if (await el.isVisible().catch(() => false)) {
         await el.click().catch(() => {});
         await page.waitForTimeout(200);
+        seMarco = true;
       }
     }
+    if (seMarco) marcadas.push(etiqueta); else noEncontradas.push(etiqueta);
+  }
+  if (noEncontradas.length) {
+    console.log('  AVISO: no se pudieron marcar estas épocas viejas (puede que el sitio haya cambiado o '
+      + 'tardó en cargar esa sección): ' + noEncontradas.join(', ')
+      + ' -- esta corrida puede quedarse corta contra el total real del sitio.');
+  }
+  if (marcadas.length) {
+    console.log('  Épocas viejas marcadas correctamente: ' + marcadas.join(', '));
   }
   await page.waitForTimeout(500);
 }
@@ -231,7 +251,15 @@ function conLimiteTiempo(promesa, ms, etiqueta) {
 
 async function buscarTesisRecientes(page, procesados, modoCompleto) {
   await page.goto(URL_BUSQUEDA, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1500);
+  // Antes se esperaba fijo 1500ms y ya -- si la tabla de épocas (una tabla
+  // pesada, con checkbox por cada combinación época/instancia) tardaba más
+  // en renderizar, seleccionarEpocasAntiguas() de abajo se topaba con nada
+  // visible todavía y fallaba en silencio. Ahora se espera explícitamente a
+  // que aparezca al menos una etiqueta de época antes de seguir (con un
+  // límite de 8s -- si ni así aparece, se sigue de todos modos, y el aviso
+  // de seleccionarEpocasAntiguas() lo va a dejar ver en el log).
+  await page.getByText('8a. Época', { exact: true }).first().waitFor({ timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(500);
 
   await seleccionarEpocasAntiguas(page);
 
