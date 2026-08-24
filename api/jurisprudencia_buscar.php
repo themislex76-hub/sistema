@@ -54,7 +54,7 @@ require_once $credentialsFile;
 // pero no el concepto general. El texto original del abogado NO se
 // descarta -- los términos se agregan aparte, para no perder ninguna
 // palabra específica que ya haya usado bien.
-function jurisprudencia_expandir_terminos(string $pregunta): string
+function jurisprudencia_expandir_terminos(string $pregunta): array
 {
     $payload = [
         'model' => JURISPRUDENCIA_MODELO_BARATO,
@@ -77,18 +77,17 @@ function jurisprudencia_expandir_terminos(string $pregunta): string
             . "\n"
             . '- Si el caso apunta claramente a un artículo específico de la LFT o la LSS, inclúyelo (ej. '
             . "\"artículo 47 LFT\").\n"
-            . '- Si los hechos mencionan el nombre de una institución, empresa o patrón real y específico (ej. '
-            . '"Servicio Postal Mexicano", "IMSS", "Petróleos Mexicanos"), inclúyelo TAL CUAL como uno de los '
-            . 'términos -- es la pista más confiable que hay para encontrar tesis que ya resolvieron algo sobre '
-            . "esa institución en particular, más confiable que cualquier interpretación legal del caso.\n"
             . '- CUIDADO: los hechos pueden incluir un argumento o postura de UNA de las partes (ej. "el patrón '
             . 'alega que se rige por el Apartado B"), que puede ser falso o estar en disputa -- NUNCA conviertas '
             . 'ese argumento en un término de búsqueda como si fuera un hecho jurídico ya resuelto (no des '
-            . '"aplicabilidad del apartado B" como término solo porque una parte lo alegó). En vez de eso, usa el '
-            . 'nombre de la institución (ver regla anterior) para que la búsqueda encuentre la tesis real que '
-            . "resuelve esa disputa, sea cual sea el resultado.\n"
-            . '- No repitas el texto original tal cual ni des explicaciones. Responde SOLO con los términos '
-            . 'separados por comas, sin numerar.',
+            . "\"aplicabilidad del apartado B\" como término solo porque una parte lo alegó).\n"
+            . '- No repitas el texto original tal cual ni des explicaciones.'
+            . "\n\n"
+            . "Responde en EXACTAMENTE dos líneas, en este formato:\n"
+            . "INSTITUCION: [nombre TAL CUAL de la institución, empresa o patrón real y específico que se "
+            . 'mencione en los hechos (ej. "Servicio Postal Mexicano", "IMSS", "Petróleos Mexicanos"), o vacío '
+            . "si no se menciona ninguna -- deja la línea después de los dos puntos vacía en ese caso\n"
+            . 'TERMINOS: [los 5-8 términos, separados por comas, sin numerar]',
         'messages' => [['role' => 'user', 'content' => "Hechos del caso: {$pregunta}"]],
     ];
     $ch = curl_init('https://api.anthropic.com/v1/messages');
@@ -111,7 +110,7 @@ function jurisprudencia_expandir_terminos(string $pregunta): string
         file_put_contents(__DIR__ . '/ia_debug.log', date('c')
             . " | [jurisprudencia_buscar expandir_terminos] FALLÓ status=$status | curl=$curlError | body="
             . mb_strimwidth((string)$raw, 0, 500, '…') . "\n", FILE_APPEND);
-        return '';
+        return ['terminos' => '', 'institucion' => ''];
     }
 
     $data = json_decode($raw, true);
@@ -119,14 +118,22 @@ function jurisprudencia_expandir_terminos(string $pregunta): string
     foreach (($data['content'] ?? []) as $bloque) {
         if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
     }
+    $texto = trim($texto);
+
+    $institucion = trim((string)(preg_match('/INSTITUCION:\s*(.*)/i', $texto, $m) ? $m[1] : ''));
+    $terminos = trim((string)(preg_match('/TERMINOS:\s*(.*)/is', $texto, $m) ? $m[1] : $texto));
+
     $u = $data['usage'] ?? [];
     file_put_contents(__DIR__ . '/ia_debug.log', date('c')
         . " | [jurisprudencia_buscar expandir_terminos] input=" . ($u['input_tokens'] ?? 0)
-        . " | output=" . ($u['output_tokens'] ?? 0) . " | terminos=" . trim($texto) . "\n", FILE_APPEND);
-    return trim($texto);
+        . " | output=" . ($u['output_tokens'] ?? 0) . " | institucion=" . $institucion
+        . " | terminos=" . $terminos . "\n", FILE_APPEND);
+    return ['terminos' => $terminos, 'institucion' => $institucion];
 }
 
-$terminosExpandidos = jurisprudencia_expandir_terminos($pregunta);
+$expandido = jurisprudencia_expandir_terminos($pregunta);
+$terminosExpandidos = $expandido['terminos'];
+$institucionMencionada = $expandido['institucion'];
 // Si este paso falla por cualquier motivo (red, la IA no contestó, etc.),
 // simplemente no hay términos que sumar y se sigue solo con el texto
 // original del abogado, como antes de este cambio.
@@ -187,6 +194,21 @@ foreach (jurisprudencia_buscar_candidatas($pdo, $terminosExpandidos) as $t) {
     if (!in_array($t['registro_digital'], $yaIncluidas, true)) {
         $candidatas[] = $t;
         $yaIncluidas[] = $t['registro_digital'];
+    }
+}
+// Tercera búsqueda dedicada SOLO al nombre de la institución/patrón, si el
+// Paso 0 detectó uno -- en textos largos con muchos temas (ej. un párrafo
+// de varias oraciones), el nombre de la institución se diluye dentro de la
+// búsqueda del texto completo y puede no alcanzar a aparecer entre las
+// candidatas, aunque literalmente esté escrito ahí. Buscarlo aparte, solo,
+// le da su propia oportunidad limpia de encontrar la jurisprudencia
+// específica de esa entidad.
+if ($institucionMencionada !== '') {
+    foreach (jurisprudencia_buscar_candidatas($pdo, $institucionMencionada) as $t) {
+        if (!in_array($t['registro_digital'], $yaIncluidas, true)) {
+            $candidatas[] = $t;
+            $yaIncluidas[] = $t['registro_digital'];
+        }
     }
 }
 
