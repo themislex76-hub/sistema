@@ -213,7 +213,26 @@ async function avanzarSiguientePagina(page, paginaActual) {
       if (!(await el.isVisible().catch(() => false))) continue;
       if (await el.isDisabled().catch(() => false)) continue;
       await el.click().catch(() => {});
-      await page.waitForTimeout(1500);
+      // Antes solo se esperaba un tiempo fijo (1.5s) y se asumía que ya
+      // había cargado -- en una lista pesada, a veces la nueva página tarda
+      // más y se terminaba leyendo una pantalla en blanco (sin resultados
+      // ni paginador), como se vio en un caso real donde el listado se
+      // cortó de golpe con solo el logo de la SCJN en el centro, sin nada
+      // más. Ahora se espera explícitamente a que aparezca al menos un
+      // resultado real ("Registro digital: ..."), con un reintento (clic
+      // de nuevo al mismo botón) si la primera espera no alcanza.
+      let cargo = await page.locator('text=/Registro digital:\\s*\\d+/').first()
+        .waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
+      if (!cargo) {
+        await page.waitForTimeout(1000);
+        await el.click().catch(() => {});
+        cargo = await page.locator('text=/Registro digital:\\s*\\d+/').first()
+          .waitFor({ timeout: 12000 }).then(() => true).catch(() => false);
+      }
+      if (!cargo) {
+        console.log('    AVISO: la página siguiente no terminó de cargar resultados después de dos '
+          + 'intentos -- se sigue de todos modos, puede que se lea vacía o incompleta esta vez.');
+      }
       return true;
     }
   }
