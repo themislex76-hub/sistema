@@ -77,6 +77,16 @@ function jurisprudencia_expandir_terminos(string $pregunta): string
             . "\n"
             . '- Si el caso apunta claramente a un artículo específico de la LFT o la LSS, inclúyelo (ej. '
             . "\"artículo 47 LFT\").\n"
+            . '- Si los hechos mencionan el nombre de una institución, empresa o patrón real y específico (ej. '
+            . '"Servicio Postal Mexicano", "IMSS", "Petróleos Mexicanos"), inclúyelo TAL CUAL como uno de los '
+            . 'términos -- es la pista más confiable que hay para encontrar tesis que ya resolvieron algo sobre '
+            . "esa institución en particular, más confiable que cualquier interpretación legal del caso.\n"
+            . '- CUIDADO: los hechos pueden incluir un argumento o postura de UNA de las partes (ej. "el patrón '
+            . 'alega que se rige por el Apartado B"), que puede ser falso o estar en disputa -- NUNCA conviertas '
+            . 'ese argumento en un término de búsqueda como si fuera un hecho jurídico ya resuelto (no des '
+            . '"aplicabilidad del apartado B" como término solo porque una parte lo alegó). En vez de eso, usa el '
+            . 'nombre de la institución (ver regla anterior) para que la búsqueda encuentre la tesis real que '
+            . "resuelve esa disputa, sea cual sea el resultado.\n"
             . '- No repitas el texto original tal cual ni des explicaciones. Responde SOLO con los términos '
             . 'separados por comas, sin numerar.',
         'messages' => [['role' => 'user', 'content' => "Hechos del caso: {$pregunta}"]],
