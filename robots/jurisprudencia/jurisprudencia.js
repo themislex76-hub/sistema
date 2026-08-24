@@ -201,14 +201,33 @@ async function avanzarSiguientePagina(page, paginaActual) {
     page.locator('button.mat-paginator-navigation-next'),
   ];
   for (const candidato of candidatos) {
-    const el = candidato.first();
-    if (await el.count() === 0) continue;
-    if (!(await el.isVisible().catch(() => false))) continue;
-    if (await el.isDisabled().catch(() => false)) continue;
-    await el.click().catch(() => {});
-    await page.waitForTimeout(1500);
-    return true;
+    // Antes se revisaba solo el PRIMER elemento que coincidiera (.first()) --
+    // si el sitio duplica ese botón (version escritorio/movil, como pasa con
+    // otros controles de este sitio) y el primero que Playwright encuentra
+    // resulta ser el oculto, se rendía con esta estrategia entera en vez de
+    // seguir buscando entre los demás que coincidan. Ahora revisa TODOS los
+    // que coincidan hasta encontrar uno de verdad visible y habilitado.
+    const n = await candidato.count();
+    for (let i = 0; i < n; i++) {
+      const el = candidato.nth(i);
+      if (!(await el.isVisible().catch(() => false))) continue;
+      if (await el.isDisabled().catch(() => false)) continue;
+      await el.click().catch(() => {});
+      await page.waitForTimeout(1500);
+      return true;
+    }
   }
+  // No se encontró ningún botón para avanzar -- puede ser de verdad el final
+  // del listado, o puede ser que el paginador tenga algo que ninguna de las
+  // estrategias de arriba supo reconocer (ej. solo muestra una ventana de
+  // números cercanos que no incluye el siguiente todavía). Se deja una
+  // captura como evidencia -- si el listado se corta antes de lo esperado,
+  // esta imagen muestra exactamente cómo se veía el paginador en ese momento
+  // en vez de tener que adivinar.
+  await page.screenshot({
+    path: require('path').join(__dirname, 'debug_no_se_encontro_siguiente_pagina.png'),
+    fullPage: true,
+  }).catch(() => {});
   return false;
 }
 
