@@ -90,6 +90,7 @@ let REINTENTO_EN_PROGRESO = false; // true mientras corre el reintento en lote d
 let REINTENTO_PROGRESO_TXT = "";
 let ACTIVE_CASE = null;
 let MODAL_TAB = "resumen";
+let INFORME_EJECUTIVO_STATE = {}; // {[expedienteId]: {cargando, error}} -- estado del informe ejecutivo con IA
 let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de CASES_DATA)
 
 // Campos que puede llenar/editar el abogado asignado. Cubre lo necesario
@@ -5411,8 +5412,27 @@ async function openModal(k, tab){
   ARCHIVO_CROP_QUEUE = [];
   ACTIVE_CASE = k; MODAL_TAB = tab || "resumen";
   if(MODAL_TAB === 'documentos') await loadDocumentos(k.id);
+  if(MODAL_TAB === 'resumen' && !k.resumen_ejecutivo && !(INFORME_EJECUTIVO_STATE[k.id]||{}).cargando) cargarInformeEjecutivo(k.id, false);
   renderModal();
   document.getElementById('modalOverlay').classList.add('show');
+}
+// Pide (o regenera) el informe ejecutivo con IA de un expediente. El backend
+// cachea el resultado y solo vuelve a llamar a la IA si el expediente cambió
+// desde la última vez -- por eso es seguro llamar esto sin forzar cada vez
+// que se abre la pestaña "Informe del juicio".
+async function cargarInformeEjecutivo(caseId, forzar){
+  INFORME_EJECUTIVO_STATE[caseId] = {cargando:true, error:null};
+  if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
+  try{
+    const r = await api('POST', 'expediente_resumen_ejecutivo.php', {id: caseId, forzar: !!forzar});
+    const kc = findCase(caseId);
+    if(kc){ kc.resumen_ejecutivo = r.resumen; kc.resumen_ejecutivo_generado_en = r.generado_en; }
+    if(ACTIVE_CASE && ACTIVE_CASE.id===caseId){ ACTIVE_CASE.resumen_ejecutivo = r.resumen; ACTIVE_CASE.resumen_ejecutivo_generado_en = r.generado_en; }
+    INFORME_EJECUTIVO_STATE[caseId] = {cargando:false, error: r.aviso || null};
+  }catch(err){
+    INFORME_EJECUTIVO_STATE[caseId] = {cargando:false, error: 'No se pudo generar el informe: ' + err.message};
+  }
+  if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
 }
 function closeModal(){
   detenerCamara();
@@ -5460,6 +5480,7 @@ function renderModal(){
       if(b.dataset.t !== 'documentos'){ detenerCamara(); CROP_PENDING = null; ARCHIVO_CROP_QUEUE = []; } // no dejar la cámara prendida ni una cola de recorte a medias al salir de la pestaña
       MODAL_TAB = b.dataset.t;
       if(MODAL_TAB === 'documentos') await loadDocumentos(ACTIVE_CASE.id);
+      if(MODAL_TAB === 'resumen' && !ACTIVE_CASE.resumen_ejecutivo && !(INFORME_EJECUTIVO_STATE[ACTIVE_CASE.id]||{}).cargando) cargarInformeEjecutivo(ACTIVE_CASE.id, false);
       renderModal();
     });
   });
@@ -5657,7 +5678,21 @@ function modalTabContent(k,p,meta){
     const det = juicioDetenido(k);
     const pAlerta = isPrescripcionRelevant(k) ? computePrescripcion(k) : null;
     const liqResumen = computeLiquidacion(k);
+    const infEstado = INFORME_EJECUTIVO_STATE[k.id] || {cargando:false, error:null};
     return `
+    <div class="legal-box" style="margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:6px;">
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--brass);">Informe ejecutivo &middot; generado con IA</div>
+        ${!infEstado.cargando ? `<button class="btn secondary" id="actualizarInformeBtn" style="padding:4px 10px; font-size:11px; flex-shrink:0;">${k.resumen_ejecutivo ? 'Actualizar' : 'Generar'}</button>` : ''}
+      </div>
+      ${infEstado.cargando
+        ? `<div class="loading-dots" style="margin:6px 0 2px;"><span></span><span></span><span></span></div>`
+        : (k.resumen_ejecutivo
+            ? `<div style="font-size:13.5px; color:var(--ink); white-space:pre-wrap; line-height:1.5;">${escapeHTML(k.resumen_ejecutivo)}</div>
+               <div style="font-size:11px; color:var(--gray); margin-top:8px;">Generado el ${new Date(k.resumen_ejecutivo_generado_en).toLocaleString('es-MX', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}</div>`
+            : `<div class="empty" style="margin:2px 0;">Aún no se ha generado un informe ejecutivo de este asunto.</div>`)}
+      ${infEstado.error ? `<div style="font-size:11.5px; color:var(--red); margin-top:6px;">${escapeHTML(infEstado.error)}</div>` : ''}
+    </div>
     <div class="legal-box" style="margin-bottom:16px;">
       <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--brass); margin-bottom:4px;">Situación actual del asunto</div>
       <div style="font-family:var(--serif); font-size:17px; font-weight:700; color:var(--ink); margin-bottom:4px;">${escapeHTML(etapaAct.label)}</div>
@@ -6310,6 +6345,10 @@ function bindModalTabEvents(){
         }catch(err){ onError(err); }
       }
     });
+  }
+  const actualizarInformeBtn = document.getElementById('actualizarInformeBtn');
+  if(actualizarInformeBtn){
+    actualizarInformeBtn.addEventListener('click', ()=> cargarInformeEjecutivo(ACTIVE_CASE.id, true));
   }
   const agregarNotaBtn = document.getElementById('agregarNotaBtn');
   if(agregarNotaBtn){

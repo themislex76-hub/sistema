@@ -1527,3 +1527,110 @@ function ia_generar_resumen_conversacion(array $historial): ?string
     $texto = trim($texto);
     return $texto !== '' ? $texto : null;
 }
+
+// Informe ejecutivo corto de un expediente, para que un jefe/socio entienda
+// el asunto sin tener que abrir el expediente completo. Recibe la fila ya
+// cargada (guard_expediente_access() ya trae todos los campos que hacen
+// falta -- SELECT *). Usa Haiku 4.5 (no IA_MODEL/Sonnet) porque es una
+// tarea acotada -- resumir datos ya estructurados, no razonar sobre texto
+// libre ambiguo -- y esto se llama por cada expediente del despacho; el
+// costo real por expediente debe quedarse en centavos. El caché real (no
+// llamar esto en cada vista) vive en el endpoint que la usa
+// (expediente_resumen_ejecutivo.php), no aquí.
+const IA_MODELO_RESUMEN_EXPEDIENTE = 'claude-haiku-4-5-20251001';
+
+function ia_generar_resumen_expediente(array $expediente): ?string
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $lineas = [];
+    $agregar = function (string $etiqueta, $valor) use (&$lineas) {
+        if ($valor === null || $valor === '' || $valor === '0000-00-00') return;
+        $lineas[] = $etiqueta . ': ' . $valor;
+    };
+
+    $agregar('Actor', $expediente['actor'] ?? null);
+    $agregar('Demandado', $expediente['demandado'] ?? null);
+    $agregar('Giro de la empresa', $expediente['giro_empresa'] ?? null);
+    $agregar('Tipo de asunto', $expediente['tipo_asunto'] ?? null);
+    $agregar('Status', $expediente['status'] ?? null);
+    $agregar('Instancia', $expediente['instancia'] ?? null);
+    $agregar('Junta/Tribunal', $expediente['junta'] ?? $expediente['tribunal'] ?? null);
+    $agregar('Puesto del trabajador', $expediente['puesto'] ?? null);
+    $agregar('Fecha de ingreso', $expediente['fecha_ingreso'] ?? null);
+    $agregar('Fecha de baja/despido', $expediente['fecha_baja'] ?? null);
+    $agregar('Quién despidió', $expediente['quien_despidio'] ?? null);
+    $agregar('Hora del despido', $expediente['hora_despido'] ?? null);
+    if (!empty($expediente['salario_diario'])) $agregar('Salario diario', '$' . number_format((float)$expediente['salario_diario'], 2));
+    if (!empty($expediente['total_90'])) $agregar('Total estimado (90 días)', '$' . number_format((float)$expediente['total_90'], 2));
+    if (!empty($expediente['total_60'])) $agregar('Total estimado (60 días)', '$' . number_format((float)$expediente['total_60'], 2));
+    $agregar('Testigos', $expediente['testigos'] ?? null);
+    if (!empty($expediente['amparo_activo'])) $agregar('Amparo', 'Activo. Notas: ' . ($expediente['amparo_notas'] ?? '(sin notas)'));
+    if (!empty($expediente['convenio_activo'])) {
+        $agregar('Convenio', 'Activo, monto $' . number_format((float)($expediente['convenio_monto'] ?? 0), 2)
+            . ', fecha de pago pactada: ' . ($expediente['convenio_fecha_pago'] ?? '(sin fecha)'));
+    }
+    if (!empty($expediente['cobro_pendiente'])) $lineas[] = 'Tiene cobro pendiente marcado.';
+    $agregar('Notas internas', $expediente['notas_internas'] ?? null);
+    $agregar('Última nota', $expediente['ultima_nota'] ?? null);
+
+    if (!$lineas) return null;
+
+    $payload = [
+        'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
+        'max_tokens' => 350,
+        'thinking' => ['type' => 'disabled'],
+        'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Te doy '
+            . 'los datos estructurados de un expediente y tu única tarea es escribir un informe ejecutivo '
+            . 'corto (4-6 líneas, español, sin encabezados ni viñetas) para que un socio o jefe del despacho '
+            . 'entienda el asunto de un vistazo, sin abrir el expediente completo. Menciona quién es el '
+            . 'actor y el demandado, de qué trata el conflicto, en qué etapa procesal va, y cualquier cosa '
+            . 'que requiera atención (convenio con pago pendiente, amparo activo, cobro pendiente, etc.). '
+            . 'IMPORTANTE: nunca calcules ni afirmes fechas límite de prescripción ni montos exactos que no '
+            . 'te haya dado yo tal cual -- solo reporta los datos que te doy, no hagas matemática legal '
+            . 'nueva. Sé directo y concreto, nada de relleno ni frases genéricas de cierre.',
+        'messages' => [['role' => 'user', 'content' => implode("\n", $lineas)]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [resumen_expediente] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+
+    $u = $data['usage'] ?? [];
+    file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+        . " | [resumen_expediente] input=" . ($u['input_tokens'] ?? 0)
+        . " | output=" . ($u['output_tokens'] ?? 0) . "\n", FILE_APPEND);
+
+    return $texto !== '' ? $texto : null;
+}
