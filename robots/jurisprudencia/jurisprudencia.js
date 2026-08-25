@@ -419,6 +419,21 @@ async function reportarTesis(lote) {
   await axios.post(config.sistema.apiBase + '/jurisprudencia_ingest.php', { tesis: lote }, {
     headers: { 'X-Robot-Key': config.sistema.robotKey },
   });
+  // Si el multidespacho está configurado (ver config.example.js), cada
+  // lote se manda también allá -- así su biblioteca de jurisprudencia se
+  // mantiene al día sola, sin exportar/importar la tabla a mano. Si esto
+  // falla (multidespacho caído, llave vencida, etc.) NO se aborta la
+  // corrida: el sistema original ya guardó el lote bien, que es lo que
+  // más importa; solo se avisa por consola para revisarlo después.
+  if (config.multidespacho && config.multidespacho.apiBase) {
+    try {
+      await axios.post(config.multidespacho.apiBase + '/jurisprudencia_sync.php', { tesis: lote }, {
+        headers: { 'X-Jurisprudencia-Sync-Key': config.multidespacho.syncKey },
+      });
+    } catch (err) {
+      console.warn('  (aviso: no se pudo sincronizar este lote con el multidespacho: ' + err.message + ')');
+    }
+  }
 }
 
 // Se manda en lotes (no todo junto hasta el final) por dos razones: en una
