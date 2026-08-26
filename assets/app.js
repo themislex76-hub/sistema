@@ -94,6 +94,7 @@ let REINTENTO_PROGRESO_TXT = "";
 let ACTIVE_CASE = null;
 let MODAL_TAB = "resumen";
 let INFORME_EJECUTIVO_STATE = {}; // {[expedienteId]: {cargando, error}} -- estado del informe ejecutivo con IA
+let SEGUIMIENTO_IA_BULK = null; // {actual, total} mientras corre "Actualizar todos los informes", null si no está corriendo
 let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de CASES_DATA)
 
 // Campos que puede llenar/editar el abogado asignado. Cubre lo necesario
@@ -4618,6 +4619,10 @@ function agendaHTML(){
     const proximasIA = accionesIA.filter(e=>e.fecha >= todayISO);
     return tabsHTML + `
     <div class="notice" style="margin-bottom:16px; max-width:100%;">Próxima acción sugerida por el informe ejecutivo con IA de cada expediente. La IA solo clasifica qué tan urgente es (alta/media/baja) a partir de lo que ya sabe del caso — la fecha de seguimiento la calcula el sistema con días hábiles normales, nunca es un plazo legal inventado por la IA.</div>
+    <div style="margin-bottom:16px;">
+      <button class="btn" id="actualizarTodosInformesBtn" ${SEGUIMIENTO_IA_BULK?'disabled':''}>${SEGUIMIENTO_IA_BULK ? `Actualizando ${SEGUIMIENTO_IA_BULK.actual} de ${SEGUIMIENTO_IA_BULK.total}...` : 'Actualizar informes de todos los expedientes activos'}</button>
+      ${!SEGUIMIENTO_IA_BULK ? `<span style="font-size:11.5px; color:var(--gray); margin-left:10px;">Hace falta una vez para que los expedientes que ya tenían informe generado antes traigan también la próxima acción.</span>` : ''}
+    </div>
     ${isAdmin ? `
     <div class="panel">
       <div class="panel-head"><h3>Seguimiento por socio</h3><span class="count">${Object.keys(resumenIAporSocio).length}</span></div>
@@ -5065,6 +5070,10 @@ function bindViewBody(){
       renderViewBody();
     });
   });
+  const actualizarTodosInformesBtn = document.getElementById('actualizarTodosInformesBtn');
+  if(actualizarTodosInformesBtn){
+    actualizarTodosInformesBtn.addEventListener('click', actualizarTodosLosInformes);
+  }
   document.querySelectorAll('[data-agenda-socio]').forEach(el=>{
     el.addEventListener('click', ()=>{
       AGENDA_SOCIO = el.dataset.agendaSocio;
@@ -5546,6 +5555,27 @@ async function cargarInformeEjecutivo(caseId, forzar){
   }
   if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
 }
+
+// Actualiza de un jalón el informe ejecutivo (y con él, la próxima acción +
+// urgencia) de todos los expedientes activos visibles para el usuario --
+// para cuando se agrega un dato nuevo al informe (como la próxima acción) y
+// hace falta que los ya generados antes lo traigan también, sin tener que
+// abrir expediente por expediente. Uno a la vez (no en paralelo) para no
+// saturar la API de la IA ni el servidor.
+async function actualizarTodosLosInformes(){
+  const casos = visibleCases().filter(k=>!estaConcluido(k));
+  if(!casos.length) return;
+  SEGUIMIENTO_IA_BULK = {actual:0, total:casos.length};
+  renderViewBody();
+  for(const k of casos){
+    SEGUIMIENTO_IA_BULK.actual++;
+    renderViewBody();
+    await cargarInformeEjecutivo(k.id, true);
+  }
+  SEGUIMIENTO_IA_BULK = null;
+  renderViewBody();
+}
+
 function closeModal(){
   detenerCamara();
   limpiarFotosCapturadas();
