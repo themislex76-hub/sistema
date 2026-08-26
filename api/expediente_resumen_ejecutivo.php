@@ -32,19 +32,23 @@ $necesitaRegenerar = $forzar
 if (!$necesitaRegenerar) {
     respond([
         'resumen' => $row['resumen_ejecutivo'],
+        'accion' => $row['accion_sugerida_ia'],
+        'urgencia' => $row['urgencia_ia'],
         'generado_en' => $row['resumen_ejecutivo_generado_en'],
         'regenerado' => false,
     ]);
 }
 
-$resumen = ia_generar_resumen_expediente($row);
+$resultado = ia_generar_resumen_expediente($row);
 
-if ($resumen === null) {
+if ($resultado === null) {
     // La IA falló (red, sin crédito, etc.) -- si ya había un resumen viejo
     // guardado, mejor mostrar ese que dejar al usuario sin nada.
     if (!empty($row['resumen_ejecutivo'])) {
         respond([
             'resumen' => $row['resumen_ejecutivo'],
+            'accion' => $row['accion_sugerida_ia'],
+            'urgencia' => $row['urgencia_ia'],
             'generado_en' => $row['resumen_ejecutivo_generado_en'],
             'regenerado' => false,
             'aviso' => 'No se pudo actualizar el resumen ahora mismo, se muestra el último generado.',
@@ -54,11 +58,19 @@ if ($resumen === null) {
 }
 
 $ahora = date('Y-m-d H:i:s');
-$pdo->prepare('UPDATE expedientes SET resumen_ejecutivo = :r, resumen_ejecutivo_generado_en = :f WHERE id = :id')
-    ->execute([':r' => $resumen, ':f' => $ahora, ':id' => $id]);
+$pdo->prepare('UPDATE expedientes SET resumen_ejecutivo = :r, accion_sugerida_ia = :a, urgencia_ia = :u, resumen_ejecutivo_generado_en = :f WHERE id = :id')
+    ->execute([
+        ':r' => $resultado['resumen'],
+        ':a' => $resultado['accion'],
+        ':u' => $resultado['urgencia'],
+        ':f' => $ahora,
+        ':id' => $id,
+    ]);
 
 respond([
-    'resumen' => $resumen,
+    'resumen' => $resultado['resumen'],
+    'accion' => $resultado['accion'],
+    'urgencia' => $resultado['urgencia'],
     'generado_en' => $ahora,
     'regenerado' => true,
 ]);

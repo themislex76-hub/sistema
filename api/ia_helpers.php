@@ -1539,7 +1539,8 @@ function ia_generar_resumen_conversacion(array $historial): ?string
 // (expediente_resumen_ejecutivo.php), no aquí.
 const IA_MODELO_RESUMEN_EXPEDIENTE = 'claude-haiku-4-5-20251001';
 
-function ia_generar_resumen_expediente(array $expediente): ?string
+// Devuelve null si falló, o ['resumen'=>string, 'accion'=>?string, 'urgencia'=>?'alta'|'media'|'baja'].
+function ia_generar_resumen_expediente(array $expediente): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -1583,17 +1584,32 @@ function ia_generar_resumen_expediente(array $expediente): ?string
 
     $payload = [
         'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
-        'max_tokens' => 350,
+        'max_tokens' => 400,
         'thinking' => ['type' => 'disabled'],
         'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Te doy '
-            . 'los datos estructurados de un expediente y tu única tarea es escribir un informe ejecutivo '
-            . 'corto (4-6 líneas, español, sin encabezados ni viñetas) para que un socio o jefe del despacho '
-            . 'entienda el asunto de un vistazo, sin abrir el expediente completo. Menciona quién es el '
-            . 'actor y el demandado, de qué trata el conflicto, en qué etapa procesal va, y cualquier cosa '
-            . 'que requiera atención (convenio con pago pendiente, amparo activo, cobro pendiente, etc.). '
-            . 'IMPORTANTE: nunca calcules ni afirmes fechas límite de prescripción ni montos exactos que no '
-            . 'te haya dado yo tal cual -- solo reporta los datos que te doy, no hagas matemática legal '
-            . 'nueva. Sé directo y concreto, nada de relleno ni frases genéricas de cierre.',
+            . 'los datos estructurados de un expediente y tu tarea tiene dos partes.'
+            . "\n\n"
+            . 'PARTE 1 -- informe ejecutivo corto (4-6 líneas, español, sin encabezados ni viñetas) para que un '
+            . 'socio o jefe del despacho entienda el asunto de un vistazo, sin abrir el expediente completo. '
+            . 'Menciona quién es el actor y el demandado, de qué trata el conflicto, en qué etapa procesal va, y '
+            . 'cualquier cosa que requiera atención (convenio con pago pendiente, amparo activo, cobro '
+            . 'pendiente, etc.).'
+            . "\n\n"
+            . 'PARTE 2 -- próxima acción: qué es lo siguiente que el abogado a cargo debería hacer en este '
+            . 'expediente (ej. "presentar la contestación", "agendar la audiencia", "dar seguimiento, sin '
+            . 'movimiento reciente", "esperar resolución, nada que hacer por ahora"), en una frase corta, y su '
+            . 'urgencia: alta (requiere atención esta semana), media (en las próximas dos semanas), o baja (sin '
+            . 'prisa, solo dar seguimiento eventual). Si el asunto está concluido o de verdad no hay nada '
+            . 'pendiente de hacer, usa ACCION: (ninguna) y URGENCIA: baja.'
+            . "\n\n"
+            . 'IMPORTANTE: nunca calcules ni afirmes fechas límite de prescripción ni montos exactos que no te '
+            . 'haya dado yo tal cual -- ni en el informe ni en la próxima acción. La urgencia es tu único '
+            . 'criterio de qué tan pronto atenderlo -- el sistema calcula la fecha de seguimiento aparte, tú no '
+            . 'debes mencionar ni inventar una fecha. Sé directo y concreto, nada de relleno ni frases genéricas '
+            . 'de cierre.'
+            . "\n\n"
+            . "Responde EXACTAMENTE en este formato (la línea '---' es literal, sepárala del informe):\n\n"
+            . "[informe ejecutivo aquí]\n\n---\nACCION: [próxima acción en una frase, o (ninguna)]\nURGENCIA: alta|media|baja",
         'messages' => [['role' => 'user', 'content' => implode("\n", $lineas)]],
     ];
 
@@ -1632,5 +1648,25 @@ function ia_generar_resumen_expediente(array $expediente): ?string
         . " | [resumen_expediente] input=" . ($u['input_tokens'] ?? 0)
         . " | output=" . ($u['output_tokens'] ?? 0) . "\n", FILE_APPEND);
 
-    return $texto !== '' ? $texto : null;
+    if ($texto === '') return null;
+
+    // Separa el informe narrativo del bloque ACCION/URGENCIA que viene
+    // después del '---'. Si la IA no siguió el formato (raro, pero puede
+    // pasar), se usa el texto completo como resumen y se deja la acción
+    // vacía -- mejor un resumen sin próxima acción que perder el resumen.
+    $partes = preg_split('/\n-{3,}\n/', $texto, 2);
+    $resumen = trim($partes[0]);
+    $accion = null;
+    $urgencia = null;
+    if (isset($partes[1])) {
+        if (preg_match('/ACCION:\s*(.*)/i', $partes[1], $m)) {
+            $accionTexto = trim($m[1]);
+            if ($accionTexto !== '' && strcasecmp($accionTexto, '(ninguna)') !== 0) $accion = $accionTexto;
+        }
+        if (preg_match('/URGENCIA:\s*(alta|media|baja)/i', $partes[1], $m)) {
+            $urgencia = strtolower($m[1]);
+        }
+    }
+
+    return ['resumen' => $resumen, 'accion' => $accion, 'urgencia' => $urgencia];
 }

@@ -3606,8 +3606,31 @@ function buildAgendaEntries(){
     if(est) entries.push({tipo:'atraso', fecha: dateToISO(est.expected), k, label:`Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`, action:'abrir_etapas'});
   });
 
+  // Próxima acción sugerida por el informe ejecutivo con IA (ver
+  // ia_generar_resumen_expediente() en el servidor). La IA solo clasifica
+  // la URGENCIA (alta/media/baja) -- nunca calcula una fecha, para no
+  // repetir el mismo riesgo de "matemática legal inventada" que ya
+  // evitamos en prescripción. La fecha de seguimiento la pone este código,
+  // con días hábiles normales a partir de cuándo se generó el informe.
+  cases.forEach(k=>{
+    if(!k.urgencia_ia || !k.accion_sugerida_ia || estaConcluido(k)) return;
+    const generado = parseDate(k.resumen_ejecutivo_generado_en);
+    if(!generado) return;
+    const dias = DIAS_HABILES_POR_URGENCIA[k.urgencia_ia] || DIAS_HABILES_POR_URGENCIA.baja;
+    const fecha = dateToISO(addBusinessDays(generado, dias));
+    entries.push({tipo:'accion_ia', fecha, k, label: k.accion_sugerida_ia, action:'ver_informe'});
+  });
+
   entries.sort((a,b)=> (a.fecha||'9999').localeCompare(b.fecha||'9999'));
   return entries;
+}
+
+const DIAS_HABILES_POR_URGENCIA = {alta:2, media:5, baja:10};
+
+function urgenciaBadgeHTML(urgencia){
+  const info = {alta:{label:'Urgente', color:'var(--red)'}, media:{label:'Media', color:'var(--amber)'}, baja:{label:'Sin prisa', color:'var(--green)'}}[urgencia];
+  if(!info) return '';
+  return `<span style="flex-shrink:0; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:${info.color}; border:1px solid ${info.color}; border-radius:99px; padding:2px 8px;">${info.label}</span>`;
 }
 
 const AGENDA_TIPO = {
@@ -3616,7 +3639,8 @@ const AGENDA_TIPO = {
   amparo:{label:'Amparo', color:'#3c5a86'},
   pendiente:{label:'Pendiente', color:'#3f6b4f'},
   atraso:{label:'Posible atraso', color:'#a83a2f'},
-  audiencia:{label:'Audiencia', color:'#3c5a86'}
+  audiencia:{label:'Audiencia', color:'#3c5a86'},
+  accion_ia:{label:'Sugerido por IA', color:'#8c6a2f'}
 };
 
 let AGENDA_SOCIO = 'todos';
@@ -4541,11 +4565,16 @@ function agendaHTML(){
   // Resumen por socio (solo Administrador) — cuenta pendientes/vencidos de
   // cada socio sin filtrar todavía, para poder elegir a quién ver de un vistazo.
   const resumenPorSocio = {};
+  const resumenIAporSocio = {};
   if(isAdmin){
     all.forEach(e=>{
       const n = assignedLawyer(e.k);
       if(!resumenPorSocio[n]) resumenPorSocio[n] = {vencidas:0, proximas:0};
       if(e.fecha < todayISO) resumenPorSocio[n].vencidas++; else resumenPorSocio[n].proximas++;
+      if(e.tipo==='accion_ia'){
+        if(!resumenIAporSocio[n]) resumenIAporSocio[n] = {alta:0, media:0, baja:0};
+        resumenIAporSocio[n][e.k.urgencia_ia]++;
+      }
     });
   }
 
@@ -4554,8 +4583,9 @@ function agendaHTML(){
   }
   const vencidas = all.filter(e=>e.fecha < todayISO);
   const proximas = all.filter(e=>e.fecha >= todayISO);
+  const accionesIA = all.filter(e=>e.tipo==='accion_ia');
 
-  const actionLabel = {pago:'Marcar cobrado', demanda:'Marcar demanda presentada', amparo:'Marcar amparo presentado', pendiente:'Marcar cumplido', abrir_etapas:'Revisar etapas', pendiente_generico:'Revisar etapas'};
+  const actionLabel = {pago:'Marcar cobrado', demanda:'Marcar demanda presentada', amparo:'Marcar amparo presentado', pendiente:'Marcar cumplido', abrir_etapas:'Revisar etapas', pendiente_generico:'Revisar etapas', ver_informe:'Ver informe'};
 
   const row = (e,i)=>{
     const t = AGENDA_TIPO[e.tipo];
@@ -4576,10 +4606,52 @@ function agendaHTML(){
   <div style="display:flex; gap:8px; margin-bottom:16px;">
     <button class="btn ${AGENDA_TAB==='general'?'':'secondary'}" data-agenda-tab="general" style="padding:8px 16px;">General</button>
     <button class="btn ${AGENDA_TAB==='asesorias'?'':'secondary'}" data-agenda-tab="asesorias" style="padding:8px 16px;">Asesorías</button>
+    <button class="btn ${AGENDA_TAB==='ia'?'':'secondary'}" data-agenda-tab="ia" style="padding:8px 16px;">Seguimiento IA</button>
   </div>`;
 
   if(AGENDA_TAB === 'asesorias'){
     return tabsHTML + citasPanelHTML(true) + disponibilidadPanelHTML();
+  }
+
+  if(AGENDA_TAB === 'ia'){
+    const vencidasIA = accionesIA.filter(e=>e.fecha < todayISO);
+    const proximasIA = accionesIA.filter(e=>e.fecha >= todayISO);
+    return tabsHTML + `
+    <div class="notice" style="margin-bottom:16px; max-width:100%;">Próxima acción sugerida por el informe ejecutivo con IA de cada expediente. La IA solo clasifica qué tan urgente es (alta/media/baja) a partir de lo que ya sabe del caso — la fecha de seguimiento la calcula el sistema con días hábiles normales, nunca es un plazo legal inventado por la IA.</div>
+    ${isAdmin ? `
+    <div class="panel">
+      <div class="panel-head"><h3>Seguimiento por socio</h3><span class="count">${Object.keys(resumenIAporSocio).length}</span></div>
+      <div class="panel-body" style="padding:0;">
+        <table><thead><tr><th>Socio</th><th>Urgente</th><th>Media</th><th>Sin prisa</th><th></th></tr></thead><tbody>
+          <tr data-agenda-socio="todos" style="cursor:pointer; ${AGENDA_SOCIO==='todos'?'background:var(--parchment);':''}">
+            <td><strong>Todos</strong></td>
+            <td style="color:var(--red); font-weight:700;">${Object.values(resumenIAporSocio).reduce((a,b)=>a+b.alta,0)}</td>
+            <td>${Object.values(resumenIAporSocio).reduce((a,b)=>a+b.media,0)}</td>
+            <td>${Object.values(resumenIAporSocio).reduce((a,b)=>a+b.baja,0)}</td>
+            <td></td>
+          </tr>
+          ${Object.keys(resumenIAporSocio).sort((a,b)=>resumenIAporSocio[b].alta-resumenIAporSocio[a].alta).map(n=>`
+          <tr data-agenda-socio="${escapeHTML(n)}" style="cursor:pointer; ${AGENDA_SOCIO===n?'background:var(--parchment);':''}">
+            <td>${escapeHTML(n)}</td>
+            <td style="color:${resumenIAporSocio[n].alta>0?'var(--red)':'inherit'}; font-weight:${resumenIAporSocio[n].alta>0?'700':'400'};">${resumenIAporSocio[n].alta}</td>
+            <td>${resumenIAporSocio[n].media}</td>
+            <td>${resumenIAporSocio[n].baja}</td>
+            <td><button class="btn secondary" data-agenda-socio="${escapeHTML(n)}" style="padding:5px 10px; font-size:11px;">Ver</button></td>
+          </tr>`).join("")}
+        </tbody></table>
+      </div>
+    </div>` : ""}
+    ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
+    ${vencidasIA.length? `
+    <div class="panel">
+      <div class="panel-head"><h3>&#9888; Vencidas / requieren atención inmediata</h3><span class="count">${vencidasIA.length}</span></div>
+      <div class="panel-body">${vencidasIA.map(row).join("")}</div>
+    </div>` : ""}
+    <div class="panel">
+      <div class="panel-head"><h3>Seguimiento próximo</h3><span class="count">${proximasIA.length}</span></div>
+      <div class="panel-body">${proximasIA.length? proximasIA.map(row).join("") : '<div class="empty">Sin acciones sugeridas por ahora. Se llenan solas conforme se genera o actualiza el informe ejecutivo de cada expediente.</div>'}</div>
+    </div>
+    `;
   }
 
   return tabsHTML + `
@@ -5127,6 +5199,9 @@ function bindViewBody(){
           MODAL_TAB = 'etapas';
           openModal(k);
           return;
+        } else if(action === 'ver_informe'){
+          openModal(k, 'resumen');
+          return;
         }
         await refreshBootstrap();
         syncGoogleIfConnected();
@@ -5463,8 +5538,8 @@ async function cargarInformeEjecutivo(caseId, forzar){
   try{
     const r = await api('POST', 'expediente_resumen_ejecutivo.php', {id: caseId, forzar: !!forzar});
     const kc = findCase(caseId);
-    if(kc){ kc.resumen_ejecutivo = r.resumen; kc.resumen_ejecutivo_generado_en = r.generado_en; }
-    if(ACTIVE_CASE && ACTIVE_CASE.id===caseId){ ACTIVE_CASE.resumen_ejecutivo = r.resumen; ACTIVE_CASE.resumen_ejecutivo_generado_en = r.generado_en; }
+    if(kc){ kc.resumen_ejecutivo = r.resumen; kc.accion_sugerida_ia = r.accion; kc.urgencia_ia = r.urgencia; kc.resumen_ejecutivo_generado_en = r.generado_en; }
+    if(ACTIVE_CASE && ACTIVE_CASE.id===caseId){ ACTIVE_CASE.resumen_ejecutivo = r.resumen; ACTIVE_CASE.accion_sugerida_ia = r.accion; ACTIVE_CASE.urgencia_ia = r.urgencia; ACTIVE_CASE.resumen_ejecutivo_generado_en = r.generado_en; }
     INFORME_EJECUTIVO_STATE[caseId] = {cargando:false, error: r.aviso || null};
   }catch(err){
     INFORME_EJECUTIVO_STATE[caseId] = {cargando:false, error: 'No se pudo generar el informe: ' + err.message};
@@ -5726,6 +5801,7 @@ function modalTabContent(k,p,meta){
         ? `<div class="loading-dots" style="margin:6px 0 2px;"><span></span><span></span><span></span></div>`
         : (k.resumen_ejecutivo
             ? `<div style="font-size:13.5px; color:var(--ink); white-space:pre-wrap; line-height:1.5;">${escapeHTML(k.resumen_ejecutivo)}</div>
+               ${k.accion_sugerida_ia ? `<div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; align-items:center; gap:8px;">${urgenciaBadgeHTML(k.urgencia_ia)}<span style="font-size:12.5px; color:var(--ink);"><strong>Próxima acción:</strong> ${escapeHTML(k.accion_sugerida_ia)}</span></div>` : ''}
                <div style="font-size:11px; color:var(--gray); margin-top:8px;">Generado el ${new Date(k.resumen_ejecutivo_generado_en).toLocaleString('es-MX', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}</div>`
             : `<div class="empty" style="margin:2px 0;">Aún no se ha generado un informe ejecutivo de este asunto.</div>`)}
       ${infEstado.error ? `<div style="font-size:11.5px; color:var(--red); margin-top:6px;">${escapeHTML(infEstado.error)}</div>` : ''}
