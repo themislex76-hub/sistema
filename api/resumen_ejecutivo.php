@@ -10,8 +10,13 @@ require_once __DIR__ . '/ia_helpers.php';
 // historial. Solo Administrador.
 //
 // GET  -> lista los resúmenes ya generados (id, fecha, num_conversaciones,
-//         contenido) para mostrarlos/copiarlos en el sistema.
-// POST -> genera uno nuevo (llama a la IA), lo guarda, y lo devuelve.
+//         periodo_desde/periodo_hasta, contenido) para mostrarlos/copiarlos
+//         en el sistema.
+// POST -> genera uno nuevo (llama a la IA), lo guarda, y lo devuelve. Acepta
+//         opcionalmente {desde, hasta} (YYYY-MM-DD) para acotar el resumen a
+//         un periodo (hoy, última semana, este mes, un rango a mano, etc.) en
+//         vez de siempre las últimas ~400 conversaciones sin importar cuándo
+//         pasaron.
 if (!in_array($_SERVER['REQUEST_METHOD'], ['GET', 'POST'], true)) fail('Método no permitido.', 405);
 $user = require_admin();
 
@@ -19,7 +24,7 @@ $pdo = db();
 
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     $stmt = $pdo->query(
-        "SELECT id, contenido, num_conversaciones, creado_en FROM resumenes_ejecutivos ORDER BY id DESC LIMIT 20"
+        "SELECT id, contenido, num_conversaciones, periodo_desde, periodo_hasta, creado_en FROM resumenes_ejecutivos ORDER BY id DESC LIMIT 20"
     );
     $resumenes = [];
     foreach ($stmt->fetchAll() as $r) {
@@ -27,6 +32,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             'id' => (int)$r['id'],
             'contenido' => $r['contenido'],
             'num_conversaciones' => (int)$r['num_conversaciones'],
+            'periodo_desde' => $r['periodo_desde'],
+            'periodo_hasta' => $r['periodo_hasta'],
             'creado_en' => $r['creado_en'],
         ];
     }
@@ -36,23 +43,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 // POST: generar uno nuevo.
 require_csrf();
 
-// En vez de mandarle a la IA el historial completo de las 300+
-// conversaciones (carísimo e impráctico), se le manda el primer mensaje de
-// cada una (el motivo original de contacto) más si calificó o no como
-// prospecto — suficiente para detectar temas y patrones sin gastar de más.
-$stmt = $pdo->query(
-    "SELECT c.telefono, c.texto AS primer_mensaje, p.tipo AS prospecto_tipo, p.estatus AS prospecto_estatus
+$in = json_input();
+$desde = trim((string)($in['desde'] ?? ''));
+$hasta = trim((string)($in['hasta'] ?? ''));
+$tienePeriodo = $desde !== '' && $hasta !== ''
+    && preg_match('/^\d{4}-\d{2}-\d{2}$/', $desde) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $hasta);
+
+// En vez de mandarle a la IA el historial completo de las conversaciones
+// (carísimo e impráctico), se le manda el primer mensaje de cada una (el
+// motivo original de contacto) más si calificó o no como prospecto —
+// suficiente para detectar temas y patrones sin gastar de más. El tope de
+// 500 aplica siempre (con o sin periodo) como salvaguarda de costo, no
+// solo cuando no se pide un rango.
+$sql = "SELECT c.telefono, c.texto AS primer_mensaje, p.tipo AS prospecto_tipo, p.estatus AS prospecto_estatus
      FROM whatsapp_conversaciones c
      INNER JOIN (
          SELECT telefono, MIN(id) AS primer_id FROM whatsapp_conversaciones WHERE direccion = 'entrante' GROUP BY telefono
      ) t ON t.primer_id = c.id
-     LEFT JOIN prospectos p ON p.telefono = c.telefono
-     ORDER BY c.creado_en DESC
-     LIMIT 400"
-);
+     LEFT JOIN prospectos p ON p.telefono = c.telefono";
+$params = [];
+if ($tienePeriodo) {
+    $sql .= " WHERE c.creado_en >= :desde AND c.creado_en < :hasta";
+    $params[':desde'] = $desde . ' 00:00:00';
+    $params[':hasta'] = date('Y-m-d', strtotime($hasta . ' +1 day')) . ' 00:00:00';
+}
+$sql .= " ORDER BY c.creado_en DESC LIMIT 500";
+$stmt = $pdo->prepare($sql);
+$stmt->execute($params);
 $filas = $stmt->fetchAll();
 
-if (!$filas) fail('No hay conversaciones registradas todavía.', 400);
+if (!$filas) fail($tienePeriodo ? 'No hay conversaciones registradas en ese periodo.' : 'No hay conversaciones registradas todavía.', 400);
 
 $lineas = [];
 foreach ($filas as $f) {
@@ -82,7 +102,9 @@ $payload = [
         . 'mejor, o volumen alto en algo específico); (4) cierra con 2-3 recomendaciones concretas y accionables. '
         . 'Usa encabezados simples con guiones, sin markdown de tablas, en un tono directo. No hagas un ensayo '
         . 'largo — va a leerlo alguien ocupado.',
-    'messages' => [['role' => 'user', 'content' => "Aquí están las conversaciones (" . count($filas) . " en total):\n\n{$transcript}"]],
+    'messages' => [['role' => 'user', 'content' =>
+        ($tienePeriodo ? "Periodo: del $desde al $hasta.\n" : "Periodo: sin acotar (las conversaciones más recientes).\n")
+        . "Aquí están las conversaciones (" . count($filas) . " en total):\n\n{$transcript}"]],
 ];
 
 $ch = curl_init('https://api.anthropic.com/v1/messages');
@@ -117,13 +139,21 @@ $texto = trim($texto);
 if ($texto === '') fail('La IA no devolvió texto.', 502);
 
 $stmt = $pdo->prepare(
-    'INSERT INTO resumenes_ejecutivos (contenido, num_conversaciones, generado_por) VALUES (:c, :n, :u)'
+    'INSERT INTO resumenes_ejecutivos (contenido, num_conversaciones, periodo_desde, periodo_hasta, generado_por) VALUES (:c, :n, :pd, :ph, :u)'
 );
-$stmt->execute([':c' => $texto, ':n' => count($filas), ':u' => $user['id']]);
+$stmt->execute([
+    ':c' => $texto,
+    ':n' => count($filas),
+    ':pd' => $tienePeriodo ? $desde : null,
+    ':ph' => $tienePeriodo ? $hasta : null,
+    ':u' => $user['id'],
+]);
 
 respond([
     'id' => (int)$pdo->lastInsertId(),
     'contenido' => $texto,
     'num_conversaciones' => count($filas),
+    'periodo_desde' => $tienePeriodo ? $desde : null,
+    'periodo_hasta' => $tienePeriodo ? $hasta : null,
     'creado_en' => date('Y-m-d H:i:s'),
 ], 201);

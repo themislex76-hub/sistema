@@ -75,6 +75,9 @@ let CONVERSACIONES = [];
 let CONVERSACIONES_STATS = {};
 let RESUMENES_EJECUTIVOS = [];
 let RESUMEN_EJECUTIVO_GENERANDO = false;
+let RESUMEN_EJECUTIVO_PERIODO = 'semana';
+let RESUMEN_EJECUTIVO_DESDE = '';
+let RESUMEN_EJECUTIVO_HASTA = '';
 let CONVERSACION_ABIERTA = null; // teléfono de la conversación expandida
 let CONVERSACION_MENSAJES = [];
 let CONVERSACION_RESUMEN = null; // {resumen, mensajes_contados, generado_en} o null
@@ -3289,6 +3292,17 @@ function rangoPeriodo(periodo, desdeCustom, hastaCustom){
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   const y = hoy.getFullYear(), m = hoy.getMonth();
   const pad = n=>String(n).padStart(2,'0');
+  if(periodo==='hoy'){
+    return {desde: dateToISO(hoy), hasta: dateToISO(hoy)};
+  }
+  if(periodo==='semana'){
+    const d = new Date(hoy); d.setDate(d.getDate()-6);
+    return {desde: dateToISO(d), hasta: dateToISO(hoy)};
+  }
+  if(periodo==='mes_movil'){
+    const d = new Date(hoy); d.setDate(d.getDate()-29);
+    return {desde: dateToISO(d), hasta: dateToISO(hoy)};
+  }
   if(periodo==='mes_actual'){
     return {desde: `${y}-${pad(m+1)}-01`, hasta: dateToISO(new Date(y, m+1, 0))};
   }
@@ -4036,31 +4050,54 @@ function mdBasicoHTML(md){
 }
 
 function resumenEjecutivoHTML(){
-  const ultimo = RESUMENES_EJECUTIVOS[0];
+  const chips = [
+    ['hoy','Hoy'], ['semana','Última semana'], ['mes_movil','Último mes'],
+    ['mes_actual','Este mes'], ['personalizado','Personalizado']
+  ];
   return `
-  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
-    <div style="font-size:12.5px; color:var(--gray);">${RESUMENES_EJECUTIVOS.length ? `Último generado: ${fmtFechaHora(ultimo.creado_en)} · ${ultimo.num_conversaciones} conversaciones` : 'Todavía no se ha generado ningún resumen.'}</div>
-    <button class="btn" id="resumenEjecutivoGenerarBtn" ${RESUMEN_EJECUTIVO_GENERANDO?'disabled':''}>${RESUMEN_EJECUTIVO_GENERANDO ? 'Generando... (puede tardar ~1 min)' : 'Generar nuevo resumen'}</button>
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+    <div class="filters" style="margin:0;">
+      ${chips.map(([v,label])=>`<div class="chip ${RESUMEN_EJECUTIVO_PERIODO===v?'active':''}" data-resumen-periodo="${v}">${label}</div>`).join("")}
+    </div>
+    <button class="btn" id="resumenEjecutivoGenerarBtn" ${RESUMEN_EJECUTIVO_GENERANDO?'disabled':''}>${RESUMEN_EJECUTIVO_GENERANDO ? 'Generando... (puede tardar ~1 min)' : 'Generar resumen de este periodo'}</button>
   </div>
-  ${!RESUMENES_EJECUTIVOS.length ? `<div class="panel"><div class="panel-body" style="padding:24px;"><div class="notice">Dale clic a "Generar nuevo resumen" — la IA revisa todas las conversaciones recientes y arma un reporte de temas comunes, patrones y oportunidades.</div></div></div>` : ''}
+  ${RESUMEN_EJECUTIVO_PERIODO==='personalizado' ? `
+  <div style="display:flex; gap:12px; align-items:end; margin-bottom:16px;">
+    <div class="field"><label>Desde</label><input type="date" id="resumenEjecutivoDesde" value="${RESUMEN_EJECUTIVO_DESDE}"></div>
+    <div class="field"><label>Hasta</label><input type="date" id="resumenEjecutivoHasta" value="${RESUMEN_EJECUTIVO_HASTA}"></div>
+  </div>` : ''}
+  <div style="font-size:12.5px; color:var(--gray); margin-bottom:16px;">${RESUMENES_EJECUTIVOS.length ? `Último generado: ${fmtFechaHora(RESUMENES_EJECUTIVOS[0].creado_en)} · ${RESUMENES_EJECUTIVOS[0].num_conversaciones} conversaciones` : 'Todavía no se ha generado ningún resumen.'}</div>
+  ${!RESUMENES_EJECUTIVOS.length ? `<div class="panel"><div class="panel-body" style="padding:24px;"><div class="notice">Elige el periodo de arriba y dale clic a "Generar resumen" — la IA revisa las conversaciones de ese periodo y arma un reporte de temas comunes, patrones y oportunidades.</div></div></div>` : ''}
   ${RESUMENES_EJECUTIVOS.map((r,i)=>`
   <div class="panel" style="margin-bottom:16px;">
     <div class="panel-head"><h3>${i===0?'Más reciente':'Resumen anterior'} — ${fmtFechaHora(r.creado_en)}</h3>
       <button class="btn secondary" data-resumen-copiar="${r.id}" style="font-size:11px; padding:6px 10px;">Copiar texto</button>
     </div>
+    <div style="padding:0 24px; margin-top:-8px; font-size:12px; color:var(--gray);">Periodo: ${r.periodo_desde && r.periodo_hasta ? `${fmtDate(r.periodo_desde)} – ${fmtDate(r.periodo_hasta)}` : 'sin acotar (más recientes)'}</div>
     <div class="panel-body" style="padding:20px 24px;">${mdBasicoHTML(r.contenido)}</div>
   </div>`).join("")}
   `;
 }
 
 function bindResumenEjecutivoEvents(){
+  document.querySelectorAll('.chip[data-resumen-periodo]').forEach(el=>{
+    el.addEventListener('click', ()=>{ RESUMEN_EJECUTIVO_PERIODO = el.dataset.resumenPeriodo; renderViewBody(); });
+  });
   const generarBtn = document.getElementById('resumenEjecutivoGenerarBtn');
   if(generarBtn){
     generarBtn.addEventListener('click', async ()=>{
+      if(RESUMEN_EJECUTIVO_PERIODO==='personalizado'){
+        const desdeEl = document.getElementById('resumenEjecutivoDesde');
+        const hastaEl = document.getElementById('resumenEjecutivoHasta');
+        RESUMEN_EJECUTIVO_DESDE = desdeEl ? desdeEl.value : '';
+        RESUMEN_EJECUTIVO_HASTA = hastaEl ? hastaEl.value : '';
+        if(!RESUMEN_EJECUTIVO_DESDE || !RESUMEN_EJECUTIVO_HASTA){ alert('Elige las dos fechas del periodo personalizado.'); return; }
+      }
+      const rango = rangoPeriodo(RESUMEN_EJECUTIVO_PERIODO, RESUMEN_EJECUTIVO_DESDE, RESUMEN_EJECUTIVO_HASTA);
       RESUMEN_EJECUTIVO_GENERANDO = true;
       renderViewBody();
       try{
-        await api('POST', 'resumen_ejecutivo.php', {});
+        await api('POST', 'resumen_ejecutivo.php', {desde: rango.desde, hasta: rango.hasta});
         await loadResumenesEjecutivos();
       }catch(err){
         alert('No se pudo generar el resumen: ' + err.message);
