@@ -3615,7 +3615,10 @@ function buildAgendaEntries(){
   // con días hábiles normales a partir de cuándo se generó el informe.
   cases.forEach(k=>{
     if(!k.urgencia_ia || !k.accion_sugerida_ia || estaConcluido(k)) return;
-    const generado = parseDate(k.resumen_ejecutivo_generado_en);
+    // resumen_ejecutivo_generado_en viene con hora ("2026-08-26 12:27:00")
+    // -- parseDate() espera solo la fecha, hay que recortarla primero o
+    // devuelve null (Invalid Date) y este bloque se saltaba TODOS los casos.
+    const generado = parseDate((k.resumen_ejecutivo_generado_en || '').slice(0, 10));
     if(!generado) return;
     const dias = DIAS_HABILES_POR_URGENCIA[k.urgencia_ia] || DIAS_HABILES_POR_URGENCIA.baja;
     const fecha = dateToISO(addBusinessDays(generado, dias));
