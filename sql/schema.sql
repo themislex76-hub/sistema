@@ -31,6 +31,9 @@ CREATE TABLE usuarios (
   pjf_usuario VARCHAR(190) NULL,
   pjf_password_enc TEXT NULL,
   pjf_actualizado_en DATETIME NULL,
+  resumen_hoy_texto TEXT NULL,
+  resumen_hoy_hash VARCHAR(64) NULL,
+  resumen_hoy_generado_en DATETIME NULL,
   creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_usuarios_email (email)

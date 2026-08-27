@@ -96,6 +96,7 @@ let MODAL_TAB = "resumen";
 let INFORME_EJECUTIVO_STATE = {}; // {[expedienteId]: {cargando, error}} -- estado del informe ejecutivo con IA
 let SEGUIMIENTO_IA_BULK = null; // {actual, total} mientras corre "Actualizar todos los informes", null si no está corriendo
 let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de CASES_DATA)
+let RESUMEN_HOY_STATE = {cargando:false, texto:null, error:null, generadoEn:null, vacio:false}; // "Qué hacer hoy" del Tablero (ver cargarResumenHoy())
 
 // Campos que puede llenar/editar el abogado asignado. Cubre lo necesario
 // para el seguimiento del asunto y para generar la demanda por combinación
@@ -2802,7 +2803,11 @@ function highlightNav(){
 function renderViewBody(){
   const el = document.getElementById('viewBody');
   if(!el) return;
-  if(VIEW==='tablero') el.innerHTML = tableroHTML();
+  if(VIEW==='tablero'){
+    el.innerHTML = tableroHTML();
+    bindResumenHoyEvents();
+    if(!RESUMEN_HOY_STATE.texto && !RESUMEN_HOY_STATE.cargando && !RESUMEN_HOY_STATE.vacio) cargarResumenHoy();
+  }
   else if(VIEW==='expedientes') el.innerHTML = expedientesHTML();
   else if(VIEW==='alertas') el.innerHTML = alertasHTML();
   else if(VIEW==='cobros') el.innerHTML = cobrosHTML();
@@ -2891,6 +2896,7 @@ function tableroHTML(){
   const detenidos = visibleCases().map(k=>({k, det:juicioDetenido(k)})).filter(x=>x.det);
 
   return `
+  ${resumenHoyHTML()}
   <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
     <button class="btn secondary" id="reporteEjecutivoBtn">📄 Generar reporte ejecutivo (PDF)</button>
   </div>
@@ -3632,6 +3638,73 @@ function buildAgendaEntries(){
 }
 
 const DIAS_HABILES_POR_URGENCIA = {alta:2, media:5, baja:10};
+
+// "Qué hacer hoy" (panel arriba del Tablero) -- reutiliza buildAgendaEntries()
+// tal cual (mismos pendientes/vencimientos que ya se ven en la Agenda
+// general y en las alertas de prescripción, con sus fechas y días ya
+// calculados aquí en el frontend). Solo se manda a la IA lo vencido o
+// próximo (5 días), ya resuelto en días -- la IA nunca calcula fechas, solo
+// prioriza y redacta. Tope de 40 para no mandar un prompt gigante si hay
+// muchísimos pendientes.
+function construirItemsHoy(){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  return buildAgendaEntries()
+    .map(e=>{
+      const f = parseDate(e.fecha);
+      const dias = f ? daysBetween(hoy, f) : null;
+      return {tipo: e.tipo, actor: e.k.actor, demandado: e.k.demandado, label: e.label, dias};
+    })
+    .filter(it => it.dias === null || it.dias <= 5)
+    .sort((a,b)=> (a.dias==null?9999:a.dias) - (b.dias==null?9999:b.dias))
+    .slice(0, 40);
+}
+
+async function cargarResumenHoy(forzar){
+  if(RESUMEN_HOY_STATE.cargando) return;
+  const items = construirItemsHoy();
+  if(!items.length){
+    RESUMEN_HOY_STATE = {cargando:false, texto:null, error:null, generadoEn:null, vacio:true};
+    if(VIEW==='tablero') renderViewBody();
+    return;
+  }
+  RESUMEN_HOY_STATE = Object.assign({}, RESUMEN_HOY_STATE, {cargando:true, error:null, vacio:false});
+  if(VIEW==='tablero') renderViewBody();
+  try{
+    const r = await api('POST', 'hoy_resumen.php', {items, forzar: !!forzar});
+    RESUMEN_HOY_STATE = {cargando:false, texto:r.resumen, error:r.aviso||null, generadoEn:r.generado_en, vacio:false};
+  }catch(err){
+    RESUMEN_HOY_STATE = {cargando:false, texto:RESUMEN_HOY_STATE.texto, error:'No se pudo generar: '+err.message, generadoEn:RESUMEN_HOY_STATE.generadoEn, vacio:false};
+  }
+  if(VIEW==='tablero') renderViewBody();
+}
+
+function resumenHoyHTML(){
+  const s = RESUMEN_HOY_STATE;
+  let body;
+  if(s.cargando && !s.texto) body = `<div class="empty">Generando...</div>`;
+  else if(s.vacio) body = `<div class="empty">Sin pendientes urgentes por ahora. Buen momento para revisar Alertas de prescripción con calma.</div>`;
+  else if(s.texto) body = `<div style="white-space:pre-line; font-size:13.5px; line-height:1.55;">${escapeHTML(s.texto)}</div>`;
+  else body = `<div class="empty">${s.error ? escapeHTML(s.error) : 'No se pudo generar todavía.'}</div>`;
+  return `
+  <div class="panel" id="resumenHoyPanel">
+    <div class="panel-head">
+      <h3>🎯 Qué hacer hoy</h3>
+      <span class="count" style="display:flex; align-items:center; gap:8px;">
+        ${s.generadoEn ? 'Generado ' + new Date(s.generadoEn).toLocaleString('es-MX', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : ''}
+        <button class="btn secondary" id="refrescarResumenHoyBtn" style="padding:3px 10px; font-size:11px;" ${s.cargando?'disabled':''}>${s.cargando?'Generando...':'🔄 Actualizar'}</button>
+      </span>
+    </div>
+    <div class="panel-body">
+      ${body}
+      ${s.texto && s.error ? `<div class="notice" style="margin-top:10px;">${escapeHTML(s.error)}</div>` : ''}
+    </div>
+  </div>`;
+}
+
+function bindResumenHoyEvents(){
+  const btn = document.getElementById('refrescarResumenHoyBtn');
+  if(btn) btn.addEventListener('click', ()=> cargarResumenHoy(true));
+}
 
 function urgenciaBadgeHTML(urgencia){
   const info = {alta:{label:'Urgente', color:'var(--red)'}, media:{label:'Media', color:'var(--amber)'}, baja:{label:'Sin prisa', color:'var(--green)'}}[urgencia];
