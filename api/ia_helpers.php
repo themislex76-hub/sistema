@@ -1836,3 +1836,96 @@ function ia_buscar_expedientes(string $pregunta, array $casos): ?array
     return $resultados;
 }
 
+const IA_MODELO_RESUMEN_SEMANAL = 'claude-haiku-4-5-20251001';
+
+// Resumen semanal del despacho para el Administrador/dueño: $metricas ya
+// trae, calculado en el frontend (metricsResumenSemanal() en app.js, con
+// las mismas funciones que usan Tablero y Agenda), qué asuntos avanzaron
+// de etapa, cuáles están en riesgo y cuánto se cobró en los últimos 7
+// días -- la IA solo redacta el reporte a partir de estos datos, nunca
+// calcula ni inventa una cifra o un caso que no venga aquí.
+function ia_generar_resumen_semanal(array $metricas): ?string
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $lineas = [];
+    $lineas[] = 'Asuntos activos totales ahora mismo: ' . (int)($metricas['totalActivos'] ?? 0);
+
+    $avances = is_array($metricas['avances'] ?? null) ? $metricas['avances'] : [];
+    $lineas[] = "\nAvances de etapa en los últimos 7 días (" . count($avances) . '):';
+    $lineas = array_merge($lineas, $avances ? array_map(fn($l) => '- ' . $l, $avances) : ['- (ninguno)']);
+
+    $enRiesgo = is_array($metricas['enRiesgo'] ?? null) ? $metricas['enRiesgo'] : [];
+    $lineas[] = "\nAsuntos en riesgo ahora mismo (" . count($enRiesgo) . '):';
+    $lineas = array_merge($lineas, $enRiesgo ? array_map(fn($l) => '- ' . $l, $enRiesgo) : ['- (ninguno)']);
+
+    $cobros = is_array($metricas['cobros'] ?? null) ? $metricas['cobros'] : [];
+    $totalCobrado = (float)($metricas['totalCobrado'] ?? 0);
+    $lineas[] = "\nCobros de los últimos 7 días (" . count($cobros) . ', total $' . number_format($totalCobrado, 2) . '):';
+    $lineas = array_merge($lineas, $cobros ? array_map(fn($l) => '- ' . $l, $cobros) : ['- (ninguno)']);
+
+    $payload = [
+        'model' => IA_MODELO_RESUMEN_SEMANAL,
+        'max_tokens' => 700,
+        'thinking' => ['type' => 'disabled'],
+        'system' => 'Eres el asistente ejecutivo de un despacho de derecho laboral en México. Te doy las métricas '
+            . 'YA calculadas de la última semana (asuntos que avanzaron de etapa, asuntos en riesgo, y qué se '
+            . 'cobró) -- tu única tarea es redactar un resumen ejecutivo corto para el dueño/socio del despacho, '
+            . 'que lo lee una vez a la semana sin abrir el sistema.'
+            . "\n\n"
+            . 'Formato: un párrafo de apertura (2-3 líneas) con el panorama general, y después 3 bloques con '
+            . 'encabezado en mayúsculas -- AVANCES, EN RIESGO, COBROS -- cada uno con viñetas breves (un guion por '
+            . 'línea) citando los casos por nombre (actor vs demandado). Si un bloque no tiene datos, dilo en una '
+            . 'línea corta ("Sin avances esta semana.") en vez de omitir el bloque completo.'
+            . "\n\n"
+            . 'REGLA DURA: nunca inventes ni cambies una cifra, una fecha, un caso o un dato que no venga tal cual '
+            . 'en las métricas que te doy -- solo redacta y organiza lo que ya está aquí.'
+            . "\n\n"
+            . 'No uses markdown con doble asterisco ni encabezados con #; para los encabezados de bloque usa solo '
+            . 'mayúsculas. Español de México, tono profesional y directo, como un reporte de negocio.',
+        'messages' => [['role' => 'user', 'content' => implode("\n", $lineas)]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 40,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [resumen_semanal] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+
+    $u = $data['usage'] ?? [];
+    file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+        . " | [resumen_semanal] input=" . ($u['input_tokens'] ?? 0)
+        . " | output=" . ($u['output_tokens'] ?? 0) . "\n", FILE_APPEND);
+
+    return $texto !== '' ? $texto : null;
+}
+

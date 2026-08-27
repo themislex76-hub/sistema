@@ -99,6 +99,7 @@ let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de
 let BUSQUEDA_IA_ACTIVA = false; // true cuando se muestra el cuadro de búsqueda con lenguaje natural en Expedientes
 let BUSQUEDA_IA_PREGUNTA = '';
 let BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:null}; // resultados: [{id, razon}] en orden de relevancia, o null si no se ha buscado
+let RESUMEN_SEMANAL_STATE = {cargando:false, texto:null, error:null, generadoEn:null}; // Resumen semanal del despacho (solo Administrador, ver resumenSemanalHTML())
 
 // Campos que puede llenar/editar el abogado asignado. Cubre lo necesario
 // para el seguimiento del asunto y para generar la demanda por combinación
@@ -2895,6 +2896,7 @@ function tableroHTML(){
 
   return `
   ${resumenHoyHTML()}
+  ${CURRENT_USER.role==='Administrador' ? resumenSemanalHTML() : ''}
   <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
     <button class="btn secondary" id="reporteEjecutivoBtn">📄 Generar reporte ejecutivo (PDF)</button>
   </div>
@@ -3759,6 +3761,123 @@ function resumenHoyHTML(){
       ${bloqueHTML('Urgente / vencido', urgentes)}
       ${bloqueHTML('Esta semana', semana)}
     </div>
+  </div>`;
+}
+
+// Resumen semanal del despacho -- solo para el Administrador: agrega,
+// sobre los últimos 7 días, qué asuntos avanzaron de etapa, cuáles están
+// en riesgo (prescripción crítica o estancados) y cuánto se cobró. Todo
+// deterministico (mismas funciones que ya usan Tablero/Agenda) -- la IA
+// solo redacta el texto a partir de estos datos, nunca calcula nada. Se
+// genera a mano con un botón (no automático) porque es un reporte
+// semanal, no algo que haga falta ver en cada visita al Tablero.
+function metricsResumenSemanal(){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const desde = addDaysDate(hoy, -7);
+  const cases = visibleCases();
+
+  const avances = [];
+  cases.forEach(k=>{
+    const meta = getMeta(k.id);
+    let etapaReciente = null;
+    ETAPAS_DEF.forEach(def=>{
+      const et = meta.etapas[def.key];
+      const f = et && et.fecha ? parseDate(et.fecha) : null;
+      if(f && f >= desde && f <= hoy) etapaReciente = def.label;
+    });
+    if(etapaReciente) avances.push({k, etapa: etapaReciente});
+  });
+
+  const enRiesgo = [];
+  cases.filter(isPrescripcionRelevant).forEach(k=>{
+    const p = computePrescripcion(k);
+    if(p && p.daysLeft <= 10) enRiesgo.push({k, motivo: `Prescripción vence en ${p.daysLeft} día(s)`});
+  });
+  cases.forEach(k=>{
+    const est = estancadoInfo(k);
+    if(est) enRiesgo.push({k, motivo: `Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`});
+  });
+
+  const cobros = [];
+  let totalCobrado = 0;
+  cases.forEach(k=>{
+    const meta = getMeta(k.id);
+    (meta.pagos||[]).forEach(p=>{
+      if(!p.cobrado || !p.fecha_cobro) return;
+      const f = parseDate(p.fecha_cobro);
+      if(f && f >= desde && f <= hoy){
+        const monto = parseFloat(p.monto) || 0;
+        totalCobrado += monto;
+        cobros.push({k, monto});
+      }
+    });
+  });
+
+  return {
+    totalActivos: cases.filter(k=>!estaConcluido(k)).length,
+    avances, enRiesgo, cobros, totalCobrado,
+  };
+}
+
+async function cargarResumenSemanal(){
+  if(RESUMEN_SEMANAL_STATE.cargando) return;
+  RESUMEN_SEMANAL_STATE = {cargando:true, texto:null, error:null, generadoEn:null};
+  renderViewBody();
+  const m = metricsResumenSemanal();
+  const metricas = {
+    totalActivos: m.totalActivos,
+    avances: m.avances.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${x.etapa}`),
+    enRiesgo: m.enRiesgo.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${x.motivo}`),
+    cobros: m.cobros.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${fmtMoney(x.monto)}`),
+    totalCobrado: m.totalCobrado,
+  };
+  try{
+    const r = await api('POST', 'resumen_semanal.php', {metricas});
+    RESUMEN_SEMANAL_STATE = {cargando:false, texto:r.resumen, error:null, generadoEn:new Date().toISOString()};
+  }catch(err){
+    RESUMEN_SEMANAL_STATE = {cargando:false, texto:null, error:'No se pudo generar: ' + err.message, generadoEn:null};
+  }
+  renderViewBody();
+}
+
+// Convierte texto plano de la IA (líneas sueltas como encabezado de
+// bloque, líneas que empiezan con "-" como viñetas) en HTML con
+// jerarquía visual -- la IA solo redacta texto, el formato lo pone este
+// código. Genérico: lo usa cualquier panel que le pida a la IA un reporte
+// corto por bloques (hoy, el resumen semanal).
+function formatearTextoBloques(texto){
+  let html = '';
+  let primerBloque = true;
+  texto.split('\n').forEach(linea=>{
+    const t = linea.trim();
+    if(!t) return;
+    if(t.startsWith('-')){
+      html += `<div style="padding:3px 0 3px 16px; position:relative;"><span style="position:absolute; left:0; color:var(--brass);">•</span>${escapeHTML(t.replace(/^-\s*/, ''))}</div>`;
+    } else {
+      html += `<div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--brass); margin-top:${primerBloque?'0':'14px'}; margin-bottom:4px;">${escapeHTML(t)}</div>`;
+      primerBloque = false;
+    }
+  });
+  return html;
+}
+
+function resumenSemanalHTML(){
+  const s = RESUMEN_SEMANAL_STATE;
+  return `
+  <div class="panel" id="resumenSemanalPanel">
+    <div class="panel-head">
+      <h3>📊 Resumen semanal del despacho</h3>
+      <span class="count" style="display:flex; align-items:center; gap:8px;">
+        ${s.generadoEn ? 'Generado ' + new Date(s.generadoEn).toLocaleString('es-MX', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : ''}
+        <button class="btn secondary" id="generarResumenSemanalBtn" style="padding:5px 12px; font-size:11.5px;" ${s.cargando?'disabled':''}>${s.cargando ? 'Generando <span class="loading-dots"><span></span><span></span><span></span></span>' : (s.texto ? '🔄 Regenerar' : '📊 Generar resumen semanal')}</button>
+      </span>
+    </div>
+    ${s.texto || s.error || s.cargando ? `
+    <div class="panel-body" style="padding:16px 20px;">
+      ${s.cargando && !s.texto ? `<div class="empty">Analizando la última semana…</div>` : ''}
+      ${s.texto ? `<div style="font-size:13.5px; line-height:1.6;">${formatearTextoBloques(s.texto)}</div>` : ''}
+      ${s.error ? `<div class="notice" style="border-left:3px solid var(--red);">${escapeHTML(s.error)}</div>` : ''}
+    </div>` : ''}
   </div>`;
 }
 
@@ -5187,6 +5306,8 @@ function bindViewBody(){
   if(busquedaIABuscarBtn) busquedaIABuscarBtn.addEventListener('click', ()=> cargarBusquedaIA());
   const busquedaIALimpiarBtn = document.getElementById('busquedaIALimpiarBtn');
   if(busquedaIALimpiarBtn) busquedaIALimpiarBtn.addEventListener('click', ()=>{ BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:null}; renderViewBody(); });
+  const generarResumenSemanalBtn = document.getElementById('generarResumenSemanalBtn');
+  if(generarResumenSemanalBtn) generarResumenSemanalBtn.addEventListener('click', ()=> cargarResumenSemanal());
   document.querySelectorAll('[data-id]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const id = parseInt(el.dataset.id);
