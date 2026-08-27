@@ -3545,7 +3545,13 @@ function cobrosHTML(){
 
 function buildAgendaEntries(){
   const entries = [];
-  const cases = visibleCases();
+  // Un asunto concluido (marcado a mano o con status "pagado"/"ya no
+  // quiso continuar") nunca debe seguir generando pendientes aquí -- antes
+  // solo el bloque de "próxima acción IA" se cuidaba de esto
+  // (!estaConcluido(k)), así que un caso concluido con un pago todavía sin
+  // marcar "cobrado" (dato independiente del cierre manual del asunto)
+  // se seguía mostrando como pendiente en Agenda y en "Qué hacer hoy".
+  const cases = visibleCases().filter(k=>!estaConcluido(k));
 
   // Audiencias agendadas (preliminar / de juicio)
   cases.forEach(k=>{
@@ -3617,7 +3623,7 @@ function buildAgendaEntries(){
   // evitamos en prescripción. La fecha de seguimiento la pone este código,
   // con días hábiles normales a partir de cuándo se generó el informe.
   cases.forEach(k=>{
-    if(!k.urgencia_ia || !k.accion_sugerida_ia || estaConcluido(k)) return;
+    if(!k.urgencia_ia || !k.accion_sugerida_ia) return;
     // resumen_ejecutivo_generado_en viene con hora ("2026-08-26 12:27:00")
     // -- parseDate() espera solo la fecha, hay que recortarla primero o
     // devuelve null (Invalid Date) y este bloque se saltaba TODOS los casos.
