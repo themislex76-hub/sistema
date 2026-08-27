@@ -3646,17 +3646,20 @@ const DIAS_HABILES_POR_URGENCIA = {alta:2, media:5, baja:10};
 // próximo (5 días), ya resuelto en días -- la IA nunca calcula fechas, solo
 // prioriza y redacta. Tope de 40 para no mandar un prompt gigante si hay
 // muchísimos pendientes.
-function construirItemsHoy(){
+function entradasHoy(){
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   return buildAgendaEntries()
     .map(e=>{
       const f = parseDate(e.fecha);
-      const dias = f ? daysBetween(hoy, f) : null;
-      return {tipo: e.tipo, actor: e.k.actor, demandado: e.k.demandado, label: e.label, dias};
+      return Object.assign({}, e, {dias: f ? daysBetween(hoy, f) : null});
     })
-    .filter(it => it.dias === null || it.dias <= 5)
+    .filter(e => e.dias === null || e.dias <= 5)
     .sort((a,b)=> (a.dias==null?9999:a.dias) - (b.dias==null?9999:b.dias))
     .slice(0, 40);
+}
+
+function construirItemsHoy(){
+  return entradasHoy().map(e=> ({tipo: e.tipo, actor: e.k.actor, demandado: e.k.demandado, label: e.label, dias: e.dias}));
 }
 
 async function cargarResumenHoy(forzar){
@@ -3705,6 +3708,17 @@ function resumenHoyHTML(){
   else if(s.vacio) body = `<div class="empty">Sin pendientes urgentes por ahora. Buen momento para revisar Alertas de prescripción con calma.</div>`;
   else if(s.texto) body = `<div style="font-size:13.5px; line-height:1.5;">${formatearResumenHoy(s.texto)}</div>`;
   else body = `<div class="empty">${s.error ? escapeHTML(s.error) : 'No se pudo generar todavía.'}</div>`;
+
+  // Debajo del texto de la IA, la misma lista pero clicable: entra al
+  // expediente con un clic (data-id, ver bindViewBody()) o resuelve la
+  // acción directo (botón .agenda-complete) sin salir del Tablero -- son
+  // las mismas filas que ya se usan en Agenda general.
+  const entradas = entradasHoy();
+  const lista = entradas.length ? `
+    <div style="margin-top:14px; border-top:1px solid var(--border); padding-top:10px;">
+      ${entradas.map(agendaRowHTML).join("")}
+    </div>` : '';
+
   return `
   <div class="panel" id="resumenHoyPanel">
     <div class="panel-head">
@@ -3717,6 +3731,7 @@ function resumenHoyHTML(){
     <div class="panel-body">
       ${body}
       ${s.texto && s.error ? `<div class="notice" style="margin-top:10px;">${escapeHTML(s.error)}</div>` : ''}
+      ${lista}
     </div>
   </div>`;
 }
@@ -3741,6 +3756,28 @@ const AGENDA_TIPO = {
   audiencia:{label:'Audiencia', color:'#3c5a86'},
   accion_ia:{label:'Sugerido por IA', color:'#8c6a2f'}
 };
+
+// Fila clicable de una entrada de buildAgendaEntries() -- compartida entre
+// la Agenda general y el panel "Qué hacer hoy" del Tablero. El nombre/
+// demandado (data-id) abre el expediente en el tab por default; el botón
+// de la derecha resuelve la acción concreta (marcar cobrado, demanda
+// presentada, etc.) sin salir de la lista -- ver el bloque ".agenda-complete"
+// en bindViewBody().
+const AGENDA_ACTION_LABEL = {pago:'Marcar cobrado', demanda:'Marcar demanda presentada', amparo:'Marcar amparo presentado', pendiente:'Marcar cumplido', abrir_etapas:'Revisar etapas', pendiente_generico:'Revisar etapas', ver_informe:'Ver informe'};
+function agendaRowHTML(e){
+  const t = AGENDA_TIPO[e.tipo];
+  return `<div class="alert-row" style="align-items:flex-start;">
+    <div style="width:76px; flex-shrink:0; text-align:center; padding-top:2px;">
+      <div style="font-size:11.5px; font-weight:700; color:${t.color};">${fmtDate(e.fecha)}</div>
+    </div>
+    <span class="badge" style="background:${t.color}1a; color:${t.color}; flex-shrink:0; margin-top:1px;">${t.label}</span>
+    <div class="alert-info" data-id="${e.k.id}" style="cursor:pointer;">
+      <div class="name">${escapeHTML(e.k.actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(e.k.demandado,30))}</div>
+      <div class="meta">${escapeHTML(e.label)} &middot; ${escapeHTML(assignedLawyer(e.k))}</div>
+    </div>
+    <button class="btn secondary agenda-complete" data-action="${e.action}" data-kid="${e.k.id}" data-idx="${e.actionIdx!=null?e.actionIdx:''}" style="flex-shrink:0; font-size:11px; padding:6px 10px;">${AGENDA_ACTION_LABEL[e.action]||'Marcar cumplido'}</button>
+  </div>`;
+}
 
 let AGENDA_SOCIO = 'todos';
 let AGENDA_TAB = 'general';
@@ -4684,22 +4721,7 @@ function agendaHTML(){
   const proximas = all.filter(e=>e.fecha >= todayISO);
   const accionesIA = all.filter(e=>e.tipo==='accion_ia');
 
-  const actionLabel = {pago:'Marcar cobrado', demanda:'Marcar demanda presentada', amparo:'Marcar amparo presentado', pendiente:'Marcar cumplido', abrir_etapas:'Revisar etapas', pendiente_generico:'Revisar etapas', ver_informe:'Ver informe'};
-
-  const row = (e,i)=>{
-    const t = AGENDA_TIPO[e.tipo];
-    return `<div class="alert-row" style="align-items:flex-start;">
-      <div style="width:76px; flex-shrink:0; text-align:center; padding-top:2px;">
-        <div style="font-size:11.5px; font-weight:700; color:${t.color};">${fmtDate(e.fecha)}</div>
-      </div>
-      <span class="badge" style="background:${t.color}1a; color:${t.color}; flex-shrink:0; margin-top:1px;">${t.label}</span>
-      <div class="alert-info" data-id="${e.k.id}" style="cursor:pointer;">
-        <div class="name">${escapeHTML(e.k.actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(e.k.demandado,30))}</div>
-        <div class="meta">${escapeHTML(e.label)} &middot; ${escapeHTML(assignedLawyer(e.k))}</div>
-      </div>
-      <button class="btn secondary agenda-complete" data-action="${e.action}" data-kid="${e.k.id}" data-idx="${e.actionIdx!=null?e.actionIdx:''}" style="flex-shrink:0; font-size:11px; padding:6px 10px;">${actionLabel[e.action]||'Marcar cumplido'}</button>
-    </div>`;
-  };
+  const row = agendaRowHTML;
 
   const tabsHTML = `
   <div style="display:flex; gap:8px; margin-bottom:16px;">
