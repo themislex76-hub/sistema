@@ -3065,15 +3065,16 @@ function expedientesHTML(){
   </div>
   ${BUSQUEDA_IA_ACTIVA ? `
   <div class="panel" style="margin-bottom:14px;">
-    <div class="panel-body">
-      <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <input type="text" id="busquedaIAInput" placeholder='Ej. "casos de despido con más de 10 años de antigüedad"' value="${escapeHTML(BUSQUEDA_IA_PREGUNTA)}" style="flex:1; min-width:260px; padding:9px 11px; border:1px solid var(--border); border-radius:8px;">
-        <button class="btn" id="busquedaIABuscarBtn" ${BUSQUEDA_IA_STATE.cargando?'disabled':''}>${BUSQUEDA_IA_STATE.cargando?'Buscando...':'Buscar'}</button>
+    <div class="panel-body" style="padding:16px 20px;">
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <input type="text" id="busquedaIAInput" placeholder='Ej. "casos de despido con más de 10 años de antigüedad"' value="${escapeHTML(BUSQUEDA_IA_PREGUNTA)}" style="flex:1; min-width:260px; padding:9px 12px; border:1px solid var(--border); border-radius:8px;">
+        <button class="btn" id="busquedaIABuscarBtn" ${BUSQUEDA_IA_STATE.cargando?'disabled':''}>${BUSQUEDA_IA_STATE.cargando ? 'Buscando <span class="loading-dots"><span></span><span></span><span></span></span>' : 'Buscar'}</button>
         ${BUSQUEDA_IA_STATE.resultados !== null ? `<button class="btn secondary" id="busquedaIALimpiarBtn">Quitar búsqueda</button>` : ''}
       </div>
-      <div style="font-size:11.5px; color:var(--gray); margin-top:8px;">Busca sobre los datos ya capturados de cada expediente (no lee el contenido de los documentos subidos).</div>
-      ${BUSQUEDA_IA_STATE.error ? `<div class="notice" style="margin-top:10px; border-left:3px solid var(--red);">${escapeHTML(BUSQUEDA_IA_STATE.error)}</div>` : ''}
-      ${buscando ? `<div style="margin-top:8px; font-size:12.5px; color:var(--gray);">${list.length} resultado(s) para "${escapeHTML(BUSQUEDA_IA_PREGUNTA)}"</div>` : ''}
+      <div style="font-size:11.5px; color:var(--gray); margin-top:10px;">Busca sobre los datos ya capturados de cada expediente (no lee el contenido de los documentos subidos).</div>
+      ${BUSQUEDA_IA_STATE.cargando ? `<div class="notice" style="margin-top:12px; display:flex; align-items:center; gap:10px;"><span class="loading-dots" style="color:var(--brass);"><span></span><span></span><span></span></span> Revisando tus expedientes…</div>` : ''}
+      ${BUSQUEDA_IA_STATE.error ? `<div class="notice" style="margin-top:12px; border-left:3px solid var(--red);">${escapeHTML(BUSQUEDA_IA_STATE.error)}</div>` : ''}
+      ${buscando ? `<div style="margin-top:10px; font-size:12.5px; color:var(--gray);">${list.length} resultado(s) para "${escapeHTML(BUSQUEDA_IA_PREGUNTA)}"</div>` : ''}
     </div>
   </div>` : ''}
   <div class="panel">
