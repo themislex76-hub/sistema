@@ -136,6 +136,7 @@ const TIPO_ASUNTO_OPCIONES = [
   'Rescisión (Art. 51 LFT)',
   'Riesgo de trabajo',
   'Designación de beneficiarios',
+  'Prima de antigüedad',
   TIPO_ASUNTO_PRESTACIONES,
 ];
 const TIPO_ASUNTO_PLAZOS = {
@@ -143,6 +144,7 @@ const TIPO_ASUNTO_PLAZOS = {
   'Rescisión (Art. 51 LFT)': {dias: 30, articulo: 'Art. 517 LFT'},
   'Riesgo de trabajo': {dias: 730, articulo: 'Art. 519 LFT'},
   'Designación de beneficiarios': {dias: 730, articulo: 'Art. 519 LFT'},
+  'Prima de antigüedad': {dias: 365, articulo: 'Art. 516 LFT'},
   'Prestaciones': {dias: 365, articulo: 'Art. 516 LFT'},
 };
 // Los expedientes ya existentes, capturados antes de que se agregara este

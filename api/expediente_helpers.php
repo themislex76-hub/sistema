@@ -25,7 +25,7 @@ function guard_expediente_access(PDO $pdo, array $user, int $id): array
 // pueden derivar solo de esos datos (aguinaldo pactado por contrato,
 // salarios devengados pendientes, vacaciones de años anteriores).
 const EDITABLE_CAMPOS = [
-    'actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
+    'tipo_asunto','actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
     'fecha_ingreso','fecha_baja','salario_mensual','salario_diario','sdi','instancia','junta',
     'tribunal','exp','status','quien_despidio','puesto_despidio','hora_despido','testigos',
     'dom_testigos','ultima_nota','aguinaldo_dias_pactados','dias_salarios_devengados',
