@@ -1539,8 +1539,39 @@ function ia_generar_resumen_conversacion(array $historial): ?string
 // (expediente_resumen_ejecutivo.php), no aquí.
 const IA_MODELO_RESUMEN_EXPEDIENTE = 'claude-haiku-4-5-20251001';
 
+// Etiquetas en español de cada etapa (mismo orden y textos que ETAPAS_DEF en
+// assets/app.js) -- solo para armar la bitácora que se le manda a la IA, no
+// duplica el cómputo de plazos legales (eso se queda solo en el frontend).
+const ETAPA_LABELS = [
+    'conciliacion_prejudicial' => 'Conciliación prejudicial',
+    'conciliacion_solicitada' => 'Solicitud de conciliación presentada',
+    'conciliacion_primer_citatorio' => 'Conciliación prejudicial (primer citatorio)',
+    'conciliacion_segundo_citatorio' => 'Conciliación prejudicial (segundo citatorio)',
+    'conciliacion_convenio' => 'Convenio',
+    'constancia_no_conciliacion' => 'Constancia de no conciliación recibida',
+    'demanda_presentada' => 'Demanda presentada ante el Tribunal',
+    'prevencion' => 'Prevención (el Tribunal previno por defectos u omisiones)',
+    'demanda_admitida' => 'Demanda admitida',
+    'emplazamiento' => 'Emplazamiento a la demandada realizado',
+    'contestacion_recibida' => 'Contestación de demanda recibida',
+    'objeciones_replica' => 'Objeciones y réplica del actor presentadas',
+    'contrarreplica' => 'Contrarréplica de la demandada presentada',
+    'manifestaciones_3dias' => 'Manifestaciones sobre pruebas nuevas',
+    'audiencia_preliminar' => 'Audiencia preliminar celebrada',
+    'audiencia_juicio' => 'Audiencia de juicio celebrada',
+    'sentencia' => 'Sentencia / laudo emitido',
+    'amparo_directo' => 'Amparo directo presentado',
+];
+
 // Devuelve null si falló, o ['resumen'=>string, 'accion'=>?string, 'urgencia'=>?'alta'|'media'|'baja'].
-function ia_generar_resumen_expediente(array $expediente): ?array
+// $etapas: filas de expediente_etapas (etapa_key, fecha, fecha_programada) en
+// CUALQUIER orden -- se reordenan aquí según ETAPA_LABELS. Sin esto, la IA
+// solo veía los datos de captura del expediente (actor, status, etc.) y
+// nunca la bitácora real de trámite, así que su "próxima acción" podía
+// contradecir lo que la pestaña "Etapas del juicio" ya mostraba (por
+// ejemplo, sugerir dar seguimiento a una etapa que ya pasó, ignorando un
+// atraso real más adelante en la bitácora).
+function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -1580,6 +1611,42 @@ function ia_generar_resumen_expediente(array $expediente): ?array
     $agregar('Notas internas', $expediente['notas_internas'] ?? null);
     $agregar('Última nota', $expediente['ultima_nota'] ?? null);
 
+    // Bitácora real de trámite -- sin esto la IA solo veía los datos de
+    // captura de arriba y podía sugerir una próxima acción que ya pasó o
+    // que contradice lo que la pestaña "Etapas del juicio" muestra. No se
+    // le pide calcular plazos legales aquí (eso sigue prohibido más abajo)
+    // -- solo se le da la fecha de la última etapa registrada y el nombre
+    // de la siguiente etapa sin registrar, para que describa correctamente
+    // en qué va el trámite.
+    $ordenEtapas = defined('ETAPA_KEYS') ? ETAPA_KEYS : [];
+    $porKey = [];
+    foreach ($etapas as $e) {
+        if (!empty($e['etapa_key'])) $porKey[$e['etapa_key']] = $e;
+    }
+    $registradas = [];
+    $ultimaEtapaIdx = null;
+    foreach ($ordenEtapas as $idx => $key) {
+        $fecha = $porKey[$key]['fecha'] ?? null;
+        if ($fecha && $fecha !== '0000-00-00') {
+            $registradas[] = (ETAPA_LABELS[$key] ?? $key) . ': ' . $fecha;
+            $ultimaEtapaIdx = $idx;
+        }
+    }
+    if ($registradas) {
+        $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
+        if ($ultimaEtapaIdx !== null && $ultimaEtapaIdx < count($ordenEtapas) - 1) {
+            $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
+            $fechaUltima = null;
+            for ($i = $ultimaEtapaIdx; $i >= 0; $i--) {
+                $f = $porKey[$ordenEtapas[$i]]['fecha'] ?? null;
+                if ($f && $f !== '0000-00-00') { $fechaUltima = $f; break; }
+            }
+            $diasDesde = $fechaUltima ? (int)round((time() - strtotime($fechaUltima)) / 86400) : null;
+            $lineas[] = 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey)
+                . ($diasDesde !== null ? " (han pasado $diasDesde día(s) desde la última etapa registrada)" : '');
+        }
+    }
+
     if (!$lineas) return null;
 
     $payload = [
@@ -1600,7 +1667,12 @@ function ia_generar_resumen_expediente(array $expediente): ?array
             . 'movimiento reciente", "esperar resolución, nada que hacer por ahora"), en una frase corta, y su '
             . 'urgencia: alta (requiere atención esta semana), media (en las próximas dos semanas), o baja (sin '
             . 'prisa, solo dar seguimiento eventual). Si el asunto está concluido o de verdad no hay nada '
-            . 'pendiente de hacer, usa ACCION: (ninguna) y URGENCIA: baja.'
+            . 'pendiente de hacer, usa ACCION: (ninguna) y URGENCIA: baja. Si te doy una "Bitácora de trámite" y '
+            . 'una "Siguiente etapa esperada, TODAVÍA SIN REGISTRAR", esa es la fuente de verdad de en qué va el '
+            . 'asunto -- básate en eso para el informe y la próxima acción, no en el campo "Status" si contradice '
+            . 'a la bitácora (el status puede estar desactualizado). Si ya pasaron muchos días desde la última '
+            . 'etapa registrada sin que se haya registrado la siguiente, la urgencia normalmente debe ser media o '
+            . 'alta, no baja.'
             . "\n\n"
             . 'IMPORTANTE: nunca calcules ni afirmes fechas límite de prescripción ni montos exactos que no te '
             . 'haya dado yo tal cual -- ni en el informe ni en la próxima acción. La urgencia es tu único '

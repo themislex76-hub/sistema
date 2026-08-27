@@ -39,7 +39,11 @@ if (!$necesitaRegenerar) {
     ]);
 }
 
-$resultado = ia_generar_resumen_expediente($row);
+$etapasStmt = $pdo->prepare('SELECT etapa_key, fecha, fecha_programada, resultado FROM expediente_etapas WHERE expediente_id = :id');
+$etapasStmt->execute([':id' => $id]);
+$etapas = $etapasStmt->fetchAll();
+
+$resultado = ia_generar_resumen_expediente($row, $etapas);
 
 if ($resultado === null) {
     // La IA falló (red, sin crédito, etc.) -- si ya había un resumen viejo

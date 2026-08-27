@@ -46,4 +46,13 @@ if (!empty($etapas['amparo_directo']['fecha'])) {
     $pdo->prepare('UPDATE expedientes SET amparo_activo = 1, amparo_presentado = 1 WHERE id = :id')->execute([':id' => $id]);
 }
 
+// expediente_etapas es una tabla aparte -- guardar aquí NO toca
+// expedientes.actualizado_en solo (MySQL no propaga ON UPDATE
+// CURRENT_TIMESTAMP entre tablas). Sin este UPDATE explícito, el informe
+// ejecutivo con IA (que decide si regenerar comparando actualizado_en
+// contra resumen_ejecutivo_generado_en) nunca se enteraría de que cambió
+// la bitácora de trámite, y se quedaría mostrando una próxima acción
+// vieja aunque el abogado ya haya registrado avances reales.
+$pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $id]);
+
 respond(['ok' => true]);
