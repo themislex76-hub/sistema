@@ -3678,12 +3678,32 @@ async function cargarResumenHoy(forzar){
   if(VIEW==='tablero') renderViewBody();
 }
 
+// Convierte el texto plano de la IA ("URGENTE / VENCIDO" como encabezado
+// de bloque, líneas que empiezan con "-" como viñetas) en HTML con
+// jerarquía visual -- la IA solo redacta texto, el formato lo pone este
+// código.
+function formatearResumenHoy(texto){
+  let html = '';
+  let primerBloque = true;
+  texto.split('\n').forEach(linea=>{
+    const t = linea.trim();
+    if(!t) return;
+    if(t.startsWith('-')){
+      html += `<div style="padding:3px 0 3px 16px; position:relative;"><span style="position:absolute; left:0; color:var(--brass);">•</span>${escapeHTML(t.replace(/^-\s*/, ''))}</div>`;
+    } else {
+      html += `<div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--brass); margin-top:${primerBloque?'0':'14px'}; margin-bottom:4px;">${escapeHTML(t)}</div>`;
+      primerBloque = false;
+    }
+  });
+  return html;
+}
+
 function resumenHoyHTML(){
   const s = RESUMEN_HOY_STATE;
   let body;
   if(s.cargando && !s.texto) body = `<div class="empty">Generando...</div>`;
   else if(s.vacio) body = `<div class="empty">Sin pendientes urgentes por ahora. Buen momento para revisar Alertas de prescripción con calma.</div>`;
-  else if(s.texto) body = `<div style="white-space:pre-line; font-size:13.5px; line-height:1.55;">${escapeHTML(s.texto)}</div>`;
+  else if(s.texto) body = `<div style="font-size:13.5px; line-height:1.5;">${formatearResumenHoy(s.texto)}</div>`;
   else body = `<div class="empty">${s.error ? escapeHTML(s.error) : 'No se pudo generar todavía.'}</div>`;
   return `
   <div class="panel" id="resumenHoyPanel">
