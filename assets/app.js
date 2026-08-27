@@ -96,7 +96,6 @@ let MODAL_TAB = "resumen";
 let INFORME_EJECUTIVO_STATE = {}; // {[expedienteId]: {cargando, error}} -- estado del informe ejecutivo con IA
 let SEGUIMIENTO_IA_BULK = null; // {actual, total} mientras corre "Actualizar todos los informes", null si no está corriendo
 let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de CASES_DATA)
-let RESUMEN_HOY_STATE = {cargando:false, texto:null, error:null, generadoEn:null, vacio:false}; // "Qué hacer hoy" del Tablero (ver cargarResumenHoy())
 
 // Campos que puede llenar/editar el abogado asignado. Cubre lo necesario
 // para el seguimiento del asunto y para generar la demanda por combinación
@@ -2803,11 +2802,7 @@ function highlightNav(){
 function renderViewBody(){
   const el = document.getElementById('viewBody');
   if(!el) return;
-  if(VIEW==='tablero'){
-    el.innerHTML = tableroHTML();
-    bindResumenHoyEvents();
-    if(!RESUMEN_HOY_STATE.texto && !RESUMEN_HOY_STATE.cargando && !RESUMEN_HOY_STATE.vacio) cargarResumenHoy();
-  }
+  if(VIEW==='tablero') el.innerHTML = tableroHTML();
   else if(VIEW==='expedientes') el.innerHTML = expedientesHTML();
   else if(VIEW==='alertas') el.innerHTML = alertasHTML();
   else if(VIEW==='cobros') el.innerHTML = cobrosHTML();
@@ -3658,87 +3653,35 @@ function entradasHoy(){
     .slice(0, 40);
 }
 
-function construirItemsHoy(){
-  return entradasHoy().map(e=> ({tipo: e.tipo, actor: e.k.actor, demandado: e.k.demandado, label: e.label, dias: e.dias}));
-}
-
-async function cargarResumenHoy(forzar){
-  if(RESUMEN_HOY_STATE.cargando) return;
-  const items = construirItemsHoy();
-  if(!items.length){
-    RESUMEN_HOY_STATE = {cargando:false, texto:null, error:null, generadoEn:null, vacio:true};
-    if(VIEW==='tablero') renderViewBody();
-    return;
-  }
-  RESUMEN_HOY_STATE = Object.assign({}, RESUMEN_HOY_STATE, {cargando:true, error:null, vacio:false});
-  if(VIEW==='tablero') renderViewBody();
-  try{
-    const r = await api('POST', 'hoy_resumen.php', {items, forzar: !!forzar});
-    RESUMEN_HOY_STATE = {cargando:false, texto:r.resumen, error:r.aviso||null, generadoEn:r.generado_en, vacio:false};
-  }catch(err){
-    RESUMEN_HOY_STATE = {cargando:false, texto:RESUMEN_HOY_STATE.texto, error:'No se pudo generar: '+err.message, generadoEn:RESUMEN_HOY_STATE.generadoEn, vacio:false};
-  }
-  if(VIEW==='tablero') renderViewBody();
-}
-
-// Convierte el texto plano de la IA ("URGENTE / VENCIDO" como encabezado
-// de bloque, líneas que empiezan con "-" como viñetas) en HTML con
-// jerarquía visual -- la IA solo redacta texto, el formato lo pone este
-// código.
-function formatearResumenHoy(texto){
-  let html = '';
-  let primerBloque = true;
-  texto.split('\n').forEach(linea=>{
-    const t = linea.trim();
-    if(!t) return;
-    if(t.startsWith('-')){
-      html += `<div style="padding:3px 0 3px 16px; position:relative;"><span style="position:absolute; left:0; color:var(--brass);">•</span>${escapeHTML(t.replace(/^-\s*/, ''))}</div>`;
-    } else {
-      html += `<div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--brass); margin-top:${primerBloque?'0':'14px'}; margin-bottom:4px;">${escapeHTML(t)}</div>`;
-      primerBloque = false;
-    }
-  });
-  return html;
-}
-
+// Lista clicable y agrupada por urgencia -- ya no depende de la IA (el
+// primer intento le pedía a la IA que redactara un párrafo, pero salía
+// como texto plano no clicable y duplicaba la lista de abajo). Un clic en
+// el nombre del caso abre el expediente (data-id, ver bindViewBody());
+// el botón de la derecha resuelve la acción directo (.agenda-complete)
+// sin salir del Tablero -- mismas filas que ya usa Agenda general.
 function resumenHoyHTML(){
-  const s = RESUMEN_HOY_STATE;
-  let body;
-  if(s.cargando && !s.texto) body = `<div class="empty">Generando...</div>`;
-  else if(s.vacio) body = `<div class="empty">Sin pendientes urgentes por ahora. Buen momento para revisar Alertas de prescripción con calma.</div>`;
-  else if(s.texto) body = `<div style="font-size:13.5px; line-height:1.5;">${formatearResumenHoy(s.texto)}</div>`;
-  else body = `<div class="empty">${s.error ? escapeHTML(s.error) : 'No se pudo generar todavía.'}</div>`;
-
-  // Debajo del texto de la IA, la misma lista pero clicable: entra al
-  // expediente con un clic (data-id, ver bindViewBody()) o resuelve la
-  // acción directo (botón .agenda-complete) sin salir del Tablero -- son
-  // las mismas filas que ya se usan en Agenda general.
   const entradas = entradasHoy();
-  const lista = entradas.length ? `
-    <div style="margin-top:14px; border-top:1px solid var(--border); padding-top:10px;">
-      ${entradas.map(agendaRowHTML).join("")}
-    </div>` : '';
-
+  if(!entradas.length){
+    return `
+    <div class="panel" id="resumenHoyPanel">
+      <div class="panel-head"><h3>🎯 Qué hacer hoy</h3></div>
+      <div class="panel-body"><div class="empty">Sin pendientes urgentes por ahora. Buen momento para revisar Alertas de prescripción con calma.</div></div>
+    </div>`;
+  }
+  const urgentes = entradas.filter(e=> e.dias===null || e.dias<=1);
+  const semana = entradas.filter(e=> e.dias!=null && e.dias>1);
+  const bloqueHTML = (titulo, lista)=> lista.length ? `
+    <div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--brass); margin:14px 0 4px;">${titulo}</div>
+    ${lista.map(agendaRowHTML).join("")}
+  ` : '';
   return `
   <div class="panel" id="resumenHoyPanel">
-    <div class="panel-head">
-      <h3>🎯 Qué hacer hoy</h3>
-      <span class="count" style="display:flex; align-items:center; gap:8px;">
-        ${s.generadoEn ? 'Generado ' + new Date(s.generadoEn).toLocaleString('es-MX', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : ''}
-        <button class="btn secondary" id="refrescarResumenHoyBtn" style="padding:3px 10px; font-size:11px;" ${s.cargando?'disabled':''}>${s.cargando?'Generando...':'🔄 Actualizar'}</button>
-      </span>
-    </div>
+    <div class="panel-head"><h3>🎯 Qué hacer hoy</h3><span class="count">${entradas.length}</span></div>
     <div class="panel-body">
-      ${body}
-      ${s.texto && s.error ? `<div class="notice" style="margin-top:10px;">${escapeHTML(s.error)}</div>` : ''}
-      ${lista}
+      ${bloqueHTML('Urgente / vencido', urgentes)}
+      ${bloqueHTML('Esta semana', semana)}
     </div>
   </div>`;
-}
-
-function bindResumenHoyEvents(){
-  const btn = document.getElementById('refrescarResumenHoyBtn');
-  if(btn) btn.addEventListener('click', ()=> cargarResumenHoy(true));
 }
 
 function urgenciaBadgeHTML(urgencia){
