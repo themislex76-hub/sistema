@@ -1743,3 +1743,96 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
     return ['resumen' => $resumen, 'accion' => $accion, 'urgencia' => $urgencia];
 }
 
+const IA_MODELO_BUSQUEDA = 'claude-haiku-4-5-20251001';
+
+// Búsqueda de expedientes con lenguaje natural: $casos ya trae, por cada
+// expediente, un resumen de texto armado en el frontend (resumenBusquedaCaso()
+// en app.js) con SOLO los campos ya capturados en el sistema -- nunca el
+// contenido de los documentos subidos, así que preguntas que dependan de
+// leer un documento (p. ej. "qué contestación alega tal cosa") no las va a
+// poder responder bien; eso es a propósito, para no necesitar meter miles
+// de tokens de documentos completos en cada búsqueda.
+// Devuelve un array de ['id'=>int, 'razon'=>string] en orden de relevancia
+// (vacío si ninguno aplica), o null si falló la llamada a la IA.
+function ia_buscar_expedientes(string $pregunta, array $casos): ?array
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $lineas = [];
+    foreach ($casos as $c) {
+        if (empty($c['id']) || empty($c['resumen'])) continue;
+        $lineas[] = (string)$c['resumen'];
+    }
+    if (!$lineas) return [];
+
+    $payload = [
+        'model' => IA_MODELO_BUSQUEDA,
+        'max_tokens' => 1500,
+        'thinking' => ['type' => 'disabled'],
+        'system' => 'Eres el buscador interno de un despacho de derecho laboral en México. Te doy una pregunta en '
+            . 'lenguaje natural y una lista de expedientes, cada uno identificado por "#<id>" con los datos ya '
+            . 'capturados en el sistema (nunca el contenido completo de documentos). Tu tarea: identificar cuáles '
+            . 'expedientes responden a la pregunta.'
+            . "\n\n"
+            . 'Responde SOLO con una línea por cada expediente que SÍ aplica, en este formato exacto: '
+            . '"<id>: <razón breve, menos de 15 palabras>", ordenados del más al menos relevante. Si ninguno '
+            . 'aplica, responde exactamente "NINGUNO" y nada más -- sin introducción, sin explicación fuera de '
+            . 'ese formato.'
+            . "\n\n"
+            . 'REGLA DURA: usa solo los datos que te doy -- nunca inventes ni asumas un dato que no esté en la '
+            . 'lista de un expediente. Si la pregunta requiere un dato que ese expediente en particular no tiene '
+            . 'capturado, no lo cuentes como coincidencia (mejor omitirlo que adivinar).',
+        'messages' => [['role' => 'user', 'content' => "Pregunta: $pregunta\n\nExpedientes:\n" . implode("\n", $lineas)]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 40,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [busqueda_semantica] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+
+    $u = $data['usage'] ?? [];
+    file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+        . " | [busqueda_semantica] input=" . ($u['input_tokens'] ?? 0)
+        . " | output=" . ($u['output_tokens'] ?? 0) . "\n", FILE_APPEND);
+
+    if ($texto === '' || strcasecmp($texto, 'NINGUNO') === 0) return [];
+
+    $resultados = [];
+    foreach (explode("\n", $texto) as $linea) {
+        if (preg_match('/^\D*(\d+)\s*:\s*(.+)$/', trim($linea), $m)) {
+            $resultados[] = ['id' => (int)$m[1], 'razon' => trim($m[2])];
+        }
+    }
+    return $resultados;
+}
+

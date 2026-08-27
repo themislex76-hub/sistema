@@ -96,6 +96,9 @@ let MODAL_TAB = "resumen";
 let INFORME_EJECUTIVO_STATE = {}; // {[expedienteId]: {cargando, error}} -- estado del informe ejecutivo con IA
 let SEGUIMIENTO_IA_BULK = null; // {actual, total} mientras corre "Actualizar todos los informes", null si no está corriendo
 let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de CASES_DATA)
+let BUSQUEDA_IA_ACTIVA = false; // true cuando se muestra el cuadro de búsqueda con lenguaje natural en Expedientes
+let BUSQUEDA_IA_PREGUNTA = '';
+let BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:null}; // resultados: [{id, razon}] en orden de relevancia, o null si no se ha buscado
 
 // Campos que puede llenar/editar el abogado asignado. Cubre lo necesario
 // para el seguimiento del asunto y para generar la demanda por combinación
@@ -2994,19 +2997,87 @@ function statusBadge(k){
   return `<span class="badge ${lvl==='unknown'?'closed':lvl}">${labelMap[lvl]||k.status||''}</span>`;
 }
 
+// Resumen compacto de un expediente para la búsqueda con lenguaje natural
+// -- solo campos ya capturados en el sistema (nunca el contenido de los
+// documentos subidos), para que la IA pueda filtrar/priorizar sin tener
+// que leer nada nuevo ni inventar datos que no estén aquí.
+function resumenBusquedaCaso(k){
+  const partes = [];
+  const add = (label, val) => { if(val !== null && val !== undefined && val !== '') partes.push(`${label}: ${val}`); };
+  add('Actor', k.actor);
+  add('Demandado', k.demandado);
+  add('Giro de la empresa', k.giro_empresa);
+  add('Tipo de asunto', k.tipo_asunto || 'Despido');
+  add('Puesto', k.puesto);
+  if(k.antiguedad_anios != null) add('Antigüedad', Math.round(k.antiguedad_anios*10)/10 + ' años');
+  add('Fecha de ingreso', k.fecha_ingreso);
+  add('Fecha de baja', k.fecha_baja);
+  if(k.salario_diario) add('Salario diario', fmtMoney(k.salario_diario));
+  add('Status', k.status);
+  add('Instancia/Tribunal', k.junta || k.tribunal || k.instancia);
+  add('Etapa procesal', etapaActualInfo(k).label);
+  add('Abogado asignado', assignedLawyer(k));
+  if(tieneConvenio(k)) add('Convenio', 'monto ' + fmtMoney(montoConvenio(k)));
+  partes.push(estaConcluido(k) ? 'Asunto CONCLUIDO' : 'Asunto ACTIVO');
+  const det = juicioDetenido(k);
+  if(det) add('Días sin movimiento', det.dias);
+  return `#${k.id} — ${partes.join(' | ')}`;
+}
+
+async function cargarBusquedaIA(){
+  const pregunta = BUSQUEDA_IA_PREGUNTA.trim();
+  if(!pregunta || BUSQUEDA_IA_STATE.cargando) return;
+  BUSQUEDA_IA_STATE = {cargando:true, resultados:null, error:null};
+  renderViewBody();
+  try{
+    const casos = visibleCases().map(k=> ({id:k.id, resumen: resumenBusquedaCaso(k)}));
+    const r = await api('POST', 'busqueda_semantica.php', {pregunta, casos});
+    BUSQUEDA_IA_STATE = {cargando:false, resultados:r.resultados || [], error:null};
+  }catch(err){
+    BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:'No se pudo buscar: ' + err.message};
+  }
+  renderViewBody();
+}
+
 function expedientesHTML(){
   const statuses = ["todos","activos","concluidos","alerta", ...new Set(visibleCases().map(k=>(k.status||'').toLowerCase()).filter(Boolean))];
   const chipLabel = {todos:'Todos', activos:'Activos', concluidos:'Concluidos', alerta:'Con alerta'};
-  const list = filteredCases();
+
+  const buscando = BUSQUEDA_IA_ACTIVA && BUSQUEDA_IA_STATE.resultados !== null && !BUSQUEDA_IA_STATE.cargando;
+  const razonPorId = {};
+  let list;
+  if(buscando){
+    BUSQUEDA_IA_STATE.resultados.forEach(r=> razonPorId[r.id] = r.razon);
+    list = BUSQUEDA_IA_STATE.resultados.map(r=> findCase(r.id)).filter(Boolean);
+  } else {
+    list = filteredCases();
+  }
+
   return `
   <div class="filters" style="justify-content:space-between; display:flex; flex-wrap:wrap; gap:10px;">
     <div class="filters" style="margin:0;">
       ${statuses.map(s=>`<div class="chip ${FILTER_STATUS===s?'active':''}" data-s="${escapeHTML(s)}">${chipLabel[s] || capitalize(s)}</div>`).join("")}
     </div>
-    <button class="btn" id="nuevoExpedienteBtn">+ Nuevo expediente</button>
+    <div style="display:flex; gap:8px;">
+      <button class="btn secondary" id="busquedaIAToggleBtn">${BUSQUEDA_IA_ACTIVA ? '✕ Cerrar búsqueda con IA' : '🔎 Buscar con lenguaje natural (IA)'}</button>
+      <button class="btn" id="nuevoExpedienteBtn">+ Nuevo expediente</button>
+    </div>
   </div>
+  ${BUSQUEDA_IA_ACTIVA ? `
+  <div class="panel" style="margin-bottom:14px;">
+    <div class="panel-body">
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <input type="text" id="busquedaIAInput" placeholder='Ej. "casos de despido con más de 10 años de antigüedad"' value="${escapeHTML(BUSQUEDA_IA_PREGUNTA)}" style="flex:1; min-width:260px; padding:9px 11px; border:1px solid var(--border); border-radius:8px;">
+        <button class="btn" id="busquedaIABuscarBtn" ${BUSQUEDA_IA_STATE.cargando?'disabled':''}>${BUSQUEDA_IA_STATE.cargando?'Buscando...':'Buscar'}</button>
+        ${BUSQUEDA_IA_STATE.resultados !== null ? `<button class="btn secondary" id="busquedaIALimpiarBtn">Quitar búsqueda</button>` : ''}
+      </div>
+      <div style="font-size:11.5px; color:var(--gray); margin-top:8px;">Busca sobre los datos ya capturados de cada expediente (no lee el contenido de los documentos subidos).</div>
+      ${BUSQUEDA_IA_STATE.error ? `<div class="notice" style="margin-top:10px; border-left:3px solid var(--red);">${escapeHTML(BUSQUEDA_IA_STATE.error)}</div>` : ''}
+      ${buscando ? `<div style="margin-top:8px; font-size:12.5px; color:var(--gray);">${list.length} resultado(s) para "${escapeHTML(BUSQUEDA_IA_PREGUNTA)}"</div>` : ''}
+    </div>
+  </div>` : ''}
   <div class="panel">
-    <div class="panel-head"><h3>Listado de asuntos</h3><span class="count">${list.length} de ${visibleCases().length}</span></div>
+    <div class="panel-head"><h3>Listado de asuntos</h3><span class="count">${list.length}${buscando?'':' de '+visibleCases().length}</span></div>
     <div class="panel-body" style="padding:0; overflow-x:auto;">
       <table style="min-width:1000px;">
         <thead><tr><th>Actor</th><th>Demandado</th><th>Expediente</th><th>Instancia</th><th>Socio</th><th>Estatus</th><th>Activo</th><th>Alerta / Amparo</th></tr></thead>
@@ -3015,7 +3086,7 @@ function expedientesHTML(){
             const p = computePrescripcion(k);
             const meta = getMeta(k.id);
             return `<tr data-id="${k.id}">
-              <td><strong>${escapeHTML(k.actor)}</strong><div style="font-size:11px;color:var(--gray)">${escapeHTML(k.puesto||'')}</div></td>
+              <td><strong>${escapeHTML(k.actor)}</strong><div style="font-size:11px; color:${razonPorId[k.id]?'var(--brass)':'var(--gray)'}; font-style:${razonPorId[k.id]?'italic':'normal'};">${escapeHTML(razonPorId[k.id] || k.puesto||'')}</div></td>
               <td>${escapeHTML(truncate(k.demandado,32))}</td>
               <td class="exp-code">${escapeHTML(k.exp||'—')}</td>
               <td>${escapeHTML(truncate(k.junta || k.instancia || '', 26))}</td>
@@ -3024,7 +3095,7 @@ function expedientesHTML(){
               <td>${estaConcluido(k) ? '<span class="badge closed">Concluido</span>' : '<span class="badge ok">Activo</span>'}</td>
               <td style="white-space:nowrap;">${ p && !isCaseClosed(k.status) ? (p.daysLeft+' d.') : '—'} ${meta.amparo_activo? '<span class="badge interrumpida">Amparo</span>' : ''}</td>
             </tr>`;
-          }).join("") || `<tr><td colspan="8" class="empty">Sin resultados para el filtro/búsqueda actual.</td></tr>`}
+          }).join("") || `<tr><td colspan="8" class="empty">${buscando ? 'Sin resultados para esa pregunta.' : 'Sin resultados para el filtro/búsqueda actual.'}</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -5098,6 +5169,23 @@ function bindViewBody(){
       finally{ nuevoBtn.disabled = false; }
     });
   }
+  const busquedaIAToggleBtn = document.getElementById('busquedaIAToggleBtn');
+  if(busquedaIAToggleBtn){
+    busquedaIAToggleBtn.addEventListener('click', ()=>{
+      BUSQUEDA_IA_ACTIVA = !BUSQUEDA_IA_ACTIVA;
+      if(!BUSQUEDA_IA_ACTIVA){ BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:null}; BUSQUEDA_IA_PREGUNTA = ''; }
+      renderViewBody();
+    });
+  }
+  const busquedaIAInput = document.getElementById('busquedaIAInput');
+  if(busquedaIAInput){
+    busquedaIAInput.addEventListener('input', (e)=>{ BUSQUEDA_IA_PREGUNTA = e.target.value; });
+    busquedaIAInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); cargarBusquedaIA(); } });
+  }
+  const busquedaIABuscarBtn = document.getElementById('busquedaIABuscarBtn');
+  if(busquedaIABuscarBtn) busquedaIABuscarBtn.addEventListener('click', ()=> cargarBusquedaIA());
+  const busquedaIALimpiarBtn = document.getElementById('busquedaIALimpiarBtn');
+  if(busquedaIALimpiarBtn) busquedaIALimpiarBtn.addEventListener('click', ()=>{ BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:null}; renderViewBody(); });
   document.querySelectorAll('[data-id]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const id = parseInt(el.dataset.id);
