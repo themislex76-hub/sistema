@@ -1808,7 +1808,18 @@ function ia_buscar_expedientes(string $pregunta, array $casos): ?array
             . 'capturado, no lo cuentes como coincidencia (mejor omitirlo que adivinar). Si la pregunta menciona '
             . '"local" o "federal", usa el campo "Jurisdicción" (ya viene resuelto) en vez de intentar '
             . 'deducirlo tú del nombre de la instancia/tribunal -- un nombre puede incluir la palabra "Federal" '
-            . 'de formas que no siempre son obvias, no lo adivines de memoria.',
+            . 'de formas que no siempre son obvias, no lo adivines de memoria.'
+            . "\n\n"
+            . 'REGLA DURA: "Fecha de ingreso" es cuándo empezó a trabajar el cliente en la empresa -- NUNCA la '
+            . 'uses para contestar preguntas sobre CUÁNDO se hizo/celebró/pactó un convenio, ni para ningún otro '
+            . 'evento del procedimiento (demanda, conciliación, etc.); son fechas totalmente distintas y no hay '
+            . 'ninguna relación entre ellas. Para preguntas sobre cuándo se llegó a un convenio, usa SOLO el '
+            . 'campo "Fecha en que se llegó al convenio (bitácora)" si existe; para preguntas sobre cuándo se '
+            . 'paga o vence un convenio, usa SOLO "Fecha de pago pactada del convenio". Si un expediente no trae '
+            . 'ninguno de esos dos campos (aunque sí tenga "Convenio: monto..."), NO tiene fecha registrada -- no '
+            . 'lo cuentes como coincidencia de una pregunta con fecha, ni "porque el ingreso cae en ese mes" ni '
+            . 'por ninguna otra razón. Y un expediente que ni siquiera trae la línea "Convenio:" nunca puede ser '
+            . 'una coincidencia para una pregunta sobre convenios, sin importar qué otro dato tenga parecido.',
         'messages' => [['role' => 'user', 'content' => "Pregunta: $pregunta\n\nExpedientes:\n" . implode("\n", $lineas)]],
     ];
 

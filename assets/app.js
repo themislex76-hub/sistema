@@ -3034,7 +3034,23 @@ function resumenBusquedaCaso(k){
   if(instanciaTexto) add('Jurisdicción', /federal/i.test(instanciaTexto) ? 'Federal' : 'Local');
   add('Etapa procesal', etapaActualInfo(k).label);
   add('Abogado asignado', assignedLawyer(k));
-  if(tieneConvenio(k)) add('Convenio', 'monto ' + fmtMoney(montoConvenio(k)));
+  // OJO: "Fecha de ingreso" (arriba) es cuándo empezó la relación laboral
+  // del cliente, NO cuándo se llegó a un convenio -- son cosas totalmente
+  // distintas y la IA las confundía al no tener un campo de fecha propio
+  // para el convenio (se detectó buscando "convenios celebrados en mayo":
+  // regresaba casos sin convenio, o con convenio pero de otro mes, solo
+  // porque el ingreso caía en mayo). Por eso el convenio trae su propia
+  // fecha aquí, calculada de forma determinística -- nunca se le deja a la
+  // IA inferirla del ingreso.
+  if(tieneConvenio(k)){
+    add('Convenio', 'monto ' + fmtMoney(montoConvenio(k)));
+    const metaConv = getMeta(k.id);
+    const etapaConvenio = metaConv.etapas && metaConv.etapas.conciliacion_convenio;
+    if(etapaConvenio && etapaConvenio.fecha) add('Fecha en que se llegó al convenio (bitácora)', etapaConvenio.fecha);
+    if(metaConv.convenio_manual && metaConv.convenio_manual.activo && metaConv.convenio_manual.fecha_pago) {
+      add('Fecha de pago pactada del convenio', metaConv.convenio_manual.fecha_pago);
+    }
+  }
   partes.push(estaConcluido(k) ? 'Asunto CONCLUIDO' : 'Asunto ACTIVO');
   const det = juicioDetenido(k);
   if(det) add('Días sin movimiento', det.dias);
