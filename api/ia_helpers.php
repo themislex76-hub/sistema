@@ -1762,7 +1762,14 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
     return ['resumen' => $resumen, 'accion' => $accion, 'urgencia' => $urgencia];
 }
 
-const IA_MODELO_BUSQUEDA = 'claude-haiku-4-5-20251001';
+// Usa el mismo modelo que el bot de WhatsApp (Sonnet, no Haiku como el resto
+// de estos helpers) -- se detectó en pruebas reales que Haiku seguía
+// confundiendo "convenio con cobro pendiente" (no pagado) con "pagado" a
+// pesar de traer el dato ya resuelto y una regla dura explícita en contra.
+// Esta búsqueda la usa el abogado ocasionalmente (no es un costo por cada
+// mensaje de WhatsApp como los demás), así que el costo extra es mínimo
+// comparado con el riesgo de un resultado mal filtrado sobre pagos reales.
+const IA_MODELO_BUSQUEDA = 'claude-sonnet-5';
 
 // Búsqueda de expedientes con lenguaje natural: $casos ya trae, por cada
 // expediente, un resumen de texto armado en el frontend (resumenBusquedaCaso()
@@ -1833,7 +1840,13 @@ function ia_buscar_expedientes(string $pregunta, array $casos): ?array
             . 'NORMAL y esperada (no es ninguna inconsistencia), así que NO cuenta como coincidencia para ese '
             . 'tipo de pregunta. Si tras revisar los dos campos calculados de cada expediente ninguno tiene de '
             . 'verdad la combinación exacta que pide la pregunta, responde NINGUNO -- es la respuesta correcta '
-            . 'cuando no hay ninguna inconsistencia real, no un fallo tuyo.',
+            . 'cuando no hay ninguna inconsistencia real, no un fallo tuyo.'
+            . "\n\n"
+            . 'EJEMPLO CONCRETO (no lo confundas): si la pregunta dice "asuntos ya pagados", un expediente cuyo '
+            . '"Estatus del asunto" dice "Convenio pactado, cobro TODAVÍA pendiente (no se ha pagado)" NO cuenta '
+            . '-- "cobro pendiente" es LO CONTRARIO de pagado, significa que el dinero todavía no llega. Solo '
+            . 'cuenta un expediente para "pagados" si su "Estatus del asunto" dice literalmente "Pagado". No '
+            . 'trates "hay un convenio" como sinónimo de "está pagado" en ningún caso.',
         'messages' => [['role' => 'user', 'content' => "Pregunta: $pregunta\n\nExpedientes:\n" . implode("\n", $lineas)]],
     ];
 
