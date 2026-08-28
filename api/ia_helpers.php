@@ -1805,7 +1805,10 @@ function ia_buscar_expedientes(string $pregunta, array $casos): ?array
             . "\n\n"
             . 'REGLA DURA: usa solo los datos que te doy -- nunca inventes ni asumas un dato que no esté en la '
             . 'lista de un expediente. Si la pregunta requiere un dato que ese expediente en particular no tiene '
-            . 'capturado, no lo cuentes como coincidencia (mejor omitirlo que adivinar).',
+            . 'capturado, no lo cuentes como coincidencia (mejor omitirlo que adivinar). Si la pregunta menciona '
+            . '"local" o "federal", usa el campo "Jurisdicción" (ya viene resuelto) en vez de intentar '
+            . 'deducirlo tú del nombre de la instancia/tribunal -- un nombre puede incluir la palabra "Federal" '
+            . 'de formas que no siempre son obvias, no lo adivines de memoria.',
         'messages' => [['role' => 'user', 'content' => "Pregunta: $pregunta\n\nExpedientes:\n" . implode("\n", $lineas)]],
     ];
 

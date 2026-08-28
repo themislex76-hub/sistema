@@ -3024,7 +3024,14 @@ function resumenBusquedaCaso(k){
   add('Fecha de baja', k.fecha_baja);
   if(k.salario_diario) add('Salario diario', fmtMoney(k.salario_diario));
   add('Status', k.status);
-  add('Instancia/Tribunal', k.junta || k.tribunal || k.instancia);
+  const instanciaTexto = k.junta || k.tribunal || k.instancia || '';
+  add('Instancia/Tribunal', instanciaTexto);
+  // La IA no siempre distingue bien "local" vs "federal" leyendo el
+  // nombre completo de la instancia (ej. "Séptimo Tribunal Laboral
+  // Federal CDMX") -- se calcula aquí de forma determinística en vez de
+  // dejárselo a su criterio, para que preguntas como "tribunales locales"
+  // filtren bien.
+  if(instanciaTexto) add('Jurisdicción', /federal/i.test(instanciaTexto) ? 'Federal' : 'Local');
   add('Etapa procesal', etapaActualInfo(k).label);
   add('Abogado asignado', assignedLawyer(k));
   if(tieneConvenio(k)) add('Convenio', 'monto ' + fmtMoney(montoConvenio(k)));
