@@ -1170,6 +1170,14 @@ function estancadoInfo(kase){
     if(meta.etapas[ETAPAS_DEF[i].key] && meta.etapas[ETAPAS_DEF[i].key].fecha) lastIdx = i;
   }
   if(lastIdx === -1 || lastIdx === ETAPAS_DEF.length-1) return null;
+  // "Convenio" y "Constancia de no conciliación" son dos resultados
+  // ALTERNATIVOS y excluyentes de la conciliación (o se llega a un
+  // acuerdo, o se agota sin él) -- nunca un paso seguido del otro. Sin
+  // este corte, el arreglo siguiente en ETAPAS_DEF (que solo refleja
+  // orden de captura, no una secuencia obligatoria) hacía que el sistema
+  // esperara una Constancia de no conciliación después de un Convenio ya
+  // alcanzado, lo cual no aplica.
+  if(ETAPAS_DEF[lastIdx].key === 'conciliacion_convenio') return null;
   const next = ETAPAS_DEF[lastIdx+1];
   if(!next.plazoDias) return null;
   const lastFecha = meta.etapas[ETAPAS_DEF[lastIdx].key].fecha;

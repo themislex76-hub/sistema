@@ -1634,7 +1634,14 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
     }
     if ($registradas) {
         $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
-        if ($ultimaEtapaIdx !== null && $ultimaEtapaIdx < count($ordenEtapas) - 1) {
+        // "Convenio" y "Constancia de no conciliación" son dos resultados
+        // ALTERNATIVOS y excluyentes de la conciliación (o se llega a un
+        // acuerdo, o se agota sin él) -- nunca un paso seguido del otro.
+        // Sin este corte, se le decía a la IA que la Constancia era la
+        // siguiente etapa esperada después de un Convenio ya alcanzado, lo
+        // cual no aplica y generaba informes contradictorios.
+        $ultimaEtapaKey = $ultimaEtapaIdx !== null ? $ordenEtapas[$ultimaEtapaIdx] : null;
+        if ($ultimaEtapaIdx !== null && $ultimaEtapaIdx < count($ordenEtapas) - 1 && $ultimaEtapaKey !== 'conciliacion_convenio') {
             $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
             $fechaUltima = null;
             for ($i = $ultimaEtapaIdx; $i >= 0; $i--) {
@@ -1679,6 +1686,12 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
             . 'correspondía a una etapa anterior al mismo tiempo, sin explicar cómo se relacionan). Si ya pasaron '
             . 'muchos días desde la última etapa registrada sin que se haya registrado la siguiente, la urgencia '
             . 'normalmente debe ser media o alta, no baja.'
+            . "\n\n"
+            . 'REGLA DURA: "Convenio" y "Constancia de no conciliación" son dos resultados ALTERNATIVOS y '
+            . 'excluyentes de la conciliación -- o se llega a un acuerdo (convenio) o se agota sin acuerdo '
+            . '(constancia de no conciliación), nunca ambos ni uno después del otro. Si ya hay un convenio '
+            . 'registrado, NUNCA digas que falta o está pendiente una constancia de no conciliación -- eso solo '
+            . 'aplicaría si la conciliación hubiera fracasado, y aquí no fue el caso.'
             . "\n\n"
             . 'IMPORTANTE: nunca calcules ni afirmes fechas límite de prescripción ni montos exactos que no te '
             . 'haya dado yo tal cual -- ni en el informe ni en la próxima acción. La urgencia es tu único '
