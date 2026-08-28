@@ -1414,6 +1414,16 @@ function caseStage(kase){
   // La bitácora manual de etapas (registrada por el abogado) tiene prioridad
   // sobre el estatus importado de la hoja de cálculo, por ser más reciente.
   if(meta.etapas.demanda_presentada && meta.etapas.demanda_presentada.fecha) return "juicio";
+  // Mismo criterio que arriba: la bitácora es fuente de verdad para "ya
+  // llegó la constancia de no conciliación, falta presentar demanda" --
+  // antes esto SOLO se detectaba por texto crudo importado (el
+  // s.includes(...) de más abajo), así que un asunto cuya constancia se
+  // registró en la bitácora (no en el status importado de la hoja de
+  // cálculo) se perdía como "activo" genérico, sin avisar que ya toca
+  // demandar. Se detectó en producción: un asunto con "Constancia de no
+  // conciliación recibida" en la bitácora no aparecía al buscar "asuntos
+  // pendientes de presentar demanda".
+  if(meta.etapas.constancia_no_conciliacion && meta.etapas.constancia_no_conciliacion.fecha) return "constancia_demanda";
   if(tieneConvenio(kase) || s === "convenio") return "convenio"; // convenio pactado, a la espera de cobro
   // "Tribunal CDMX/Edomex/Federal CDMX/Federal Edomex" (lista estandarizada) y el
   // texto legado "Juicio en Tribunal" indican lo mismo: demanda ya presentada,
@@ -3002,6 +3012,7 @@ function statusBadge(k){
   if(stage === "desistio") return `<span class="badge closed">Cliente desistió</span>`;
   if(stage === "convenio") return `<span class="badge convenio">Convenio &middot; cobro pendiente</span>`;
   if(stage === "juicio") return `<span class="badge interrumpida">Demanda presentada</span>`;
+  if(stage === "constancia_demanda") return `<span class="badge warn">Constancia recibida · falta demandar</span>`;
   const lvl = alertLevel(k);
   const labelMap = {crit:'Crítico', warn:'Próximo', ok:'Con margen', unknown:'Sin fecha'};
   return `<span class="badge ${lvl==='unknown'?'closed':lvl}">${labelMap[lvl]||k.status||''}</span>`;
