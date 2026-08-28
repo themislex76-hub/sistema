@@ -1411,6 +1411,15 @@ function caseStage(kase){
   const meta = getMeta(kase.id);
   if(s.includes("pagado")) return "pagado";
   if(s.includes("ya no quiso")) return "desistio";
+  // Si el abogado marcó el asunto Concluido a mano (checkbox aparte, por
+  // cualquier motivo -- se resolvió fuera del sistema, se decidió no
+  // seguir, etc.) eso manda sobre cualquier etapa procesal de la bitácora:
+  // antes caseStage() no sabía nada de esta marca manual, así que un
+  // asunto Concluido podía seguir mostrando "Convenio · cobro pendiente" o
+  // "Constancia recibida · falta demandar" como si siguiera activo -- una
+  // contradicción real (detectada en producción: casos Concluidos que
+  // salían en la búsqueda de "pendientes de presentar demanda").
+  if(meta.concluido_manual) return "concluido_manual";
   // La bitácora manual de etapas (registrada por el abogado) tiene prioridad
   // sobre el estatus importado de la hoja de cálculo, por ser más reciente.
   if(meta.etapas.demanda_presentada && meta.etapas.demanda_presentada.fecha) return "juicio";
@@ -3010,6 +3019,7 @@ function statusBadge(k){
   const stage = caseStage(k);
   if(stage === "pagado") return `<span class="badge closed">Pagado</span>`;
   if(stage === "desistio") return `<span class="badge closed">Cliente desistió</span>`;
+  if(stage === "concluido_manual") return `<span class="badge closed">Concluido</span>`;
   if(stage === "convenio") return `<span class="badge convenio">Convenio &middot; cobro pendiente</span>`;
   if(stage === "juicio") return `<span class="badge interrumpida">Demanda presentada</span>`;
   if(stage === "constancia_demanda") return `<span class="badge warn">Constancia recibida · falta demandar</span>`;
@@ -3027,6 +3037,7 @@ function estatusCalculadoTexto(k){
   const stage = caseStage(k);
   if(stage === "pagado") return "Pagado (ya cobrado -- el asunto está Concluido)";
   if(stage === "desistio") return "Cliente desistió (el asunto está Concluido)";
+  if(stage === "concluido_manual") return "Concluido (marcado manualmente por el abogado, sin importar la última etapa de la bitácora)";
   if(stage === "convenio") return "Convenio pactado, cobro TODAVÍA pendiente (no se ha pagado)";
   if(stage === "juicio") return "Demanda presentada, en juicio";
   if(stage === "constancia_demanda") return "Recibió constancia de no conciliación, falta presentar demanda";
