@@ -1830,7 +1830,8 @@ function ia_buscar_expedientes(string $pregunta, array $casos): ?array
             . "\n\n"
             . 'REGLA DURA: para cualquier pregunta sobre si un asunto está "pagado", "cobrado", "con convenio '
             . 'pendiente de cobro", "en demanda"/"en juicio" o "concluido"/"activo", usa EXCLUSIVAMENTE el campo '
-            . '"Estatus del asunto (calculado...)" y el campo "Asunto CONCLUIDO"/"Asunto ACTIVO" -- son los datos '
+            . '"Estatus del asunto (calculado, es el que se ve en la lista)" y el campo "Asunto CONCLUIDO"/"Asunto '
+            . 'ACTIVO" (al final de cada línea) -- son los datos '
             . 'ya verificados. NUNCA infieras ese tipo de estatus del "Status (texto crudo...)", de la nota, ni '
             . 'de la bitácora -- esos pueden estar desactualizados o no tener relación real con si ya se pagó. '
             . 'Cuando la pregunta busca una INCONSISTENCIA o contradicción (p. ej. "pagados pero reportados como '
