@@ -17,6 +17,17 @@ require_once __DIR__ . '/push_helpers.php';
 // alguien mandando decenas de mensajes seguidos sin sentido.
 const WHATSAPP_LIMITE_MENSAJES_DIA = 30;
 
+// Cuántos segundos esperar, antes de llamar a la IA, a ver si el mismo
+// número manda más mensajes seguidos (muy común en WhatsApp: la gente
+// parte una idea en varias burbujas cortas -- "10", "20 dias", "si señor"
+// -- en vez de un solo párrafo). Sin esto, cada burbuja disparaba su
+// propia llamada completa a la IA y el cliente recibía una respuesta
+// distinta por cada una -- se detectó en producción a un cliente que
+// mandó su explicación en 6 mensajes seguidos y el bot le contestó 6
+// veces, con textos distintos entre sí (6x el gasto de IA para un solo
+// intercambio real). Ver el bloque "espera para agrupar" más abajo.
+const WHATSAPP_ESPERA_AGRUPAR_SEGUNDOS = 8;
+
 // Horario de atención: todos los días, 8:00-19:00 hora de Ciudad de México
 // (date_default_timezone_set ya se fija globalmente en db.php, que carga
 // antes que este archivo en la cadena de whatsapp_webhook.php). Domingo
@@ -32,6 +43,27 @@ function dentro_de_horario_atencion(): bool
 {
     $hora = (int)date('G');
     return $hora >= 8 && $hora < 19;
+}
+
+// Convierte el historial de whatsapp_conversaciones (una fila por mensaje)
+// al arreglo que espera la API de Claude, fusionando mensajes CONSECUTIVOS
+// del mismo rol en un solo turno. Hace falta porque la API de Anthropic
+// exige que los roles alternen entre "user" y "assistant" -- sin esto, un
+// bloque de varios mensajes seguidos del cliente (ver la espera para
+// agrupar en procesar_mensaje_entrante) llegaría como varios "user"
+// consecutivos y la llamada fallaría.
+function ia_mensajes_desde_historial(array $historial): array
+{
+    $mensajes = [];
+    foreach ($historial as $h) {
+        $role = $h['direccion'] === 'entrante' ? 'user' : 'assistant';
+        if ($mensajes && end($mensajes)['role'] === $role) {
+            $mensajes[count($mensajes) - 1]['content'] .= "\n" . $h['texto'];
+        } else {
+            $mensajes[] = ['role' => $role, 'content' => $h['texto']];
+        }
+    }
+    return $mensajes;
 }
 
 function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil): void
@@ -57,12 +89,14 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     // del mismo mensaje, no uno nuevo — se corta aquí, antes de gastar
     // nada de IA.
     $messageId = (string)($msg['id'] ?? '');
+    $idPropio = null;
     if ($messageId !== '') {
         try {
             $stmt = $pdo->prepare(
                 "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por, whatsapp_message_id) VALUES (:t, 'entrante', :texto, 'ia', :mid)"
             );
             $stmt->execute([':t' => $telefono, ':texto' => $texto, ':mid' => $messageId]);
+            $idPropio = (int)$pdo->lastInsertId();
         } catch (\PDOException $e) {
             if ($e->getCode() === '23000') {
                 return;
@@ -87,6 +121,7 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
             "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'entrante', :texto, 'ia')"
         );
         $stmt->execute([':t' => $telefono, ':texto' => $texto]);
+        $idPropio = (int)$pdo->lastInsertId();
     }
 
     // Si ya hay un prospecto y el bot está pausado, un humano lleva el
@@ -190,6 +225,27 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         }
     }
 
+    // Espera para agrupar: si la persona sigue escribiendo (varias burbujas
+    // seguidas), se le da tiempo antes de gastar una llamada de IA. Al
+    // terminar la espera se checa si llegó un mensaje MÁS NUEVO de este
+    // mismo número mientras tanto -- si sí, esta invocación se retira sin
+    // contestar (ni gastar IA): la más reciente hará este mismo checeo y
+    // será la que junte todo el bloque y conteste una sola vez. $idPropio
+    // puede quedar null solo si el INSERT de arriba no llegó a correr
+    // (no debería pasar a estas alturas), en cuyo caso se sigue de todos
+    // modos en vez de arriesgarse a nunca contestar.
+    if ($idPropio !== null) {
+        sleep(WHATSAPP_ESPERA_AGRUPAR_SEGUNDOS);
+        $stmt = $pdo->prepare(
+            "SELECT id FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante' ORDER BY id DESC LIMIT 1"
+        );
+        $stmt->execute([':t' => $telefono]);
+        $masReciente = $stmt->fetch();
+        if ($masReciente && (int)$masReciente['id'] !== $idPropio) {
+            return;
+        }
+    }
+
     // Indicador nativo de WhatsApp "escribiendo..." mientras se genera la
     // respuesta — y punto de partida para medir cuánto tardó todo el
     // proceso, para el retraso natural de abajo.
@@ -202,13 +258,7 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     $stmt->execute([':t' => $telefono]);
     $historial = array_reverse($stmt->fetchAll());
 
-    $mensajesIA = [];
-    foreach ($historial as $h) {
-        $mensajesIA[] = [
-            'role' => $h['direccion'] === 'entrante' ? 'user' : 'assistant',
-            'content' => $h['texto'],
-        ];
-    }
+    $mensajesIA = ia_mensajes_desde_historial($historial);
     if (!$mensajesIA || end($mensajesIA)['role'] !== 'user') {
         $mensajesIA[] = ['role' => 'user', 'content' => $texto];
     }
@@ -337,13 +387,7 @@ function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
         return ['ok' => false, 'motivo' => 'Ya pasaron más de 23h desde el último mensaje del cliente -- WhatsApp ya no deja mandar un mensaje libre. No se llamó a la IA.'];
     }
 
-    $mensajesIA = [];
-    foreach ($historial as $h) {
-        $mensajesIA[] = [
-            'role' => $h['direccion'] === 'entrante' ? 'user' : 'assistant',
-            'content' => $h['texto'],
-        ];
-    }
+    $mensajesIA = ia_mensajes_desde_historial($historial);
     if (!$mensajesIA || end($mensajesIA)['role'] !== 'user') {
         return ['ok' => false, 'motivo' => 'No se encontró un mensaje del cliente pendiente de contestar.'];
     }
@@ -417,13 +461,7 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
     // El historial que se manda a Claude debe terminar en un mensaje del
     // cliente (role=user) — se descarta la respuesta de emergencia previa.
     array_pop($historial);
-    $mensajesIA = [];
-    foreach ($historial as $h) {
-        $mensajesIA[] = [
-            'role' => $h['direccion'] === 'entrante' ? 'user' : 'assistant',
-            'content' => $h['texto'],
-        ];
-    }
+    $mensajesIA = ia_mensajes_desde_historial($historial);
     if (!$mensajesIA || end($mensajesIA)['role'] !== 'user') {
         return ['ok' => false, 'motivo' => 'No se encontró un mensaje del cliente pendiente de contestar.'];
     }
