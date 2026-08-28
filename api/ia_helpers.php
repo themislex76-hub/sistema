@@ -1819,7 +1819,21 @@ function ia_buscar_expedientes(string $pregunta, array $casos): ?array
             . 'ninguno de esos dos campos (aunque sí tenga "Convenio: monto..."), NO tiene fecha registrada -- no '
             . 'lo cuentes como coincidencia de una pregunta con fecha, ni "porque el ingreso cae en ese mes" ni '
             . 'por ninguna otra razón. Y un expediente que ni siquiera trae la línea "Convenio:" nunca puede ser '
-            . 'una coincidencia para una pregunta sobre convenios, sin importar qué otro dato tenga parecido.',
+            . 'una coincidencia para una pregunta sobre convenios, sin importar qué otro dato tenga parecido.'
+            . "\n\n"
+            . 'REGLA DURA: para cualquier pregunta sobre si un asunto está "pagado", "cobrado", "con convenio '
+            . 'pendiente de cobro", "en demanda"/"en juicio" o "concluido"/"activo", usa EXCLUSIVAMENTE el campo '
+            . '"Estatus del asunto (calculado...)" y el campo "Asunto CONCLUIDO"/"Asunto ACTIVO" -- son los datos '
+            . 'ya verificados. NUNCA infieras ese tipo de estatus del "Status (texto crudo...)", de la nota, ni '
+            . 'de la bitácora -- esos pueden estar desactualizados o no tener relación real con si ya se pagó. '
+            . 'Cuando la pregunta busca una INCONSISTENCIA o contradicción (p. ej. "pagados pero reportados como '
+            . 'activos", "convenio cobrado pero sigue activo", "concluidos sin convenio"), un expediente SOLO '
+            . 'cuenta como coincidencia si esos dos campos calculados de verdad muestran esa combinación exacta '
+            . '-- un caso con "Convenio pactado, cobro TODAVÍA pendiente" + "Asunto ACTIVO" es la combinación '
+            . 'NORMAL y esperada (no es ninguna inconsistencia), así que NO cuenta como coincidencia para ese '
+            . 'tipo de pregunta. Si tras revisar los dos campos calculados de cada expediente ninguno tiene de '
+            . 'verdad la combinación exacta que pide la pregunta, responde NINGUNO -- es la respuesta correcta '
+            . 'cuando no hay ninguna inconsistencia real, no un fallo tuyo.',
         'messages' => [['role' => 'user', 'content' => "Pregunta: $pregunta\n\nExpedientes:\n" . implode("\n", $lineas)]],
     ];
 

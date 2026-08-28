@@ -3007,6 +3007,21 @@ function statusBadge(k){
   return `<span class="badge ${lvl==='unknown'?'closed':lvl}">${labelMap[lvl]||k.status||''}</span>`;
 }
 
+// Versión en texto plano del mismo estatus que statusBadge() le muestra al
+// abogado en la lista -- para mandarle a la IA de búsqueda semántica el
+// mismo dato que ve un humano, en vez de dejarla adivinar del texto crudo
+// importado (k.status), que puede estar desactualizado o no tener nada
+// que ver con "pagado"/"convenio"/"demanda presentada".
+function estatusCalculadoTexto(k){
+  const stage = caseStage(k);
+  if(stage === "pagado") return "Pagado (ya cobrado -- el asunto está Concluido)";
+  if(stage === "desistio") return "Cliente desistió (el asunto está Concluido)";
+  if(stage === "convenio") return "Convenio pactado, cobro TODAVÍA pendiente (no se ha pagado)";
+  if(stage === "juicio") return "Demanda presentada, en juicio";
+  if(stage === "constancia_demanda") return "Recibió constancia de no conciliación, falta presentar demanda";
+  return "En conciliación / trámite previo a demanda, sin convenio todavía";
+}
+
 // Resumen compacto de un expediente para la búsqueda con lenguaje natural
 // -- solo campos ya capturados en el sistema (nunca el contenido de los
 // documentos subidos), para que la IA pueda filtrar/priorizar sin tener
@@ -3023,7 +3038,14 @@ function resumenBusquedaCaso(k){
   add('Fecha de ingreso', k.fecha_ingreso);
   add('Fecha de baja', k.fecha_baja);
   if(k.salario_diario) add('Salario diario', fmtMoney(k.salario_diario));
-  add('Status', k.status);
+  add('Status (texto crudo importado -- no usar para determinar si está pagado/concluido, puede estar desactualizado)', k.status);
+  // El badge "Estatus" que ve el abogado en la lista NO sale de este texto
+  // crudo -- sale de caseStage(), que cruza el status importado con la
+  // bitácora y el convenio manual (más recientes y confiables). Sin este
+  // campo calculado, la IA solo tenía el texto crudo de arriba para
+  // preguntas de "pagado"/"convenio pendiente de cobro"/"demanda
+  // presentada", y adivinaba mal.
+  add('Estatus del asunto (calculado, es el que se ve en la lista)', estatusCalculadoTexto(k));
   const instanciaTexto = k.junta || k.tribunal || k.instancia || '';
   add('Instancia/Tribunal', instanciaTexto);
   // La IA no siempre distingue bien "local" vs "federal" leyendo el
