@@ -60,34 +60,19 @@ function whatsapp_extension_por_mime(string $mime): string
     return $mapa[$mime] ?? 'bin';
 }
 
-// Respuesta cuando se guarda un archivo pero NO se escala a un humano
-// (ver más abajo el criterio) -- deja claro que el bot no revisa
-// documentos por este medio, para no generar la expectativa de que
-// alguien le va a hacer una revisión gratis a un contrato u otro
-// documento que nada tiene que ver con un pago.
-const WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO = 'Recibí tu archivo, ya quedó guardado. Por este medio el asistente automático no puede leer ni revisar el contenido de documentos (como contratos) -- si necesitas que un abogado lo revise a fondo, eso es parte de la asesoría personalizada. Mientras tanto, ¿en qué más te puedo ayudar?';
-
-// Un cliente mandó una imagen o documento -- antes esto se perdía por
-// completo: el bot solo contestaba "no puedo leer esto" y el archivo
-// nunca quedaba guardado en ningún lado. Se detectó en producción con un
-// cliente que insistía en haber mandado el comprobante de un pago y nadie
-// del despacho pudo verlo nunca, porque de verdad no se guardaba nada.
-// Ahora se descarga de los servidores de Meta y se guarda siempre para
-// que un abogado lo pueda revisar desde Conversaciones/Prospectos.
+// Un cliente mandó una imagen o documento (típicamente un comprobante de
+// pago) -- antes esto se perdía por completo: el bot solo contestaba "no
+// puedo leer esto" y el archivo nunca quedaba guardado en ningún lado. Se
+// detectó en producción con un cliente que insistía en haber mandado un
+// comprobante que nadie del despacho pudo ver nunca, porque de verdad no
+// se guardaba nada. Ahora se descarga de los servidores de Meta y se
+// guarda para que un abogado lo revise desde Conversaciones/Prospectos.
 //
 // El bot NO interpreta el contenido del archivo (no se lo manda a la IA)
 // -- por costo, y porque un comprobante hay que revisarlo con cuidado, no
-// que lo "lea" un modelo y decida solo.
-//
-// Pero guardarlo no significa siempre interrumpir a un humano: si
-// cualquier archivo (una foto, un "revísame este contrato" de alguien que
-// nunca ha pagado nada) pausara el bot y mandara una alerta urgente, el
-// despacho se llenaría de avisos que no son nada urgente -- solo se
-// escala de verdad cuando hay un pago pendiente de cobrar de por medio
-// (el escenario real: alguien insistiendo en que ya pagó su asesoría). En
-// cualquier otro caso, el archivo queda guardado y visible igual, pero el
-// bot sigue la conversación normal, dejando claro que no revisa
-// documentos por este medio.
+// que lo "lea" un modelo y decida solo. Solo lo guarda, avisa a un humano
+// (mismo mecanismo que una conversación atorada) y pausa sus respuestas
+// automáticas para que la conversación la retome una persona.
 function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string $tipo, ?string $nombrePerfil): void
 {
     $messageId = (string)($msg['id'] ?? '');
@@ -146,24 +131,11 @@ function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string 
     $stmt = $pdo->prepare('UPDATE whatsapp_conversaciones SET media_ruta = :ruta, media_mime = :mime WHERE id = :id');
     $stmt->execute([':ruta' => $rutaRelativa, ':mime' => $descarga['mime_type'], ':id' => $idPropio]);
 
-    // ¿Hay algún pago pendiente de cobrar para este número? Es la única
-    // señal de contexto que tenemos para saber si este archivo es
-    // probablemente un comprobante de pago (lo urgente de verdad) y no
-    // solo un documento cualquiera.
-    $stmt = $pdo->prepare("SELECT id FROM citas_asesoria WHERE telefono = :t AND estado = 'pendiente_pago' LIMIT 1");
-    $stmt->execute([':t' => $telefono]);
-    $tienePagoPendiente = (bool)$stmt->fetch();
+    whatsapp_enviar($telefono, 'Recibí tu archivo — un abogado del despacho lo va a revisar directamente contigo. 🙏');
 
-    if ($tienePagoPendiente) {
-        whatsapp_enviar($telefono, 'Recibí tu archivo — un abogado del despacho lo va a revisar directamente contigo. 🙏');
-        ia_registrar_prospecto_atorado($pdo, $telefono, null, 'Mandó un archivo (' . $tipo . ') con un pago de asesoría pendiente de cobrar -- probable comprobante, revisarlo en Conversaciones (WhatsApp) o Prospectos.', $nombrePerfil);
-    } else {
-        whatsapp_enviar($telefono, WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO);
-        $stmt = $pdo->prepare(
-            "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
-        );
-        $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO]);
-    }
+    // Un archivo adjunto siempre necesita que un humano lo revise con
+    // cuidado -- no es algo que el bot deba seguir manejando solo.
+    ia_registrar_prospecto_atorado($pdo, $telefono, null, 'Mandó un archivo (' . $tipo . ') -- revisarlo en Conversaciones (WhatsApp) o Prospectos.', $nombrePerfil);
 }
 
 // Convierte el historial de whatsapp_conversaciones (una fila por mensaje)
