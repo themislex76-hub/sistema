@@ -16,8 +16,8 @@ $pdo = db();
 $stmt = $pdo->query(
     "SELECT c.telefono, c.texto AS ultimo_texto, c.direccion AS ultima_direccion, c.creado_en AS ultimo_mensaje,
             t.total_mensajes, t.primer_mensaje,
-            p.tipo AS prospecto_tipo, p.estatus AS prospecto_estatus, p.nombre AS prospecto_nombre,
-            p.expediente_id, u.nombre AS asignado_nombre
+            p.id AS prospecto_id, p.tipo AS prospecto_tipo, p.estatus AS prospecto_estatus, p.nombre AS prospecto_nombre,
+            p.pausado_bot, p.expediente_id, u.nombre AS asignado_nombre
      FROM whatsapp_conversaciones c
      INNER JOIN (
          SELECT telefono, COUNT(*) AS total_mensajes, MIN(creado_en) AS primer_mensaje, MAX(id) AS ultimo_id
@@ -39,9 +39,11 @@ foreach ($stmt->fetchAll() as $r) {
         'ultimo_mensaje' => $r['ultimo_mensaje'],
         'total_mensajes' => (int)$r['total_mensajes'],
         'primer_mensaje' => $r['primer_mensaje'],
+        'prospecto_id' => $r['prospecto_id'] !== null ? (int)$r['prospecto_id'] : null,
         'prospecto_tipo' => $r['prospecto_tipo'],
         'prospecto_estatus' => $r['prospecto_estatus'],
         'prospecto_nombre' => $r['prospecto_nombre'],
+        'pausado_bot' => $r['pausado_bot'] !== null ? (bool)$r['pausado_bot'] : false,
         'expediente_id' => $r['expediente_id'] !== null ? (int)$r['expediente_id'] : null,
         'asignado_nombre' => $r['asignado_nombre'],
         'fallo' => $r['ultima_direccion'] === 'saliente' && strpos((string)$r['ultimo_texto'], IA_FALLBACK_TEXTO) === 0,

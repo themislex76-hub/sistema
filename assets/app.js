@@ -4709,6 +4709,16 @@ function conversacionDetalleHTML(c){
           <button class="btn secondary" data-marcar-prospecto="${escapeHTML(c.prospecto_tipo)}" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 12px;">Reactivar como pendiente en Prospectos</button>
         ` : "")}
       </div>
+      ${c.prospecto_id ? `
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+        <select data-prospecto-estatus="${c.prospecto_id}" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          ${Object.keys(PROSPECTO_ESTATUS_LABEL).map(k=>`<option value="${k}" ${c.prospecto_estatus===k?'selected':''}>${PROSPECTO_ESTATUS_LABEL[k]}</option>`).join("")}
+        </select>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
+          <input type="checkbox" data-prospecto-pausado="${c.prospecto_id}" ${c.pausado_bot?'checked':''}> Bot pausado (suspender respuestas automáticas)
+        </label>
+      </div>
+      ` : ""}
       <div style="background:var(--parchment); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px;">
           <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray);">Resumen (IA) — para revisar cómo va contestando el bot</div>
@@ -4767,6 +4777,23 @@ function renderConversacionModal(){
 }
 
 function bindConversacionModalEvents(){
+  document.querySelectorAll('[data-prospecto-estatus]').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(sel.dataset.prospectoEstatus), estatus: sel.value});
+        await loadConversaciones();
+        renderConversacionModal();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-pausado]').forEach(chk=>{
+    chk.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(chk.dataset.prospectoPausado), pausado_bot: chk.checked});
+        await loadConversaciones();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); chk.checked = !chk.checked; }
+    });
+  });
   document.querySelectorAll('[data-borrar-mensaje]').forEach(a=>{
     a.addEventListener('click', async (e)=>{
       e.preventDefault();
