@@ -94,6 +94,61 @@ function whatsapp_marcar_leido_y_escribiendo(string $messageId): bool
     return true;
 }
 
+// Descarga un archivo que un cliente MANDÓ por WhatsApp (imagen o
+// documento), usando su media_id -- son dos pasos: primero se le pide a la
+// Graph API la URL temporal real del archivo, y luego se descarga desde
+// ahí (los dos pasos necesitan el mismo token de acceso, la URL temporal
+// por sí sola no es pública). Devuelve ['bytes' => string, 'mime_type' =>
+// string], o null si algo falla.
+function whatsapp_descargar_media(string $mediaId): ?array
+{
+    $credentialsFile = __DIR__ . '/whatsapp_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $ch = curl_init('https://graph.facebook.com/v23.0/' . $mediaId);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . WHATSAPP_TOKEN],
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | [descargar_media:url] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+    $data = json_decode($raw, true);
+    $url = $data['url'] ?? null;
+    $mimeType = (string)($data['mime_type'] ?? 'application/octet-stream');
+    if (!$url) {
+        return null;
+    }
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . WHATSAPP_TOKEN],
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $bytes = curl_exec($ch);
+    $status2 = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError2 = curl_error($ch);
+    curl_close($ch);
+    if ($bytes === false || $status2 < 200 || $status2 >= 300) {
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | [descargar_media:archivo] status=$status2 | curl=$curlError2\n", FILE_APPEND);
+        return null;
+    }
+
+    return ['bytes' => $bytes, 'mime_type' => $mimeType];
+}
+
 // Sube un archivo a los servidores de Meta — paso obligatorio antes de
 // poder mandarlo como documento (WhatsApp no acepta el archivo directo
 // en el mismo mensaje). Devuelve el media_id, o null si falla.
