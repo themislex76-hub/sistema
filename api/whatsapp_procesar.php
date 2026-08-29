@@ -45,6 +45,99 @@ function dentro_de_horario_atencion(): bool
     return $hora >= 8 && $hora < 19;
 }
 
+// Tipos de mensaje de WhatsApp CON archivo adjunto que sí guardamos, para
+// que un abogado los revise (típicamente un comprobante de pago) -- audio,
+// video, stickers y ubicación quedan fuera de alcance por ahora y caen en
+// el aviso genérico de "no puedo leer esto" más abajo.
+const WHATSAPP_TIPOS_MEDIA_SOPORTADOS = ['image', 'document'];
+
+function whatsapp_extension_por_mime(string $mime): string
+{
+    $mapa = [
+        'image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp',
+        'application/pdf' => 'pdf',
+    ];
+    return $mapa[$mime] ?? 'bin';
+}
+
+// Un cliente mandó una imagen o documento (típicamente un comprobante de
+// pago) -- antes esto se perdía por completo: el bot solo contestaba "no
+// puedo leer esto" y el archivo nunca quedaba guardado en ningún lado. Se
+// detectó en producción con un cliente que insistía en haber mandado un
+// comprobante que nadie del despacho pudo ver nunca, porque de verdad no
+// se guardaba nada. Ahora se descarga de los servidores de Meta y se
+// guarda para que un abogado lo revise desde Conversaciones/Prospectos.
+//
+// El bot NO interpreta el contenido del archivo (no se lo manda a la IA)
+// -- por costo, y porque un comprobante hay que revisarlo con cuidado, no
+// que lo "lea" un modelo y decida solo. Solo lo guarda, avisa a un humano
+// (mismo mecanismo que una conversación atorada) y pausa sus respuestas
+// automáticas para que la conversación la retome una persona.
+function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string $tipo, ?string $nombrePerfil): void
+{
+    $messageId = (string)($msg['id'] ?? '');
+    $mediaInfo = $msg[$tipo] ?? [];
+    $mediaId = (string)($mediaInfo['id'] ?? '');
+    $caption = trim((string)($mediaInfo['caption'] ?? ''));
+    $nombreArchivo = trim((string)($mediaInfo['filename'] ?? ''));
+    $textoPlaceholder = $caption !== ''
+        ? $caption
+        : ($tipo === 'image' ? '(imagen adjunta)' : '(documento adjunto' . ($nombreArchivo !== '' ? ': ' . $nombreArchivo : '') . ')');
+
+    $idPropio = null;
+    if ($messageId !== '') {
+        try {
+            $stmt = $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por, whatsapp_message_id) VALUES (:t, 'entrante', :texto, 'ia', :mid)"
+            );
+            $stmt->execute([':t' => $telefono, ':texto' => $textoPlaceholder, ':mid' => $messageId]);
+            $idPropio = (int)$pdo->lastInsertId();
+        } catch (\PDOException $e) {
+            if ($e->getCode() === '23000') {
+                return; // Reintento de Meta del mismo archivo -- ya se guardó antes.
+            }
+            throw $e;
+        }
+    } else {
+        $stmt = $pdo->prepare(
+            "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'entrante', :texto, 'ia')"
+        );
+        $stmt->execute([':t' => $telefono, ':texto' => $textoPlaceholder]);
+        $idPropio = (int)$pdo->lastInsertId();
+    }
+
+    if ($mediaId === '') {
+        whatsapp_enviar($telefono, 'Recibí tu archivo, pero hubo un problema técnico leyéndolo — ¿me lo puedes volver a mandar, por favor?');
+        return;
+    }
+
+    $descarga = whatsapp_descargar_media($mediaId);
+    if ($descarga === null) {
+        whatsapp_enviar($telefono, 'Recibí tu archivo, pero hubo un problema técnico descargándolo de nuestro lado. Un abogado del despacho te va a contactar directo por esto.');
+        ia_registrar_prospecto_atorado($pdo, $telefono, null, 'Mandó un archivo (' . $tipo . ') pero hubo un error técnico al descargarlo -- pedirle que lo reenvíe o resolverlo directo con la persona.', $nombrePerfil);
+        return;
+    }
+
+    $ext = whatsapp_extension_por_mime($descarga['mime_type']);
+    $carpetaTelefono = preg_replace('/[^0-9A-Za-z]/', '', $telefono) ?: 'sin_numero';
+    $dirCarpeta = __DIR__ . '/../data/whatsapp_media/' . $carpetaTelefono;
+    if (!is_dir($dirCarpeta)) {
+        @mkdir($dirCarpeta, 0755, true);
+    }
+    $nombreDisco = $idPropio . '.' . $ext;
+    file_put_contents($dirCarpeta . '/' . $nombreDisco, $descarga['bytes']);
+    $rutaRelativa = $carpetaTelefono . '/' . $nombreDisco;
+
+    $stmt = $pdo->prepare('UPDATE whatsapp_conversaciones SET media_ruta = :ruta, media_mime = :mime WHERE id = :id');
+    $stmt->execute([':ruta' => $rutaRelativa, ':mime' => $descarga['mime_type'], ':id' => $idPropio]);
+
+    whatsapp_enviar($telefono, 'Recibí tu archivo — un abogado del despacho lo va a revisar directamente contigo. 🙏');
+
+    // Un archivo adjunto siempre necesita que un humano lo revise con
+    // cuidado -- no es algo que el bot deba seguir manejando solo.
+    ia_registrar_prospecto_atorado($pdo, $telefono, null, 'Mandó un archivo (' . $tipo . ') -- revisarlo en Conversaciones (WhatsApp) o Prospectos.', $nombrePerfil);
+}
+
 // Convierte el historial de whatsapp_conversaciones (una fila por mensaje)
 // al arreglo que espera la API de Claude, fusionando mensajes CONSECUTIVOS
 // del mismo rol en un solo turno. Hace falta porque la API de Anthropic
@@ -71,8 +164,13 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     $telefono = (string)($msg['from'] ?? '');
     if ($telefono === '') return;
 
-    if (($msg['type'] ?? '') !== 'text') {
-        whatsapp_enviar($telefono, 'Por ahora solo puedo leer mensajes de texto. Cuéntame tu duda escribiéndola, por favor.');
+    $tipoMensaje = (string)($msg['type'] ?? '');
+    if (in_array($tipoMensaje, WHATSAPP_TIPOS_MEDIA_SOPORTADOS, true)) {
+        procesar_media_entrante($pdo, $telefono, $msg, $tipoMensaje, $nombrePerfil);
+        return;
+    }
+    if ($tipoMensaje !== 'text') {
+        whatsapp_enviar($telefono, 'Por ahora solo puedo leer mensajes de texto, imágenes y documentos. Cuéntame tu duda escribiéndola, por favor.');
         return;
     }
 

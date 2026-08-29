@@ -14,7 +14,7 @@ if ($telefono === '') fail('Falta el teléfono.', 400);
 
 $pdo = db();
 $stmt = $pdo->prepare(
-    'SELECT direccion, texto, respondido_por, creado_en FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id ASC LIMIT 500'
+    'SELECT id, direccion, texto, media_ruta, media_mime, respondido_por, creado_en FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id ASC LIMIT 500'
 );
 $stmt->execute([':t' => $telefono]);
 
