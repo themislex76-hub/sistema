@@ -3015,25 +3015,6 @@ function dateToISO(d){ if(!d) return ""; return d.toISOString().slice(0,10); }
 function truncate(s,n){ if(!s) return ""; return s.length>n? s.slice(0,n-1)+"…" : s; }
 function escapeHTML(s){ if(s===null||s===undefined) return ""; return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
-// Contenido de una burbuja de mensaje de WhatsApp -- normalmente solo
-// texto, pero si el cliente mandó una imagen o documento (comprobante,
-// etc.) se muestra la miniatura o un enlace en vez del placeholder de
-// texto que se generó al guardarlo. El link real (con sesión/cookie) lo
-// sirve whatsapp_media_ver.php.
-function mensajeContenidoHTML(m){
-  if(!m.media_ruta) return escapeHTML(m.texto);
-  const url = API_BASE + 'whatsapp_media_ver.php?id=' + m.id;
-  const esImagen = (m.media_mime || '').startsWith('image/');
-  // El texto guardado es o una nota/caption real del cliente, o un
-  // placeholder generado por el servidor entre paréntesis -- solo se
-  // muestra si es una nota real.
-  const notaReal = m.texto && !/^\(/.test(m.texto) ? `<div style="margin-top:4px;">${escapeHTML(m.texto)}</div>` : '';
-  if(esImagen){
-    return `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" style="max-width:220px; max-height:220px; border-radius:6px; display:block;" alt="Imagen adjunta"></a>${notaReal}`;
-  }
-  return `<a href="${url}" target="_blank" rel="noopener" style="text-decoration:underline;">📎 Ver documento adjunto</a>${notaReal}`;
-}
-
 function statusBadge(k){
   const stage = caseStage(k);
   if(stage === "pagado") return `<span class="badge closed">Pagado</span>`;
@@ -4122,7 +4103,7 @@ function prospectoDetalleHTML(p){
         ${PROSPECTO_MENSAJES.length ? PROSPECTO_MENSAJES.map(m=>`
           <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
             <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
-              ${mensajeContenidoHTML(m)}
+              ${escapeHTML(m.texto)}
               <div style="font-size:10px; opacity:.6; margin-top:3px;">${m.direccion==='saliente'?(m.respondido_por==='humano'?'Tú':'Bot'):'Cliente'} &middot; ${fmtFechaHora(m.creado_en)}</div>
             </div>
           </div>`).join("") : `<div class="notice">Sin mensajes todavía.</div>`}
@@ -4686,7 +4667,7 @@ function conversacionDetalleHTML(c){
         ${CONVERSACION_MENSAJES.length ? CONVERSACION_MENSAJES.map(m=>`
           <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
             <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
-              ${mensajeContenidoHTML(m)}
+              ${escapeHTML(m.texto)}
               <div style="font-size:10px; opacity:.6; margin-top:3px;">${m.direccion==='saliente'?(m.respondido_por==='humano'?'Humano':'Bot'):'Cliente'} &middot; ${fmtFechaHora(m.creado_en)}</div>
             </div>
           </div>`).join("") : `<div class="notice">Sin mensajes.</div>`}
@@ -4865,7 +4846,7 @@ async function abrirCitaConversacionModal(telefono, nombre){
         ${CONVERSACION_MENSAJES.length ? CONVERSACION_MENSAJES.map(m=>`
           <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
             <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
-              ${mensajeContenidoHTML(m)}
+              ${escapeHTML(m.texto)}
               <div style="font-size:10px; opacity:.6; margin-top:3px;">${m.direccion==='saliente'?(m.respondido_por==='humano'?'Humano':'Bot'):'Cliente'} &middot; ${fmtFechaHora(m.creado_en)}</div>
             </div>
           </div>`).join("") : `<div class="notice">Sin mensajes.</div>`}

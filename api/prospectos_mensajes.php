@@ -18,7 +18,7 @@ if ($user['rol'] !== 'administrador') {
     }
 }
 $stmt = $pdo->prepare(
-    'SELECT id, direccion, texto, media_ruta, media_mime, respondido_por, creado_en FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id ASC LIMIT 300'
+    'SELECT direccion, texto, respondido_por, creado_en FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id ASC LIMIT 300'
 );
 $stmt->execute([':t' => $telefono]);
 
