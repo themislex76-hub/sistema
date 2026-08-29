@@ -3034,6 +3034,28 @@ function mensajeContenidoHTML(m){
   return `<a href="${url}" target="_blank" rel="noopener" style="text-decoration:underline;">📎 Ver documento adjunto</a>${notaReal}`;
 }
 
+// Línea pequeña bajo cada burbuja (quién la mandó y cuándo), con un
+// enlace para borrar el mensaje -- solo visible para Administrador, es
+// una acción destructiva y sin deshacer.
+function mensajeMetaHTML(m, etiquetaSaliente){
+  const quien = m.direccion==='saliente' ? (m.respondido_por==='humano'?etiquetaSaliente:'Bot') : 'Cliente';
+  const borrar = CURRENT_USER.role === 'Administrador'
+    ? ` &middot; <a href="#" data-borrar-mensaje="${m.id}" style="color:inherit; opacity:.7; text-decoration:none;" title="Borrar este mensaje">🗑</a>`
+    : '';
+  return `${quien} &middot; ${fmtFechaHora(m.creado_en)}${borrar}`;
+}
+
+// Borra un mensaje (con confirmación) y vuelve a cargar/renderizar el
+// hilo indicado -- $recargar es una función async que ya sabe cómo
+// recargar los mensajes y volver a pintar la vista donde se llamó.
+async function borrarMensajeWhatsapp(id, recargar){
+  if(!confirm('¿Borrar este mensaje? No se puede deshacer.')) return;
+  try{
+    await api('POST', 'whatsapp_mensaje_borrar.php', {id: parseInt(id)});
+    await recargar();
+  }catch(err){ alert('No se pudo borrar: ' + err.message); }
+}
+
 function statusBadge(k){
   const stage = caseStage(k);
   if(stage === "pagado") return `<span class="badge closed">Pagado</span>`;
@@ -4123,7 +4145,7 @@ function prospectoDetalleHTML(p){
           <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
             <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
               ${mensajeContenidoHTML(m)}
-              <div style="font-size:10px; opacity:.6; margin-top:3px;">${m.direccion==='saliente'?(m.respondido_por==='humano'?'Tú':'Bot'):'Cliente'} &middot; ${fmtFechaHora(m.creado_en)}</div>
+              <div style="font-size:10px; opacity:.6; margin-top:3px;">${mensajeMetaHTML(m, 'Tú')}</div>
             </div>
           </div>`).join("") : `<div class="notice">Sin mensajes todavía.</div>`}
       </div>
@@ -4167,6 +4189,17 @@ function renderProspectoModal(){
 }
 
 function bindProspectoModalEvents(){
+  document.querySelectorAll('[data-borrar-mensaje]').forEach(a=>{
+    a.addEventListener('click', async (e)=>{
+      e.preventDefault();
+      const p = PROSPECTOS.find(x=>x.id===PROSPECTO_ABIERTO);
+      if(!p) return;
+      await borrarMensajeWhatsapp(a.dataset.borrarMensaje, async ()=>{
+        await loadProspectoMensajes(p.telefono);
+        renderProspectoModal();
+      });
+    });
+  });
   document.querySelectorAll('[data-prospecto-estatus]').forEach(sel=>{
     sel.addEventListener('change', async ()=>{
       try{
@@ -4687,7 +4720,7 @@ function conversacionDetalleHTML(c){
           <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
             <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
               ${mensajeContenidoHTML(m)}
-              <div style="font-size:10px; opacity:.6; margin-top:3px;">${m.direccion==='saliente'?(m.respondido_por==='humano'?'Humano':'Bot'):'Cliente'} &middot; ${fmtFechaHora(m.creado_en)}</div>
+              <div style="font-size:10px; opacity:.6; margin-top:3px;">${mensajeMetaHTML(m, 'Humano')}</div>
             </div>
           </div>`).join("") : `<div class="notice">Sin mensajes.</div>`}
       </div>
@@ -4732,6 +4765,17 @@ function renderConversacionModal(){
 }
 
 function bindConversacionModalEvents(){
+  document.querySelectorAll('[data-borrar-mensaje]').forEach(a=>{
+    a.addEventListener('click', async (e)=>{
+      e.preventDefault();
+      const telefono = CONVERSACION_ABIERTA;
+      if(!telefono) return;
+      await borrarMensajeWhatsapp(a.dataset.borrarMensaje, async ()=>{
+        await loadConversacionMensajes(telefono);
+        renderConversacionModal();
+      });
+    });
+  });
   const conversacionResumenBtn = document.getElementById('conversacionResumenBtn');
   if(conversacionResumenBtn){
     conversacionResumenBtn.addEventListener('click', async ()=>{
@@ -4866,7 +4910,7 @@ async function abrirCitaConversacionModal(telefono, nombre){
           <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
             <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
               ${mensajeContenidoHTML(m)}
-              <div style="font-size:10px; opacity:.6; margin-top:3px;">${m.direccion==='saliente'?(m.respondido_por==='humano'?'Humano':'Bot'):'Cliente'} &middot; ${fmtFechaHora(m.creado_en)}</div>
+              <div style="font-size:10px; opacity:.6; margin-top:3px;">${mensajeMetaHTML(m, 'Humano')}</div>
             </div>
           </div>`).join("") : `<div class="notice">Sin mensajes.</div>`}
       </div>
@@ -4874,6 +4918,14 @@ async function abrirCitaConversacionModal(telefono, nombre){
   </div>`;
   document.getElementById('modalClose').addEventListener('click', closeModal);
   overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
+  document.querySelectorAll('[data-borrar-mensaje]').forEach(a=>{
+    a.addEventListener('click', async (e)=>{
+      e.preventDefault();
+      await borrarMensajeWhatsapp(a.dataset.borrarMensaje, async ()=>{
+        await abrirCitaConversacionModal(telefono, nombre);
+      });
+    });
+  });
   overlay.classList.add('show');
   const scroll = overlay.querySelector('.chat-scroll');
   if(scroll) scroll.scrollTop = scroll.scrollHeight;
