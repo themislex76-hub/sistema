@@ -752,6 +752,29 @@ mejor que mencionarla en cada respuesta.
   NO llames ninguna herramienta — sigue la conversación normal,
   contestando sus dudas como siempre, sin insistir de nuevo con la misma
   pregunta.
+- REGLA DURA sobre pagos: tú NUNCA sabes si un pago de verdad se recibió.
+  Solo el sistema lo sabe, y solo cuando Mercado Pago manda su
+  notificación real (que tú no ves en esta conversación) -- nunca por lo
+  que el cliente te diga ("ya hice el pago", "ya deposité", manda una
+  foto de un comprobante, etc.), sin importar cuántas veces insista o con
+  cuánta seguridad lo diga. NUNCA le digas "ya quedó registrado tu pago"
+  ni nada que suene a que tú lo confirmaste -- si insiste, explícale que
+  el sistema confirma solo, y si de verdad ya pagó, en cuanto se procese
+  el abogado lo va a contactar directo (sin que tú tengas que hacer nada
+  más que avisar, ver el punto de escalar_a_humano abajo).
+- Cuándo usar escalar_a_humano (avisa a un abogado y TÚ DEJAS DE
+  CONTESTAR esta conversación): cuando la persona insiste en que ya pagó
+  y tú no tienes forma de confirmarlo, cuando te acusa de fraude/estafa o
+  amenaza con exhibir al despacho, o cuando pide claramente que le
+  llamen/hablar con una persona y tú no puedes cumplirlo. Llámala en
+  cuanto veas ese patrón -- no seas tú quien decide "ahorita no hace
+  falta todavía" mientras la persona sigue insistiendo turno tras turno.
+  Una vez por conversación basta: si ya la llamaste antes aquí mismo, NO
+  la vuelvas a llamar -- solo contesta con calidez y brevedad que el
+  abogado ya tiene su caso y la va a contactar, sin prometer nada que no
+  puedas cumplir tú (nunca digas "te llamo en X minutos", "en breve
+  tendrás noticias mías" ni nada con un tiempo específico -- tú no
+  controlas cuándo la contacta el abogado).
 TXT;
 
 const IA_TOOLS = [
@@ -845,6 +868,24 @@ const IA_TOOLS = [
                 ],
             ],
             'required' => ['fecha', 'hora_inicio'],
+        ],
+    ],
+    [
+        'name' => 'escalar_a_humano',
+        'description' => 'Detiene tus respuestas automáticas en esta conversación y avisa DE INMEDIATO (notificación push) a un abogado del despacho para que la atienda en persona -- a partir de aquí tú ya no le contestas más, un humano toma el chat desde Prospectos (WhatsApp). Úsala cuando: (a) la persona insiste en que ya hizo un pago que tú no tienes forma de confirmar (nunca puedes confirmar un pago por lo que diga el cliente -- solo la notificación real de Mercado Pago lo confirma, y tú no la ves en esta conversación); (b) acusa al despacho de fraude/estafa, amenaza con exhibirlo públicamente, o está claramente muy molesta y ya no avanza con tus respuestas; (c) pide explícitamente hablar por teléfono/que le llamen ya y no tienes forma de cumplirlo. Llámala UNA sola vez por este tipo de situación -- si ya la llamaste antes en esta misma conversación, no la vuelvas a llamar, solo mantén tu respuesta breve y de espera.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'nombre' => [
+                    'type' => 'string',
+                    'description' => 'Nombre de la persona si lo sabes, o cadena vacía si no.',
+                ],
+                'resumen' => [
+                    'type' => 'string',
+                    'description' => 'Resumen breve (1-3 líneas) de la situación puntual que necesita revisar un humano -- por ejemplo qué pago dice haber hecho, por qué medio, y a qué hora era su cita, para que el abogado pueda verificarlo rápido.',
+                ],
+            ],
+            'required' => ['resumen'],
         ],
     ],
     [
@@ -1224,6 +1265,16 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead);
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
                 $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in, $lead);
+            } elseif ($bloque['name'] === 'escalar_a_humano') {
+                $nombreEscalar = trim((string)($in['nombre'] ?? '')) ?: null;
+                $resumenEscalar = trim((string)($in['resumen'] ?? '')) ?: 'La conversación necesita que un abogado la atienda en persona.';
+                ia_registrar_prospecto_atorado($pdo, $telefono, $lead, $resumenEscalar, $nombreEscalar);
+                $contenido = trim($textoRonda) === ''
+                    ? json_encode([
+                        'ok' => true,
+                        'recordatorio' => 'Ya avisaste a un abogado -- ahora, en tu siguiente respuesta, escribe SOLO tu último mensaje breve para la persona (dile que un abogado la va a contactar directo) sin llamar ninguna otra herramienta.',
+                    ], JSON_UNESCAPED_UNICODE)
+                    : json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
             } else {
                 // registrar_lead_despido, registrar_interes_asesoria_paga,
                 // registrar_interes_control_expedientes: solo hace falta

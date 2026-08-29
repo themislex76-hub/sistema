@@ -143,51 +143,78 @@ function citas_crear_pendiente(PDO $pdo, string $telefono, string $fecha, string
     if (!$fechaObj) return null;
     $diaSemana = (int)$fechaObj->format('N');
 
-    // :hora_a y :hora_b llevan el mismo valor — con
-    // PDO::ATTR_EMULATE_PREPARES en false (como usa este sistema, ver
-    // db.php) no se puede reutilizar el mismo parámetro con nombre dos
-    // veces en la misma consulta.
-    $stmt = $pdo->prepare(
-        "SELECT d.usuario_id, d.hora_fin
-         FROM disponibilidad_asesorias d
-         JOIN usuarios u ON u.id = d.usuario_id
-         WHERE u.activo = 1 AND d.dia_semana = :dia
-           AND d.hora_inicio <= :hora_a AND d.hora_fin >= ADDTIME(:hora_b, '01:00:00')
-         ORDER BY d.usuario_id"
-    );
-    $stmt->execute([':dia' => $diaSemana, ':hora_a' => $horaInicio . ':00', ':hora_b' => $horaInicio . ':00']);
-    $candidatos = $stmt->fetchAll();
-    if (!$candidatos) return null;
-
-    $stmt = $pdo->prepare(
-        "SELECT usuario_id FROM citas_asesoria
-         WHERE fecha = :fecha AND hora_inicio = :hora AND estado IN ('confirmada', 'pendiente_pago')"
-    );
-    $stmt->execute([':fecha' => $fecha, ':hora' => $horaInicio . ':00']);
-    $ocupadosEnEsteSlot = array_column($stmt->fetchAll(), 'usuario_id');
-
-    $usuarioLibre = null;
-    foreach ($candidatos as $c) {
-        if (!in_array($c['usuario_id'], $ocupadosEnEsteSlot)) {
-            $usuarioLibre = $c;
-            break;
+    // Si dos clientes (o dos procesamientos casi simultáneos del MISMO
+    // cliente -- ver whatsapp_procesar.php) eligen el mismo horario casi
+    // al mismo tiempo, sin un candado real ambos podían pasar el checeo
+    // de "¿ya está ocupado?" antes de que cualquiera hubiera insertado su
+    // cita, y los dos terminaban apartando el mismo horario -- se detectó
+    // en producción: el bot le confirmó un horario a un cliente y
+    // segundos después le avisó que "se acababa de ocupar". FOR UPDATE
+    // sobre las filas de disponibilidad de este abogado/horario (que
+    // siempre existen de antemano, a diferencia de las citas) hace que la
+    // segunda transacción espere a que la primera termine, y entonces sí
+    // vea el cupo ya tomado.
+    $pdo->beginTransaction();
+    try {
+        // :hora_a y :hora_b llevan el mismo valor — con
+        // PDO::ATTR_EMULATE_PREPARES en false (como usa este sistema, ver
+        // db.php) no se puede reutilizar el mismo parámetro con nombre dos
+        // veces en la misma consulta.
+        $stmt = $pdo->prepare(
+            "SELECT d.usuario_id, d.hora_fin
+             FROM disponibilidad_asesorias d
+             JOIN usuarios u ON u.id = d.usuario_id
+             WHERE u.activo = 1 AND d.dia_semana = :dia
+               AND d.hora_inicio <= :hora_a AND d.hora_fin >= ADDTIME(:hora_b, '01:00:00')
+             ORDER BY d.usuario_id
+             FOR UPDATE"
+        );
+        $stmt->execute([':dia' => $diaSemana, ':hora_a' => $horaInicio . ':00', ':hora_b' => $horaInicio . ':00']);
+        $candidatos = $stmt->fetchAll();
+        if (!$candidatos) {
+            $pdo->rollBack();
+            return null;
         }
+
+        $stmt = $pdo->prepare(
+            "SELECT usuario_id FROM citas_asesoria
+             WHERE fecha = :fecha AND hora_inicio = :hora AND estado IN ('confirmada', 'pendiente_pago')"
+        );
+        $stmt->execute([':fecha' => $fecha, ':hora' => $horaInicio . ':00']);
+        $ocupadosEnEsteSlot = array_column($stmt->fetchAll(), 'usuario_id');
+
+        $usuarioLibre = null;
+        foreach ($candidatos as $c) {
+            if (!in_array($c['usuario_id'], $ocupadosEnEsteSlot)) {
+                $usuarioLibre = $c;
+                break;
+            }
+        }
+        if (!$usuarioLibre) {
+            $pdo->rollBack();
+            return null;
+        }
+
+        $horaFin = (new DateTimeImmutable($horaInicio))->modify('+1 hour')->format('H:i:s');
+        $stmt = $pdo->prepare(
+            "INSERT INTO citas_asesoria (telefono, usuario_id, fecha, hora_inicio, hora_fin, nombre_cliente, estado)
+             VALUES (:telefono, :usuario_id, :fecha, :hora_inicio, :hora_fin, :nombre, 'pendiente_pago')"
+        );
+        $stmt->execute([
+            ':telefono' => $telefono,
+            ':usuario_id' => $usuarioLibre['usuario_id'],
+            ':fecha' => $fecha,
+            ':hora_inicio' => $horaInicio . ':00',
+            ':hora_fin' => $horaFin,
+            ':nombre' => $nombreCliente,
+        ]);
+        $citaId = (int)$pdo->lastInsertId();
+        $pdo->commit();
+        return $citaId;
+    } catch (\Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
     }
-    if (!$usuarioLibre) return null;
-
-    $horaFin = (new DateTimeImmutable($horaInicio))->modify('+1 hour')->format('H:i:s');
-    $stmt = $pdo->prepare(
-        "INSERT INTO citas_asesoria (telefono, usuario_id, fecha, hora_inicio, hora_fin, nombre_cliente, estado)
-         VALUES (:telefono, :usuario_id, :fecha, :hora_inicio, :hora_fin, :nombre, 'pendiente_pago')"
-    );
-    $stmt->execute([
-        ':telefono' => $telefono,
-        ':usuario_id' => $usuarioLibre['usuario_id'],
-        ':fecha' => $fecha,
-        ':hora_inicio' => $horaInicio . ':00',
-        ':hora_fin' => $horaFin,
-        ':nombre' => $nombreCliente,
-    ]);
-
-    return (int)$pdo->lastInsertId();
 }
