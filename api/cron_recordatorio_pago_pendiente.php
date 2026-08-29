@@ -35,9 +35,28 @@ $citas = $stmt->fetchAll();
 
 $enviados = 0;
 $fallidos = 0;
+$omitidos = 0;
 $minutosRestantes = 10;
 
+// Si ya hay un humano enterado de esta conversación (escaló como reclamo,
+// se atoró, o cualquier otro motivo que haya pausado el bot), mandar este
+// recordatorio genérico de "no se te vaya tu horario" es contraproducente
+// -- se detectó en producción: a un cliente que ya había reclamado que no
+// le confirmaban su pago le siguió llegando este mismo recordatorio,
+// como si nada hubiera pasado, y eso solo lo enoja más. Se salta el envío
+// (pero igual se marca como atendido, para no reintentarlo después).
+$stmtPausado = $pdo->prepare('SELECT pausado_bot FROM prospectos WHERE telefono = :t LIMIT 1');
+
 foreach ($citas as $cita) {
+    $stmtPausado->execute([':t' => $cita['telefono']]);
+    $prospecto = $stmtPausado->fetch();
+    if ($prospecto && (int)$prospecto['pausado_bot'] === 1) {
+        $omitidos++;
+        $upd = $pdo->prepare('UPDATE citas_asesoria SET recordatorio_pago_enviado = 1 WHERE id = :id');
+        $upd->execute([':id' => $cita['id']]);
+        continue;
+    }
+
     $mensaje = "¡No se te vaya a ir tu horario! Te quedan {$minutosRestantes} minutos para completar el pago de tu asesoría antes de que se libere. Aquí está tu link de nuevo:\n{$cita['link_pago']}\n\nSolo acepta tarjeta de crédito/débito o saldo de Mercado Pago.";
 
     if (whatsapp_enviar($cita['telefono'], $mensaje)) {
@@ -54,4 +73,4 @@ foreach ($citas as $cita) {
     }
 }
 
-echo count($citas) . " cita(s) encontrada(s), $enviados enviado(s), $fallidos fallido(s).\n";
+echo count($citas) . " cita(s) encontrada(s), $enviados enviado(s), $fallidos fallido(s), $omitidos omitido(s) por tener humano enterado.\n";
