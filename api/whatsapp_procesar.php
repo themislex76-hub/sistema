@@ -351,6 +351,33 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         }
     }
 
+    // Respaldo determinístico: si el cliente insiste en que ya pagó Y hay
+    // un pago de asesoría pendiente de cobrar para este número, se escala
+    // de inmediato SIN depender de que la IA decida llamar
+    // escalar_a_humano -- se detectó en producción que el modelo a veces
+    // solo REDACTA "ya avisé a un abogado" sin de verdad llamar la
+    // herramienta (la misma falla que causó el problema real con un
+    // cliente que insistía en haber pagado y nadie del despacho se
+    // enteró nunca). Esta red de seguridad no depende de que la IA se
+    // acuerde -- si el patrón se repite, se corta aquí y se escala solo,
+    // sin ni siquiera llamar a la IA.
+    $pareceReclamoDePago = preg_match('/\bya\b.{0,20}pag/iu', $texto) === 1
+        || preg_match('/\bya\b.{0,20}(deposit|transfer)/iu', $texto) === 1;
+    if ($pareceReclamoDePago) {
+        $stmt = $pdo->prepare("SELECT id FROM citas_asesoria WHERE telefono = :t AND estado = 'pendiente_pago' LIMIT 1");
+        $stmt->execute([':t' => $telefono]);
+        if ($stmt->fetch()) {
+            $mensajeSinConfirmacion = 'Por aquí todavía no me aparece tu pago confirmado en el sistema -- en cuanto Mercado Pago lo registre, el abogado te contacta directo. Ya le avisé para que revise tu caso. 🙏';
+            whatsapp_enviar($telefono, $mensajeSinConfirmacion);
+            $stmt = $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+            );
+            $stmt->execute([':t' => $telefono, ':texto' => $mensajeSinConfirmacion]);
+            ia_registrar_prospecto_atorado($pdo, $telefono, null, 'Insiste en que ya pagó su asesoría pero no hay confirmación de Mercado Pago -- revisar y aclarar con la persona.', $nombrePerfil);
+            return;
+        }
+    }
+
     // Espera para agrupar: si la persona sigue escribiendo (varias burbujas
     // seguidas), se le da tiempo antes de gastar una llamada de IA. Al
     // terminar la espera se checa si llegó un mensaje MÁS NUEVO de este
