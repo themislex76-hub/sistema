@@ -364,16 +364,37 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     $pareceReclamoDePago = preg_match('/\bya\b.{0,20}pag/iu', $texto) === 1
         || preg_match('/\bya\b.{0,20}(deposit|transfer)/iu', $texto) === 1;
     if ($pareceReclamoDePago) {
-        $stmt = $pdo->prepare("SELECT id FROM citas_asesoria WHERE telefono = :t AND estado = 'pendiente_pago' LIMIT 1");
+        // No solo "pendiente_pago ahora mismo" -- el caso real que motivó
+        // esto (un cliente insistiendo días después de que su link expiró)
+        // ya no tenía la cita en pendiente_pago para entonces, solo
+        // expirada/cancelada. Cualquier cita suya que nunca se pagó de
+        // verdad cuenta -- pero si YA tiene una cita realmente confirmada
+        // (pagada de verdad), no se dispara: ahí sí ya pagó y no hace
+        // falta ninguna advertencia.
+        $stmt = $pdo->prepare(
+            "SELECT id FROM citas_asesoria WHERE telefono = :t AND estado IN ('pendiente_pago', 'expirada', 'cancelada') ORDER BY id DESC LIMIT 1"
+        );
         $stmt->execute([':t' => $telefono]);
-        if ($stmt->fetch()) {
+        $tieneCitaSinPagar = (bool)$stmt->fetch();
+        $yaConfirmado = false;
+        if ($tieneCitaSinPagar) {
+            $stmt = $pdo->prepare("SELECT id FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' LIMIT 1");
+            $stmt->execute([':t' => $telefono]);
+            $yaConfirmado = (bool)$stmt->fetch();
+        }
+        if ($tieneCitaSinPagar && !$yaConfirmado) {
             $mensajeSinConfirmacion = 'Por aquí todavía no me aparece tu pago confirmado en el sistema -- en cuanto Mercado Pago lo registre, el abogado te contacta directo. Ya le avisé para que revise tu caso. 🙏';
             whatsapp_enviar($telefono, $mensajeSinConfirmacion);
             $stmt = $pdo->prepare(
                 "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
             );
             $stmt->execute([':t' => $telefono, ':texto' => $mensajeSinConfirmacion]);
-            ia_registrar_prospecto_atorado($pdo, $telefono, null, 'Insiste en que ya pagó su asesoría pero no hay confirmación de Mercado Pago -- revisar y aclarar con la persona.', $nombrePerfil);
+            ia_registrar_prospecto_atorado(
+                $pdo, $telefono,
+                ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''],
+                'Insiste en que ya pagó su asesoría pero no hay confirmación de Mercado Pago -- revisar y aclarar con la persona.',
+                $nombrePerfil
+            );
             return;
         }
     }

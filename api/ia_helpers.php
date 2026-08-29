@@ -1290,7 +1290,12 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             } elseif ($bloque['name'] === 'escalar_a_humano') {
                 $nombreEscalar = trim((string)($in['nombre'] ?? '')) ?: null;
                 $resumenEscalar = trim((string)($in['resumen'] ?? '')) ?: 'La conversación necesita que un abogado la atienda en persona.';
-                ia_registrar_prospecto_atorado($pdo, $telefono, $lead, $resumenEscalar, $nombreEscalar);
+                // Siempre 'reclamo', aunque ya hubiera un $lead de otro tipo
+                // en este mismo turno -- disputa de pago/acusación/pedir
+                // hablar con alguien es, por definición, una escalación
+                // urgente, no un interesado normal en Asesoría $299.
+                $leadEscalar = ['tipo' => 'reclamo', 'estado' => $lead['estado'] ?? '', 'nombre' => $lead['nombre'] ?? '', 'resumen' => ''];
+                ia_registrar_prospecto_atorado($pdo, $telefono, $leadEscalar, $resumenEscalar, $nombreEscalar);
                 $contenido = trim($textoRonda) === ''
                     ? json_encode([
                         'ok' => true,
@@ -1485,14 +1490,13 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
  */
 function ia_registrar_prospecto_atorado(PDO $pdo, string $telefono, ?array $lead, string $resumenFallback, ?string $nombre = null): void
 {
-    // Si ya había un lead real de esta misma ronda (p. ej. sí mostró
-    // interés real en la asesoría, solo que no hay horarios disponibles),
-    // se respeta su tipo -- pero cuando no hay ningún lead de por medio,
-    // esto es una escalación pura (disputa de pago, queja, conversación
-    // atorada) y se guarda como 'reclamo', para no mezclarla entre los
-    // interesados normales de "Asesoría $299" y que sea fácil de
-    // encontrar aparte.
-    $datosLead = $lead ?? ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''];
+    // Por default esto sigue siendo un interesado real que solo se atoró
+    // por algo operativo (no hay horarios, falló el link de pago) -- eso
+    // NO es un reclamo/queja, sigue siendo un lead de asesoría normal.
+    // Los llamadores que sí representan una escalación real (disputa de
+    // pago, conversación atorada, escalar_a_humano) mandan su propio
+    // $lead con tipo='reclamo' explícito -- ver esos call sites.
+    $datosLead = $lead ?? ['tipo' => 'asesoria_paga', 'estado' => '', 'nombre' => '', 'resumen' => ''];
     if (trim($datosLead['resumen']) === '') {
         $datosLead['resumen'] = $resumenFallback;
     }
