@@ -339,7 +339,7 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
             );
             $stmt->execute([':t' => $telefono, ':texto' => $mensajeAtorado]);
             guardar_prospecto($pdo, $telefono, $nombrePerfil, [
-                'tipo' => 'asesoria_paga',
+                'tipo' => 'reclamo',
                 'estado' => '',
                 'nombre' => '',
                 'resumen' => 'Conversación atorada: el cliente repitió el mismo mensaje varias veces sin que el bot lograra avanzar con las preguntas de calificación — contactar directo por teléfono. Último mensaje: ' . mb_strimwidth($texto, 0, 200, '…'),

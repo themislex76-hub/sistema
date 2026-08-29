@@ -1485,7 +1485,14 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
  */
 function ia_registrar_prospecto_atorado(PDO $pdo, string $telefono, ?array $lead, string $resumenFallback, ?string $nombre = null): void
 {
-    $datosLead = $lead ?? ['tipo' => 'asesoria_paga', 'estado' => '', 'nombre' => '', 'resumen' => ''];
+    // Si ya había un lead real de esta misma ronda (p. ej. sí mostró
+    // interés real en la asesoría, solo que no hay horarios disponibles),
+    // se respeta su tipo -- pero cuando no hay ningún lead de por medio,
+    // esto es una escalación pura (disputa de pago, queja, conversación
+    // atorada) y se guarda como 'reclamo', para no mezclarla entre los
+    // interesados normales de "Asesoría $299" y que sea fácil de
+    // encontrar aparte.
+    $datosLead = $lead ?? ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''];
     if (trim($datosLead['resumen']) === '') {
         $datosLead['resumen'] = $resumenFallback;
     }

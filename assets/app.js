@@ -4040,8 +4040,8 @@ let AGENDA_TAB = 'general';
 
 const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
 const PROSPECTO_ESTATUS_BADGE = {nuevo:'crit', contactado:'warn', descartado:'closed', convertido:'ok'};
-const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesoría $299', control_expedientes:'Control de Expedientes'};
-const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida', control_expedientes:'ok'};
+const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesoría $299', control_expedientes:'Control de Expedientes', reclamo:'Reclamo'};
+const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida', control_expedientes:'ok', reclamo:'crit'};
 
 function prospectosHTML(){
   if(!PROSPECTOS.length){
@@ -4082,14 +4082,16 @@ function prospectosHTML(){
   const pendientesDespido = PROSPECTOS.filter(p=>p.tipo==='despido' && !p.tiene_asesoria_confirmada && esPendiente(p)).length;
   const pendientesAsesoria = PROSPECTOS.filter(p=>p.tipo==='asesoria_paga' && esPendiente(p)).length;
   const pendientesControlExp = PROSPECTOS.filter(p=>p.tipo==='control_expedientes' && esPendiente(p)).length;
+  const pendientesReclamos = PROSPECTOS.filter(p=>p.tipo==='reclamo' && esPendiente(p)).length;
   const tabsHTML = `
   <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
     <button class="btn ${PROSPECTOS_TAB==='despido'?'':'secondary'}" data-prospectos-tab="despido" style="padding:8px 16px;">Despido (litigio) ${pendientesDespido>0?`<span class="nav-badge">${pendientesDespido}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='asesoria_paga'?'':'secondary'}" data-prospectos-tab="asesoria_paga" style="padding:8px 16px;">Asesorías $299 ${pendientesAsesoria>0?`<span class="nav-badge">${pendientesAsesoria}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='control_expedientes'?'':'secondary'}" data-prospectos-tab="control_expedientes" style="padding:8px 16px;">Control de Expedientes ${pendientesControlExp>0?`<span class="nav-badge">${pendientesControlExp}</span>`:""}</button>
+    <button class="btn ${PROSPECTOS_TAB==='reclamo'?'':'secondary'}" data-prospectos-tab="reclamo" style="padding:8px 16px;">Reclamos ${pendientesReclamos>0?`<span class="nav-badge">${pendientesReclamos}</span>`:""}</button>
   </div>`;
 
-  const TITULOS_TAB = {despido:'Prospectos de despido', asesoria_paga:'Prospectos de asesoría paga', control_expedientes:'Despachos interesados en Control de Expedientes'};
+  const TITULOS_TAB = {despido:'Prospectos de despido', asesoria_paga:'Prospectos de asesoría paga', control_expedientes:'Despachos interesados en Control de Expedientes', reclamo:'Reclamos y conversaciones urgentes'};
   return tabsHTML + `
   <div class="panel">
     <div class="panel-head"><h3>${TITULOS_TAB[PROSPECTOS_TAB]}</h3><span class="count">${visibles.length}</span></div>
