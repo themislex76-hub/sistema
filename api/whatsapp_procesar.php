@@ -122,7 +122,12 @@ function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string 
     }
 
     if ($mediaId === '') {
+        // No debería pasar con un mensaje real de Meta -- se registra el
+        // payload completo para poder diagnosticarlo si vuelve a ocurrir.
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . ' | [media_sin_id] tel=' . $telefono . ' | ' . json_encode($msg, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
         whatsapp_enviar($telefono, 'Recibí tu archivo, pero hubo un problema técnico leyéndolo — ¿me lo puedes volver a mandar, por favor?');
+        ia_registrar_prospecto_atorado($pdo, $telefono, null, 'Mandó un archivo (' . $tipo . ') pero hubo un error técnico leyéndolo -- pedirle que lo reenvíe o resolverlo directo con la persona.', $nombrePerfil);
         return;
     }
 
