@@ -351,63 +351,39 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         }
     }
 
-    // Respaldo determinístico: si el cliente insiste en que ya pagó Y hay
-    // un pago de asesoría pendiente de cobrar para este número, se escala
-    // de inmediato SIN depender de que la IA decida llamar
-    // escalar_a_humano -- se detectó en producción que el modelo a veces
-    // solo REDACTA "ya avisé a un abogado" sin de verdad llamar la
-    // herramienta (la misma falla que causó el problema real con un
-    // cliente que insistía en haber pagado y nadie del despacho se
-    // enteró nunca). Esta red de seguridad no depende de que la IA se
-    // acuerde -- si el patrón se repite, se corta aquí y se escala solo,
-    // sin ni siquiera llamar a la IA.
-    $pareceReclamoDePago = preg_match('/\bya\b.{0,20}pag/iu', $texto) === 1
+    // Respaldo determinístico y GENERAL para reclamos -- no depende de que
+    // la IA decida llamar escalar_a_humano (se detectó en producción,
+    // repetidas veces, que el modelo solo REDACTA "ya avisé a un abogado"
+    // sin de verdad llamar la herramienta, dejando al cliente esperando
+    // una escalación que nunca pasó). Esto corta ANTES de llamar a la IA
+    // en cuanto el mensaje se parece a un reclamo real -- acusación de
+    // fraude/estafa, amenaza de exhibir al despacho, exigir devolución, o
+    // insistir en que ya pagó -- sin condición extra (no hace falta que
+    // haya una cita de por medio: un reclamo es un reclamo aunque no sea
+    // sobre un pago). Contesta con un mensaje fijo, pausa el bot y avisa
+    // a un humano, siempre.
+    $pareceReclamo =
+        preg_match('/estafa|fraude|enga[ñn]|es un robo/iu', $texto) === 1
+        || preg_match('/exhibir|tik\s*tok|redes sociales|voy a (publicar|denunciar|quemar|exponer)/iu', $texto) === 1
+        || preg_match('/devoluci[oó]n|reembolso|regr[eé]same mi dinero|quiero mi dinero/iu', $texto) === 1
+        || preg_match('/\bya\b.{0,20}pag/iu', $texto) === 1
         || preg_match('/\bya\b.{0,20}(deposit|transfer)/iu', $texto) === 1;
-    if ($pareceReclamoDePago) {
-        // Registro de depuración -- se detectaron varias pruebas reales
-        // donde este bloque parecía no dispararse y no había forma de
-        // saber, sin esto, si de verdad no se estaba llegando a correr
-        // este código (archivo viejo en el servidor) o si sí corría pero
-        // no encontraba ninguna cita que justificara escalar. Revisa
-        // api/whatsapp_send_debug.log después de una prueba real.
+    if ($pareceReclamo) {
         file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
-            . " | [respaldo_pago] patrón detectado de $telefono | texto=\"" . mb_strimwidth($texto, 0, 80, '…') . "\"\n", FILE_APPEND);
-        // No solo "pendiente_pago ahora mismo" -- el caso real que motivó
-        // esto (un cliente insistiendo días después de que su link expiró)
-        // ya no tenía la cita en pendiente_pago para entonces, solo
-        // expirada/cancelada. Cualquier cita suya que nunca se pagó de
-        // verdad cuenta -- pero si YA tiene una cita realmente confirmada
-        // (pagada de verdad), no se dispara: ahí sí ya pagó y no hace
-        // falta ninguna advertencia.
+            . " | [respaldo_reclamo] escalando de $telefono | texto=\"" . mb_strimwidth($texto, 0, 80, '…') . "\"\n", FILE_APPEND);
+        $mensajeEscalado = 'Entiendo tu molestia -- voy a avisarle de inmediato a un abogado del despacho para que revise tu caso directamente contigo. En breve te contacta por este mismo WhatsApp. 🙏';
+        whatsapp_enviar($telefono, $mensajeEscalado);
         $stmt = $pdo->prepare(
-            "SELECT id FROM citas_asesoria WHERE telefono = :t AND estado IN ('pendiente_pago', 'expirada', 'cancelada') ORDER BY id DESC LIMIT 1"
+            "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
         );
-        $stmt->execute([':t' => $telefono]);
-        $tieneCitaSinPagar = (bool)$stmt->fetch();
-        $yaConfirmado = false;
-        if ($tieneCitaSinPagar) {
-            $stmt = $pdo->prepare("SELECT id FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' LIMIT 1");
-            $stmt->execute([':t' => $telefono]);
-            $yaConfirmado = (bool)$stmt->fetch();
-        }
-        if ($tieneCitaSinPagar && !$yaConfirmado) {
-            $mensajeSinConfirmacion = 'Por aquí todavía no me aparece tu pago confirmado en el sistema -- en cuanto Mercado Pago lo registre, el abogado te contacta directo. Ya le avisé para que revise tu caso. 🙏';
-            whatsapp_enviar($telefono, $mensajeSinConfirmacion);
-            $stmt = $pdo->prepare(
-                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
-            );
-            $stmt->execute([':t' => $telefono, ':texto' => $mensajeSinConfirmacion]);
-            ia_registrar_prospecto_atorado(
-                $pdo, $telefono,
-                ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''],
-                'Insiste en que ya pagó su asesoría pero no hay confirmación de Mercado Pago -- revisar y aclarar con la persona.',
-                $nombrePerfil
-            );
-            return;
-        }
-        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
-            . " | [respaldo_pago] NO escaló -- tieneCitaSinPagar=" . ($tieneCitaSinPagar ? 'si' : 'no')
-            . " yaConfirmado=" . ($yaConfirmado ? 'si' : 'no') . " (sigue a la IA normal)\n", FILE_APPEND);
+        $stmt->execute([':t' => $telefono, ':texto' => $mensajeEscalado]);
+        ia_registrar_prospecto_atorado(
+            $pdo, $telefono,
+            ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''],
+            'Reclamo detectado automáticamente -- revisar la conversación completa. Último mensaje: ' . mb_strimwidth($texto, 0, 200, '…'),
+            $nombrePerfil
+        );
+        return;
     }
 
     // Espera para agrupar: si la persona sigue escribiendo (varias burbujas
