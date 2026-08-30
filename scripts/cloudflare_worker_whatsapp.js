@@ -53,6 +53,12 @@ export default {
             telefono: msg.from || '',
             tipo: msg.type || '',
             texto: msg.type === 'text' && msg.text ? (msg.text.body || '') : '',
+            // Para imágenes/documentos, el puente reenvía el objeto de
+            // media tal cual lo manda Meta (id, caption, mime_type,
+            // filename) -- sin esto el sistema no puede descargar el
+            // archivo, aunque el mensaje sí llegue.
+            imagen: msg.type === 'image' ? (msg.image || null) : null,
+            documento: msg.type === 'document' ? (msg.document || null) : null,
             nombre,
           });
         }

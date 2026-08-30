@@ -75,12 +75,24 @@ $pdo = db();
 
 foreach ($mensajes as $m) {
     $nombrePerfil = isset($m['nombre']) && $m['nombre'] !== '' ? (string)$m['nombre'] : null;
-    procesar_mensaje_entrante($pdo, [
+    $tipo = (string)($m['tipo'] ?? '');
+    $msgReconstruido = [
         'id' => (string)($m['id'] ?? ''),
         'from' => (string)($m['telefono'] ?? ''),
-        'type' => (string)($m['tipo'] ?? ''),
+        'type' => $tipo,
         'text' => ['body' => (string)($m['texto'] ?? '')],
-    ], $nombrePerfil);
+    ];
+    // El puente de Cloudflare manda el objeto de media (id, caption,
+    // mime_type, filename) tal cual lo dio Meta bajo 'imagen'/'documento'
+    // -- se reconstruye aquí la misma forma que procesar_media_entrante()
+    // espera encontrar en $msg['image'] / $msg['document'].
+    if ($tipo === 'image' && !empty($m['imagen']) && is_array($m['imagen'])) {
+        $msgReconstruido['image'] = $m['imagen'];
+    }
+    if ($tipo === 'document' && !empty($m['documento']) && is_array($m['documento'])) {
+        $msgReconstruido['document'] = $m['documento'];
+    }
+    procesar_mensaje_entrante($pdo, $msgReconstruido, $nombrePerfil);
 }
 // La respuesta ya se mandó arriba, antes de procesar — no hay nada más
 // que responder aquí, el script solo termina de correr en silencio.
