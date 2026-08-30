@@ -10,9 +10,10 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') fail('Método no permitido.', 405);
 require_robot_key();
 
 $pdo = db();
-$sql = "SELECT id, exp, actor, demandado, junta, tribunal
+$sql = "SELECT id, exp, actor, demandado, junta, tribunal, amparo_expediente, amparo_tribunal
         FROM expedientes
         WHERE (junta IS NOT NULL AND junta <> '') OR (tribunal IS NOT NULL AND tribunal <> '')
+           OR (amparo_expediente IS NOT NULL AND amparo_expediente <> '')
         ORDER BY id";
 $rows = $pdo->query($sql)->fetchAll();
 
@@ -35,6 +36,13 @@ foreach ($rows as $r) {
         'junta' => $r['junta'],
         'tribunal' => $r['tribunal'],
         'es_federal' => $esFederal,
+        // El amparo directo SIEMPRE lo resuelve un Tribunal Colegiado de
+        // Circuito, que es un órgano FEDERAL -- sin importar si el juicio
+        // laboral original fue local (CDMX/Edomex) o federal. Por eso el
+        // robot debe rastrear este número aunque 'es_federal' de arriba
+        // sea false.
+        'amparo_expediente' => $r['amparo_expediente'],
+        'amparo_tribunal' => $r['amparo_tribunal'],
     ];
 }
 

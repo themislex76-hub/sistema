@@ -1812,6 +1812,55 @@ const FUENTE_BOLETIN_LABEL = {
   federal_laboral: 'Tribunales Laborales Federales',
   otro: 'Otra fuente',
 };
+// Catálogo de Tribunales Colegiados en Materia de Trabajo -- solo Primer
+// Circuito (CDMX) y Segundo Circuito (Estado de México), que es donde
+// opera el despacho. Nombres oficiales verificados (Consejo de la
+// Judicatura Federal / vLex) -- si algún día se crea un tribunal nuevo
+// que no aparezca aquí, "Otro / no está en la lista" cubre ese caso sin
+// bloquear la captura. El nombre exacto que quede guardado es lo que el
+// robot Federal muestra en el resumen del aviso -- no afecta si encuentra
+// o no el acuerdo (eso depende solo del número de expediente del amparo).
+const AMPARO_TRIBUNAL_OTRO = 'otro';
+const AMPARO_TRIBUNALES = {
+  primero: [
+    'Primer Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Segundo Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Tercer Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Cuarto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Quinto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Sexto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Séptimo Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Octavo Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Noveno Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Primer Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Segundo Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Tercer Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Cuarto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Quinto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Sexto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+  ],
+  segundo: [
+    'Primer Tribunal Colegiado en Materia de Trabajo del Segundo Circuito',
+    'Segundo Tribunal Colegiado en Materia de Trabajo del Segundo Circuito',
+    'Tercer Tribunal Colegiado en Materia de Trabajo del Segundo Circuito',
+  ],
+};
+function amparoCircuitoDeTribunal(tribunal){
+  if(!tribunal) return '';
+  if(AMPARO_TRIBUNALES.primero.includes(tribunal)) return 'primero';
+  if(AMPARO_TRIBUNALES.segundo.includes(tribunal)) return 'segundo';
+  return '';
+}
+function amparoTribunalOptionsHTML(circuito, tribunalActual){
+  const lista = AMPARO_TRIBUNALES[circuito] || [];
+  const esConocido = lista.includes(tribunalActual);
+  let opts = '<option value="">Selecciona...</option>';
+  opts += lista.map(t=>`<option value="${escapeHTML(t)}" ${t===tribunalActual?'selected':''}>${escapeHTML(t)}</option>`).join('');
+  opts += `<option value="${AMPARO_TRIBUNAL_OTRO}" ${(tribunalActual && !esConocido)?'selected':''}>Otro / no está en la lista</option>`;
+  return opts;
+}
+
 function avisosNuevosCount(){ return AVISOS_BOLETIN.filter(a=>a.estado==='nuevo').length; }
 function avisosDeExpediente(id){ return AVISOS_BOLETIN.filter(a=>a.expediente_id===id); }
 async function loadAvisosBoletin(){
@@ -2467,7 +2516,7 @@ async function loadUsuariosAdmin(){
 
 function defaultMeta(){
   return {notas:"", cobro_pendiente:false,
-    pagos:[], prestaciones_extra:[], amparo_activo:false, amparo_fecha_notif:"", amparo_notas:"", amparo_presentado:false,
+    pagos:[], prestaciones_extra:[], amparo_activo:false, amparo_fecha_notif:"", amparo_tribunal:"", amparo_expediente:"", amparo_notas:"", amparo_presentado:false,
     etapas:{}, pendientes:[], historial:[], concluido_manual:false, notas_bitacora:[],
     convenio_manual:{activo:false, monto:'', fecha_pago:''}};
 }
@@ -6452,6 +6501,7 @@ function modalTabContent(k,p,meta){
   }
   if(MODAL_TAB==='amparo'){
     const a = computeAmparoDeadline(meta);
+    const circuitoActual = amparoCircuitoDeTribunal(meta.amparo_tribunal);
     return `
     <label style="display:flex; align-items:center; gap:8px; margin-bottom:14px; font-size:13px; color:var(--ink);">
       <input type="checkbox" id="amparoActivo" ${meta.amparo_activo?'checked':''}> Este asunto tiene o podría requerir amparo directo
@@ -6462,8 +6512,25 @@ function modalTabContent(k,p,meta){
         <div class="v" style="font-weight:700; color:${a && a.daysLeft<=5? 'var(--red)': a? 'var(--ink)':'var(--gray)'}">${a? fmtDate(dateToISO(a.deadline)) + ' ('+a.daysLeft+' d.)' : '—'}</div>
       </div>
     </div>
-    <div class="field" style="margin-top:14px;"><label>Notas sobre el amparo</label><textarea id="amparoNotas" placeholder="Acto reclamado, Tribunal Colegiado, número de expediente...">${escapeHTML(meta.amparo_notas||'')}</textarea></div>
-    <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo descarta sábados, domingos y los días inhábiles capturados en "Días inhábiles"; aun así, verifica el calendario oficial del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales.</div>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="field"><label>Circuito del amparo</label>
+        <select id="amparoCircuito">
+          <option value="">Selecciona...</option>
+          <option value="primero" ${circuitoActual==='primero'?'selected':''}>Primer Circuito (Ciudad de México)</option>
+          <option value="segundo" ${circuitoActual==='segundo'?'selected':''}>Segundo Circuito (Estado de México)</option>
+        </select>
+      </div>
+      <div class="field"><label>Tribunal Colegiado</label>
+        <select id="amparoTribunalSelect">${amparoTribunalOptionsHTML(circuitoActual, meta.amparo_tribunal||'')}</select>
+      </div>
+    </div>
+    <div class="field" id="amparoTribunalOtroWrap" style="margin-top:10px; ${circuitoActual===''&&meta.amparo_tribunal?'':'display:none;'}">
+      <label>Especifica el tribunal (o juzgado)</label>
+      <input type="text" id="amparoTribunalOtro" placeholder="Nombre completo del tribunal o juzgado" value="${circuitoActual===''?escapeHTML(meta.amparo_tribunal||''):''}">
+    </div>
+    <div class="field" style="margin-top:10px;"><label>Número de expediente del amparo</label><input type="text" id="amparoExpediente" placeholder="Ej. AD 123/2026 (distinto al expediente del juicio laboral)" value="${escapeHTML(meta.amparo_expediente||'')}"></div>
+    <div class="field" style="margin-top:14px;"><label>Notas sobre el amparo</label><textarea id="amparoNotas" placeholder="Acto reclamado, observaciones...">${escapeHTML(meta.amparo_notas||'')}</textarea></div>
+    <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo descarta sábados, domingos y los días inhábiles capturados en "Días inhábiles"; aun así, verifica el calendario oficial del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales. El número de expediente del amparo (una vez que el Tribunal lo asigne) es lo que permite que el robot Federal también avise cuando haya movimientos ahí -- captúralo en cuanto lo tengas.</div>
     <div style="margin-top:14px;"><button class="btn" id="saveAmparoBtn">Guardar datos de amparo</button></div>
     `;
   }
@@ -7171,14 +7238,32 @@ function bindModalTabEvents(){
       }
     });
   }
+  const amparoCircuitoSel = document.getElementById('amparoCircuito');
+  const amparoTribunalSel = document.getElementById('amparoTribunalSelect');
+  const amparoTribunalOtroWrap = document.getElementById('amparoTribunalOtroWrap');
+  if(amparoCircuitoSel && amparoTribunalSel && amparoTribunalOtroWrap){
+    amparoCircuitoSel.addEventListener('change', ()=>{
+      amparoTribunalSel.innerHTML = amparoTribunalOptionsHTML(amparoCircuitoSel.value, '');
+      amparoTribunalOtroWrap.style.display = 'none';
+    });
+    amparoTribunalSel.addEventListener('change', ()=>{
+      amparoTribunalOtroWrap.style.display = amparoTribunalSel.value === AMPARO_TRIBUNAL_OTRO ? '' : 'none';
+    });
+  }
   const saveAmparoBtn = document.getElementById('saveAmparoBtn');
   if(saveAmparoBtn){
     saveAmparoBtn.addEventListener('click', async ()=>{
+      const tribunalSelVal = amparoTribunalSel ? amparoTribunalSel.value : '';
+      const amparoTribunalFinal = tribunalSelVal === AMPARO_TRIBUNAL_OTRO
+        ? (document.getElementById('amparoTribunalOtro') ? document.getElementById('amparoTribunalOtro').value.trim() : '')
+        : tribunalSelVal;
       try{
         await api('POST', 'expedientes_update_amparo.php', {
           id: ACTIVE_CASE.id,
           amparo_activo: document.getElementById('amparoActivo').checked,
           amparo_fecha_notif: document.getElementById('amparoFecha').value,
+          amparo_tribunal: amparoTribunalFinal,
+          amparo_expediente: document.getElementById('amparoExpediente').value.trim(),
           amparo_notas: document.getElementById('amparoNotas').value
         });
         saveAmparoBtn.textContent = "Guardado ✓";

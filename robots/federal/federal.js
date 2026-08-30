@@ -112,12 +112,23 @@ async function main() {
 
   const expedientes = await obtenerExpedientesMonitoreados();
   const porNumero = new Map();
+  let conAmparo = 0;
   for (const e of expedientes) {
     const candidatos = [e.junta, e.tribunal].filter(Boolean);
     const esFederal = candidatos.some(c => /FEDERAL/i.test(c));
     if (esFederal && e.exp) porNumero.set(normalizeExp(e.exp), e);
+    // El amparo directo SIEMPRE lo resuelve un Tribunal Colegiado de
+    // Circuito (órgano federal), sin importar si el juicio laboral
+    // original fue local o federal -- por eso se indexa aparte, sin
+    // condicionarlo a esFederal. Ambas entradas (el expediente original y
+    // el del amparo) apuntan al MISMO expediente 'e', así que un acuerdo
+    // de cualquiera de los dos números se reporta contra el mismo asunto.
+    if (e.amparo_expediente) {
+      porNumero.set(normalizeExp(e.amparo_expediente), e);
+      conAmparo++;
+    }
   }
-  console.log(`${porNumero.size} expediente(s) con tribunal federal capturado.`);
+  console.log(`${porNumero.size} número(s) de expediente monitoreados (incluye ${conAmparo} de amparo).`);
 
   const cuentas = await obtenerCuentasPJF();
   console.log(`${cuentas.length} cuenta(s) del Portal Federal guardada(s).`);

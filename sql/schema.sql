@@ -116,6 +116,8 @@ CREATE TABLE expedientes (
   amparo_activo TINYINT(1) NOT NULL DEFAULT 0,
   amparo_presentado TINYINT(1) NOT NULL DEFAULT 0,
   amparo_fecha_notif DATE NULL,
+  amparo_tribunal VARCHAR(190) NULL,
+  amparo_expediente VARCHAR(60) NULL,
   amparo_notas TEXT NULL,
   convenio_activo TINYINT(1) NOT NULL DEFAULT 0,
   convenio_monto DECIMAL(12,2) NULL,
