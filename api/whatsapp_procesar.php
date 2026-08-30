@@ -127,14 +127,14 @@ function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string 
         file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
             . ' | [media_sin_id] tel=' . $telefono . ' | ' . json_encode($msg, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
         whatsapp_enviar($telefono, 'Recibí tu archivo, pero hubo un problema técnico leyéndolo — ¿me lo puedes volver a mandar, por favor?');
-        ia_registrar_prospecto_atorado($pdo, $telefono, null, 'Mandó un archivo (' . $tipo . ') pero hubo un error técnico leyéndolo -- pedirle que lo reenvíe o resolverlo directo con la persona.', $nombrePerfil);
+        ia_registrar_prospecto_atorado($pdo, $telefono, ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''], 'Mandó un archivo (' . $tipo . ') pero hubo un error técnico leyéndolo -- pedirle que lo reenvíe o resolverlo directo con la persona.', $nombrePerfil);
         return;
     }
 
     $descarga = whatsapp_descargar_media($mediaId);
     if ($descarga === null) {
         whatsapp_enviar($telefono, 'Recibí tu archivo, pero hubo un problema técnico descargándolo de nuestro lado. Un abogado del despacho te va a contactar directo por esto.');
-        ia_registrar_prospecto_atorado($pdo, $telefono, null, 'Mandó un archivo (' . $tipo . ') pero hubo un error técnico al descargarlo -- pedirle que lo reenvíe o resolverlo directo con la persona.', $nombrePerfil);
+        ia_registrar_prospecto_atorado($pdo, $telefono, ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''], 'Mandó un archivo (' . $tipo . ') pero hubo un error técnico al descargarlo -- pedirle que lo reenvíe o resolverlo directo con la persona.', $nombrePerfil);
         return;
     }
 
@@ -161,7 +161,7 @@ function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string 
 
     if ($tienePagoPendiente) {
         whatsapp_enviar($telefono, 'Recibí tu archivo — un abogado del despacho lo va a revisar directamente contigo. 🙏');
-        ia_registrar_prospecto_atorado($pdo, $telefono, null, 'Mandó un archivo (' . $tipo . ') con un pago de asesoría pendiente de cobrar -- probable comprobante, revisarlo en Conversaciones (WhatsApp) o Prospectos.', $nombrePerfil);
+        ia_registrar_prospecto_atorado($pdo, $telefono, ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''], 'Mandó un archivo (' . $tipo . ') con un pago de asesoría pendiente de cobrar -- probable comprobante, revisarlo en Conversaciones (WhatsApp) o Prospectos.', $nombrePerfil);
     } else {
         whatsapp_enviar($telefono, WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO);
         $stmt = $pdo->prepare(
