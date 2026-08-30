@@ -65,7 +65,7 @@ function whatsapp_extension_por_mime(string $mime): string
 // documentos por este medio, para no generar la expectativa de que
 // alguien le va a hacer una revisión gratis a un contrato u otro
 // documento que nada tiene que ver con un pago.
-const WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO = 'Recibí tu documento, lo revisaremos y te daremos una respuesta. Mientras tanto, ¿en qué más te puedo ayudar?';
+const WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO = 'Recibí tu documento, lo revisaremos y te daremos una respuesta.';
 
 // Un cliente mandó una imagen o documento -- antes esto se perdía por
 // completo: el bot solo contestaba "no puedo leer esto" y el archivo
