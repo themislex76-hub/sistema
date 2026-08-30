@@ -15,6 +15,18 @@ if ($id <= 0) fail('Falta el id del expediente.', 400);
 $pdo = db();
 guard_expediente_access($pdo, $user, $id);
 
+// Se necesita el valor ANTERIOR de cada etapa (antes de tocar nada) para
+// poder registrar en el historial solo las que de verdad cambiaron --
+// log_historial() ya trae su propio guard de "antes === despues", así que
+// llamarlo siempre (incluso sin cambio real) es seguro, solo no escribe
+// nada si no hubo diferencia.
+$existentesStmt = $pdo->prepare('SELECT etapa_key, fecha, hora, fecha_programada, resultado FROM expediente_etapas WHERE expediente_id = :eid');
+$existentesStmt->execute([':eid' => $id]);
+$existentes = [];
+foreach ($existentesStmt->fetchAll() as $r) {
+    $existentes[$r['etapa_key']] = $r;
+}
+
 $upsert = $pdo->prepare(
     'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha, hora, fecha_programada, resultado)
      VALUES (:eid, :key, :fecha, :hora, :fecha_programada, :resultado)
@@ -32,6 +44,10 @@ foreach (ETAPA_KEYS as $key) {
     $hora = $hora === '' ? null : $hora;
     $fechaProg = $fechaProg === '' ? null : $fechaProg;
     $resultado = $resultado === '' ? null : $resultado;
+
+    $anteriorTexto = etapa_texto_resumen($existentes[$key] ?? null);
+    $nuevaTexto = etapa_texto_resumen(['fecha' => $fecha, 'hora' => $hora, 'fecha_programada' => $fechaProg, 'resultado' => $resultado]);
+    log_historial($pdo, $id, $user, 'etapa_' . $key, $anteriorTexto, $nuevaTexto);
 
     if ($fecha === null && $hora === null && $fechaProg === null && $resultado === null) {
         $delete->execute([':eid' => $id, ':key' => $key]);

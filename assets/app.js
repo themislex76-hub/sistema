@@ -3957,18 +3957,31 @@ function resumenHoyHTML(){
 function metricsResumenSemanal(){
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   const desde = addDaysDate(hoy, -7);
+  // El historial trae hora real (no solo fecha) -- a diferencia de "hoy"
+  // arriba (medianoche), aquí el límite superior tiene que ser mañana a
+  // medianoche, si no cualquier cambio de HOY mismo (después de las
+  // 00:00) quedaría fuera del rango.
+  const hastaHistorial = addDaysDate(hoy, 1);
   const cases = visibleCases();
 
+  // Avances = de verdad lo que el abogado HIZO en el sistema esta semana
+  // (etapas guardadas, cobros marcados), tomado de expediente_historial
+  // -- no la fecha del evento legal en sí (que puede ser de hace meses,
+  // capturada apenas ahora). Cada entrada trae quién y a qué hora exacta.
   const avances = [];
   cases.forEach(k=>{
     const meta = getMeta(k.id);
-    let etapaReciente = null;
-    ETAPAS_DEF.forEach(def=>{
-      const et = meta.etapas[def.key];
-      const f = et && et.fecha ? parseDate(et.fecha) : null;
-      if(f && f >= desde && f <= hoy) etapaReciente = def.label;
+    (meta.historial||[]).forEach(h=>{
+      const esEtapa = /^etapa_/.test(h.campo);
+      if(!esEtapa && h.campo !== 'cobros') return;
+      if(!h.despues) return; // se dejó en blanco/se borró, no es un avance
+      const f = new Date(h.ts);
+      if(isNaN(f.getTime()) || f < desde || f >= hastaHistorial) return;
+      const etiqueta = esEtapa
+        ? ((ETAPAS_DEF.find(d => 'etapa_' + d.key === h.campo) || {}).label || h.campo)
+        : 'Cobros actualizados';
+      avances.push({k, etapa: etiqueta, usuario: h.usuario, ts: h.ts});
     });
-    if(etapaReciente) avances.push({k, etapa: etapaReciente});
   });
 
   const enRiesgo = [];
@@ -4009,7 +4022,7 @@ async function cargarResumenSemanal(){
   const m = metricsResumenSemanal();
   const metricas = {
     totalActivos: m.totalActivos,
-    avances: m.avances.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${x.etapa}`),
+    avances: m.avances.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${x.etapa} -- registrado por ${x.usuario} el ${new Date(x.ts).toLocaleString('es-MX', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}`),
     enRiesgo: m.enRiesgo.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${x.motivo}`),
     cobros: m.cobros.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${fmtMoney(x.monto)}`),
     totalCobrado: m.totalCobrado,

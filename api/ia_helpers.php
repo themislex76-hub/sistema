@@ -2040,6 +2040,11 @@ function ia_generar_resumen_semanal(array $metricas): ?string
             . 'línea) citando los casos por nombre (actor vs demandado). Si un bloque no tiene datos, dilo en una '
             . 'línea corta ("Sin avances esta semana.") en vez de omitir el bloque completo.'
             . "\n\n"
+            . 'REGLA DURA sobre AVANCES: cada línea de "Avances de etapa" ya trae quién lo registró y la fecha/hora '
+            . 'exacta (ej. "-- registrado por Ana Pérez el 28 ago, 14:32") -- consérvalo siempre en tu viñeta, no lo '
+            . 'resumas ni lo quites. El dueño del despacho quiere ver quién hizo cada cosa y cuándo, no solo qué se '
+            . 'hizo.'
+            . "\n\n"
             . 'REGLA DURA: nunca inventes ni cambies una cifra, una fecha, un caso o un dato que no venga tal cual '
             . 'en las métricas que te doy -- solo redacta y organiza lo que ya está aquí.'
             . "\n\n"

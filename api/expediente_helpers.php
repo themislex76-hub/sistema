@@ -40,6 +40,21 @@ const ETAPA_KEYS = [
     'manifestaciones_3dias','audiencia_preliminar','audiencia_juicio','sentencia','amparo_directo',
 ];
 
+// Texto corto para el historial de cambios (log_historial) cuando se
+// guarda una etapa -- null si la etapa quedó vacía (para que
+// log_historial no registre nada en ese caso, ya trae su propio guard de
+// "antes === despues").
+function etapa_texto_resumen(?array $r): ?string
+{
+    if (!$r) return null;
+    $partes = [];
+    if (!empty($r['fecha'])) $partes[] = 'fecha: ' . $r['fecha'];
+    if (!empty($r['hora'])) $partes[] = 'hora: ' . $r['hora'];
+    if (!empty($r['fecha_programada'])) $partes[] = 'programada: ' . $r['fecha_programada'];
+    if (!empty($r['resultado'])) $partes[] = 'resultado: ' . $r['resultado'];
+    return $partes ? implode(', ', $partes) : null;
+}
+
 // Columnas DECIMAL de MySQL: PDO siempre las entrega como string (para no
 // perder precisión), pero el frontend hace aritmética/.toFixed() esperando
 // números reales. Hay que convertirlas antes de mandarlas como JSON.
