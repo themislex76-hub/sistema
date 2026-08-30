@@ -364,6 +364,14 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     $pareceReclamoDePago = preg_match('/\bya\b.{0,20}pag/iu', $texto) === 1
         || preg_match('/\bya\b.{0,20}(deposit|transfer)/iu', $texto) === 1;
     if ($pareceReclamoDePago) {
+        // Registro de depuración -- se detectaron varias pruebas reales
+        // donde este bloque parecía no dispararse y no había forma de
+        // saber, sin esto, si de verdad no se estaba llegando a correr
+        // este código (archivo viejo en el servidor) o si sí corría pero
+        // no encontraba ninguna cita que justificara escalar. Revisa
+        // api/whatsapp_send_debug.log después de una prueba real.
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | [respaldo_pago] patrón detectado de $telefono | texto=\"" . mb_strimwidth($texto, 0, 80, '…') . "\"\n", FILE_APPEND);
         // No solo "pendiente_pago ahora mismo" -- el caso real que motivó
         // esto (un cliente insistiendo días después de que su link expiró)
         // ya no tenía la cita en pendiente_pago para entonces, solo
@@ -397,6 +405,9 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
             );
             return;
         }
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | [respaldo_pago] NO escaló -- tieneCitaSinPagar=" . ($tieneCitaSinPagar ? 'si' : 'no')
+            . " yaConfirmado=" . ($yaConfirmado ? 'si' : 'no') . " (sigue a la IA normal)\n", FILE_APPEND);
     }
 
     // Espera para agrupar: si la persona sigue escribiendo (varias burbujas
