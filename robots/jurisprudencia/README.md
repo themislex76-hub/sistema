@@ -36,13 +36,40 @@ completo (la terminal lo muestra) y compártelo para ajustarlo.
 
 ## Dejarlo corriendo solo, una vez por semana
 
-- **Windows**: Programador de tareas — tarea que ejecute `node` con
-  `jurisprudencia.js` como argumento, "Iniciar en" apuntando a esta
-  carpeta, programada una vez por semana (ej. lunes 7:00 am).
+- **Windows**: en esta carpeta ya está `run_semanal.bat` (entra a la
+  carpeta y corre `node jurisprudencia.js`, guardando la salida en
+  `robot.log`). Para programarlo sin tener que navegar el Programador de
+  tareas a mano, abre PowerShell **como administrador** y pega este
+  comando (ajusta la ruta si tu carpeta no es exactamente esta):
+  ```
+  schtasks /create /tn "Jurisprudencia Expertos Laborales" /tr "C:\Users\Ruben\Desktop\ROBOTS\JURISPRUDENCIA\run_semanal.bat" /sc weekly /d MON /st 07:00 /rl LIMITED
+  ```
+  Esto crea una tarea que corre cada lunes a las 7:00 am, aunque no hayas
+  iniciado sesión con la ventana abierta (mientras la computadora esté
+  prendida). Para comprobar que quedó programada:
+  ```
+  schtasks /query /tn "Jurisprudencia Expertos Laborales"
+  ```
+  Y para quitarla si algún día ya no la quieres:
+  ```
+  schtasks /delete /tn "Jurisprudencia Expertos Laborales" /f
+  ```
 - **Mac/Linux**: crontab (`crontab -e`):
   ```
   0 7 * * 1 cd /ruta/completa/a/robots/jurisprudencia && /usr/local/bin/node jurisprudencia.js >> robot.log 2>&1
   ```
+
+## Mantener actualizadas AMBAS bibliotecas de jurisprudencia (sistema + multidespacho)
+
+El robot ya sabe mandar cada tesis nueva a los dos sistemas en la misma
+corrida -- no hace falta correrlo dos veces ni exportar/importar nada a
+mano. Para activarlo, en `config.js` (la copia local, no la que está en
+git) agrega/revisa el bloque `multidespacho` con la URL real de
+controldeexpedientes.mx y la misma llave que tenga configurada
+`api/jurisprudencia_sync_credentials.php` allá -- ver el ejemplo comentado
+en `config.example.js`. Si ese bloque falta o está mal, el robot sigue
+guardando bien en el sistema original, solo que no sincroniza nada más
+(avisa por consola, no se detiene por eso).
 
 ## Cómo funciona
 
