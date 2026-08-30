@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ela-shell-v39';
+const CACHE_NAME = 'ela-shell-v40';
 const SHELL_FILES = [
   '/sistema/',
   '/sistema/assets/style.css?v=5',
@@ -45,6 +45,16 @@ self.addEventListener('fetch', (event) => {
 
 // Notificaciones push (como WhatsApp) — el servidor manda un JSON
 // {title, body, url} (ver api/push_helpers.php); esto solo lo muestra.
+// Cada push de este sistema ya representa algo que de verdad necesita
+// atención (nunca se manda por rutina) -- por eso aquí se le pide al
+// navegador que llame la atención lo más posible:
+//  - vibrate: patrón de vibración distintivo (Android; iOS lo ignora, el
+//    sistema operativo decide su propia vibración ahí).
+//  - requireInteraction: la notificación se queda visible hasta que
+//    alguien la toque, no desaparece sola a los pocos segundos.
+//  - silent NO se pone en true, así el navegador reproduce su sonido de
+//    notificación por default -- la Notification API no deja elegir un
+//    sonido personalizado, eso lo controla el sistema operativo.
 self.addEventListener('push', (event) => {
   let data = {title: 'Expertos Laborales', body: 'Tienes un mensaje nuevo.', url: '/sistema/'};
   try{ if(event.data) data = Object.assign(data, event.data.json()); }catch(e){}
@@ -54,6 +64,9 @@ self.addEventListener('push', (event) => {
       icon: '/sistema/assets/icons/icon-192.png',
       badge: '/sistema/assets/icons/icon-192.png',
       data: {url: data.url || '/sistema/'},
+      vibrate: [300, 150, 300, 150, 300],
+      requireInteraction: true,
+      silent: false,
     })
   );
 });
