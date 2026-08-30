@@ -369,7 +369,13 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     // sobre un pago). Contesta con un mensaje fijo, pausa el bot y avisa
     // a un humano, siempre.
     $pareceReclamo =
-        preg_match('/estafa|fraude|enga[ñn]|es un robo/iu', $texto) === 1
+        // "fraude/estafa/robo/engaño" NO cuenta si el cliente está
+        // describiendo una acusación que ÉL recibió (de su jefe, en su
+        // trabajo) -- ej. "me culparon de un fraude", "me acusaron de
+        // robo y me despidieron" -- eso es información normal de su
+        // caso, no una queja contra el despacho.
+        (preg_match('/estafa|fraude|enga[ñn]|es un robo/iu', $texto) === 1
+            && preg_match('/me (culp(an|aron)?|acus(an|aron)?|despidieron|corrieron).{0,30}(fraude|estafa|robo|enga[ñn])|(fraude|estafa|robo|enga[ñn]).{0,30}me (culp|acus)|(jefe|patr[oó]n|empresa|trabajo).{0,30}(fraude|estafa|robo|enga[ñn])/iu', $texto) !== 1)
         // "tiktok"/"redes sociales" solos NO cuentan -- un cliente real
         // puede decir "lo vi en tiktok" sin ninguna amenaza. Solo cuenta
         // si va junto con un verbo de amenaza (exhibir/exponer/publicar/
