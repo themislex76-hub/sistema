@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/prospectos_helpers.php';
 require_once __DIR__ . '/push_helpers.php';
+require_once __DIR__ . '/soporte_tecnico_helpers.php';
 
 // Protege contra un número que abuse del bot (spam, pruebas, troleo) y
 // dispare el gasto de IA sin control — 30 mensajes entrantes en 24 horas
@@ -388,6 +389,29 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
             'Reclamo detectado automáticamente -- revisar la conversación completa. Último mensaje: ' . mb_strimwidth($texto, 0, 200, '…'),
             $nombrePerfil
         );
+        return;
+    }
+
+    // Soporte técnico del sistema Control de Expedientes -- MISMO número
+    // de WhatsApp que el bot de asesoría laboral (se decidió no abrir uno
+    // aparte), pero completamente separado en prompt/herramientas/modelo
+    // (ver soporte_tecnico_helpers.php) para no mezclar los dos dominios.
+    // Detección determinística por el mismo motivo que el reclamo de
+    // arriba: nunca se le pregunta a la IA si esto es soporte técnico.
+    if (soporte_parece_pregunta_tecnica($texto)) {
+        $stmt = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
+        $stmt->execute([':t' => $telefono]);
+        $historialSoporte = array_reverse($stmt->fetchAll());
+        $mensajesSoporte = ia_mensajes_desde_historial($historialSoporte);
+        if (!$mensajesSoporte || end($mensajesSoporte)['role'] !== 'user') {
+            $mensajesSoporte[] = ['role' => 'user', 'content' => $texto];
+        }
+        $respuestaSoporte = soporte_responder($pdo, $telefono, $mensajesSoporte, $nombrePerfil);
+        whatsapp_enviar($telefono, $respuestaSoporte);
+        $stmt = $pdo->prepare(
+            "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+        );
+        $stmt->execute([':t' => $telefono, ':texto' => $respuestaSoporte]);
         return;
     }
 
