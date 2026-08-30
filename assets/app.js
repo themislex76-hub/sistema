@@ -2753,6 +2753,7 @@ function shellHTML(){
       <div class="sidebar-foot">
         <div class="user-pill"><div class="dot"></div><span>${escapeHTML(CURRENT_USER.name)}</span></div>
         <button class="switch-user" id="pushNotifBtn" style="margin-bottom:6px;">&#128276; Activar notificaciones</button>
+        ${(typeof Notification !== 'undefined' && Notification.permission === 'granted') ? `<button class="switch-user" id="pushTestBtn" style="margin-bottom:6px;">Probar notificación</button>` : ''}
         <button class="switch-user" id="switchUserBtn">Cambiar de usuario</button>
       </div>
     </div>
@@ -2848,6 +2849,23 @@ function bindShell(){
         pushNotifBtn.disabled = false;
         pushNotifBtn.textContent = textoOriginal;
         alert('No se pudieron activar las notificaciones: ' + err.message);
+      }
+    });
+  }
+  const pushTestBtn = document.getElementById('pushTestBtn');
+  if(pushTestBtn){
+    pushTestBtn.addEventListener('click', async ()=>{
+      pushTestBtn.disabled = true;
+      const textoOriginal = pushTestBtn.textContent;
+      pushTestBtn.textContent = 'Mandando...';
+      try{
+        await api('POST', 'push_test.php', {});
+        pushTestBtn.textContent = 'Mandada ✓ (revisa tu celular)';
+        setTimeout(()=>{ pushTestBtn.textContent = textoOriginal; pushTestBtn.disabled = false; }, 3000);
+      }catch(err){
+        pushTestBtn.disabled = false;
+        pushTestBtn.textContent = textoOriginal;
+        alert('No se pudo mandar la prueba: ' + err.message);
       }
     });
   }
