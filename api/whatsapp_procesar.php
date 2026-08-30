@@ -370,10 +370,18 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     // a un humano, siempre.
     $pareceReclamo =
         preg_match('/estafa|fraude|enga[ñn]|es un robo/iu', $texto) === 1
-        || preg_match('/exhibir|tik\s*tok|redes sociales|voy a (publicar|denunciar|quemar|exponer)/iu', $texto) === 1
+        // "tiktok"/"redes sociales" solos NO cuentan -- un cliente real
+        // puede decir "lo vi en tiktok" sin ninguna amenaza. Solo cuenta
+        // si va junto con un verbo de amenaza (exhibir/exponer/publicar/
+        // denunciar/quemar), en cualquier orden.
+        || preg_match('/(exhib|expon|public|denunci|quem).{0,40}(tik\s*tok|redes sociales)|(tik\s*tok|redes sociales).{0,40}(exhib|expon|public|denunci|quem)|voy a (publicar|denunciar|quemar|exponer|exhibir)/iu', $texto) === 1
         || preg_match('/devoluci[oó]n|reembolso|regr[eé]same mi dinero|quiero mi dinero/iu', $texto) === 1
-        || preg_match('/\bya\b.{0,20}pag/iu', $texto) === 1
-        || preg_match('/\bya\b.{0,20}(deposit|transfer)/iu', $texto) === 1;
+        // REGLA DURA: "ya" tiene que estar pegado a un verbo de pago en
+        // primera persona (ya pagué/deposité/transferí) -- no basta con
+        // que "ya" y "pag" aparezcan cerca por cualquier motivo (ej. "no
+        // firmé YA QUE dije que me PAGaran" es una conjunción normal, no
+        // una afirmación de pago, y no debe escalar).
+        || preg_match('/\bya\s+(te\s+|le\s+|les\s+)?(pagu[eé]|deposit[eé]|transfer[ií])\b/iu', $texto) === 1;
     if ($pareceReclamo) {
         file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
             . " | [respaldo_reclamo] escalando de $telefono | texto=\"" . mb_strimwidth($texto, 0, 80, '…') . "\"\n", FILE_APPEND);
