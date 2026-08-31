@@ -1045,8 +1045,8 @@ const ETAPAS_DEF = [
   {key:'objeciones_replica', label:'Objeciones y réplica del actor presentadas', fundamento:'Art. 873-B LFT', plazoDesdeEtapa:'contestacion_recibida', plazoDias:8, plazoTipo:'habiles', plazoLabel:'El actor objeta pruebas y formula réplica dentro de los 8 días siguientes al traslado de la contestación (Art. 873-B LFT)'},
   {key:'contrarreplica', label:'Contrarréplica de la demandada presentada', fundamento:'Art. 873-C LFT', plazoDesdeEtapa:'objeciones_replica', plazoDias:5, plazoTipo:'habiles', plazoLabel:'La demandada contrarreplica dentro de los 5 días siguientes al traslado de la réplica (Art. 873-C LFT)'},
   {key:'manifestaciones_3dias', label:'Manifestaciones sobre pruebas nuevas (si las hubo en la contrarréplica)', fundamento:'Art. 873-C LFT', plazoDesdeEtapa:'contrarreplica', plazoDias:3, plazoTipo:'habiles', plazoLabel:'Solo aplica si la demandada ofreció pruebas nuevas en su contrarréplica; el actor tiene 3 días para manifestarse (Art. 873-C LFT)'},
-  {key:'audiencia_preliminar', label:'Audiencia preliminar celebrada', fundamento:'Arts. 873-E a 873-G LFT', plazoDesdeEtapa:'contrarreplica', plazoDias:10, plazoTipo:'habiles', plazoLabel:'El Tribunal la fija dentro de los 10 días siguientes a que concluya la fase escrita (Art. 873-C LFT)'},
-  {key:'audiencia_juicio', label:'Audiencia de juicio celebrada', fundamento:'Arts. 873-H a 891 LFT'},
+  {key:'audiencia_preliminar', label:'Audiencia preliminar celebrada', fundamento:'Arts. 873-E a 873-G LFT', plazoDesdeEtapa:'contrarreplica', plazoDias:10, plazoTipo:'habiles', plazoLabel:'El Tribunal la fija dentro de los 10 días siguientes a que concluya la fase escrita (Art. 873-C LFT)', conHora:true},
+  {key:'audiencia_juicio', label:'Audiencia de juicio celebrada', fundamento:'Arts. 873-H a 891 LFT', conHora:true},
   {key:'sentencia', label:'Sentencia / laudo emitido', fundamento:'Art. 873-J LFT'},
   {key:'amparo_directo', label:'Amparo directo presentado (si procede)', fundamento:'Art. 17 Ley de Amparo — 15 días hábiles desde la notificación de la sentencia', plazoDesdeEtapa:'sentencia', plazoDias:15, plazoTipo:'habiles', plazoLabel:'Captura la fecha de notificación de la sentencia en la pestaña "Amparo" para un cómputo exacto del plazo'},
 ];
@@ -1077,7 +1077,7 @@ function proximaAudiencia(kase){
     .map(key=>{
       const e = meta.etapas[key];
       if(!e || e.fecha || !e.fecha_programada) return null; // ya celebrada, o sin fecha agendada
-      return {key, fecha: e.fecha_programada, label: AUDIENCIA_LABEL_CLIENTE[key]};
+      return {key, fecha: e.fecha_programada, hora: e.hora || null, label: AUDIENCIA_LABEL_CLIENTE[key]};
     })
     .filter(Boolean)
     .sort((a,b)=> a.fecha.localeCompare(b.fecha));
@@ -1969,11 +1969,15 @@ async function sincronizarGoogleCalendar(onProgress){
   for(const e of entries){
     const id = await googleEventId(CURRENT_USER.id, e);
     idsActuales.push(id);
+    // Si la audiencia trae hora capturada, se manda como evento con horario
+    // exacto (igual que las citas de asesoría) en vez de todo el día — así
+    // Google Calendar también puede avisar de un choque de horario.
+    const conHora = e.tipo==='audiencia' && e.hora;
     const body = {
       summary: `[${AGENDA_TIPO[e.tipo].label}] ${e.k.actor} vs ${truncate(e.k.demandado,40)}`,
       description: e.label + '\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.',
-      start: {date: e.fecha},
-      end: {date: e.fecha},
+      start: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
+      end: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
     };
     try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
     hechos++;
@@ -3813,7 +3817,7 @@ function buildAgendaEntries(){
   // Audiencias agendadas (preliminar / de juicio)
   cases.forEach(k=>{
     const aud = proximaAudiencia(k);
-    if(aud) entries.push({tipo:'audiencia', fecha: aud.fecha, k, label: aud.label, action:'pendiente_generico'});
+    if(aud) entries.push({tipo:'audiencia', fecha: aud.fecha, hora: aud.hora, k, label: aud.label, action:'pendiente_generico'});
   });
 
   // Pagos de convenio pendientes
@@ -4105,14 +4109,36 @@ function agendaRowHTML(e){
   return `<div class="alert-row" style="align-items:flex-start;">
     <div style="width:76px; flex-shrink:0; text-align:center; padding-top:2px;">
       <div style="font-size:11.5px; font-weight:700; color:${t.color};">${fmtDate(e.fecha)}</div>
+      ${e.hora ? `<div style="font-size:10.5px; color:var(--gray);">${escapeHTML(e.hora)} hrs</div>` : ''}
     </div>
     <span class="badge" style="background:${t.color}1a; color:${t.color}; flex-shrink:0; margin-top:1px;">${t.label}</span>
     <div class="alert-info" data-id="${e.k.id}" style="cursor:pointer;">
       <div class="name">${escapeHTML(e.k.actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(e.k.demandado,30))}</div>
       <div class="meta">${escapeHTML(e.label)} &middot; ${escapeHTML(assignedLawyer(e.k))}</div>
+      ${e.chocaCon ? `<div style="font-size:11.5px; color:var(--red); font-weight:600; margin-top:2px;">&#9888; Mismo día y hora que la audiencia de ${escapeHTML(e.chocaCon)} en otro expediente</div>` : ''}
     </div>
     <button class="btn secondary agenda-complete" data-action="${e.action}" data-kid="${e.k.id}" data-idx="${e.actionIdx!=null?e.actionIdx:''}" style="flex-shrink:0; font-size:11px; padding:6px 10px;">${AGENDA_ACTION_LABEL[e.action]||'Marcar cumplido'}</button>
   </div>`;
+}
+
+// Marca las audiencias de socios distintos que caen el mismo día y hora,
+// para que el choque de agenda salte a la vista en vez de descubrirse
+// hasta que ya es tarde para reorganizarse.
+function marcarChoquesDeAgenda(entries){
+  const porFechaHora = {};
+  entries.forEach(e=>{
+    if(e.tipo!=='audiencia' || !e.hora) return;
+    const clave = e.fecha+'|'+e.hora;
+    (porFechaHora[clave] = porFechaHora[clave] || []).push(e);
+  });
+  Object.values(porFechaHora).forEach(grupo=>{
+    if(grupo.length < 2) return;
+    grupo.forEach(e=>{
+      const otro = grupo.find(o=>o!==e && assignedLawyer(o.k)!==assignedLawyer(e.k));
+      if(otro) e.chocaCon = assignedLawyer(otro.k);
+    });
+  });
+  return entries;
 }
 
 let AGENDA_SOCIO = 'todos';
@@ -5090,7 +5116,7 @@ function disponibilidadPanelHTML(){
 
 function agendaHTML(){
   const isAdmin = CURRENT_USER.role === 'Administrador';
-  let all = buildAgendaEntries();
+  let all = marcarChoquesDeAgenda(buildAgendaEntries());
   const today = new Date(); today.setHours(0,0,0,0);
   const todayISO = dateToISO(today);
 
@@ -6780,8 +6806,9 @@ function modalTabContent(k,p,meta){
             <option value="desfavorable" ${resultado==='desfavorable'?'selected':''}>Desfavorable</option>
           </select></div>` : ''}
         ${esAudiencia ? `<div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">Fecha agendada</label><input type="date" class="etapa-fecha-programada" data-etapa="${def.key}" value="${programada}" style="padding:6px 8px; border:1px solid var(--brass-dim); border-radius:6px; font-size:12px;"></div>` : ''}
+        ${esAudiencia && def.conHora ? `<div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">Hora agendada</label><input type="time" class="etapa-hora" data-etapa="${def.key}" value="${hora}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></div>` : ''}
         <div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">${esAudiencia?'Fecha en que se celebró':''}</label><input type="date" class="etapa-fecha" data-etapa="${def.key}" value="${val||''}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></div>
-        ${def.conHora ? `<div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">Hora</label><input type="time" class="etapa-hora" data-etapa="${def.key}" value="${hora}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></div>` : ''}
+        ${(!esAudiencia && def.conHora) ? `<div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">Hora</label><input type="time" class="etapa-hora" data-etapa="${def.key}" value="${hora}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></div>` : ''}
       </div>`;
     }).join("")}
     <div style="margin-top:18px;"><button class="btn" id="saveEtapasBtn">Guardar etapas</button> <span id="avisoClienteEtapas"></span></div>
@@ -7523,7 +7550,7 @@ function clientCardHTML(k){
 
       ${(()=>{ const aud = proximaAudiencia(k); return aud ? `<div style="background:var(--amber-bg); border:1px solid var(--brass-dim); border-radius:8px; padding:12px 14px; margin-bottom:16px;">
         <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:#6b4d18; margin-bottom:3px;">&#128197; Tienes una audiencia programada</div>
-        <div style="font-size:15px; font-weight:700; color:var(--ink);">${fmtDate(aud.fecha)}</div>
+        <div style="font-size:15px; font-weight:700; color:var(--ink);">${fmtDate(aud.fecha)}${aud.hora ? ' a las '+escapeHTML(aud.hora)+' hrs' : ''}</div>
         <div style="font-size:12.5px; color:#6b4d18; margin-top:2px;">${escapeHTML(aud.label)}</div>
       </div>` : ''; })()}
 
