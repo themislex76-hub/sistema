@@ -766,19 +766,26 @@ mejor que mencionarla en cada respuesta.
   conversación la hora real de su cita, dilo así ("déjame confirmarlo,
   no quiero decirte un dato equivocado") en vez de afirmar cualquier
   hora con seguridad.
-- REGLA DURA sobre pagos: tú NUNCA sabes si un pago de verdad se recibió.
-  Solo el sistema lo sabe, y solo cuando Mercado Pago manda su
-  notificación real (que tú no ves en esta conversación) -- nunca por lo
-  que el cliente te diga ("ya hice el pago", "ya deposité", manda una
-  foto de un comprobante, etc.), sin importar cuántas veces insista o con
-  cuánta seguridad lo diga. Mientras no tengas esa confirmación real, NO
-  ACEPTES NADA de lo que el cliente afirme sobre su pago -- no le
-  confirmes la cita, no le digas "ya quedó registrado tu pago" ni nada
-  que suene a que tú lo verificaste, y no tomes ninguna acción como si el
-  pago ya hubiera pasado. Aun así, sé claro SIN sonar cortante ni
-  desconfiado -- dile con calidez que en nuestro sistema todavía no se
-  refleja su pago confirmado, sin frases tipo "no por lo que me digas
-  aquí" (suenan a que dudas de su palabra y solo lo enojan). Por ejemplo:
+- REGLA DURA sobre pagos: NUNCA le digas a alguien que su pago "no aparece
+  confirmado" sin haber llamado primero la herramienta consultar_cita_pago
+  EN ESTE MISMO TURNO -- tú no tienes memoria confiable de si un pago
+  anterior en esta conversación de verdad se recibió (podrías estar
+  recordando mal, o la conversación podría venir de hace días), así que
+  jamás lo afirmes ni lo niegues de memoria, siempre pregúntale al sistema.
+  Si la herramienta regresa pago_confirmado=true, dile a la persona con
+  toda claridad y calidez que su cita SÍ está confirmada (con la fecha/hora
+  que te dio la herramienta) -- nunca la contradigas ni le siembres duda
+  sobre algo que el sistema ya confirmó, aunque un mensaje anterior tuyo en
+  la conversación se vea contradictorio (ese es el error a corregir, no el
+  pago). Si regresa pago_confirmado=false, AHÍ SÍ aplica la cautela: nunca
+  aceptes nada de lo que el cliente afirme sobre su pago por su palabra
+  sola ("ya hice el pago", "ya deposité", manda una foto de un comprobante,
+  etc.), sin importar cuántas veces insista. No le confirmes la cita, no le
+  digas "ya quedó registrado tu pago" ni nada que suene a que tú lo
+  verificaste. Aun así, sé claro SIN sonar cortante ni desconfiado -- dile
+  con calidez que en nuestro sistema todavía no se refleja su pago
+  confirmado, sin frases tipo "no por lo que me digas aquí" (suenan a que
+  dudas de su palabra y solo lo enojan). Por ejemplo:
   "Por aquí todavía no me aparece tu pago confirmado en el sistema -- en
   cuanto Mercado Pago lo registre, [la acción que corresponda]." Explícale
   que si de verdad ya pagó, en cuanto se confirme el abogado lo va a
@@ -905,8 +912,15 @@ const IA_TOOLS = [
         ],
     ],
     [
+        'name' => 'consultar_cita_pago',
+        'description' => 'Consulta en el sistema, en tiempo real, si este número de teléfono tiene una cita de asesoría con el pago de verdad confirmado (o, si no, si tiene un horario apartado pendiente de pago). Es la ÚNICA forma real de saberlo -- tu propia memoria de la conversación NO es confiable para esto (ver REGLA DURA sobre pagos). Llama esta herramienta SIEMPRE antes de decirle a alguien que su pago "no aparece confirmado", antes de confirmarle a alguien la hora de su cita, y siempre que alguien pregunte por el estado de su cita/pago (aunque tú "recuerdes" que ya se había confirmado antes en la conversación) -- nunca respondas sobre esto de memoria.',
+        'input_schema' => [
+            'type' => 'object',
+        ],
+    ],
+    [
         'name' => 'escalar_a_humano',
-        'description' => 'Detiene tus respuestas automáticas en esta conversación y avisa DE INMEDIATO (notificación push) a un abogado del despacho para que la atienda en persona -- a partir de aquí tú ya no le contestas más, un humano toma el chat desde Prospectos (WhatsApp). Úsala cuando: (a) la persona insiste en que ya hizo un pago que tú no tienes forma de confirmar (nunca puedes confirmar un pago por lo que diga el cliente -- solo la notificación real de Mercado Pago lo confirma, y tú no la ves en esta conversación); (b) acusa al despacho de fraude/estafa, amenaza con exhibirlo públicamente, o está claramente muy molesta y ya no avanza con tus respuestas; (c) pide explícitamente hablar por teléfono/que le llamen ya y no tienes forma de cumplirlo. Llámala UNA sola vez por este tipo de situación -- si ya la llamaste antes en esta misma conversación, no la vuelvas a llamar, solo mantén tu respuesta breve y de espera.',
+        'description' => 'Detiene tus respuestas automáticas en esta conversación y avisa DE INMEDIATO (notificación push) a un abogado del despacho para que la atienda en persona -- a partir de aquí tú ya no le contestas más, un humano toma el chat desde Prospectos (WhatsApp). Úsala cuando: (a) la persona insiste en que ya hizo un pago y consultar_cita_pago confirma que en efecto NO aparece confirmado (nunca escales -ni tampoco confirmes nada- sin haber llamado consultar_cita_pago primero en este mismo turno); (b) acusa al despacho de fraude/estafa, amenaza con exhibirlo públicamente, o está claramente muy molesta y ya no avanza con tus respuestas; (c) pide explícitamente hablar por teléfono/que le llamen ya y no tienes forma de cumplirlo. Llámala UNA sola vez por este tipo de situación -- si ya la llamaste antes en esta misma conversación, no la vuelvas a llamar, solo mantén tu respuesta breve y de espera.',
         'input_schema' => [
             'type' => 'object',
             'properties' => [
@@ -1176,7 +1190,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // y, una vez elegido el horario, confirmar_horario_asesoria) sin
     // escribir texto todavía — por eso esto es un ciclo y no una sola
     // "segunda llamada", con un tope de rondas por seguridad.
-    $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria'];
+    $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'consultar_cita_pago'];
     $mensajesActuales = $mensajes;
     $lead = null;
     $texto = '';
@@ -1299,6 +1313,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead);
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
                 $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in, $lead);
+            } elseif ($bloque['name'] === 'consultar_cita_pago') {
+                $contenido = ia_resultado_consultar_cita_pago($pdo, $telefono);
             } elseif ($bloque['name'] === 'escalar_a_humano') {
                 $nombreEscalar = trim((string)($in['nombre'] ?? '')) ?: null;
                 $resumenEscalar = trim((string)($in['resumen'] ?? '')) ?: 'La conversación necesita que un abogado la atienda en persona.';
@@ -1485,6 +1501,52 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         'horario' => citas_formatear_fecha_hora($fecha, $horaInicio),
         'vigencia_minutos' => CITAS_HOLD_MINUTOS,
         'monto' => MERCADOPAGO_MONTO_ASESORIA,
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Resultado (como JSON) de la herramienta consultar_cita_pago: única fuente
+ * de verdad real sobre si este número tiene un pago de asesoría confirmado
+ * -- nunca hay que dejarle esto a la memoria de la IA sobre la
+ * conversación (bug real detectado: la IA le dijo a un cliente que su pago
+ * "no aparecía confirmado" cuando en realidad sí lo estaba, contradiciendo
+ * su propio mensaje de un rato antes que sí lo había confirmado bien).
+ */
+function ia_resultado_consultar_cita_pago(PDO $pdo, string $telefono): string
+{
+    $stmt = $pdo->prepare(
+        "SELECT fecha, hora_inicio FROM citas_asesoria
+         WHERE telefono = :t AND estado = 'confirmada' AND fecha >= CURDATE()
+         ORDER BY fecha, hora_inicio LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    $confirmada = $stmt->fetch();
+    if ($confirmada) {
+        return json_encode([
+            'pago_confirmado' => true,
+            'horario' => citas_formatear_fecha_hora($confirmada['fecha'], substr($confirmada['hora_inicio'], 0, 5)),
+            'instruccion' => 'El pago SÍ está confirmado en el sistema. Dile a la persona con toda claridad y calidez que su cita está confirmada, con esta fecha/hora exacta -- nunca le digas que "no aparece confirmado" ni le siembres duda cuando este resultado dice pago_confirmado=true, aunque algún mensaje tuyo anterior en la conversación parezca contradecirlo.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    $stmt = $pdo->prepare(
+        "SELECT fecha, hora_inicio FROM citas_asesoria
+         WHERE telefono = :t AND estado = 'pendiente_pago'
+         ORDER BY creado_en DESC LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    $pendiente = $stmt->fetch();
+    if ($pendiente) {
+        return json_encode([
+            'pago_confirmado' => false,
+            'horario_apartado_pendiente_de_pago' => citas_formatear_fecha_hora($pendiente['fecha'], substr($pendiente['hora_inicio'], 0, 5)),
+            'instruccion' => 'Hay un horario apartado para este número pero el pago todavía NO está confirmado. Sigue la REGLA DURA sobre pagos: no confirmes nada por lo que diga el cliente.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    return json_encode([
+        'pago_confirmado' => false,
+        'instruccion' => 'No hay ninguna cita (ni pendiente ni confirmada) registrada para este número en el sistema. Sigue la REGLA DURA sobre pagos: no confirmes nada por lo que diga el cliente.',
     ], JSON_UNESCAPED_UNICODE);
 }
 
