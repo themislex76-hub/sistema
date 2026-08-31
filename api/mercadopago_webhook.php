@@ -46,19 +46,37 @@ if ($pago === null) {
     mp_webhook_responder(500);
 }
 
-if (($pago['status'] ?? '') !== 'approved') {
-    // Pago rechazado, pendiente, cancelado, etc. — no hay nada que
-    // confirmar todavía. Si llega un aviso posterior con "approved" se
-    // procesa entonces.
+$estadoPago = $pago['status'] ?? '';
+$citaId = (int)($pago['external_reference'] ?? 0);
+$pdo = db();
+
+// Si el abogado hace una devolución directo en el panel de Mercado Pago
+// (fuera de este sistema, como pasa hoy), MP manda este mismo webhook de
+// nuevo con el mismo pago pero status='refunded' -- antes esto se
+// ignoraba en silencio, así que la cita se quedaba "confirmada" para
+// siempre en nuestro sistema aunque ya no hubiera cobro real detrás. Eso
+// causó un caso real: un cliente reembolsado escribió después y el bot,
+// al ver la cita todavía "confirmada" en la base de datos, le reafirmó
+// una cita que ya no debía existir, chocando con otro horario. Cancelar
+// aquí automáticamente evita que eso se repita, sin que nadie tenga que
+// acordarse de cancelarla también aquí después de reembolsar en Mercado Pago.
+if (in_array($estadoPago, ['refunded', 'charged_back', 'cancelled'], true) && $citaId > 0) {
+    $upd = $pdo->prepare("UPDATE citas_asesoria SET estado = 'cancelada' WHERE id = :id AND estado = 'confirmada'");
+    $upd->execute([':id' => $citaId]);
     mp_webhook_responder(200);
 }
 
-$citaId = (int)($pago['external_reference'] ?? 0);
+if ($estadoPago !== 'approved') {
+    // Pago rechazado, pendiente, etc. — no hay nada que confirmar
+    // todavía. Si llega un aviso posterior con "approved" se procesa
+    // entonces.
+    mp_webhook_responder(200);
+}
+
 if ($citaId <= 0) {
     mp_webhook_responder(200);
 }
 
-$pdo = db();
 $stmt = $pdo->prepare('SELECT * FROM citas_asesoria WHERE id = :id LIMIT 1');
 $stmt->execute([':id' => $citaId]);
 $cita = $stmt->fetch();
