@@ -67,6 +67,12 @@ let JURISPRUDENCIA_CARGANDO = false;
 let JURISPRUDENCIA_ERROR = '';
 let JURISPRUDENCIA_RESULTADO = null; // {respuesta, tesis:[...]}
 let JURISPRUDENCIA_TESIS_ABIERTA = null; // registro_digital mostrado en el modal de texto completo
+let JURISPRUDENCIA_MATCHES = []; // tesis nuevas que el cruce automático ya vinculó a expedientes activos
+
+async function loadJurisprudenciaMatches(){
+  try{ JURISPRUDENCIA_MATCHES = (await api('GET', 'jurisprudencia_matches_list.php')).matches; }
+  catch(e){ JURISPRUDENCIA_MATCHES = []; }
+}
 
 // Vista "Conversaciones (WhatsApp)" (solo Administrador) — control de
 // calidad del bot: TODAS las conversaciones, hayan calificado como
@@ -2259,6 +2265,7 @@ async function refreshBootstrap(){
     await loadUsuariosAdmin();
   }
   await loadDiasInhabiles();
+  syncAvisosAbogado(); // en segundo plano, no bloquea la carga
   await loadConfiguracion();
   await loadPlantillasLib();
   await loadGoogleStatus();
@@ -2270,6 +2277,7 @@ async function refreshBootstrap(){
     await loadProspectos();
     await loadDisponibilidad();
     await loadCitas();
+    await loadJurisprudenciaMatches();
   }
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadConversaciones();
@@ -3899,6 +3907,36 @@ function buildAgendaEntries(){
   return entries;
 }
 
+// Manda al servidor los pendientes de los próximos 3 días (audiencia, pago,
+// prescripción, amparo, pendiente, atraso) para que el cron diario
+// (cron_recordatorio_abogado.php) le avise al abogado responsable por
+// notificación push un día antes -- sin tener que reimplementar en PHP
+// ninguno de los cálculos de plazo que ya hace buildAgendaEntries() (días
+// hábiles/inhábiles, suspensión por conciliación, etc.). Se dispara solo,
+// en silencio, cada vez que alguien abre el sistema -- si nadie lo abre en
+// varios días el caché se queda desactualizado, pero es la misma
+// limitación que ya tiene la sincronización con Google Calendar.
+const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso'];
+async function syncAvisosAbogado(){
+  if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const hoyISO = dateToISO(hoy);
+  const limiteISO = dateToISO(addDaysDate(hoy, 3));
+  try{
+    const entries = buildAgendaEntries()
+      .filter(e => AVISOS_ABOGADO_TIPOS.includes(e.tipo) && e.fecha >= hoyISO && e.fecha <= limiteISO)
+      .map(e => ({
+        expediente_id: e.k.id,
+        clave: e.tipo + (e.actionIdx!=null ? ':'+e.actionIdx : ''),
+        tipo: e.tipo,
+        fecha: e.fecha,
+        hora: e.hora || null,
+        label: e.label,
+      }));
+    await api('POST', 'agenda_sync_avisos.php', {entries, todos: CURRENT_USER.role === 'Administrador'});
+  }catch(err){}
+}
+
 const DIAS_HABILES_POR_URGENCIA = {alta:2, media:5, baja:10};
 
 // "Qué hacer hoy" (panel arriba del Tablero) -- reutiliza buildAgendaEntries()
@@ -4696,6 +4734,22 @@ function jurisprudenciaVincularRegistros(html, listaTesis){
 function jurisprudenciaHTML(){
   const r = JURISPRUDENCIA_RESULTADO;
   return `
+  ${JURISPRUDENCIA_MATCHES.length ? `
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-head"><h3>Sugeridas para tus casos</h3><span class="count">${JURISPRUDENCIA_MATCHES.length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      ${JURISPRUDENCIA_MATCHES.map(m=>`
+      <div class="alert-row" style="align-items:flex-start; cursor:pointer;" data-id="${m.expediente_id}">
+        <div class="alert-info">
+          <div class="name">${escapeHTML(m.actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(m.demandado,30))}</div>
+          <div class="meta" style="font-weight:600; color:var(--ink);">${escapeHTML(m.rubro)}</div>
+          <div class="meta">${escapeHTML(m.interpretacion)}</div>
+        </div>
+      </div>`).join("")}
+    </div>
+  </div>
+  <div class="notice" style="margin-bottom:16px;">El sistema revisa solo las tesis que se van agregando a la biblioteca contra tus expedientes activos, con el mismo criterio del buscador de abajo — no reemplaza una búsqueda a mano.</div>
+  ` : ''}
   <div class="panel" style="margin-bottom:16px;">
     <div class="panel-body" style="padding:20px 24px;">
       <div class="notice" style="margin-bottom:14px;">Describe los hechos concretos de tu caso (quién es el patrón, qué prestación o problema hay, qué pasó) — evita preguntas muy generales, entre más específico mejor. Solo cita tesis reales de esta biblioteca, nunca inventa una.</div>

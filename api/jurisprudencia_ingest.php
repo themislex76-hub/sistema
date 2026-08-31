@@ -26,6 +26,7 @@ $stmt = $pdo->prepare(
 );
 
 $guardadas = 0;
+$registrosNuevos = []; // solo las que de verdad son insert (no un refresco de una ya existente)
 foreach ($tesis as $t) {
     $registro = (int)($t['registro_digital'] ?? 0);
     $rubro = trim((string)($t['rubro'] ?? ''));
@@ -42,7 +43,24 @@ foreach ($tesis as $t) {
         ':texto' => $texto,
         ':fecha' => ($t['fecha_publicacion'] ?? '') !== '' ? $t['fecha_publicacion'] : null,
     ]);
+    // rowCount() de un INSERT ... ON DUPLICATE KEY UPDATE en MySQL: 1 = sí
+    // se insertó, 2 = ya existía y se actualizó. Solo lo nuevo dispara el
+    // cruce automático contra expedientes activos, para no repetirlo cada
+    // vez que el robot vuelve a mandar una tesis que solo se refrescó.
+    if ($stmt->rowCount() === 1) $registrosNuevos[] = $registro;
     $guardadas++;
 }
 
-respond(['guardadas' => $guardadas]);
+// Cruce automático contra expedientes activos -- ver
+// jurisprudencia_cruce_helpers.php. Un fallo aquí (IA caída, etc.) nunca
+// debe tumbar el ingreso de las tesis, que ya se guardaron arriba.
+if ($registrosNuevos) {
+    try {
+        require_once __DIR__ . '/jurisprudencia_cruce_helpers.php';
+        jurisprudencia_cruzar_con_activos($pdo, $registrosNuevos);
+    } catch (\Throwable $e) {
+        error_log('jurisprudencia_cruzar_con_activos falló: ' . $e->getMessage());
+    }
+}
+
+respond(['guardadas' => $guardadas, 'nuevas' => count($registrosNuevos)]);
