@@ -89,6 +89,79 @@ function salario_minimo_diario_actual(PDO $pdo): float
 }
 
 /**
+ * Salario diario integrado cuando hay percepciones variables (bonos,
+ * comisiones) de por medio (Art. 289 LFT) -- bug real detectado en
+ * producción: el bot estaba haciendo este promedio "a mano" (aritmética de
+ * la IA, con la fórmula descrita en texto plano en la herramienta de
+ * liquidación) para un caso con un bono anual de casi $113,000, y su
+ * propio mensaje admitió que el resultado "a mano" salió distinto al de
+ * la herramienta -- exactamente el tipo de cálculo legal que este sistema
+ * nunca debe dejarle a la IA.
+ *
+ * Criterio (jurisprudencia SCJN sobre integración de salario variable):
+ * percepciones variables de periodicidad ANUAL o esporádica (bonos
+ * anuales, reparto de utilidades, etc.) se promedian sobre los últimos
+ * 365 días -- no sobre 30 días, que es el criterio que aplica solo a
+ * percepciones variables de periodicidad corta y regular (comisiones
+ * semanales/quincenales, por ejemplo). Esta función es para el caso
+ * ANUAL; si el caso es de comisiones frecuentes, no la uses -- eso
+ * requiere revisión directa del abogado.
+ *
+ * $salarioDiarioFijo: la parte fija del salario, ya convertida a diario
+ * (sueldo + prestaciones fijas regulares -- fondo de ahorro, vales de
+ * despensa, etc. -- entre 30 si es mensual o entre 15 si es quincenal).
+ * $percepcionesVariables: arreglo de ['monto' => float, 'fecha' => 'Y-m-d']
+ * -- cada pago variable que la persona haya recibido, con su fecha real.
+ * $fechaReferencia: 'Y-m-d', normalmente la fecha de baja (o la de hoy si
+ * el caso todavía no ha pasado) -- se cuentan los pagos de los 365 días
+ * anteriores a esta fecha (inclusive).
+ */
+function calcular_sdi_con_variable(float $salarioDiarioFijo, array $percepcionesVariables, string $fechaReferencia): ?array
+{
+    try {
+        $referencia = new DateTimeImmutable($fechaReferencia);
+    } catch (\Throwable $e) {
+        return null;
+    }
+    $desde = $referencia->modify('-365 days');
+
+    $totalConsiderado = 0.0;
+    $pagosConsiderados = 0;
+    $pagosFueraDeRango = 0;
+    foreach ($percepcionesVariables as $p) {
+        $monto = (float)($p['monto'] ?? 0);
+        $fechaStr = (string)($p['fecha'] ?? '');
+        if ($monto <= 0 || $fechaStr === '') continue;
+        try {
+            $fecha = new DateTimeImmutable($fechaStr);
+        } catch (\Throwable $e) {
+            continue;
+        }
+        if ($fecha >= $desde && $fecha <= $referencia) {
+            $totalConsiderado += $monto;
+            $pagosConsiderados++;
+        } else {
+            $pagosFueraDeRango++;
+        }
+    }
+
+    $promedioDiarioVariable = $totalConsiderado / 365;
+    $salarioDiarioIntegrado = $salarioDiarioFijo + $promedioDiarioVariable;
+
+    return [
+        'salario_diario_fijo' => round($salarioDiarioFijo, 2),
+        'total_variable_considerado' => round($totalConsiderado, 2),
+        'pagos_considerados' => $pagosConsiderados,
+        'pagos_fuera_de_rango_365_dias' => $pagosFueraDeRango,
+        'promedio_diario_variable' => round($promedioDiarioVariable, 2),
+        'salario_diario_a_usar' => round($salarioDiarioIntegrado, 2),
+        'nota' => 'Este es el salario diario (fijo + variable promediado a 365 días, Art. 289 LFT) que hay que pasar '
+            . 'como salario_diario a calcular_estimado_liquidacion -- esa herramienta ya le aplica encima, aparte, '
+            . 'el factor de integración de aguinaldo/prima vacacional mínimos de ley, no lo agregues tú dos veces.',
+    ];
+}
+
+/**
  * Devuelve null si las fechas/salario no son válidos.
  * $diasVacacionesAnteriores: días de vacaciones de años anteriores que la
  * persona dice que no disfrutó (0 si no aplica o no se sabe).

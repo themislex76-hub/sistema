@@ -970,8 +970,38 @@ const IA_TOOLS = [
         ],
     ],
     [
+        'name' => 'calcular_sdi_con_variable',
+        'description' => 'Calcula el salario diario a usar (con código real, no de memoria) cuando la persona tiene, además de su sueldo fijo, percepciones VARIABLES de periodicidad anual o esporádica (bono anual por objetivos, reparto de utilidades, comisión anual, etc.) -- promedia esos pagos sobre los últimos 365 días conforme al Art. 289 LFT. Llama esta herramienta SIEMPRE que haya un bono/percepción variable de este tipo de por medio, ANTES de llamar calcular_estimado_liquidacion -- NUNCA promedies tú mismo el bono a mano (bug real detectado en producción: la IA calculó un SDI "a mano" que salió distinto al de la herramienta, sin forma de saber cuál era el correcto, en un caso de $466,000 en juego). Si la persona tiene comisiones/variables que se pagan con frecuencia corta y regular (semanal/quincenal, no anual), NO uses esta herramienta -- ese promedio es distinto (30 días) y requiere revisión directa del abogado, dilo así.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'salario_diario_fijo' => [
+                    'type' => 'number',
+                    'description' => 'Solo la parte FIJA del salario (sueldo + prestaciones fijas regulares como fondo de ahorro o vales de despensa, si se pagan siempre igual), ya convertida a diario (mensual/30, quincenal/15) -- sin incluir el bono/variable.',
+                ],
+                'percepciones_variables' => [
+                    'type' => 'array',
+                    'description' => 'Cada pago variable (bono, utilidades, etc.) que la persona haya mencionado, con su monto real en pesos y la fecha en que lo recibió (o la fecha que ella indique). No inventes fechas ni montos que no te haya dado -- si solo sabes el monto de un pago sin fecha exacta, usa tu mejor estimado razonable de cuándo fue (ej. "se paga en septiembre cada año") y dilo así en tu respuesta.',
+                    'items' => [
+                        'type' => 'object',
+                        'properties' => [
+                            'monto' => ['type' => 'number', 'description' => 'Monto en pesos de ese pago variable.'],
+                            'fecha' => ['type' => 'string', 'description' => 'Fecha en que se pagó, formato YYYY-MM-DD.'],
+                        ],
+                        'required' => ['monto', 'fecha'],
+                    ],
+                ],
+                'fecha_referencia' => [
+                    'type' => 'string',
+                    'description' => 'Fecha de baja (o la de hoy si el caso todavía no ha pasado), formato YYYY-MM-DD -- se cuentan los pagos variables de los 365 días anteriores a esta fecha.',
+                ],
+            ],
+            'required' => ['salario_diario_fijo', 'percepciones_variables', 'fecha_referencia'],
+        ],
+    ],
+    [
         'name' => 'calcular_estimado_liquidacion',
-        'description' => 'Calcula un estimado real (con las mismas fórmulas que la calculadora del sistema, no aproximado) de lo que le corresponde a la persona: finiquito y, si aplica, indemnización. Cubre tres escenarios distintos (ver "modo"): despido, renuncia voluntaria, y rescisión por causa imputable al patrón. Llama esta herramienta SOLO cuando ya tengas los datos necesarios — nunca inventes ni calcules el monto tú mismo.',
+        'description' => 'Calcula un estimado real (con las mismas fórmulas que la calculadora del sistema, no aproximado) de lo que le corresponde a la persona: finiquito y, si aplica, indemnización. Cubre tres escenarios distintos (ver "modo"): despido, renuncia voluntaria, y rescisión por causa imputable al patrón. Llama esta herramienta SOLO cuando ya tengas los datos necesarios — nunca inventes ni calcules el monto tú mismo. Si la persona tiene percepciones variables (bono anual, etc.), primero llama calcular_sdi_con_variable y usa el "salario_diario_a_usar" que te regrese como el salario_diario de aquí -- nunca promedies el variable tú mismo.',
         'input_schema' => [
             'type' => 'object',
             'properties' => [
@@ -1245,7 +1275,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // y, una vez elegido el horario, confirmar_horario_asesoria) sin
     // escribir texto todavía — por eso esto es un ciclo y no una sola
     // "segunda llamada", con un tope de rondas por seguridad.
-    $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_plazo_prestaciones', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'consultar_cita_pago'];
+    $herramientasConSeguimiento = ['calcular_sdi_con_variable', 'calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_plazo_prestaciones', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'consultar_cita_pago'];
     $mensajesActuales = $mensajes;
     $lead = null;
     $texto = '';
@@ -1314,7 +1344,16 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         $toolResults = [];
         foreach ($toolUseBlocks as $bloque) {
             $in = $bloque['input'] ?? [];
-            if ($bloque['name'] === 'calcular_estimado_liquidacion') {
+            if ($bloque['name'] === 'calcular_sdi_con_variable') {
+                $sdiVariable = calcular_sdi_con_variable(
+                    (float)($in['salario_diario_fijo'] ?? 0),
+                    is_array($in['percepciones_variables'] ?? null) ? $in['percepciones_variables'] : [],
+                    (string)($in['fecha_referencia'] ?? '')
+                );
+                $contenido = $sdiVariable !== null
+                    ? json_encode($sdiVariable, JSON_UNESCAPED_UNICODE)
+                    : json_encode(['error' => 'Fecha de referencia inválida o faltante.'], JSON_UNESCAPED_UNICODE);
+            } elseif ($bloque['name'] === 'calcular_estimado_liquidacion') {
                 $calc = calcular_estimado_liquidacion(
                     $pdo,
                     (string)($in['fecha_ingreso'] ?? ''),
