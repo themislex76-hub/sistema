@@ -381,7 +381,12 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         // si va junto con un verbo de amenaza (exhibir/exponer/publicar/
         // denunciar/quemar), en cualquier orden.
         || preg_match('/(exhib|expon|public|denunci|quem).{0,40}(tik\s*tok|redes sociales)|(tik\s*tok|redes sociales).{0,40}(exhib|expon|public|denunci|quem)|voy a (publicar|denunciar|quemar|exponer|exhibir)/iu', $texto) === 1
-        || preg_match('/devoluci[oó]n|reembolso|regr[eé]same mi dinero|quiero mi dinero/iu', $texto) === 1
+        // "devolución"/"reembolso" solos NO cuentan -- un cliente puede
+        // mencionar una devolución ajena dentro de su propio caso (ej. "un
+        // proveedor no generó la devolución de un pago de arrendamiento"
+        // narrando su despido) sin que sea un reclamo contra el despacho.
+        // Solo cuenta si está en primera persona, sobre SU dinero.
+        || preg_match('/mi\s+(devoluci[oó]n|reembolso)|(devoluci[oó]n|reembolso)\s+de\s+mi\s+(pago|dinero|asesor[ií]a)|regr[eé]same mi dinero|quiero mi dinero|no me han (devuelto|reembolsado)|me (devuelvan|reembolsen)\b/iu', $texto) === 1
         // REGLA DURA: "ya" tiene que estar pegado a un verbo de pago en
         // primera persona (ya pagué/deposité/transferí) -- no basta con
         // que "ya" y "pag" aparezcan cerca por cualquier motivo (ej. "no

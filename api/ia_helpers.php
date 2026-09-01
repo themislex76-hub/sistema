@@ -932,7 +932,7 @@ const IA_TOOLS = [
     ],
     [
         'name' => 'escalar_a_humano',
-        'description' => 'Detiene tus respuestas automáticas en esta conversación y avisa DE INMEDIATO (notificación push) a un abogado del despacho para que la atienda en persona -- a partir de aquí tú ya no le contestas más, un humano toma el chat desde Prospectos (WhatsApp). Úsala cuando: (a) la persona insiste en que ya hizo un pago y consultar_cita_pago confirma que en efecto NO aparece confirmado (nunca escales -ni tampoco confirmes nada- sin haber llamado consultar_cita_pago primero en este mismo turno); (b) acusa al despacho de fraude/estafa, amenaza con exhibirlo públicamente, o está claramente muy molesta y ya no avanza con tus respuestas; (c) pide explícitamente hablar por teléfono/que le llamen ya y no tienes forma de cumplirlo. Llámala UNA sola vez por este tipo de situación -- si ya la llamaste antes en esta misma conversación, no la vuelvas a llamar, solo mantén tu respuesta breve y de espera.',
+        'description' => 'Detiene tus respuestas automáticas en esta conversación y avisa DE INMEDIATO (notificación push) a un abogado del despacho para que la atienda en persona -- a partir de aquí tú ya no le contestas más, un humano toma el chat desde Prospectos (WhatsApp). Úsala cuando: (a) la persona insiste en que ya hizo un pago y consultar_cita_pago confirma que en efecto NO aparece confirmado (nunca escales -ni tampoco confirmes nada- sin haber llamado consultar_cita_pago primero en este mismo turno); (b) acusa al despacho de fraude/estafa, amenaza con exhibirlo públicamente, o está claramente muy molesta y ya no avanza con tus respuestas; (c) pide explícitamente hablar por teléfono/que le llamen ya y no tienes forma de cumplirlo, SIN que haya ninguna queja o disputa de por medio. Llámala UNA sola vez por este tipo de situación -- si ya la llamaste antes en esta misma conversación, no la vuelvas a llamar, solo mantén tu respuesta breve y de espera.',
         'input_schema' => [
             'type' => 'object',
             'properties' => [
@@ -944,8 +944,13 @@ const IA_TOOLS = [
                     'type' => 'string',
                     'description' => 'Resumen breve (1-3 líneas) de la situación puntual que necesita revisar un humano -- por ejemplo qué pago dice haber hecho, por qué medio, y a qué hora era su cita, para que el abogado pueda verificarlo rápido.',
                 ],
+                'motivo' => [
+                    'type' => 'string',
+                    'enum' => ['disputa_o_queja', 'quiere_hablar_con_alguien'],
+                    'description' => '"disputa_o_queja" para los casos (a) y (b) -- disputa de pago o acusación/molestia real, algo urgente que de verdad necesita revisarse. "quiere_hablar_con_alguien" SOLO para el caso (c) -- pidió que le llamen o hablar con un ejecutivo sin ninguna queja ni disputa de por medio (ej. prefiere que le expliquen su cálculo por teléfono). No uses "quiere_hablar_con_alguien" si en el fondo sí hay una queja o disputa -- en ese caso es "disputa_o_queja" aunque la persona lo pida con calma.',
+                ],
             ],
-            'required' => ['resumen'],
+            'required' => ['resumen', 'motivo'],
         ],
     ],
     [
@@ -1330,11 +1335,13 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             } elseif ($bloque['name'] === 'escalar_a_humano') {
                 $nombreEscalar = trim((string)($in['nombre'] ?? '')) ?: null;
                 $resumenEscalar = trim((string)($in['resumen'] ?? '')) ?: 'La conversación necesita que un abogado la atienda en persona.';
-                // Siempre 'reclamo', aunque ya hubiera un $lead de otro tipo
-                // en este mismo turno -- disputa de pago/acusación/pedir
-                // hablar con alguien es, por definición, una escalación
-                // urgente, no un interesado normal en Asesoría $299.
-                $leadEscalar = ['tipo' => 'reclamo', 'estado' => $lead['estado'] ?? '', 'nombre' => $lead['nombre'] ?? '', 'resumen' => ''];
+                // 'atencion_directa' solo cuando de verdad no hay ninguna
+                // queja ni disputa de por medio (solo pidió que le llamen) --
+                // mezclarlo con 'reclamo' diluía la señal de los reclamos
+                // reales (disputa de pago, acusación) entre pedidos
+                // normales de "prefiero que me expliquen por teléfono".
+                $tipoEscalar = ($in['motivo'] ?? '') === 'quiere_hablar_con_alguien' ? 'atencion_directa' : 'reclamo';
+                $leadEscalar = ['tipo' => $tipoEscalar, 'estado' => $lead['estado'] ?? '', 'nombre' => $lead['nombre'] ?? '', 'resumen' => ''];
                 ia_registrar_prospecto_atorado($pdo, $telefono, $leadEscalar, $resumenEscalar, $nombreEscalar);
                 $contenido = trim($textoRonda) === ''
                     ? json_encode([
