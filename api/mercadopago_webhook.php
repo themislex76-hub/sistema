@@ -109,11 +109,30 @@ $horarioTexto = citas_formatear_fecha_hora($cita['fecha'], substr($cita['hora_in
 // despacho con interesados que no habían pagado todavía) — ya que sí pagó,
 // recién aquí se registra, con los datos reales de la cita, y se pausa el
 // bot (a partir de aquí un humano se encarga de preparar y hacer la llamada).
+//
+// Bug real detectado en producción: como este es el PRIMER guardado del
+// prospecto, el "Resumen del caso" se quedaba solo con "Asesoría pagada...
+// y agendada para..." — sin ningún dato de qué le pasó a la persona,
+// aunque ya lo hubiera contado con detalle en la conversación (el abogado
+// llegaba a la llamada sin haber leído nada real del caso). Se rescata el
+// primer mensaje real que mandó el cliente (la descripción original de su
+// caso) para que el resumen sí diga algo útil.
+$stmtPrimerMsg = $pdo->prepare(
+    "SELECT texto FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante' ORDER BY creado_en ASC LIMIT 1"
+);
+$stmtPrimerMsg->execute([':t' => $cita['telefono']]);
+$primerMensaje = trim((string)($stmtPrimerMsg->fetchColumn() ?: ''));
+
+$resumenPago = "Asesoría pagada (\${$cita['monto']} MXN) y agendada para {$horarioTexto}.";
+$resumenCompleto = $primerMensaje !== ''
+    ? $resumenPago . ' Consulta original del cliente: "' . mb_strimwidth($primerMensaje, 0, 300, '…') . '"'
+    : $resumenPago;
+
 guardar_prospecto($pdo, $cita['telefono'], $cita['nombre_cliente'], [
     'tipo' => 'asesoria_paga',
     'estado' => '',
     'nombre' => $cita['nombre_cliente'] ?? '',
-    'resumen' => "Asesoría pagada (\${$cita['monto']} MXN) y agendada para {$horarioTexto}.",
+    'resumen' => $resumenCompleto,
 ], true, true);
 
 // Se avisa directo al abogado que le tocó la cita (no al "asignado" del
