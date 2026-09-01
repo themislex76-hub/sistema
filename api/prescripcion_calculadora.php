@@ -93,3 +93,71 @@ function calcular_plazo_demanda(string $fechaDespido, ?string $fechaSolicitudCon
         'nota' => 'Plazo reanudado desde el día siguiente a la Constancia de No Conciliación, con los días que quedaban.',
     ];
 }
+
+// Cálculo real (no aritmética de la IA) del plazo para reclamar
+// prestaciones/finiquito (aguinaldo, vacaciones, prima vacacional, salarios
+// no pagados, etc.) cuando NO se trata de un despido ni de una rescisión
+// del Art. 51 LFT -- por ejemplo una renuncia voluntaria donde el patrón se
+// quedó debiendo el finiquito. Bug real detectado en producción: el bot le
+// aplicó a un caso así el plazo de 2 meses del despido (Art. 518 LFT),
+// dándole al cliente una falsa urgencia de "solo te quedan 7 días" cuando
+// en realidad, al ser una reclamación de prestaciones, el plazo real es de
+// UN AÑO (Art. 516 LFT, regla general de prescripción).
+//
+// $fechaBaja: 'Y-m-d', fecha en que terminó la relación laboral (renuncia,
+// término del contrato, etc. -- NO un despido/rescisión, esos usan
+// calcular_plazo_demanda). $hoy: 'Y-m-d', por defecto la fecha actual.
+function calcular_plazo_prestaciones(string $fechaBaja, ?string $fechaSolicitudConciliacion, ?string $fechaFinConciliacion, ?string $hoy = null): ?array
+{
+    try {
+        $baja = new DateTimeImmutable($fechaBaja);
+    } catch (\Throwable $e) {
+        return null;
+    }
+    $ahora = $hoy !== null ? new DateTimeImmutable($hoy) : new DateTimeImmutable();
+    $limiteOriginal = $baja->modify('+365 days');
+
+    if ($fechaSolicitudConciliacion === null || $fechaSolicitudConciliacion === '') {
+        $diasRestantes = (int)$ahora->diff($limiteOriginal)->format('%r%a');
+        return [
+            'estado' => $diasRestantes < 0 ? 'vencido' : 'vigente',
+            'dias_restantes' => $diasRestantes,
+            'fecha_limite' => $limiteOriginal->format('Y-m-d'),
+            'nota' => 'Plazo general de prestaciones (Art. 516 LFT, 1 año), no el de despido -- todavía no inició trámite de conciliación, el plazo corre normal.',
+        ];
+    }
+
+    try {
+        $solicitud = new DateTimeImmutable($fechaSolicitudConciliacion);
+    } catch (\Throwable $e) {
+        return null;
+    }
+    $diasRestantesAlPausar = (int)$solicitud->diff($limiteOriginal)->format('%r%a');
+
+    if ($fechaFinConciliacion === null || $fechaFinConciliacion === '') {
+        return [
+            'estado' => 'pausado',
+            'dias_restantes' => null,
+            'dias_restantes_al_reanudar' => $diasRestantesAlPausar,
+            'fecha_limite' => null,
+            'nota' => 'Plazo de prestaciones (Art. 516 LFT, 1 año) pausado mientras dura la conciliación. Al concluir '
+                . '(Constancia de No Conciliación), le quedarán ' . max(0, $diasRestantesAlPausar) . ' día(s) para demandar.',
+        ];
+    }
+
+    try {
+        $finConciliacion = new DateTimeImmutable($fechaFinConciliacion);
+    } catch (\Throwable $e) {
+        return null;
+    }
+    $reanuda = $finConciliacion->modify('+1 day');
+    $limiteFinal = $reanuda->modify('+' . max(0, $diasRestantesAlPausar) . ' days');
+    $diasRestantes = (int)$ahora->diff($limiteFinal)->format('%r%a');
+
+    return [
+        'estado' => $diasRestantes < 0 ? 'vencido' : 'vigente',
+        'dias_restantes' => $diasRestantes,
+        'fecha_limite' => $limiteFinal->format('Y-m-d'),
+        'nota' => 'Plazo de prestaciones (Art. 516 LFT, 1 año) reanudado desde el día siguiente a la Constancia de No Conciliación, con los días que quedaban.',
+    ];
+}

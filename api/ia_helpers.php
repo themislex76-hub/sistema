@@ -803,6 +803,22 @@ mejor que mencionarla en cada respuesta.
   sin cobrar de nuevo). Si la cita original ya no está vigente y la
   persona insiste en que no debería pagar de nuevo, usa escalar_a_humano
   en vez de resolverlo tú.
+- REGLA DURA sobre plazos: renuncia voluntaria NO es despido, y su plazo
+  es DISTINTO. Bug real detectado en producción: a un cliente que
+  renunció voluntariamente y solo reclamaba su finiquito no pagado se le
+  aplicó por error el plazo de despido (2 meses, Art. 518 LFT) y se le
+  dijo que "solo le quedaban 7 días" -- una urgencia falsa gravísima,
+  cuando en realidad al ser reclamo de prestaciones (aguinaldo,
+  vacaciones, prima vacacional, salarios no pagados) el plazo real es de
+  UN AÑO (Art. 516 LFT). Antes de calcular o mencionar CUALQUIER plazo,
+  identifica primero si de verdad es un despido/rescisión (patrón corrió
+  a la persona, o la persona se fue por una causa imputable al patrón del
+  Art. 51) -- ahí sí usa calcular_plazo_demanda. Si en cambio la persona
+  RENUNCIÓ por su cuenta (sin causa imputable al patrón) y solo le deben
+  dinero (finiquito/prestaciones), usa calcular_plazo_prestaciones -- NUNCA
+  calcular_plazo_demanda para ese caso. Ante la duda de cuál aplica,
+  pregúntale directamente a la persona si ella renunció o si el patrón la
+  corrió, antes de calcular o mencionar cualquier plazo.
 - REGLA DURA sobre archivos/comprobantes que manda el cliente: NUNCA digas
   ni des a entender que "el abogado ya está enterado", "ya lo tiene en
   revisión", "ya vio tu comprobante" o cualquier frase parecida, solo
@@ -995,7 +1011,7 @@ const IA_TOOLS = [
     ],
     [
         'name' => 'calcular_plazo_demanda',
-        'description' => 'Calcula (con las fechas reales, no de memoria) cuántos días le quedan a la persona para presentar su demanda de despido antes de que prescriba su derecho (Art. 518 LFT: 2 meses desde el despido), tomando en cuenta que el trámite de conciliación SUSPENDE ese plazo (no lo reinicia) mientras dura. Llama esta herramienta SIEMPRE que se hable de un despido real (no hipotético) y tengas al menos la fecha del despido — para poder avisarle con precisión si tiene poco tiempo o si ya se le venció, en vez de solo mencionar el dato genérico de "2 meses". Nunca calcules esto tú mismo ni redondees.',
+        'description' => 'Calcula (con las fechas reales, no de memoria) cuántos días le quedan a la persona para presentar su demanda de despido antes de que prescriba su derecho (Art. 518 LFT: 2 meses desde el despido), tomando en cuenta que el trámite de conciliación SUSPENDE ese plazo (no lo reinicia) mientras dura. Llama esta herramienta SIEMPRE que se hable de un despido real (no hipotético) y tengas al menos la fecha del despido — para poder avisarle con precisión si tiene poco tiempo o si ya se le venció, en vez de solo mencionar el dato genérico de "2 meses". Nunca calcules esto tú mismo ni redondees. ADVERTENCIA -- NO uses esta herramienta si la persona RENUNCIÓ voluntariamente (sin causa imputable al patrón) y solo reclama que no le pagaron su finiquito (aguinaldo, vacaciones, prima vacacional, salarios no pagados): eso NO es un despido, el plazo de 2 meses del Art. 518 NO le aplica -- usa calcular_plazo_prestaciones en su lugar (bug real detectado en producción: se le dijo a un cliente que renunció voluntariamente que solo le quedaban 7 días para reclamar su finiquito, cuando en realidad tenía casi un año -- una urgencia falsa que nunca debe repetirse).',
         'input_schema' => [
             'type' => 'object',
             'properties' => [
@@ -1013,6 +1029,28 @@ const IA_TOOLS = [
                 ],
             ],
             'required' => ['fecha_despido'],
+        ],
+    ],
+    [
+        'name' => 'calcular_plazo_prestaciones',
+        'description' => 'Calcula (con las fechas reales, no de memoria) cuántos días le quedan a la persona para reclamar prestaciones/finiquito no pagado (aguinaldo, vacaciones, prima vacacional, salarios adeudados) cuando NO hay un despido ni una rescisión de por medio -- típicamente una RENUNCIA VOLUNTARIA donde el patrón se quedó debiendo el finiquito. El plazo aquí es de UN AÑO (Art. 516 LFT, regla general de prescripción), muy distinto a los 2 meses de un despido -- usa SIEMPRE esta herramienta (nunca calcular_plazo_demanda) para este tipo de caso, en cuanto tengas la fecha en que terminó la relación laboral. Igual que con el despido, el trámite de conciliación suspende este plazo mientras dura.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'fecha_baja' => [
+                    'type' => 'string',
+                    'description' => 'Fecha exacta en que terminó la relación laboral (renuncia, término del contrato, etc.), formato YYYY-MM-DD.',
+                ],
+                'fecha_solicitud_conciliacion' => [
+                    'type' => 'string',
+                    'description' => 'Fecha en que presentó su solicitud de conciliación ante el Centro (YYYY-MM-DD), si ya la presentó. Cadena vacía si todavía no ha iniciado ningún trámite.',
+                ],
+                'fecha_fin_conciliacion' => [
+                    'type' => 'string',
+                    'description' => 'Fecha en que se emitió su Constancia de No Conciliación, o en que se dio por concluido el trámite (YYYY-MM-DD), si ya la tiene. Cadena vacía si el trámite de conciliación sigue en curso o no ha iniciado.',
+                ],
+            ],
+            'required' => ['fecha_baja'],
         ],
     ],
     [
@@ -1207,7 +1245,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // y, una vez elegido el horario, confirmar_horario_asesoria) sin
     // escribir texto todavía — por eso esto es un ciclo y no una sola
     // "segunda llamada", con un tope de rondas por seguridad.
-    $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'consultar_cita_pago'];
+    $herramientasConSeguimiento = ['calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_plazo_prestaciones', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'consultar_cita_pago'];
     $mensajesActuales = $mensajes;
     $lead = null;
     $texto = '';
@@ -1318,6 +1356,15 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 $contenido = $plazo !== null
                     ? json_encode($plazo, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Fecha de despido inválida o faltante.'], JSON_UNESCAPED_UNICODE);
+            } elseif ($bloque['name'] === 'calcular_plazo_prestaciones') {
+                $plazoPrestaciones = calcular_plazo_prestaciones(
+                    (string)($in['fecha_baja'] ?? ''),
+                    trim((string)($in['fecha_solicitud_conciliacion'] ?? '')) ?: null,
+                    trim((string)($in['fecha_fin_conciliacion'] ?? '')) ?: null
+                );
+                $contenido = $plazoPrestaciones !== null
+                    ? json_encode($plazoPrestaciones, JSON_UNESCAPED_UNICODE)
+                    : json_encode(['error' => 'Fecha de baja inválida o faltante.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'calcular_salarios_caidos') {
                 $salariosCaidos = calcular_salarios_caidos(
                     (string)($in['fecha_despido'] ?? ''),
