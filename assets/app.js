@@ -4286,7 +4286,10 @@ function prospectoDetalleHTML(p){
         </label>` : `<span class="badge ok">Turnado a ti</span>`}
         ${p.expediente_id ? `<span class="badge ok">Convertido en expediente ${escapeHTML(p.expediente_exp||'')}</span>` : `<button class="btn secondary" data-prospecto-convertir="${p.id}" style="font-size:11px; padding:6px 10px;">Convertir en expediente</button>`}
       </div>
-      ${p.resumen_caso ? `<div class="notice" style="margin-bottom:14px;"><strong>Resumen del caso (según el bot):</strong> ${escapeHTML(p.resumen_caso)}</div>` : ""}
+      <div class="notice" style="margin-bottom:14px;">
+        ${p.resumen_caso ? `<strong>Resumen del caso (según el bot):</strong> ${escapeHTML(p.resumen_caso)}<br>` : ""}
+        <button class="btn secondary" data-prospecto-generar-resumen="${p.id}" style="font-size:11px; padding:5px 10px; margin-top:${p.resumen_caso?'8px':'0'};">${p.resumen_caso ? 'Regenerar resumen' : 'Generar resumen'}</button>
+      </div>
       <div class="chat-scroll" style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px; background:var(--parchment);">
         ${PROSPECTO_MENSAJES.length ? PROSPECTO_MENSAJES.map(m=>`
           <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
@@ -4385,6 +4388,24 @@ function bindProspectoModalEvents(){
         renderViewBody();
         renderProspectoModal();
       }catch(err){ alert('No se pudo convertir: ' + err.message); btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-generar-resumen]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = parseInt(btn.dataset.prospectoGenerarResumen);
+      btn.disabled = true;
+      const textoOriginal = btn.textContent;
+      btn.textContent = 'Generando...';
+      try{
+        const d = await api('POST', 'prospectos_generar_resumen.php', {id});
+        const p = PROSPECTOS.find(x=>x.id===id);
+        if(p) p.resumen_caso = d.resumen_caso;
+        renderProspectoModal();
+      }catch(err){
+        alert('No se pudo generar el resumen: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = textoOriginal;
+      }
     });
   });
   const prospectoEnviarBtn = document.getElementById('prospectoEnviarBtn');
