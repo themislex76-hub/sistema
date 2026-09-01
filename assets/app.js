@@ -2277,7 +2277,6 @@ async function refreshBootstrap(){
     await loadProspectos();
     await loadDisponibilidad();
     await loadCitas();
-    await loadJurisprudenciaMatches();
   }
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadConversaciones();
@@ -4736,22 +4735,6 @@ function jurisprudenciaVincularRegistros(html, listaTesis){
 function jurisprudenciaHTML(){
   const r = JURISPRUDENCIA_RESULTADO;
   return `
-  ${JURISPRUDENCIA_MATCHES.length ? `
-  <div class="panel" style="margin-bottom:16px;">
-    <div class="panel-head"><h3>Sugeridas para tus casos</h3><span class="count">${JURISPRUDENCIA_MATCHES.length}</span></div>
-    <div class="panel-body" style="padding:0;">
-      ${JURISPRUDENCIA_MATCHES.map(m=>`
-      <div class="alert-row" style="align-items:flex-start; cursor:pointer;" data-id="${m.expediente_id}">
-        <div class="alert-info">
-          <div class="name">${escapeHTML(m.actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(m.demandado,30))}</div>
-          <div class="meta" style="font-weight:600; color:var(--ink);">${escapeHTML(m.rubro)}</div>
-          <div class="meta">${escapeHTML(m.interpretacion)}</div>
-        </div>
-      </div>`).join("")}
-    </div>
-  </div>
-  <div class="notice" style="margin-bottom:16px;">El sistema revisa solo las tesis que se van agregando a la biblioteca contra tus expedientes activos, con el mismo criterio del buscador de abajo — no reemplaza una búsqueda a mano.</div>
-  ` : ''}
   <div class="panel" style="margin-bottom:16px;">
     <div class="panel-body" style="padding:20px 24px;">
       <div class="notice" style="margin-bottom:14px;">Describe los hechos concretos de tu caso (quién es el patrón, qué prestación o problema hay, qué pasó) — evita preguntas muy generales, entre más específico mejor. Solo cita tesis reales de esta biblioteca, nunca inventa una.</div>

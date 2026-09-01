@@ -51,16 +51,18 @@ foreach ($tesis as $t) {
     $guardadas++;
 }
 
-// Cruce automático contra expedientes activos -- ver
-// jurisprudencia_cruce_helpers.php. Un fallo aquí (IA caída, etc.) nunca
-// debe tumbar el ingreso de las tesis, que ya se guardaron arriba.
-if ($registrosNuevos) {
-    try {
-        require_once __DIR__ . '/jurisprudencia_cruce_helpers.php';
-        jurisprudencia_cruzar_con_activos($pdo, $registrosNuevos);
-    } catch (\Throwable $e) {
-        error_log('jurisprudencia_cruzar_con_activos falló: ' . $e->getMessage());
-    }
-}
+// Cruce automático contra expedientes activos -- DESACTIVADO por ahora
+// (ver jurisprudencia_cruce_helpers.php): en producción salió con demasiados
+// falsos positivos (tesis genéricas de trámite marcadas como "aplicables" a
+// expedientes con los que no tienen relación real) -- hay que mejorar el
+// criterio de relevancia antes de volver a prenderlo.
+// if ($registrosNuevos) {
+//     try {
+//         require_once __DIR__ . '/jurisprudencia_cruce_helpers.php';
+//         jurisprudencia_cruzar_con_activos($pdo, $registrosNuevos);
+//     } catch (\Throwable $e) {
+//         error_log('jurisprudencia_cruzar_con_activos falló: ' . $e->getMessage());
+//     }
+// }
 
 respond(['guardadas' => $guardadas, 'nuevas' => count($registrosNuevos)]);
