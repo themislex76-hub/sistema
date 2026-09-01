@@ -245,6 +245,7 @@ function whatsapp_enviar_pdf_calculo(string $telefono, array $calc, float $salar
         @mkdir($carpetaTmp, 0755, true);
     }
     $rutaTemporal = $carpetaTmp . '/calculo_' . bin2hex(random_bytes(8)) . '.pdf';
+    $enviado = false;
 
     try {
         // require_once con un archivo que no existe es un error fatal de
@@ -263,7 +264,8 @@ function whatsapp_enviar_pdf_calculo(string $telefono, array $calc, float $salar
         if ($mediaId === null) {
             return false;
         }
-        return whatsapp_enviar_documento($telefono, $mediaId, 'Calculo_liquidacion_Expertos_Laborales.pdf');
+        $enviado = whatsapp_enviar_documento($telefono, $mediaId, 'Calculo_liquidacion_Expertos_Laborales.pdf');
+        return $enviado;
     } catch (\Throwable $e) {
         // Cualquier error real (falta vendor/, falta una clase, permisos,
         // etc.) se captura aquí en vez de tumbar la petición completa en
@@ -274,5 +276,23 @@ function whatsapp_enviar_pdf_calculo(string $telefono, array $calc, float $salar
         return false;
     } finally {
         @unlink($rutaTemporal);
+        // Bug real detectado: el envío del PDF nunca quedaba registrado en
+        // whatsapp_conversaciones, así que desde el sistema (la pantalla de
+        // Conversaciones/Prospectos) era imposible saber si de verdad se
+        // mandó o no -- había que confiar en el mensaje de texto del bot
+        // ("en unos segundos te llega el PDF") sin poder comprobarlo. Se
+        // deja constancia aquí, se haya logrado mandar o no.
+        try {
+            $pdo = db();
+            $texto = $enviado
+                ? '📄 PDF de cálculo de liquidación enviado.'
+                : '⚠️ El PDF de cálculo de liquidación NO se pudo enviar (revisar whatsapp_send_debug.log).';
+            $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+            )->execute([':t' => $telefono, ':texto' => $texto]);
+        } catch (\Throwable $e) {
+            // Nunca dejar que un fallo al registrar esto tumbe el envío ya
+            // intentado.
+        }
     }
 }
