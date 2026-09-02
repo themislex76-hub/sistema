@@ -159,3 +159,78 @@ function mercadopago_obtener_pago(string $paymentId): ?array
 
     return json_decode($raw, true);
 }
+
+/**
+ * Trae TODOS los pagos aprobados de la cuenta de Mercado Pago del
+ * despacho entre dos fechas (se usa para el reporte de cursos vendidos —
+ * ver api/cursos_ingresos_mensual.php). A diferencia de las asesorías
+ * (que sí quedan registradas en citas_asesoria), los cursos se venden
+ * desde la página aparte expertoslaborales.com/cursos y ahí no hay ningún
+ * registro en este sistema -- por eso este reporte no consulta la base de
+ * datos local, consulta directamente el historial real de pagos de
+ * Mercado Pago (misma cuenta que ya usa el sistema para las asesorías).
+ * Pagina de 50 en 50 hasta agotar el total o llegar a un tope de
+ * seguridad, para no dejar la petición corriendo indefinidamente si la
+ * cuenta tuviera un volumen enorme de pagos.
+ * Devuelve un array de ['description', 'transaction_amount', 'date_approved']
+ * o null si falló la consulta (credenciales faltantes o error de red).
+ */
+function mercadopago_buscar_pagos_aprobados(DateTimeInterface $desde, DateTimeInterface $hasta): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+
+    $pagos = [];
+    $offset = 0;
+    $limit = 50;
+    $topeSeguridad = 2000;
+
+    do {
+        $query = http_build_query([
+            'status' => 'approved',
+            'range' => 'date_approved',
+            'begin_date' => $desde->format('Y-m-d\TH:i:s.000P'),
+            'end_date' => $hasta->format('Y-m-d\TH:i:s.000P'),
+            'sort' => 'date_approved',
+            'criteria' => 'desc',
+            'limit' => $limit,
+            'offset' => $offset,
+        ]);
+        $ch = curl_init('https://api.mercadopago.com/v1/payments/search?' . $query);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $token,
+            ],
+            CURLOPT_TIMEOUT => 20,
+        ]);
+        $raw = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($raw === false || $status < 200 || $status >= 300) {
+            file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+                . " | buscar_pagos_aprobados | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+            return null;
+        }
+
+        $data = json_decode($raw, true);
+        $resultados = $data['results'] ?? [];
+        foreach ($resultados as $p) {
+            $pagos[] = [
+                'description' => (string)($p['description'] ?? ''),
+                'transaction_amount' => (float)($p['transaction_amount'] ?? 0),
+                'date_approved' => (string)($p['date_approved'] ?? ''),
+            ];
+        }
+
+        $total = (int)($data['paging']['total'] ?? count($resultados));
+        $offset += $limit;
+    } while ($offset < $total && $offset < $topeSeguridad && count($resultados) > 0);
+
+    return $pagos;
+}
