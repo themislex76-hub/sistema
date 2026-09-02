@@ -32,7 +32,7 @@ $fin = $inicio->modify('+1 hour');
 
 $stmt = $pdo->prepare(
     "INSERT INTO citas_asesoria (telefono, usuario_id, fecha, hora_inicio, hora_fin, estado, monto, nombre_cliente, pagado_en)
-     VALUES (:telefono, :usuario_id, :fecha, :hora_inicio, :hora_fin, 'confirmada', 299.00, 'Prueba recordatorio', NOW())"
+     VALUES (:telefono, :usuario_id, :fecha, :hora_inicio, :hora_fin, 'confirmada', 399.00, 'Prueba recordatorio', NOW())"
 );
 $stmt->execute([
     ':telefono' => $telefono,

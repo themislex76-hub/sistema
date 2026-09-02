@@ -159,7 +159,7 @@ contesta dudas laborales automáticamente y capta dos tipos de prospecto:
   radica en Ciudad de México o Estado de México, el bot deja de contestar
   solo y lo registra como posible cliente de litigio.
 - **Asesoría personalizada de pago**: a cualquier persona, de cualquier
-  estado, el bot le ofrece la asesoría de 1 hora por $299 MXN. Si la
+  estado, el bot le ofrece la asesoría de 1 hora por $399 MXN. Si la
   persona muestra interés, también se registra como prospecto — el bot no
   cobra por sí solo, tú le mandas los datos de pago/agenda a mano desde la
   conversación.

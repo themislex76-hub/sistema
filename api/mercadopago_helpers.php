@@ -5,7 +5,7 @@ declare(strict_types=1);
 // pago vía la API de Mercado Pago (Checkout Pro / Preferencias). Ver
 // mercadopago_credentials.example.php para configurar el Access Token.
 
-const MERCADOPAGO_MONTO_ASESORIA = 299.00;
+const MERCADOPAGO_MONTO_ASESORIA = 399.00;
 
 /**
  * Carga el Access Token desde mercadopago_credentials.php si ya existe en
@@ -23,7 +23,7 @@ function mercadopago_token(): ?string
 
 /**
  * Crea una "preferencia" de pago en Mercado Pago para la asesoría
- * telefónica ($299 MXN) y devuelve el link de pago (init_point) listo
+ * telefónica ($399 MXN) y devuelve el link de pago (init_point) listo
  * para mandarle al cliente por WhatsApp. Solo acepta tarjeta de crédito/
  * débito y el saldo de la cuenta de Mercado Pago (ambos confirman al
  * instante) — se excluyen OXXO, transferencia, depósito en ventanilla y

@@ -4227,7 +4227,7 @@ let AGENDA_TAB = 'general';
 
 const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
 const PROSPECTO_ESTATUS_BADGE = {nuevo:'crit', contactado:'warn', descartado:'closed', convertido:'ok'};
-const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesoría $299', control_expedientes:'Control de Expedientes', reclamo:'Reclamo', atencion_directa:'Quiere hablar con alguien'};
+const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesoría $399', control_expedientes:'Control de Expedientes', reclamo:'Reclamo', atencion_directa:'Quiere hablar con alguien'};
 const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida', control_expedientes:'ok', reclamo:'crit', atencion_directa:'warn'};
 
 function prospectosHTML(){
@@ -4252,7 +4252,7 @@ function prospectosHTML(){
   // a una persona por nombre/teléfono la quiere encontrar sin importar su
   // estatus.
   const buscando = SEARCH_TERM.trim() !== '';
-  // Un prospecto de despido que YA pagó y agendó su asesoría de $299 (pasa
+  // Un prospecto de despido que YA pagó y agendó su asesoría de $399 (pasa
   // cuando alguien primero calificó como despido y luego también pagó la
   // asesoría) se queda con tipo='despido' a propósito (nunca se degrada,
   // ver guardar_prospecto en prospectos_helpers.php) — pero mostrarlo aquí
@@ -4274,7 +4274,7 @@ function prospectosHTML(){
   const tabsHTML = `
   <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
     <button class="btn ${PROSPECTOS_TAB==='despido'?'':'secondary'}" data-prospectos-tab="despido" style="padding:8px 16px;">Despido (litigio) ${pendientesDespido>0?`<span class="nav-badge">${pendientesDespido}</span>`:""}</button>
-    <button class="btn ${PROSPECTOS_TAB==='asesoria_paga'?'':'secondary'}" data-prospectos-tab="asesoria_paga" style="padding:8px 16px;">Asesorías $299 ${pendientesAsesoria>0?`<span class="nav-badge">${pendientesAsesoria}</span>`:""}</button>
+    <button class="btn ${PROSPECTOS_TAB==='asesoria_paga'?'':'secondary'}" data-prospectos-tab="asesoria_paga" style="padding:8px 16px;">Asesorías $399 ${pendientesAsesoria>0?`<span class="nav-badge">${pendientesAsesoria}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='control_expedientes'?'':'secondary'}" data-prospectos-tab="control_expedientes" style="padding:8px 16px;">Control de Expedientes ${pendientesControlExp>0?`<span class="nav-badge">${pendientesControlExp}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='reclamo'?'':'secondary'}" data-prospectos-tab="reclamo" style="padding:8px 16px;">Reclamos ${pendientesReclamos>0?`<span class="nav-badge">${pendientesReclamos}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='atencion_directa'?'':'secondary'}" data-prospectos-tab="atencion_directa" style="padding:8px 16px;">Quiere hablar con alguien ${pendientesAtencionDirecta>0?`<span class="nav-badge">${pendientesAtencionDirecta}</span>`:""}</button>

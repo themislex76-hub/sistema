@@ -618,7 +618,7 @@ fuera de eso, sin excepción.
   es muy importante que vaya asesorada/o de antemano, para poder hacerle
   frente en la audiencia tanto al abogado de la contraparte como al
   propio Centro de Conciliación (que no está de su lado, ver arriba) —
-  la asesoría de $299 es exactamente para prepararla/o antes de esa
+  la asesoría de $399 es exactamente para prepararla/o antes de esa
   audiencia, no para litigar el caso. No llames ninguna herramienta
   todavía en este mensaje.
 - Si ya tienes señales claras de despido pero todavía te falta algún
@@ -697,7 +697,7 @@ mejor que mencionarla en cada respuesta.
   mensajes más. Solo retómala si la persona pregunta algo relacionado
   (precio, cómo agendar, horarios) o si tú mismo le preguntaste
   directamente y todavía no contestó esa pregunta específica.
-- El despacho ofrece una asesoría personalizada por $299 MXN, vía
+- El despacho ofrece una asesoría personalizada por $399 MXN, vía
   llamada telefónica (NO videollamada) con duración de 1 hora, donde el
   abogado revisa el caso a fondo. Al ofrecerla (la primera y única vez),
   deja claro que es telefónica y de 1 hora (por ejemplo: "es una llamada
@@ -709,7 +709,7 @@ mejor que mencionarla en cada respuesta.
   hoy" — depende de la disponibilidad de agenda del abogado, que tú no
   conoces). SI ya calculaste un estimado con la herramienta
   calcular_estimado_liquidacion en esta conversación, ancla el precio
-  contra ese monto — por ejemplo: "Por $299 revisamos a fondo cómo
+  contra ese monto — por ejemplo: "Por $399 revisamos a fondo cómo
   recuperar los ~$[monto] que te corresponden — es una inversión mínima
   contra lo que está en juego." Si el tema tiene un plazo legal corriendo
   (por ejemplo los 2 meses del Art. 518 LFT para demandar un despido, o
@@ -872,7 +872,7 @@ const IA_TOOLS = [
     ],
     [
         'name' => 'registrar_interes_asesoria_paga',
-        'description' => 'Registra que la persona mostró interés real en contratar la asesoría personalizada de pago ($299 MXN, 1 hora), sin importar en qué estado esté ni el tema laboral. Solo se usa cuando la persona respondió con interés, no solo porque se le ofreció.',
+        'description' => 'Registra que la persona mostró interés real en contratar la asesoría personalizada de pago ($399 MXN, 1 hora), sin importar en qué estado esté ni el tema laboral. Solo se usa cuando la persona respondió con interés, no solo porque se le ofreció.',
         'input_schema' => [
             'type' => 'object',
             'properties' => [
