@@ -4091,9 +4091,23 @@ async function cargarResumenSemanal(){
   RESUMEN_SEMANAL_STATE = {cargando:true, texto:null, error:null, generadoEn:null};
   renderViewBody();
   const m = metricsResumenSemanal();
+  // Un mismo expediente puede tener varias etapas capturadas de un jalón
+  // (ej. al dar de alta un caso que ya venía avanzado) -- todas quedan en
+  // el historial con el mismo minuto. Sin agrupar, el resumen repetía el
+  // nombre del caso una vez por etapa, lo cual se leía como info
+  // duplicada aunque cada línea fuera un avance real distinto.
+  const avancesPorCaso = new Map();
+  [...m.avances].sort((a,b)=> new Date(a.ts) - new Date(b.ts)).forEach(x=>{
+    let entry = avancesPorCaso.get(x.k.id);
+    if(!entry){ entry = {k:x.k, etapas:[], usuario:x.usuario, ts:x.ts}; avancesPorCaso.set(x.k.id, entry); }
+    entry.etapas.push(x.etapa);
+    entry.usuario = x.usuario;
+    entry.ts = x.ts;
+  });
+  const avancesAgrupados = Array.from(avancesPorCaso.values());
   const metricas = {
     totalActivos: m.totalActivos,
-    avances: m.avances.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${x.etapa} -- registrado por ${x.usuario} el ${new Date(x.ts).toLocaleString('es-MX', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}`),
+    avances: avancesAgrupados.map(e=> `${e.k.actor} vs ${e.k.demandado||'—'}: ${e.etapas.join(' → ')} -- registrado por ${e.usuario} el ${new Date(e.ts).toLocaleString('es-MX', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}`),
     enRiesgo: m.enRiesgo.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${x.motivo}`),
     cobros: m.cobros.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${fmtMoney(x.monto)}`),
     totalCobrado: m.totalCobrado,
