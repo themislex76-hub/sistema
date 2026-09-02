@@ -1786,6 +1786,11 @@ function extractMonto(text){
 let EQUIPO = [];
 let USUARIOS_ADMIN = []; // detalle completo (correo, activo, etc.) — solo lo usa la vista "Equipo" del Administrador
 let DIAS_INHABILES = []; // {id, fecha, descripcion, ambito} — ver pantalla "Días inhábiles"
+let ASESORIAS_POR_MES = []; // {mes:'YYYY-MM', vendidas, total} — asesorías $299/$399 vendidas, ver panel en "Ingresos por periodo"
+async function loadAsesoriasPorMes(){
+  try{ ASESORIAS_POR_MES = (await api('GET', 'asesorias_ingresos_mensual.php')).meses; }
+  catch(e){ ASESORIAS_POR_MES = []; }
+}
 
 // Horarios semanales propios para atender asesorías telefónicas de pago —
 // ver panel "Mi disponibilidad para asesorías" dentro de Agenda general.
@@ -2277,6 +2282,7 @@ async function refreshBootstrap(){
     await loadProspectos();
     await loadDisponibilidad();
     await loadCitas();
+    await loadAsesoriasPorMes();
   }
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadConversaciones();
@@ -3765,6 +3771,30 @@ function ingresosHTML(){
       }).join("") || `<tr><td colspan="3" class="empty">Sin cobros registrados todavía.</td></tr>`}</tbody></table>
     </div>
   </div>
+
+  ${(()=>{
+    const totalVendidasHist = ASESORIAS_POR_MES.reduce((s,m)=>s+m.vendidas,0);
+    const totalGanadoHist = ASESORIAS_POR_MES.reduce((s,m)=>s+m.total,0);
+    return `
+  <div class="panel">
+    <div class="panel-head"><h3>Asesorías de pago vendidas por mes</h3><span class="count">${ASESORIAS_POR_MES.length} mes(es)</span></div>
+    <div class="panel-body" style="padding:16px 20px 0;">
+      <div class="stat-grid" style="grid-template-columns:repeat(2,1fr); margin-bottom:16px;">
+        <div class="stat-card"><div class="bar"></div><div class="num">${totalVendidasHist}</div><div class="label">Asesorías vendidas en total</div></div>
+        <div class="stat-card ok"><div class="bar"></div><div class="num">${fmtMoney(totalGanadoHist)}</div><div class="label">Total ganado (la asesoría es servicio directo, no hay reparto)</div></div>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Mes</th><th>Vendidas</th><th>Ganado</th></tr></thead>
+      <tbody>${ASESORIAS_POR_MES.map(m=>{
+        const [y,mm] = m.mes.split('-');
+        const nombreMes = MESES_ES[parseInt(mm)-1];
+        return `<tr><td>${capitalize(nombreMes)} ${y}</td><td>${m.vendidas}</td><td><strong>${fmtMoney(m.total)}</strong></td></tr>`;
+      }).join("") || `<tr><td colspan="3" class="empty">Sin asesorías vendidas todavía.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+  })()}
   `;
 }
 
