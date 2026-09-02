@@ -22,20 +22,43 @@ function mercadopago_token(): ?string
 }
 
 /**
+ * Cuánto se le debe cobrar a este teléfono: normalmente el precio vigente
+ * (MERCADOPAGO_MONTO_ASESORIA), salvo que el bot ya le haya cotizado el
+ * precio anterior ($299) en algún mensaje saliente de esta misma
+ * conversación -- ahí se respeta lo ya dicho, para no subirle el precio a
+ * media plática a alguien a quien ya se le prometió otro monto. Como el
+ * bot deja de mencionar "$299" en cuanto se sube el nuevo prompt, esto se
+ * autolimita solo a las conversaciones que ya traían esa cotización de
+ * antes del cambio de precio -- no hace falta llevar una fecha de corte a mano.
+ */
+function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): float
+{
+    $stmt = $pdo->prepare(
+        "SELECT 1 FROM whatsapp_conversaciones
+         WHERE telefono = :t AND direccion = 'saliente' AND texto LIKE '%299%'
+         LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    return $stmt->fetchColumn() ? 299.00 : MERCADOPAGO_MONTO_ASESORIA;
+}
+
+/**
  * Crea una "preferencia" de pago en Mercado Pago para la asesoría
- * telefónica ($399 MXN) y devuelve el link de pago (init_point) listo
- * para mandarle al cliente por WhatsApp. Solo acepta tarjeta de crédito/
- * débito y el saldo de la cuenta de Mercado Pago (ambos confirman al
- * instante) — se excluyen OXXO, transferencia, depósito en ventanilla y
- * "Meses sin Tarjeta", porque esos no confirman el pago de inmediato o no
- * son un pago real en el momento, lo que dejaría un horario apartado sin
- * certeza real de si se va a pagar o no.
+ * telefónica y devuelve el link de pago (init_point) listo para mandarle
+ * al cliente por WhatsApp. Solo acepta tarjeta de crédito/débito y el
+ * saldo de la cuenta de Mercado Pago (ambos confirman al instante) — se
+ * excluyen OXXO, transferencia, depósito en ventanilla y "Meses sin
+ * Tarjeta", porque esos no confirman el pago de inmediato o no son un
+ * pago real en el momento, lo que dejaría un horario apartado sin certeza
+ * real de si se va a pagar o no.
  *
  * $citaId se manda como external_reference para poder relacionar la
- * notificación del webhook con la cita correcta.
+ * notificación del webhook con la cita correcta. $monto es el precio real
+ * a cobrar (ver mercadopago_monto_asesoria_a_respetar) -- normalmente el
+ * vigente, salvo que ya se le haya cotizado el anterior a esta persona.
  * Devuelve ['id' => preference_id, 'init_point' => url_de_pago] o null si falló.
  */
-function mercadopago_crear_preferencia_asesoria(int $citaId, string $telefono, string $notificationUrl): ?array
+function mercadopago_crear_preferencia_asesoria(int $citaId, string $telefono, string $notificationUrl, float $monto = MERCADOPAGO_MONTO_ASESORIA): ?array
 {
     $token = mercadopago_token();
     if ($token === null) {
@@ -48,7 +71,7 @@ function mercadopago_crear_preferencia_asesoria(int $citaId, string $telefono, s
             'title' => 'Asesoría laboral personalizada (llamada telefónica, 1 hora)',
             'quantity' => 1,
             'currency_id' => 'MXN',
-            'unit_price' => MERCADOPAGO_MONTO_ASESORIA,
+            'unit_price' => $monto,
         ]],
         'payment_methods' => [
             'excluded_payment_types' => [

@@ -1584,7 +1584,8 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         ], JSON_UNESCAPED_UNICODE);
     }
 
-    $pref = mercadopago_crear_preferencia_asesoria($citaId, $telefono, MERCADOPAGO_WEBHOOK_URL);
+    $monto = mercadopago_monto_asesoria_a_respetar($pdo, $telefono);
+    $pref = mercadopago_crear_preferencia_asesoria($citaId, $telefono, MERCADOPAGO_WEBHOOK_URL, $monto);
     if ($pref === null) {
         // No dejamos la cita "atorada" ocupando el horario si no se pudo
         // generar el link de pago.
@@ -1605,7 +1606,7 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         'link_pago' => $pref['init_point'],
         'horario' => citas_formatear_fecha_hora($fecha, $horaInicio),
         'vigencia_minutos' => CITAS_HOLD_MINUTOS,
-        'monto' => MERCADOPAGO_MONTO_ASESORIA,
+        'monto' => $monto,
     ], JSON_UNESCAPED_UNICODE);
 }
 
