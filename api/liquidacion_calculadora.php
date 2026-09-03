@@ -61,15 +61,20 @@ function max_vacaciones_anteriores_no_prescritas_lft(DateTimeImmutable $ing, Dat
     return $tot;
 }
 
-// Texto legible de antigüedad ("1 año, 6 meses, 17 días"), igual que
-// antigText(d) en la calculadora del sitio: descompone los días totales en
-// años (÷365), meses (÷30 del residuo) y días (residuo final).
-function antiguedad_texto_lft(int $diasTotales): string
+// Texto legible de antigüedad ("1 año, 6 meses, 17 días") -- usa el
+// desglose real de calendario (DateInterval), no una aproximación de
+// ÷365/÷30: esa aproximación se detectó en producción dando fechas mal
+// (ej. "10 años, 10 meses, 20 días" en vez de "10 años, 10 meses, 12
+// días" para el mismo ingreso/baja, porque ÷365 y ÷30 no respetan meses
+// de 28-31 días ni años bisiestos). Los montos en pesos no se ven
+// afectados por este bug -- usan $ing/$baj directamente (completed_years_lft,
+// last_aniversario_lft) -- solo el texto mostrado al cliente/abogado.
+function antiguedad_texto_lft(DateTimeImmutable $ing, DateTimeImmutable $baj): string
 {
-    $anios = intdiv($diasTotales, 365);
-    $restoDias = $diasTotales % 365;
-    $meses = intdiv($restoDias, 30);
-    $dias = $restoDias % 30;
+    $diff = $ing->diff($baj);
+    $anios = $diff->y;
+    $meses = $diff->m;
+    $dias = $diff->d;
 
     $partes = [];
     if ($anios > 0) $partes[] = $anios . ' ' . ($anios === 1 ? 'año' : 'años');
@@ -260,7 +265,7 @@ function calcular_estimado_liquidacion(
         'modo' => $modo,
         'antiguedad_anios' => round($aniosDec, 2),
         'antiguedad_anios_completos' => $cy,
-        'antiguedad_texto' => antiguedad_texto_lft($antigDias),
+        'antiguedad_texto' => antiguedad_texto_lft($ing, $baj),
         'sdi_usado' => round($sdi, 2),
         'prima_antiguedad_procede' => $primaAntiguedadProcede,
         'aguinaldo_dias' => round($aguinaldoDias, 1),
