@@ -849,7 +849,7 @@ TXT;
 const IA_TOOLS = [
     [
         'name' => 'registrar_lead_despido',
-        'description' => 'Registra un caso de DESPIDO (no rescisión del Art. 51 LFT, no otro reclamo laboral) donde la fuente de trabajo (empresa/patrón) está en Ciudad de México o Estado de México, para que un abogado del despacho le dé seguimiento como posible cliente de litigio. Solo se usa cuando se cumplen todas las condiciones de calificación.',
+        'description' => 'Registra un caso de DESPIDO (no rescisión del Art. 51 LFT, no otro reclamo laboral) donde la fuente de trabajo (empresa/patrón) está en Ciudad de México o Estado de México, para que un abogado del despacho le dé seguimiento como posible cliente de litigio. Solo se usa cuando se cumplen todas las condiciones de calificación -- incluyendo que la persona NO haya iniciado ya su propio trámite en el Centro de Conciliación sin Constancia de No Conciliación todavía (ese caso no califica, ofrece la asesoría de pago con registrar_interes_asesoria_paga en su lugar, ver REGLA DURA arriba). Antes de llamar esta herramienta confirma explícitamente el estatus de conciliación si todavía no lo sabes -- nunca la llames solo porque la persona mencionó un despido, sin haber confirmado primero que no está ya llevando su propio trámite.',
         'input_schema' => [
             'type' => 'object',
             'properties' => [
