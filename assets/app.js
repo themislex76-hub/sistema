@@ -4304,7 +4304,15 @@ function prospectosHTML(){
   // "descartado" es que el despacho no toma el litigio, no que se deje de
   // contestarle a la persona — el bot le sigue contestando solo (ver
   // prospectos_update.php), por eso también puede reaparecer si escribe.
-  const esPendiente = p => p.estatus === 'nuevo' || (p.mensaje_nuevo && p.estatus !== 'descartado');
+  // Un prospecto de asesoría de pago que YA tiene una cita confirmada
+  // (pagó y quedó agendado solo, sin intervención humana) no cuenta como
+  // "pendiente" solo por seguir con estatus='nuevo' -- nada quedó
+  // marcado como convertido automáticamente al pagar, así que sin este
+  // filtro se acumulaban para siempre inflando el conteo de la pestaña
+  // "Asesorías $399" con casos ya resueltos. Un mensaje nuevo de esa
+  // misma persona (ej. una duda antes de su cita) sigue contando como
+  // pendiente igual que siempre.
+  const esPendiente = p => (p.estatus === 'nuevo' && !p.tiene_asesoria_confirmada) || (p.mensaje_nuevo && p.estatus !== 'descartado');
   // La casilla de búsqueda del topbar (nombre o teléfono) también aplica
   // aquí — antes solo filtraba Expedientes (ver visibleCases()). Mientras
   // se busca, se ignora el filtro de "solo pendientes": alguien que busca
