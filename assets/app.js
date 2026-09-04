@@ -4426,7 +4426,7 @@ function renderProspectoModal(){
   const p = PROSPECTOS.find(x=>x.id===PROSPECTO_ABIERTO);
   if(!p) return;
   const overlay = document.getElementById('modalOverlay');
-  overlay.innerHTML = `<div class="modal" style="max-width:720px;">
+  overlay.innerHTML = `<div class="modal" style="max-width:1040px;">
     <div class="modal-head">
       <button class="close" id="modalClose">&times;</button>
       <h2>${escapeHTML(p.nombre || 'Sin nombre')}</h2>
@@ -5030,7 +5030,7 @@ function renderConversacionModal(){
   const c = CONVERSACIONES.find(x=>x.telefono===CONVERSACION_ABIERTA);
   if(!c) return;
   const overlay = document.getElementById('modalOverlay');
-  overlay.innerHTML = `<div class="modal" style="max-width:720px;">
+  overlay.innerHTML = `<div class="modal" style="max-width:1040px;">
     <div class="modal-head">
       <button class="close" id="modalClose">&times;</button>
       <h2>${escapeHTML(c.prospecto_nombre || c.telefono)}</h2>
@@ -5197,7 +5197,7 @@ function citasPanelHTML(forzar){
 async function abrirCitaConversacionModal(telefono, nombre){
   await loadConversacionMensajes(telefono);
   const overlay = document.getElementById('modalOverlay');
-  overlay.innerHTML = `<div class="modal" style="max-width:720px;">
+  overlay.innerHTML = `<div class="modal" style="max-width:1040px;">
     <div class="modal-head">
       <button class="close" id="modalClose">&times;</button>
       <h2>${escapeHTML(nombre || telefono)}</h2>
