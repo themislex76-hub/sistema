@@ -31,7 +31,7 @@ function mercadopago_token(): ?string
  * nuevo prompt, esto se autolimita solo a las conversaciones que ya
  * traían esa cotización de antes del cambio de precio.
  *
- * OJO: el primer intento de este filtro buscaba "299" a secas y causó un
+ * OJO 1: el primer intento de este filtro buscaba "299" a secas y causó un
  * cobro real de $299 en una asesoría nueva -- cualquier cálculo de
  * liquidación cuyo total/desglose contuviera "299" en cualquier parte
  * (ej. "$61,299.40") hacía falso positivo, sin relación alguna con el
@@ -40,9 +40,26 @@ function mercadopago_token(): ?string
  * porque el "$" no queda pegado al "299") Y la palabra "asesor" en el
  * mismo mensaje, para anclarlo a una cotización real de la asesoría y no
  * a una cifra de cálculo que por coincidencia contenga esos dígitos.
+ *
+ * OJO 2: la promesa de respetar $299 es solo para la PRIMERA asesoría
+ * (a quien ya se le cotizó antes de subir el precio y todavía no pagaba
+ * nada) -- si el teléfono YA tiene una asesoría pagada y confirmada
+ * antes (citas_asesoria.estado = 'confirmada'), lo que está pidiendo
+ * ahora es una asesoría NUEVA y separada, no la que se le cotizó en su
+ * momento -- esa promesa ya se cumplió con la que pagó. En ese caso
+ * cobra el precio vigente, sin importar que su historial de WhatsApp
+ * siga trayendo el mensaje viejo de "$299".
  */
 function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): float
 {
+    $stmt = $pdo->prepare(
+        "SELECT 1 FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    if ($stmt->fetchColumn()) {
+        return MERCADOPAGO_MONTO_ASESORIA;
+    }
+
     $stmt = $pdo->prepare(
         "SELECT 1 FROM whatsapp_conversaciones
          WHERE telefono = :t AND direccion = 'saliente'
