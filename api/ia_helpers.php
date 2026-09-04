@@ -441,14 +441,27 @@ fuera de eso, sin excepción.
      dos motivos independientes para NO llamar registrar_lead_despido,
      cualquiera de los dos ya basta. Orienta con la misma calidad de
      siempre y ofrece la asesoría de pago.
-  3. El domicilio de la fuente de trabajo (la empresa/patrón donde
-     trabajaba, no donde vive el trabajador) está en Ciudad de México, O
-     en uno de estos municipios del Estado de México — eso es lo que
+  3. El domicilio de la fuente de trabajo está en Ciudad de México, O en
+     uno de estos municipios del Estado de México — eso es lo que
      determina la jurisdicción, así que pregunta específicamente dónde
-     está ubicada la empresa, no dónde vive la persona. El despacho SOLO
-     atiende estos municipios de Edomex — si es Edomex pero el municipio
-     NO está en esta lista, NO califica (aunque sea un municipio vecino o
-     conocido):
+     está ubicada la empresa, no dónde vive la persona.
+     REGLA DURA — "fuente de trabajo" es el CENTRO DE TRABAJO REAL donde
+     la persona físicamente prestaba sus servicios día a día (la
+     sucursal, planta, oficina o local donde llegaba a trabajar) — NUNCA
+     la matriz, el domicilio fiscal, ni cualquier otra sucursal que la
+     empresa tenga en otro lado. Es muy común que una empresa grande o
+     con varias sucursales tenga oficinas en CDMX o en algún municipio de
+     la lista aunque el trabajador haya laborado siempre en otro estado
+     (ej. Veracruz, Jalisco) — eso NO califica, aunque la empresa "sí
+     tenga oficinas aquí". Una respuesta genérica como "sí, la empresa
+     tiene oficinas en Ciudad de México" NO es suficiente para calificar
+     — siempre pregunta explícitamente en qué ciudad/municipio estaba
+     UBICADA LA SUCURSAL, PLANTA U OFICINA DONDE ELLA/ÉL TRABAJABA
+     FÍSICAMENTE (no "dónde tiene oficinas la empresa" en general), y
+     usa esa respuesta, no el domicilio corporativo ni otras sucursales.
+     El despacho SOLO atiende estos municipios de Edomex — si es Edomex
+     pero el municipio NO está en esta lista, NO califica (aunque sea un
+     municipio vecino o conocido):
      Atizapán de Zaragoza, Cuautitlán, Cuautitlán Izcalli, Coyotepec,
      Huixquilucan, Huehuetoca, Isidro Fabela, Jilotzingo, Melchor Ocampo,
      Naucalpan, Nicolás Romero, Teoloyucan, Tepotzotlán, Tlalnepantla,
@@ -849,14 +862,14 @@ TXT;
 const IA_TOOLS = [
     [
         'name' => 'registrar_lead_despido',
-        'description' => 'Registra un caso de DESPIDO (no rescisión del Art. 51 LFT, no otro reclamo laboral) donde la fuente de trabajo (empresa/patrón) está en Ciudad de México o Estado de México, para que un abogado del despacho le dé seguimiento como posible cliente de litigio. Solo se usa cuando se cumplen todas las condiciones de calificación -- incluyendo que la persona NO haya iniciado ya su propio trámite en el Centro de Conciliación sin Constancia de No Conciliación todavía (ese caso no califica, ofrece la asesoría de pago con registrar_interes_asesoria_paga en su lugar, ver REGLA DURA arriba). Antes de llamar esta herramienta confirma explícitamente el estatus de conciliación si todavía no lo sabes -- nunca la llames solo porque la persona mencionó un despido, sin haber confirmado primero que no está ya llevando su propio trámite.',
+        'description' => 'Registra un caso de DESPIDO (no rescisión del Art. 51 LFT, no otro reclamo laboral) donde la fuente de trabajo (empresa/patrón) está en Ciudad de México o Estado de México, para que un abogado del despacho le dé seguimiento como posible cliente de litigio. Solo se usa cuando se cumplen todas las condiciones de calificación -- incluyendo que la persona NO haya iniciado ya su propio trámite en el Centro de Conciliación sin Constancia de No Conciliación todavía (ese caso no califica, ofrece la asesoría de pago con registrar_interes_asesoria_paga en su lugar, ver REGLA DURA arriba). Antes de llamar esta herramienta confirma explícitamente el estatus de conciliación si todavía no lo sabes -- nunca la llames solo porque la persona mencionó un despido, sin haber confirmado primero que no está ya llevando su propio trámite. También confirma que el estado corresponde al CENTRO DE TRABAJO REAL (la sucursal/planta/oficina donde físicamente trabajaba), no a la matriz ni a otra sucursal de la empresa -- una empresa con oficinas en CDMX pero cuyo trabajador laboraba en otro estado (ej. Veracruz, Jalisco) NO califica, aunque "la empresa sí tenga oficinas aquí".',
         'input_schema' => [
             'type' => 'object',
             'properties' => [
                 'estado' => [
                     'type' => 'string',
                     'enum' => ['Ciudad de México', 'Estado de México'],
-                    'description' => 'Estado donde está ubicada la fuente de trabajo (la empresa/patrón), no donde vive el trabajador.',
+                    'description' => 'Estado donde está ubicado el CENTRO DE TRABAJO REAL donde la persona físicamente prestaba sus servicios (la sucursal/planta/oficina donde llegaba a trabajar) -- no donde vive el trabajador, no la matriz, y no cualquier otra sucursal que la empresa tenga en otro lado.',
                 ],
                 'nombre' => [
                     'type' => 'string',
