@@ -27,15 +27,26 @@ function mercadopago_token(): ?string
  * precio anterior ($299) en algún mensaje saliente de esta misma
  * conversación -- ahí se respeta lo ya dicho, para no subirle el precio a
  * media plática a alguien a quien ya se le prometió otro monto. Como el
- * bot deja de mencionar "$299" en cuanto se sube el nuevo prompt, esto se
- * autolimita solo a las conversaciones que ya traían esa cotización de
- * antes del cambio de precio -- no hace falta llevar una fecha de corte a mano.
+ * bot deja de mencionar "$299" para la asesoría en cuanto se sube el
+ * nuevo prompt, esto se autolimita solo a las conversaciones que ya
+ * traían esa cotización de antes del cambio de precio.
+ *
+ * OJO: el primer intento de este filtro buscaba "299" a secas y causó un
+ * cobro real de $299 en una asesoría nueva -- cualquier cálculo de
+ * liquidación cuyo total/desglose contuviera "299" en cualquier parte
+ * (ej. "$61,299.40") hacía falso positivo, sin relación alguna con el
+ * precio de la asesoría. Ahora exige "$299" (con el signo de pesos, así
+ * que un número grande formateado con miles como "$1,299.00" no cuenta,
+ * porque el "$" no queda pegado al "299") Y la palabra "asesor" en el
+ * mismo mensaje, para anclarlo a una cotización real de la asesoría y no
+ * a una cifra de cálculo que por coincidencia contenga esos dígitos.
  */
 function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): float
 {
     $stmt = $pdo->prepare(
         "SELECT 1 FROM whatsapp_conversaciones
-         WHERE telefono = :t AND direccion = 'saliente' AND texto LIKE '%299%'
+         WHERE telefono = :t AND direccion = 'saliente'
+           AND texto LIKE '%\$299%' AND texto LIKE '%asesor%'
          LIMIT 1"
     );
     $stmt->execute([':t' => $telefono]);
