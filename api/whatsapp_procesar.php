@@ -395,7 +395,20 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         // que "ya" y "pag" aparezcan cerca por cualquier motivo (ej. "no
         // firmé YA QUE dije que me PAGaran" es una conjunción normal, no
         // una afirmación de pago, y no debe escalar).
-        || preg_match('/\bya\s+(te\s+|le\s+|les\s+)?(pagu[eé]|deposit[eé]|transfer[ií])\b/iu', $texto) === 1;
+        || preg_match('/\bya\s+(te\s+|le\s+|les\s+)?(pagu[eé]|deposit[eé]|transfer[ií])\b/iu', $texto) === 1
+        // Caso real detectado en producción: alguien escribió "Ya esta el
+        // pago solo quiero que se me confirme" -- no calzaba con el
+        // patrón de arriba (no es "ya pagué", es "ya está el pago"), así
+        // que se coló al flujo normal de la IA en vez de escalar aquí, y
+        // la IA terminó confirmándole el pago/cita sin haberlo verificado
+        // de verdad (la cita nunca se pagó). Se cubren aquí las variantes
+        // más comunes de "afirmar que el pago ya se hizo" sin usar
+        // exactamente pagué/deposité/transferí en primera persona.
+        || preg_match('/\bya\s+(hice|realic[eé]|efectu[eé])\s+(el\s+)?pago\b/iu', $texto) === 1
+        || preg_match('/\b(el\s+)?pago\s+ya\s+(est[aá]|qued[oó]|se\s+(hizo|realiz[oó]))\b/iu', $texto) === 1
+        || preg_match('/\bya\s+est[aá]\s+(el\s+)?pago\b/iu', $texto) === 1
+        || preg_match('/\bacabo\s+de\s+(pagar|hacer\s+el\s+pago|realizar\s+el\s+pago|transferir|depositar)\b/iu', $texto) === 1
+        || preg_match('/\bya\s+((est[aá]|qued[oó])\s+)?(pagado|depositado|transferido)\b/iu', $texto) === 1;
     if ($pareceReclamo) {
         file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
             . " | [respaldo_reclamo] escalando de $telefono | texto=\"" . mb_strimwidth($texto, 0, 80, '…') . "\"\n", FILE_APPEND);
