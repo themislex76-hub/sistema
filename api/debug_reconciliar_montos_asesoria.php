@@ -15,17 +15,31 @@ require_once __DIR__ . '/mercadopago_helpers.php';
 require_admin();
 header('Content-Type: text/plain; charset=utf-8');
 set_time_limit(300);
+// Cada cita revisada implica una llamada real a la API de Mercado Pago
+// (varios cientos de ms) -- revisar TODAS las citas confirmadas desde
+// siempre tronaba por timeout del hosting antes de terminar. En la
+// práctica solo hace falta revisar las de después del cambio de precio
+// (antes todas eran $299 de verdad, coinciden con el default, no hay
+// nada que corregir ahí) -- por default solo mira los últimos 15 días.
+// Si hiciera falta un rango más amplio, se puede pedir con ?dias=60.
+if (ob_get_level() > 0) { ob_implicit_flush(true); ob_end_flush(); } else { ob_implicit_flush(true); }
+
+$dias = isset($_GET['dias']) ? max(1, (int)$_GET['dias']) : 15;
+$desde = (new DateTimeImmutable("-{$dias} days"))->format('Y-m-d H:i:s');
 
 $pdo = db();
-$stmt = $pdo->query(
+$stmt = $pdo->prepare(
     "SELECT id, telefono, monto, mp_payment_id, pagado_en
      FROM citas_asesoria
      WHERE estado = 'confirmada' AND mp_payment_id IS NOT NULL
+       AND pagado_en >= :desde
      ORDER BY id DESC"
 );
+$stmt->execute([':desde' => $desde]);
 $citas = $stmt->fetchAll();
 
-echo "Revisando " . count($citas) . " cita(s) confirmada(s) con pago verificable...\n\n";
+echo "Revisando " . count($citas) . " cita(s) confirmada(s) con pago verificable de los últimos {$dias} día(s)...\n";
+echo "(agrega ?dias=60 a la URL para revisar un rango más amplio)\n\n";
 
 $corregidas = 0;
 $sinCambio = 0;
