@@ -56,7 +56,7 @@ let PROSPECTOS = []; // leads de despido CDMX/Edomex captados por el bot de What
 let PROSPECTO_ABIERTO = null; // id del prospecto cuyo chat está abierto en el modal
 let PROSPECTO_MENSAJES = []; // historial de WhatsApp del prospecto abierto
 let PROSPECTOS_MOSTRAR_ATENDIDOS = false; // solo se ve lo pendiente por atender por default (ver prospectosHTML)
-let PROSPECTOS_TAB = 'despido'; // pestaña activa en Prospectos: 'despido' o 'asesoria_paga'
+let PROSPECTOS_TAB = 'asesoria_paga'; // pestaña activa en Prospectos: 'asesoria_paga', 'control_expedientes', 'reclamo' o 'atencion_directa' -- ya no hay contacto gratis, no existe pestaña de despido
 
 // Vista "Jurisprudencia" — buscador sobre la biblioteca de tesis de la SCJN
 // (compartida entre todos los despachos, ver jurisprudencia_tesis). Primero
@@ -2365,7 +2365,7 @@ async function loadProspectoMensajes(telefono){
   }catch(e){ PROSPECTO_MENSAJES = []; }
 }
 
-function prospectosNuevosCount(){ return PROSPECTOS.filter(p=>p.estatus!=='descartado' && (p.estatus==='nuevo' || p.mensaje_nuevo)).length; }
+function prospectosNuevosCount(){ return PROSPECTOS.filter(p=>p.tipo!=='despido' && p.estatus!=='descartado' && (p.estatus==='nuevo' || p.mensaje_nuevo)).length; }
 
 async function loadConversaciones(){
   try{
@@ -4308,7 +4308,7 @@ const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida', 
 function prospectosHTML(){
   if(!PROSPECTOS.length){
     return `<div class="panel"><div class="panel-body" style="padding:24px;">
-      <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte un caso de despido en CDMX/Edomex, o a alguien interesado en la asesoría de pago, aparecerá aquí.</div>
+      <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte a alguien interesado en la asesoría de pago (o en Control de Expedientes), aparecerá aquí.</div>
     </div></div>`;
   }
   // Por default la lista solo muestra lo pendiente por atender: los
@@ -4335,13 +4335,7 @@ function prospectosHTML(){
   // a una persona por nombre/teléfono la quiere encontrar sin importar su
   // estatus.
   const buscando = SEARCH_TERM.trim() !== '';
-  // Un prospecto de despido que YA pagó y agendó su asesoría de $399 (pasa
-  // cuando alguien primero calificó como despido y luego también pagó la
-  // asesoría) se queda con tipo='despido' a propósito (nunca se degrada,
-  // ver guardar_prospecto en prospectos_helpers.php) — pero mostrarlo aquí
-  // solo confunde la pestaña de litigio con algo que ya se está manejando
-  // por Agenda general. Se oculta de esta lista, no se pierde el dato.
-  let base = PROSPECTOS.filter(p => p.tipo === PROSPECTOS_TAB && !(PROSPECTOS_TAB === 'despido' && p.tiene_asesoria_confirmada));
+  let base = PROSPECTOS.filter(p => p.tipo === PROSPECTOS_TAB);
   if(buscando){
     const q = SEARCH_TERM.trim().toLowerCase();
     base = base.filter(p => (p.nombre||'').toLowerCase().includes(q) || (p.telefono||'').toLowerCase().includes(q));
@@ -4349,14 +4343,12 @@ function prospectosHTML(){
   const visibles = buscando ? base : base.filter(p => PROSPECTOS_MOSTRAR_ATENDIDOS || esPendiente(p));
   const atendidosOcultos = buscando ? [] : base.filter(p => !esPendiente(p));
 
-  const pendientesDespido = PROSPECTOS.filter(p=>p.tipo==='despido' && !p.tiene_asesoria_confirmada && esPendiente(p)).length;
   const pendientesAsesoria = PROSPECTOS.filter(p=>p.tipo==='asesoria_paga' && esPendiente(p)).length;
   const pendientesControlExp = PROSPECTOS.filter(p=>p.tipo==='control_expedientes' && esPendiente(p)).length;
   const pendientesReclamos = PROSPECTOS.filter(p=>p.tipo==='reclamo' && esPendiente(p)).length;
   const pendientesAtencionDirecta = PROSPECTOS.filter(p=>p.tipo==='atencion_directa' && esPendiente(p)).length;
   const tabsHTML = `
   <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
-    <button class="btn ${PROSPECTOS_TAB==='despido'?'':'secondary'}" data-prospectos-tab="despido" style="padding:8px 16px;">Despido (litigio) ${pendientesDespido>0?`<span class="nav-badge">${pendientesDespido}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='asesoria_paga'?'':'secondary'}" data-prospectos-tab="asesoria_paga" style="padding:8px 16px;">Asesorías $399 ${pendientesAsesoria>0?`<span class="nav-badge">${pendientesAsesoria}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='control_expedientes'?'':'secondary'}" data-prospectos-tab="control_expedientes" style="padding:8px 16px;">Control de Expedientes ${pendientesControlExp>0?`<span class="nav-badge">${pendientesControlExp}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='reclamo'?'':'secondary'}" data-prospectos-tab="reclamo" style="padding:8px 16px;">Reclamos ${pendientesReclamos>0?`<span class="nav-badge">${pendientesReclamos}</span>`:""}</button>

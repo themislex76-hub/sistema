@@ -490,30 +490,17 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
 
     $resultado = ia_responder_whatsapp($pdo, $mensajesIA, $telefono);
     $respuesta = $resultado['texto'];
-    $lead = $resultado['lead'];
 
-    // Un lead de despido no tiene nada más que el bot pueda hacer — se
-    // guarda de inmediato como prospecto y se avisa que un humano contacta
-    // directo. Uno de asesoría paga NO se guarda aquí todavía: el bot ya
-    // trae los horarios/link de pago dentro de $respuesta (ver
+    // Ya no hay contacto gratis para nadie (el despacho lo eliminó por
+    // completo) -- todo interesado se empuja a la asesoría de pago. Un
+    // lead de asesoría paga NO se guarda aquí todavía: el bot ya trae los
+    // horarios/link de pago dentro de $respuesta (ver
     // ofrecer_horarios_asesoria/confirmar_horario_asesoria en
-    // ia_helpers.php) y sigue el flujo solo — para no llenarle Prospectos
+    // ia_helpers.php) y sigue el flujo solo -- para no llenarle Prospectos
     // al despacho con interesados que todavía no pagan, esos leads solo se
     // guardan si el flujo automático se atora o si el pago se confirma
     // (ver ia_registrar_prospecto_atorado en ia_helpers.php y
     // mercadopago_webhook.php).
-    if ($lead && $lead['tipo'] === 'despido') {
-        $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
-        guardar_prospecto($pdo, $telefono, $nombrePerfil, $lead);
-        // Si ya era prospecto de DESPIDO, el aviso de "nuevo mensaje" de
-        // arriba ya cubrió este caso. Pero si era nuevo, o si ya existía
-        // como prospecto de asesoría de pago y ahora se convierte en un
-        // caso de despido real, sí hay que avisar aquí — ese aviso de
-        // arriba no dispara para tipo=asesoria_paga.
-        if (!$prospecto || $prospecto['tipo'] !== 'despido') {
-            push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono, '/sistema/?abrir=' . urlencode($telefono));
-        }
-    }
 
     // Retraso natural antes de contestar: entre 20 y 28s (con variación
     // al azar), restando lo que ya tardó la llamada a la IA. Tope duro de
@@ -619,18 +606,9 @@ function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
 
     $resultado = ia_responder_whatsapp($pdo, $mensajesIA, $telefono);
     $respuesta = $resultado['texto'];
-    $lead = $resultado['lead'];
 
     if ($respuesta === IA_FALLBACK_TEXTO) {
         return ['ok' => false, 'motivo' => 'La IA no pudo contestar (revisa credenciales/saldo de Anthropic).'];
-    }
-
-    if ($lead && $lead['tipo'] === 'despido') {
-        $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
-        if (!$prospecto || $prospecto['tipo'] !== 'despido') {
-            push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono, '/sistema/?abrir=' . urlencode($telefono));
-        }
-        guardar_prospecto($pdo, $telefono, null, $lead);
     }
 
     if (!whatsapp_enviar($telefono, $respuesta)) {
@@ -693,18 +671,9 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
 
     $resultado = ia_responder_whatsapp($pdo, $mensajesIA, $telefono);
     $respuesta = $resultado['texto'];
-    $lead = $resultado['lead'];
 
     if ($respuesta === IA_FALLBACK_TEXTO) {
         return ['ok' => false, 'motivo' => 'La IA sigue sin poder contestar (revisa las credenciales o el saldo de Anthropic).'];
-    }
-
-    if ($lead && $lead['tipo'] === 'despido') {
-        $respuesta .= "\n\nPor lo que me cuentas, un abogado del despacho te va a contactar en breve para revisar tu caso a detalle, sin costo.";
-        if (!$prospecto || $prospecto['tipo'] !== 'despido') {
-            push_notificar_prospecto($pdo, null, 'Nuevo prospecto de despido', $lead['nombre'] ?: $telefono, '/sistema/?abrir=' . urlencode($telefono));
-        }
-        guardar_prospecto($pdo, $telefono, null, $lead);
     }
 
     if (!whatsapp_enviar($telefono, $respuesta)) {
