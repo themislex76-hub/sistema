@@ -1520,7 +1520,50 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         }
     }
 
-    return ['texto' => trim($texto), 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente];
+    $texto = trim($texto);
+
+    // Última barrera antes de mandar el mensaje: caso real detectado en
+    // producción (Rosa Isela, ago-2026) -- la IA, a pesar de la REGLA
+    // DURA sobre pagos, le confirmó por su cuenta un pago y una cita que
+    // JAMÁS se completaron (nunca hubo pago real, la cita expiró sola).
+    // El prompt por sí solo no es suficiente garantía -- esto no depende
+    // de que la IA "se acuerde" de la regla: si el texto que va a
+    // mandarse afirma un pago/cita confirmados pero este teléfono no
+    // tiene NINGUNA cita realmente confirmada en la base de datos, se
+    // bloquea ese mensaje aquí mismo y se escala a un humano, sin
+    // excepción.
+    if (ia_texto_confirma_pago_sin_evidencia($pdo, $telefono, $texto)) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [confirmacion_pago_bloqueada] tel=$telefono | texto_bloqueado=\"" . $texto . "\"\n", FILE_APPEND);
+        ia_registrar_prospecto_atorado(
+            $pdo, $telefono,
+            ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''],
+            'La IA iba a confirmarle un pago/cita a esta persona sin que el sistema tenga ninguna cita realmente confirmada para su número -- se bloqueó el mensaje automáticamente, revisar con prioridad.'
+        );
+        $texto = 'Antes de confirmarte, déjame verificar bien tu pago directo con el sistema -- en un momento un abogado del despacho te contacta por aquí mismo para confirmarte con toda seguridad.';
+    }
+
+    return ['texto' => $texto, 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente];
+}
+
+/**
+ * true si $texto afirma que un pago/cita de asesoría ya está confirmado,
+ * pero este teléfono no tiene NINGUNA cita con estado='confirmada' en la
+ * base de datos -- es decir, la IA está a punto de confirmar algo que el
+ * sistema no respalda. Ver el caso real que motivó esto en
+ * ia_responder_whatsapp() arriba.
+ */
+function ia_texto_confirma_pago_sin_evidencia(PDO $pdo, string $telefono, string $texto): bool
+{
+    $pareceConfirmacion = preg_match(
+        '/pago.{0,15}(qued[oó]|est[aá]|fue)\s*(ya\s*)?confirmad[oa]|confirmad[oa].{0,20}(tu|su)\s*pago|ya\s*(se\s*)?(qued[oó]|registr[oó]).{0,20}(tu|su)\s*pago|pago\s*(exitoso|recibido)|(tu|su)\s*(cita|asesor[ií]a)\s*(ya\s*)?(qued[oó]|est[aá])\s*(agendada\s*y\s*)?confirmad[oa]/iu',
+        $texto
+    ) === 1;
+    if (!$pareceConfirmacion) return false;
+
+    $stmt = $pdo->prepare("SELECT 1 FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' LIMIT 1");
+    $stmt->execute([':t' => $telefono]);
+    return !$stmt->fetchColumn();
 }
 
 // URL pública del webhook de Mercado Pago — a donde Mercado Pago avisa
