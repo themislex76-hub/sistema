@@ -90,11 +90,21 @@ if (!$cita) {
 // mismo aviso dos veces casi al mismo tiempo (le pasa seguido), solo uno de
 // los dos avisos puede "ganar" la carrera y mandar el WhatsApp de
 // confirmación. El otro ve rowCount() = 0 y no hace nada más.
+// monto se guarda aquí con el transaction_amount REAL que confirma
+// Mercado Pago, no con el que se calculó al momento de generar el link
+// (ver mercadopago_monto_asesoria_a_respetar) -- así el dato queda
+// blindado contra cualquier bug futuro en ese cálculo: lo que se guarda
+// es lo que Mercado Pago dice que de verdad se cobró. Bug real detectado
+// en producción: la columna 'monto' de citas_asesoria nunca se llenaba
+// en ningún punto del flujo (ni al crear la cita ni aquí), así que se
+// quedaba siempre en su DEFAULT de la tabla (299.00) sin importar el
+// precio real cobrado -- el cobro en Mercado Pago sí era correcto, pero
+// los reportes del sistema mostraban el precio viejo para todo mundo.
 $stmt = $pdo->prepare(
-    "UPDATE citas_asesoria SET estado = 'confirmada', mp_payment_id = :pago_id, pagado_en = NOW()
+    "UPDATE citas_asesoria SET estado = 'confirmada', mp_payment_id = :pago_id, pagado_en = NOW(), monto = :monto
      WHERE id = :id AND estado != 'confirmada'"
 );
-$stmt->execute([':pago_id' => $paymentId, ':id' => $citaId]);
+$stmt->execute([':pago_id' => $paymentId, ':id' => $citaId, ':monto' => (float)($pago['transaction_amount'] ?? 0)]);
 
 if ($stmt->rowCount() === 0) {
     // Ya estaba confirmada (aviso duplicado) o perdió la carrera contra otro
