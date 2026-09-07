@@ -1793,7 +1793,8 @@ function extractMonto(text){
 let EQUIPO = [];
 let USUARIOS_ADMIN = []; // detalle completo (correo, activo, etc.) — solo lo usa la vista "Equipo" del Administrador
 let DIAS_INHABILES = []; // {id, fecha, descripcion, ambito} — ver pantalla "Días inhábiles"
-let ASESORIAS_POR_MES = []; // {mes:'YYYY-MM', vendidas, total} — asesorías $299/$399 vendidas, ver panel en "Ingresos por periodo"
+let ASESORIAS_POR_MES = []; // {mes:'YYYY-MM', vendidas, total, por_monto:[{monto,vendidas,total}]} — asesorías $299/$399 vendidas, ver panel en "Ingresos por periodo"
+let ASESORIA_MES_ABIERTO = null; // 'YYYY-MM' del mes desplegado en ese panel, o null si ninguno
 async function loadAsesoriasPorMes(){
   try{ ASESORIAS_POR_MES = (await api('GET', 'asesorias_ingresos_mensual.php')).meses; }
   catch(e){ ASESORIAS_POR_MES = []; }
@@ -3792,12 +3793,27 @@ function ingresosHTML(){
       </div>
     </div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Mes</th><th>Vendidas</th><th>Ganado</th></tr></thead>
+      <table><thead><tr><th>Mes</th><th>Vendidas</th><th>Ganado</th><th></th></tr></thead>
       <tbody>${ASESORIAS_POR_MES.map(m=>{
         const [y,mm] = m.mes.split('-');
         const nombreMes = MESES_ES[parseInt(mm)-1];
-        return `<tr><td>${capitalize(nombreMes)} ${y}</td><td>${m.vendidas}</td><td><strong>${fmtMoney(m.total)}</strong></td></tr>`;
-      }).join("") || `<tr><td colspan="3" class="empty">Sin asesorías vendidas todavía.</td></tr>`}</tbody></table>
+        const abierto = ASESORIA_MES_ABIERTO === m.mes;
+        const fila = `<tr data-asesoria-mes-toggle="${m.mes}" style="cursor:pointer;">
+          <td>${capitalize(nombreMes)} ${y}</td><td>${m.vendidas}</td><td><strong>${fmtMoney(m.total)}</strong></td>
+          <td style="color:var(--gray); font-size:11px; white-space:nowrap;">${abierto ? 'Ocultar ▲' : 'Ver desglose ▼'}</td>
+        </tr>`;
+        const detalle = abierto ? `<tr><td colspan="4" style="padding:0;">
+          <table style="width:100%; background:var(--parchment);"><tbody>
+            ${(m.por_monto||[]).map(pm=>`<tr>
+              <td style="padding-left:36px; color:var(--gray);">a ${fmtMoney(pm.monto)} c/u</td>
+              <td>${pm.vendidas}</td>
+              <td><strong>${fmtMoney(pm.total)}</strong></td>
+              <td></td>
+            </tr>`).join("")}
+          </tbody></table>
+        </td></tr>` : "";
+        return fila + detalle;
+      }).join("") || `<tr><td colspan="4" class="empty">Sin asesorías vendidas todavía.</td></tr>`}</tbody></table>
     </div>
   </div>
   `;
@@ -5763,6 +5779,13 @@ function bindViewBody(){
   if(generarResumenSemanalBtn) generarResumenSemanalBtn.addEventListener('click', ()=> cargarResumenSemanal());
   const consultarCursosBtn = document.querySelector('[data-consultar-cursos]');
   if(consultarCursosBtn) consultarCursosBtn.addEventListener('click', ()=> cargarCursosPorMes());
+  document.querySelectorAll('[data-asesoria-mes-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const mes = el.dataset.asesoriaMesToggle;
+      ASESORIA_MES_ABIERTO = ASESORIA_MES_ABIERTO === mes ? null : mes;
+      renderViewBody();
+    });
+  });
   document.querySelectorAll('[data-id]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const id = parseInt(el.dataset.id);
