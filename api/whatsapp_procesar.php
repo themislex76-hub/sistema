@@ -283,15 +283,22 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     $stmt->execute([':t' => $telefono]);
     $prospecto = $stmt->fetch();
 
-    // Un candidato (prospecto) de DESPIDO ya registrado que vuelve a
-    // escribir — avisa siempre, esté o no pausado el bot (si está pausado
-    // es justo cuando más hace falta que un humano se entere). Los
-    // descartados no avisan: el bot los sigue atendiendo solo. Los de
-    // asesoría de pago NO avisan aquí — ese flujo lo sigue el bot solo
-    // (horarios, link de pago), y si de verdad se atora, ya avisa aparte
-    // (ver ia_registrar_prospecto_atorado) — avisar en cada mensaje suyo
-    // sería ruido innecesario al celular.
-    if ($prospecto && $prospecto['estatus'] !== 'descartado' && $prospecto['tipo'] === 'despido') {
+    // Cualquier prospecto con el bot pausado (un humano lo está llevando,
+    // o ya no hay nada que el bot pueda seguir haciendo solo -- pago ya
+    // confirmado y cita agendada, reclamo ya escalado, etc.) avisa en
+    // CADA mensaje nuevo que escriba, sin importar el tipo -- es justo
+    // cuando más hace falta que un humano se entere, porque el bot ya no
+    // le va a contestar nada. Bug real detectado: antes solo avisaba
+    // para tipo='despido' -- alguien con una asesoría YA PAGADA (bot
+    // pausado desde ese momento) podía escribir de nuevo y quedarse sin
+    // ninguna notificación, invisible hasta que alguien entrara a
+    // revisar Prospectos por su cuenta. Los descartados no avisan: el
+    // bot los sigue atendiendo solo. Mientras el bot SIGUE llevando el
+    // flujo solo (pausado_bot=0, ej. una asesoría de pago que todavía no
+    // se paga) no se avisa aquí -- sería ruido innecesario al celular;
+    // si de verdad se atora, ya avisa aparte (ver
+    // ia_registrar_prospecto_atorado).
+    if ($prospecto && $prospecto['estatus'] !== 'descartado' && (int)$prospecto['pausado_bot'] === 1) {
         push_notificar_prospecto(
             $pdo,
             $prospecto['asignado_a'] !== null ? (int)$prospecto['asignado_a'] : null,
