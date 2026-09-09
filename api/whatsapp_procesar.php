@@ -256,6 +256,26 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         $idPropio = (int)$pdo->lastInsertId();
     }
 
+    // Número bloqueado (ver numeros_bloquear.php) -- el mensaje ya quedó
+    // guardado arriba para no perder el historial, pero el bot NUNCA le
+    // contesta solo a un número bloqueado. Aun así SÍ se avisa al
+    // despacho (igual que un reclamo) para no perder de vista el caso
+    // por completo -- "bloqueado" es "ya no le contesto yo mismo", no
+    // "ignóralo del todo". Esto va antes que cualquier otra lógica
+    // (prospecto, horario de atención, IA) porque tiene que ganarles a
+    // todas sin excepción.
+    $stmtBloqueado = $pdo->prepare('SELECT 1 FROM numeros_bloqueados WHERE telefono = :t');
+    $stmtBloqueado->execute([':t' => $telefono]);
+    if ($stmtBloqueado->fetchColumn()) {
+        ia_registrar_prospecto_atorado(
+            $pdo, $telefono,
+            ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''],
+            '🚫 Número bloqueado volvió a escribir: "' . mb_strimwidth($texto, 0, 150, '…') . '"',
+            $nombrePerfil
+        );
+        return;
+    }
+
     // Si ya hay un prospecto y el bot está pausado, un humano lleva el
     // caso: no autorespondemos, solo quedó guardado el mensaje para que
     // el abogado lo vea y conteste desde la vista Prospectos.

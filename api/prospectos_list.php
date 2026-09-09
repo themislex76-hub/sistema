@@ -32,7 +32,10 @@ $sql = "SELECT p.*, e.exp AS expediente_exp, u.nombre AS asignado_nombre,
                EXISTS(
                  SELECT 1 FROM citas_asesoria c
                  WHERE c.telefono = p.telefono AND c.estado = 'confirmada'
-               ) AS tiene_asesoria_confirmada
+               ) AS tiene_asesoria_confirmada,
+               EXISTS(
+                 SELECT 1 FROM numeros_bloqueados nb WHERE nb.telefono = p.telefono
+               ) AS bloqueado
         FROM prospectos p
         LEFT JOIN expedientes e ON e.id = p.expediente_id
         LEFT JOIN usuarios u ON u.id = p.asignado_a"
@@ -68,6 +71,7 @@ foreach ($stmt->fetchAll() as $r) {
         'ultimo_mensaje_texto' => $r['ultimo_mensaje_texto'],
         'ultimo_mensaje_direccion' => $r['ultimo_mensaje_direccion'],
         'tiene_asesoria_confirmada' => (bool)$r['tiene_asesoria_confirmada'],
+        'bloqueado' => (bool)$r['bloqueado'],
     ];
 }
 

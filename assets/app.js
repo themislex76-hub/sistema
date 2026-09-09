@@ -45,6 +45,29 @@ async function api(method, path, body){
   return json.data;
 }
 
+// Sube y manda una imagen por WhatsApp (ej. comprobante de una
+// devolución) -- aparte de api() porque es un archivo real
+// (multipart/form-data), no JSON.
+async function apiSubirImagen(telefono, file){
+  const form = new FormData();
+  form.append('telefono', telefono);
+  form.append('imagen', file);
+  const headers = {};
+  if(CSRF_TOKEN) headers['X-CSRF-Token'] = CSRF_TOKEN;
+  let res, json;
+  try{
+    res = await fetch(API_BASE + 'prospectos_enviar_imagen.php', {method:'POST', credentials:'same-origin', headers, body:form});
+    json = await res.json();
+  }catch(e){
+    throw new Error('No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.');
+  }
+  if(!json || json.ok !== true){
+    const msg = (json && json.error) ? json.error : ('Error del servidor ('+res.status+').');
+    throw new Error(msg);
+  }
+  return json.data;
+}
+
 function mapRol(rolDb){ return rolDb === 'administrador' ? 'Administrador' : 'Socio/a'; }
 
 let CURRENT_USER = null;
@@ -4399,6 +4422,10 @@ function prospectoDetalleHTML(p){
         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
           <input type="checkbox" data-prospecto-pausado="${p.id}" ${p.pausado_bot?'checked':''}> Bot pausado (seguimiento humano)
         </label>
+        ${isAdmin ? (p.bloqueado
+          ? `<button class="btn secondary" data-desbloquear-numero="${escapeHTML(p.telefono)}" style="font-size:11px; padding:6px 10px; color:var(--danger, #b3261e);">🚫 Bloqueado — quitar bloqueo</button>`
+          : `<button class="btn secondary" data-bloquear-numero="${escapeHTML(p.telefono)}" style="font-size:11px; padding:6px 10px;">Bloquear número</button>`
+        ) : (p.bloqueado ? `<span class="badge crit">🚫 Número bloqueado</span>` : '')}
         ${isAdmin ? `<label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
           Turnar a
           <select data-prospecto-asignado="${p.id}" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
@@ -4425,6 +4452,9 @@ function prospectoDetalleHTML(p){
       <div style="display:flex; gap:8px;">
         <input type="text" id="prospectoRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:16px;">
         <button class="btn" id="prospectoEnviarBtn" data-telefono="${escapeHTML(p.telefono)}">Enviar</button>
+        <label class="btn secondary" style="padding:9px 12px; cursor:pointer;" title="Mandar una imagen (ej. comprobante de devolución)">
+          📷<input type="file" accept="image/jpeg,image/png,image/webp" id="prospectoImagenInput" data-telefono="${escapeHTML(p.telefono)}" style="display:none;">
+        </label>
       </div>
   `;
 }
@@ -4531,6 +4561,45 @@ function bindProspectoModalEvents(){
       }
     });
   });
+  document.querySelectorAll('[data-bloquear-numero]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const telefono = btn.dataset.bloquearNumero;
+      if(!confirm('¿Bloquear este número? El bot va a dejar de contestarle solo -- pero si escribe de nuevo, a ti sí te va a avisar (igual que un reclamo).')) return;
+      const motivo = prompt('Motivo del bloqueo (opcional):') || '';
+      btn.disabled = true;
+      try{
+        await api('POST', 'numeros_bloquear.php', {telefono, motivo});
+        await loadProspectos();
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo bloquear: ' + err.message); btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-desbloquear-numero]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const telefono = btn.dataset.desbloquearNumero;
+      if(!confirm('¿Quitar el bloqueo de este número?')) return;
+      btn.disabled = true;
+      try{
+        await api('POST', 'numeros_desbloquear.php', {telefono});
+        await loadProspectos();
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo quitar el bloqueo: ' + err.message); btn.disabled = false; }
+    });
+  });
+  const prospectoImagenInput = document.getElementById('prospectoImagenInput');
+  if(prospectoImagenInput){
+    prospectoImagenInput.addEventListener('change', async ()=>{
+      const file = prospectoImagenInput.files[0];
+      if(!file) return;
+      const telefono = prospectoImagenInput.dataset.telefono;
+      prospectoImagenInput.disabled = true;
+      try{
+        await apiSubirImagen(telefono, file);
+        await loadProspectoMensajes(telefono);
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo mandar la imagen: ' + err.message); prospectoImagenInput.disabled = false; }
+    });
+  }
   const prospectoEnviarBtn = document.getElementById('prospectoEnviarBtn');
   if(prospectoEnviarBtn){
     prospectoEnviarBtn.addEventListener('click', async ()=>{
@@ -5007,6 +5076,10 @@ function conversacionDetalleHTML(c){
         <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
           <input type="checkbox" data-conversacion-pausada="${escapeHTML(c.telefono)}" ${c.pausado_bot?'checked':''}> Bot pausado (suspender respuestas automáticas)
         </label>
+        ${c.bloqueado
+          ? `<button class="btn secondary" data-desbloquear-numero="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 10px; color:var(--danger, #b3261e);">🚫 Bloqueado — quitar bloqueo</button>`
+          : `<button class="btn secondary" data-bloquear-numero="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 10px;">Bloquear número</button>`
+        }
       </div>
       <div style="background:var(--parchment); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
         <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px;">
@@ -5028,6 +5101,9 @@ function conversacionDetalleHTML(c){
       <div style="display:flex; gap:8px; margin-top:12px;">
         <input type="text" id="conversacionRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:16px;">
         <button class="btn" id="conversacionEnviarBtn" data-telefono="${escapeHTML(c.telefono)}">Enviar</button>
+        <label class="btn secondary" style="padding:9px 12px; cursor:pointer;" title="Mandar una imagen (ej. comprobante de devolución)">
+          📷<input type="file" accept="image/jpeg,image/png,image/webp" id="conversacionImagenInput" data-telefono="${escapeHTML(c.telefono)}" style="display:none;">
+        </label>
       </div>
   `;
 }
@@ -5084,6 +5160,45 @@ function bindConversacionModalEvents(){
       }catch(err){ alert('No se pudo actualizar: ' + err.message); chk.checked = !chk.checked; }
     });
   });
+  document.querySelectorAll('[data-bloquear-numero]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const telefono = btn.dataset.bloquearNumero;
+      if(!confirm('¿Bloquear este número? El bot va a dejar de contestarle solo -- pero si escribe de nuevo, a ti sí te va a avisar (igual que un reclamo).')) return;
+      const motivo = prompt('Motivo del bloqueo (opcional):') || '';
+      btn.disabled = true;
+      try{
+        await api('POST', 'numeros_bloquear.php', {telefono, motivo});
+        await loadConversaciones();
+        renderConversacionModal();
+      }catch(err){ alert('No se pudo bloquear: ' + err.message); btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-desbloquear-numero]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const telefono = btn.dataset.desbloquearNumero;
+      if(!confirm('¿Quitar el bloqueo de este número?')) return;
+      btn.disabled = true;
+      try{
+        await api('POST', 'numeros_desbloquear.php', {telefono});
+        await loadConversaciones();
+        renderConversacionModal();
+      }catch(err){ alert('No se pudo quitar el bloqueo: ' + err.message); btn.disabled = false; }
+    });
+  });
+  const conversacionImagenInput = document.getElementById('conversacionImagenInput');
+  if(conversacionImagenInput){
+    conversacionImagenInput.addEventListener('change', async ()=>{
+      const file = conversacionImagenInput.files[0];
+      if(!file) return;
+      const telefono = conversacionImagenInput.dataset.telefono;
+      conversacionImagenInput.disabled = true;
+      try{
+        await apiSubirImagen(telefono, file);
+        await loadConversacionMensajes(telefono);
+        renderConversacionModal();
+      }catch(err){ alert('No se pudo mandar la imagen: ' + err.message); conversacionImagenInput.disabled = false; }
+    });
+  }
   document.querySelectorAll('[data-borrar-mensaje]').forEach(a=>{
     a.addEventListener('click', async (e)=>{
       e.preventDefault();

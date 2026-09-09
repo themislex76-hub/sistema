@@ -188,6 +188,89 @@ function whatsapp_subir_documento(string $rutaArchivo, string $nombreArchivo): ?
     return $data['id'] ?? null;
 }
 
+// Igual que whatsapp_subir_documento() pero para cualquier tipo de
+// archivo (se usa para mandar imágenes desde el sistema, ej. un
+// comprobante de devolución) -- ese estaba fijo a application/pdf.
+function whatsapp_subir_media(string $rutaArchivo, string $nombreArchivo, string $mimeType): ?string
+{
+    $credentialsFile = __DIR__ . '/whatsapp_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $url = 'https://graph.facebook.com/v23.0/' . WHATSAPP_PHONE_ID . '/media';
+    $payload = [
+        'messaging_product' => 'whatsapp',
+        'file' => new CURLFile($rutaArchivo, $mimeType, $nombreArchivo),
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . WHATSAPP_TOKEN],
+        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | [subir_media] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+    $data = json_decode($raw, true);
+    return $data['id'] ?? null;
+}
+
+// Manda una imagen ya subida (con su media_id) por WhatsApp.
+function whatsapp_enviar_imagen(string $telefono, string $mediaId, string $caption = ''): bool
+{
+    $credentialsFile = __DIR__ . '/whatsapp_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        return false;
+    }
+    require_once $credentialsFile;
+
+    $url = 'https://graph.facebook.com/v23.0/' . WHATSAPP_PHONE_ID . '/messages';
+    $payload = [
+        'messaging_product' => 'whatsapp',
+        'to' => $telefono,
+        'type' => 'image',
+        'image' => [
+            'id' => $mediaId,
+            'caption' => $caption,
+        ],
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . WHATSAPP_TOKEN,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | [enviar_imagen] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return false;
+    }
+    return true;
+}
+
 // Manda un documento ya subido (con su media_id) por WhatsApp.
 function whatsapp_enviar_documento(string $telefono, string $mediaId, string $nombreArchivo, string $caption = ''): bool
 {
