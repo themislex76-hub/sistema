@@ -7,6 +7,9 @@ declare(strict_types=1);
 // decide llamar a una herramienta solo cuando corresponde:
 //   - registrar_interes_asesoria_paga: cualquier persona, de cualquier
 //     estado, que acepta o pregunta por la asesoría personalizada de pago.
+//   - registrar_interes_curso: interés real en uno de los 3 cursos en
+//     línea (se guarda de inmediato, a diferencia de la asesoría, porque
+//     no hay forma automática de saber si completó la compra).
 //   - calcular_estimado_liquidacion: hace la aritmética real en PHP (con
 //     las mismas fórmulas que la calculadora del sistema, ver
 //     liquidacion_calculadora.php) en vez de que la IA "calcule a mano" y
@@ -342,6 +345,15 @@ memoria — es la fuente más común de errores):
     primera vez, pero si ya lo ofreciste en esta conversación no insistas
     de nuevo por tu cuenta — retómalo solo si la persona pregunta algo
     relacionado (precio, contenido, cómo pagar).
+  · REGLA DURA: en cuanto la persona muestre interés real en un curso
+    específico (no solo "qué cursos hay" sino que responda con intención
+    de comprarlo, pida el link de pago, o pregunte detalles concretos de
+    precio/contenido/inscripción de UNO en particular), llama
+    registrar_interes_curso ADEMÁS de mandarle el link directo, en el
+    mismo turno — nunca en lugar del link, y nunca sin haberle dado ya el
+    link. No hay forma automática de saber si completa la compra en la
+    página del curso, así que esta herramienta es la única forma de que
+    el abogado se entere y le pueda dar seguimiento si no compra.
 
 Reglas de contenido:
 - Cita el artículo específico de la Ley Federal del Trabajo (o de la Ley
@@ -616,6 +628,29 @@ const IA_TOOLS = [
                 ],
             ],
             'required' => ['resumen'],
+        ],
+    ],
+    [
+        'name' => 'registrar_interes_curso',
+        'description' => 'Registra que la persona mostró interés real en uno de los 3 cursos en línea del despacho (respondió con intención de comprarlo, pidió el link de pago, o preguntó detalles concretos de precio/contenido/inscripción) -- no solo porque preguntó qué cursos hay en general. Llama esta herramienta ADEMÁS de mandarle el link directo del curso, nunca en su lugar -- así el abogado le puede dar seguimiento si no completa la compra (no hay forma automática de saber si pagó, a diferencia de la asesoría).',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'curso' => [
+                    'type' => 'string',
+                    'enum' => ['Nuevo Procedimiento Laboral Mexicano', 'El Juicio de Amparo en Materia del Trabajo', 'Actas Administrativas Laborales'],
+                    'description' => 'Cuál de los 3 cursos le interesó.',
+                ],
+                'nombre' => [
+                    'type' => 'string',
+                    'description' => 'Nombre de la persona si lo mencionó, o cadena vacía si no.',
+                ],
+                'resumen' => [
+                    'type' => 'string',
+                    'description' => 'Resumen breve (1-2 líneas): qué preguntó o qué necesita, para que el abogado sepa de qué hablarle al darle seguimiento.',
+                ],
+            ],
+            'required' => ['curso', 'resumen'],
         ],
     ],
     [
@@ -1238,6 +1273,18 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         $texto = 'Antes de confirmarte, déjame verificar bien tu pago directo con el sistema -- en un momento un abogado del despacho te contacta por aquí mismo para confirmarte con toda seguridad.';
     }
 
+    // A diferencia de la asesoría de pago (que sigue su flujo solo y solo
+    // se guarda como prospecto si se atora o se confirma el pago), un
+    // interés en curso SIEMPRE se guarda aquí mismo -- no hay ningún
+    // webhook ni forma automática de saber si la persona completó la
+    // compra en la página del curso, así que esta es la ÚNICA forma de
+    // que quede registrado para poder darle seguimiento después. No se
+    // fuerza pausa del bot -- sigue contestando normal, nomás queda
+    // guardado para seguimiento (ver cron_seguimiento_cursos.php).
+    if ($lead && $lead['tipo'] === 'interes_curso') {
+        guardar_prospecto($pdo, $telefono, null, $lead);
+    }
+
     return ['texto' => $texto, 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente];
 }
 
@@ -1449,11 +1496,12 @@ function ia_extraer_respuesta(array $data): array
     foreach ($bloques as $bloque) {
         if (($bloque['type'] ?? '') === 'text') {
             $texto .= $bloque['text'];
-        } elseif (($bloque['type'] ?? '') === 'tool_use' && in_array($bloque['name'] ?? '', ['registrar_interes_asesoria_paga', 'registrar_interes_control_expedientes'], true)) {
+        } elseif (($bloque['type'] ?? '') === 'tool_use' && in_array($bloque['name'] ?? '', ['registrar_interes_asesoria_paga', 'registrar_interes_control_expedientes', 'registrar_interes_curso'], true)) {
             $input = $bloque['input'] ?? [];
             $tipoPorHerramienta = [
                 'registrar_interes_asesoria_paga' => 'asesoria_paga',
                 'registrar_interes_control_expedientes' => 'control_expedientes',
+                'registrar_interes_curso' => 'interes_curso',
             ];
             $nuevoLead = [
                 'tipo' => $tipoPorHerramienta[$bloque['name']],
@@ -1461,6 +1509,9 @@ function ia_extraer_respuesta(array $data): array
                 'nombre' => (string)($input['nombre'] ?? ''),
                 'resumen' => (string)($input['resumen'] ?? ''),
             ];
+            if ($bloque['name'] === 'registrar_interes_curso') {
+                $nuevoLead['curso'] = (string)($input['curso'] ?? '');
+            }
             if ($lead === null) {
                 $lead = $nuevoLead;
             }

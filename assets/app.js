@@ -4302,13 +4302,13 @@ let AGENDA_TAB = 'general';
 
 const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
 const PROSPECTO_ESTATUS_BADGE = {nuevo:'crit', contactado:'warn', descartado:'closed', convertido:'ok'};
-const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesoría $399', control_expedientes:'Control de Expedientes', reclamo:'Reclamo', atencion_directa:'Quiere hablar con alguien'};
-const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida', control_expedientes:'ok', reclamo:'crit', atencion_directa:'warn'};
+const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesoría $399', control_expedientes:'Control de Expedientes', reclamo:'Reclamo', atencion_directa:'Quiere hablar con alguien', interes_curso:'Interés en curso'};
+const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida', control_expedientes:'ok', reclamo:'crit', atencion_directa:'warn', interes_curso:'interrumpida'};
 
 function prospectosHTML(){
   if(!PROSPECTOS.length){
     return `<div class="panel"><div class="panel-body" style="padding:24px;">
-      <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte a alguien interesado en la asesoría de pago (o en Control de Expedientes), aparecerá aquí.</div>
+      <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte a alguien interesado en la asesoría de pago, en un curso, o en Control de Expedientes, aparecerá aquí.</div>
     </div></div>`;
   }
   // Por default la lista solo muestra lo pendiente por atender: los
@@ -4347,15 +4347,17 @@ function prospectosHTML(){
   const pendientesControlExp = PROSPECTOS.filter(p=>p.tipo==='control_expedientes' && esPendiente(p)).length;
   const pendientesReclamos = PROSPECTOS.filter(p=>p.tipo==='reclamo' && esPendiente(p)).length;
   const pendientesAtencionDirecta = PROSPECTOS.filter(p=>p.tipo==='atencion_directa' && esPendiente(p)).length;
+  const pendientesCursos = PROSPECTOS.filter(p=>p.tipo==='interes_curso' && esPendiente(p)).length;
   const tabsHTML = `
   <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
     <button class="btn ${PROSPECTOS_TAB==='asesoria_paga'?'':'secondary'}" data-prospectos-tab="asesoria_paga" style="padding:8px 16px;">Asesorías $399 ${pendientesAsesoria>0?`<span class="nav-badge">${pendientesAsesoria}</span>`:""}</button>
+    <button class="btn ${PROSPECTOS_TAB==='interes_curso'?'':'secondary'}" data-prospectos-tab="interes_curso" style="padding:8px 16px;">Interés en cursos ${pendientesCursos>0?`<span class="nav-badge">${pendientesCursos}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='control_expedientes'?'':'secondary'}" data-prospectos-tab="control_expedientes" style="padding:8px 16px;">Control de Expedientes ${pendientesControlExp>0?`<span class="nav-badge">${pendientesControlExp}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='reclamo'?'':'secondary'}" data-prospectos-tab="reclamo" style="padding:8px 16px;">Reclamos ${pendientesReclamos>0?`<span class="nav-badge">${pendientesReclamos}</span>`:""}</button>
     <button class="btn ${PROSPECTOS_TAB==='atencion_directa'?'':'secondary'}" data-prospectos-tab="atencion_directa" style="padding:8px 16px;">Quiere hablar con alguien ${pendientesAtencionDirecta>0?`<span class="nav-badge">${pendientesAtencionDirecta}</span>`:""}</button>
   </div>`;
 
-  const TITULOS_TAB = {despido:'Prospectos de despido', asesoria_paga:'Prospectos de asesoría paga', control_expedientes:'Despachos interesados en Control de Expedientes', reclamo:'Reclamos y conversaciones urgentes', atencion_directa:'Piden que les llamen (sin queja de por medio)'};
+  const TITULOS_TAB = {despido:'Prospectos de despido', asesoria_paga:'Prospectos de asesoría paga', control_expedientes:'Despachos interesados en Control de Expedientes', reclamo:'Reclamos y conversaciones urgentes', atencion_directa:'Piden que les llamen (sin queja de por medio)', interes_curso:'Interés en cursos en línea'};
   return tabsHTML + `
   <div class="panel">
     <div class="panel-head"><h3>${TITULOS_TAB[PROSPECTOS_TAB]}</h3><span class="count">${visibles.length}</span></div>
@@ -4366,6 +4368,7 @@ function prospectosHTML(){
         <div class="alert-info">
           <div class="name" style="${p.mensaje_nuevo?'font-weight:700;':''}">${escapeHTML(p.nombre || 'Sin nombre')} <span style="color:var(--gray); font-weight:400;">&middot; ${escapeHTML(p.estado_ubicacion||'sin estado')}</span></div>
           <div class="meta" style="${p.mensaje_nuevo?'color:var(--ink); font-weight:600;':''}">${escapeHTML(p.telefono)}</div>
+          ${p.curso_interes ? `<div style="font-size:12px; color:var(--brass); font-weight:700; margin-top:4px;">Curso: ${escapeHTML(p.curso_interes)}</div>` : ''}
           ${p.resumen_caso ? `<div style="font-size:12px; color:var(--ink); margin-top:4px; white-space:normal; overflow-wrap:break-word;">${escapeHTML(p.resumen_caso)}</div>` : ''}
           ${p.ultimo_mensaje_texto ? `<div style="font-size:11.5px; color:var(--gray); margin-top:4px; white-space:normal; overflow-wrap:break-word; font-style:italic;">${p.ultimo_mensaje_direccion==='entrante'?'Cliente':'Bot/Tú'}: "${escapeHTML(truncate(p.ultimo_mensaje_texto,220))}" &middot; ${fmtFechaHora(p.ultima_actividad)}</div>` : ''}
         </div>
@@ -4406,6 +4409,7 @@ function prospectoDetalleHTML(p){
         ${p.expediente_id ? `<span class="badge ok">Convertido en expediente ${escapeHTML(p.expediente_exp||'')}</span>` : `<button class="btn secondary" data-prospecto-convertir="${p.id}" style="font-size:11px; padding:6px 10px;">Convertir en expediente</button>`}
       </div>
       <div class="notice" style="margin-bottom:14px;">
+        ${p.curso_interes ? `<strong>Curso de interés:</strong> ${escapeHTML(p.curso_interes)}<br>` : ""}
         ${p.resumen_caso ? `<strong>Resumen del caso (según el bot):</strong> ${escapeHTML(p.resumen_caso)}<br>` : ""}
         <button class="btn secondary" data-prospecto-generar-resumen="${p.id}" style="font-size:11px; padding:5px 10px; margin-top:${p.resumen_caso?'8px':'0'};">${p.resumen_caso ? 'Regenerar resumen' : 'Generar resumen'}</button>
       </div>

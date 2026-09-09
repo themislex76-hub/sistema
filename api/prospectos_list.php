@@ -52,6 +52,7 @@ foreach ($stmt->fetchAll() as $r) {
         'nombre' => $r['nombre'],
         'estado_ubicacion' => $r['estado_ubicacion'],
         'resumen_caso' => $r['resumen_caso'],
+        'curso_interes' => $r['curso_interes'],
         'estatus' => $r['estatus'],
         'pausado_bot' => (bool)$r['pausado_bot'],
         'mensaje_nuevo' => $mensajesSinLeer > 0,

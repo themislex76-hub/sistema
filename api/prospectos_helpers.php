@@ -34,19 +34,25 @@ function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, ar
 {
     $nombre = $lead['nombre'] !== '' ? $lead['nombre'] : $nombrePerfil;
     $estado = $lead['estado'] !== '' ? $lead['estado'] : null;
+    // Solo lo trae el lead de registrar_interes_curso -- null para
+    // cualquier otro tipo (no se toca ni se borra si ya había uno
+    // guardado de antes en ese teléfono).
+    $curso = $lead['curso'] ?? null;
     $pausar = ($forzarPausa || $lead['tipo'] === 'despido') ? 1 : 0;
     $estatusUpdate = $reactivarEstatus ? "estatus = 'nuevo'," : '';
     $pausadoUpdate = $reactivarEstatus
         ? "IF(tipo = 'despido' OR VALUES(tipo) = 'despido' OR VALUES(pausado_bot) = 1, 1, pausado_bot)"
         : "IF(estatus = 'descartado', pausado_bot, IF(tipo = 'despido' OR VALUES(tipo) = 'despido' OR VALUES(pausado_bot) = 1, 1, pausado_bot))";
     $stmt = $pdo->prepare(
-        "INSERT INTO prospectos (telefono, tipo, nombre, estado_ubicacion, resumen_caso, pausado_bot)
-         VALUES (:t, :tipo, :nombre, :estado, :resumen, :pausar)
+        "INSERT INTO prospectos (telefono, tipo, nombre, estado_ubicacion, resumen_caso, curso_interes, pausado_bot)
+         VALUES (:t, :tipo, :nombre, :estado, :resumen, :curso, :pausar)
          ON DUPLICATE KEY UPDATE
            tipo = IF(tipo = 'despido', 'despido', VALUES(tipo)),
            nombre = COALESCE(VALUES(nombre), nombre),
            estado_ubicacion = COALESCE(VALUES(estado_ubicacion), estado_ubicacion),
            resumen_caso = VALUES(resumen_caso),
+           curso_interes = COALESCE(VALUES(curso_interes), curso_interes),
+           seguimiento_en = IF(VALUES(tipo) = 'interes_curso', NULL, seguimiento_en),
            {$estatusUpdate}
            pausado_bot = {$pausadoUpdate}"
     );
@@ -56,6 +62,7 @@ function guardar_prospecto(PDO $pdo, string $telefono, ?string $nombrePerfil, ar
         ':nombre' => $nombre,
         ':estado' => $estado,
         ':resumen' => $lead['resumen'],
+        ':curso' => $curso,
         ':pausar' => $pausar,
     ]);
 }
