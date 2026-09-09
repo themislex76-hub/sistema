@@ -1297,6 +1297,18 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
  */
 function ia_texto_confirma_pago_sin_evidencia(PDO $pdo, string $telefono, string $texto): bool
 {
+    // Caso real detectado en producción: "Antes que nada: por aquí
+    // todavía no me aparece confirmado tu pago del viernes..." -- ese es
+    // EXACTAMENTE el mensaje honesto que la REGLA DURA de arriba le pide
+    // usar cuando el pago NO está confirmado, y usa las mismas palabras
+    // ("confirmado", "pago") que la forma afirmativa que sí hay que
+    // bloquear. Se descarta primero la forma negada -- si no se hace
+    // esto, el mensaje CORRECTO se bloquea por error y genera una
+    // escalación falsa a "reclamo" sin que haya nada que revisar.
+    if (preg_match('/no\s+(le\s+|te\s+|me\s+)?aparece.{0,30}confirmad|todav[ií]a\s+no.{0,40}confirmad|a[uú]n\s+no.{0,40}confirmad|no\s+(est[aá]|ha\s+sido|se\s+ha)\s+confirmad|sin\s+confirmar|no.{0,15}confirmad[oa].{0,20}(tu|su)\s*pago/iu', $texto)) {
+        return false;
+    }
+
     $pareceConfirmacion = preg_match(
         '/pago.{0,15}(qued[oó]|est[aá]|fue)\s*(ya\s*)?confirmad[oa]|confirmad[oa].{0,20}(tu|su)\s*pago|ya\s*(se\s*)?(qued[oó]|registr[oó]).{0,20}(tu|su)\s*pago|pago\s*(exitoso|recibido)|(tu|su)\s*(cita|asesor[ií]a)\s*(ya\s*)?(qued[oó]|est[aá])\s*(agendada\s*y\s*)?confirmad[oa]/iu',
         $texto
