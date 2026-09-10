@@ -41,12 +41,17 @@ require_once $credentialsFile;
 
 $sent = $_SERVER['HTTP_X_RELAY_KEY'] ?? '';
 if ($sent === '' || !hash_equals(WHATSAPP_RELAY_KEY, $sent)) {
+    file_put_contents(__DIR__ . '/whatsapp_relay_debug.log', date('c')
+        . ' | RECHAZADO -- llave X-Relay-Key no coincide (o vino vacía)' . "\n", FILE_APPEND);
     http_response_code(403);
     exit;
 }
 
 $in = json_decode((string)file_get_contents('php://input'), true) ?: [];
 $mensajes = $in['mensajes'] ?? [];
+
+file_put_contents(__DIR__ . '/whatsapp_relay_debug.log', date('c')
+    . ' | RECIBIDO -- ' . count($mensajes) . ' mensaje(s)' . "\n", FILE_APPEND);
 
 // El puente de Cloudflare (scripts/cloudflare_worker_whatsapp.js) espera
 // (await) esta respuesta antes de contestarle a Meta — si el
