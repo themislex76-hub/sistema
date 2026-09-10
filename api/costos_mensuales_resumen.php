@@ -2,6 +2,8 @@
 declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/mercadopago_helpers.php';
+require_once __DIR__ . '/anthropic_admin_helpers.php';
+if (file_exists(__DIR__ . '/anthropic_credentials.php')) require_once __DIR__ . '/anthropic_credentials.php';
 
 // Compara, mes a mes, los costos capturados a mano (IA, hosting, WhatsApp
 // Business API, comisión de Mercado Pago) contra los ingresos que el
@@ -110,7 +112,8 @@ foreach ($todosLosMeses as $mes) {
         'notas' => $c['notas'] ?? null,
         'tiene_costos_capturados' => $c !== null,
         'comision_mercadopago_sugerida' => $mpDisponible ? round($comisionMpAutoPorMes[$mes] ?? 0.0, 2) : null,
+        'costo_ia_sugerido' => anthropic_costo_mensual_usd($mes),
     ];
 }
 
-respond(['meses' => $meses, 'mp_disponible' => $mpDisponible]);
+respond(['meses' => $meses, 'mp_disponible' => $mpDisponible, 'ia_disponible' => defined('ANTHROPIC_ADMIN_API_KEY')]);

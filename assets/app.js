@@ -3898,7 +3898,7 @@ function costosVsIngresosHTML(){
       <button class="btn secondary" data-consultar-costos style="font-size:11px; padding:5px 10px;" ${s.cargando?'disabled':''}>${s.cargando?'Consultando...':(meses.length?'Actualizar':'Consultar')}</button>
     </div>
     <div class="panel-body" style="padding:16px 20px;">
-      <div class="notice">Los ingresos (asesorías + cursos) se calculan solos. La comisión de Mercado Pago se sugiere sola (con el monto real que cobró MP en cursos/asesorías de ese mes, abajo del formulario). El costo de IA, hosting y WhatsApp Business API los sigues capturando tú a mano.</div>
+      <div class="notice">Los ingresos (asesorías + cursos) se calculan solos. La comisión de Mercado Pago y el costo de IA se sugieren solos (abajo del formulario, con el monto real de ese mes) si configuraste la llave de administrador de Anthropic en el servidor. El hosting y WhatsApp Business API los sigues capturando tú a mano.</div>
       ${s.error ? `<div class="notice" style="color:var(--danger, #b3261e); margin-top:10px;">${escapeHTML(s.error)}</div>` : ''}
       <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-top:14px;">
         <div class="field"><label>Mes</label><input type="month" id="costoMesInput" value="${mesActual}"></div>
@@ -3908,7 +3908,7 @@ function costosVsIngresosHTML(){
         <div class="field"><label>Comisión Mercado Pago ($)</label><input type="number" id="costoMpInput" step="0.01" min="0" placeholder="0" style="width:130px;"></div>
         <button class="btn" id="guardarCostosBtn" ${s.guardando?'disabled':''}>${s.guardando?'Guardando...':'Guardar mes'}</button>
       </div>
-      <div id="comisionMpSugeridaHint" style="margin-top:8px; font-size:12px; color:var(--gray);" data-meses='${escapeHTML(JSON.stringify(meses.map(m=>({mes:m.mes, sugerida:m.comision_mercadopago_sugerida}))))}'></div>
+      <div id="sugerenciasCostosHint" style="margin-top:8px; font-size:12px; color:var(--gray); display:flex; flex-direction:column; gap:2px;" data-meses='${escapeHTML(JSON.stringify(meses.map(m=>({mes:m.mes, comisionMp:m.comision_mercadopago_sugerida, costoIa:m.costo_ia_sugerido}))))}'></div>
     </div>
     ${meses.length ? `
     <div class="panel-body" style="padding:0;">
@@ -4248,22 +4248,28 @@ async function cargarCostosMensuales(){
   renderViewBody();
 }
 
-function actualizarSugerenciaComisionMp(){
-  const hint = document.getElementById('comisionMpSugeridaHint');
+function actualizarSugerenciasCostos(){
+  const hint = document.getElementById('sugerenciasCostosHint');
   const mesInput = document.getElementById('costoMesInput');
   if(!hint || !mesInput) return;
   const meses = JSON.parse(hint.dataset.meses || '[]');
   const encontrado = meses.find(m => m.mes === mesInput.value);
-  if(!encontrado || encontrado.sugerida == null){
-    hint.innerHTML = '';
-    return;
+  const lineas = [];
+
+  if(encontrado && encontrado.comisionMp != null){
+    lineas.push({texto: `Mercado Pago detectó <strong>${fmtMoney(encontrado.comisionMp)}</strong> de comisión real en cursos/asesorías de ese mes`, campo:'costoMpInput', valor: encontrado.comisionMp, id:'usarComisionMpSugerida'});
   }
-  hint.innerHTML = `Mercado Pago detectó <strong>${fmtMoney(encontrado.sugerida)}</strong> de comisión real en cursos/asesorías de ese mes — `
-    + `<a href="#" id="usarComisionMpSugeridaLink">usar este valor</a>.`;
-  const link = document.getElementById('usarComisionMpSugeridaLink');
-  if(link) link.addEventListener('click', (e)=>{
-    e.preventDefault();
-    document.getElementById('costoMpInput').value = encontrado.sugerida;
+  if(encontrado && encontrado.costoIa != null){
+    lineas.push({texto: `Anthropic Console reporta <strong>${fmtMoney(encontrado.costoIa)}</strong> de gasto real de IA ese mes`, campo:'costoIaInput', valor: encontrado.costoIa, id:'usarCostoIaSugerido'});
+  }
+
+  hint.innerHTML = lineas.map(l => `${l.texto} — <a href="#" id="${l.id}">usar este valor</a>.`).join('');
+  lineas.forEach(l=>{
+    const link = document.getElementById(l.id);
+    if(link) link.addEventListener('click', (e)=>{
+      e.preventDefault();
+      document.getElementById(l.campo).value = l.valor;
+    });
   });
 }
 
@@ -6011,12 +6017,12 @@ function bindViewBody(){
       document.getElementById('costoWhatsappInput').value = datos.costo_whatsapp || '';
       document.getElementById('costoMpInput').value = datos.comision_mercadopago || '';
       document.getElementById('costoMesInput').scrollIntoView({behavior:'smooth', block:'center'});
-      actualizarSugerenciaComisionMp();
+      actualizarSugerenciasCostos();
     });
   });
   const costoMesInputEl = document.getElementById('costoMesInput');
-  if(costoMesInputEl) costoMesInputEl.addEventListener('change', actualizarSugerenciaComisionMp);
-  actualizarSugerenciaComisionMp();
+  if(costoMesInputEl) costoMesInputEl.addEventListener('change', actualizarSugerenciasCostos);
+  actualizarSugerenciasCostos();
   document.querySelectorAll('[data-asesoria-mes-toggle]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const mes = el.dataset.asesoriaMesToggle;
