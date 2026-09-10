@@ -29,4 +29,17 @@ if (!$esAdmin && (int)$cita['usuario_id'] !== (int)$user['id']) {
 $upd = $pdo->prepare('UPDATE citas_asesoria SET atendida = 1 WHERE id = :id');
 $upd->execute([':id' => $id]);
 
+// Bug real detectado en producción: al marcar la cita como atendida, el
+// prospecto se quedaba con pausado_bot=1 para siempre -- la llamada ya se
+// dio, ya no hay nada pendiente que un humano tenga que seguir, así que
+// se reactiva el bot para que conteste solo si esa persona vuelve a
+// escribir por otra cosa más adelante (igual que al marcar un prospecto
+// como "Descartado" -- ver prospectos_update.php).
+$stmtTel = $pdo->prepare('SELECT telefono FROM citas_asesoria WHERE id = :id');
+$stmtTel->execute([':id' => $id]);
+$telefono = $stmtTel->fetchColumn();
+if ($telefono) {
+    $pdo->prepare('UPDATE prospectos SET pausado_bot = 0 WHERE telefono = :t')->execute([':t' => $telefono]);
+}
+
 respond(['ok' => true]);
