@@ -45,13 +45,13 @@ async function api(method, path, body){
   return json.data;
 }
 
-// Sube y manda una imagen por WhatsApp (ej. comprobante de una
-// devolución) -- aparte de api() porque es un archivo real
+// Sube y manda una imagen o PDF por WhatsApp (ej. comprobante de una
+// devolución, un cálculo) -- aparte de api() porque es un archivo real
 // (multipart/form-data), no JSON.
 async function apiSubirImagen(telefono, file){
   const form = new FormData();
   form.append('telefono', telefono);
-  form.append('imagen', file);
+  form.append('archivo', file);
   const headers = {};
   if(CSRF_TOKEN) headers['X-CSRF-Token'] = CSRF_TOKEN;
   let res, json;
@@ -4554,8 +4554,8 @@ function prospectoDetalleHTML(p){
       <div style="display:flex; gap:8px;">
         <input type="text" id="prospectoRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:16px;">
         <button class="btn" id="prospectoEnviarBtn" data-telefono="${escapeHTML(p.telefono)}">Enviar</button>
-        <label class="btn secondary" style="padding:9px 12px; cursor:pointer;" title="Mandar una imagen (ej. comprobante de devolución)">
-          📷<input type="file" accept="image/jpeg,image/png,image/webp" id="prospectoImagenInput" data-telefono="${escapeHTML(p.telefono)}" style="display:none;">
+        <label class="btn secondary" style="padding:9px 12px; cursor:pointer;" title="Mandar una imagen o PDF (ej. comprobante de devolución, cálculo)">
+          📎<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" id="prospectoImagenInput" data-telefono="${escapeHTML(p.telefono)}" style="display:none;">
         </label>
       </div>
   `;
@@ -4699,7 +4699,7 @@ function bindProspectoModalEvents(){
         await apiSubirImagen(telefono, file);
         await loadProspectoMensajes(telefono);
         renderProspectoModal();
-      }catch(err){ alert('No se pudo mandar la imagen: ' + err.message); prospectoImagenInput.disabled = false; }
+      }catch(err){ alert('No se pudo mandar el archivo: ' + err.message); prospectoImagenInput.disabled = false; }
     });
   }
   const prospectoEnviarBtn = document.getElementById('prospectoEnviarBtn');
@@ -5203,8 +5203,8 @@ function conversacionDetalleHTML(c){
       <div style="display:flex; gap:8px; margin-top:12px;">
         <input type="text" id="conversacionRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:16px;">
         <button class="btn" id="conversacionEnviarBtn" data-telefono="${escapeHTML(c.telefono)}">Enviar</button>
-        <label class="btn secondary" style="padding:9px 12px; cursor:pointer;" title="Mandar una imagen (ej. comprobante de devolución)">
-          📷<input type="file" accept="image/jpeg,image/png,image/webp" id="conversacionImagenInput" data-telefono="${escapeHTML(c.telefono)}" style="display:none;">
+        <label class="btn secondary" style="padding:9px 12px; cursor:pointer;" title="Mandar una imagen o PDF (ej. comprobante de devolución, cálculo)">
+          📎<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" id="conversacionImagenInput" data-telefono="${escapeHTML(c.telefono)}" style="display:none;">
         </label>
       </div>
   `;
@@ -5298,7 +5298,7 @@ function bindConversacionModalEvents(){
         await apiSubirImagen(telefono, file);
         await loadConversacionMensajes(telefono);
         renderConversacionModal();
-      }catch(err){ alert('No se pudo mandar la imagen: ' + err.message); conversacionImagenInput.disabled = false; }
+      }catch(err){ alert('No se pudo mandar el archivo: ' + err.message); conversacionImagenInput.disabled = false; }
     });
   }
   document.querySelectorAll('[data-borrar-mensaje]').forEach(a=>{
