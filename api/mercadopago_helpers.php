@@ -249,10 +249,20 @@ function mercadopago_buscar_pagos_aprobados(DateTimeInterface $desde, DateTimeIn
         $data = json_decode($raw, true);
         $resultados = $data['results'] ?? [];
         foreach ($resultados as $p) {
+            // fee_details trae lo que Mercado Pago se quedó de comisión por
+            // ESE pago en particular -- se suma aquí (en valor absoluto,
+            // MP a veces lo manda en negativo) para poder calcular la
+            // comisión real sin tener que adivinar un porcentaje fijo.
+            $comision = 0.0;
+            foreach (($p['fee_details'] ?? []) as $fee) {
+                $comision += abs((float)($fee['amount'] ?? 0));
+            }
             $pagos[] = [
+                'id' => (string)($p['id'] ?? ''),
                 'description' => (string)($p['description'] ?? ''),
                 'transaction_amount' => (float)($p['transaction_amount'] ?? 0),
                 'date_approved' => (string)($p['date_approved'] ?? ''),
+                'comision' => $comision,
             ];
         }
 
