@@ -23,6 +23,10 @@ if ($user['rol'] !== 'administrador') {
     }
 }
 
+if (!whatsapp_dentro_ventana_24h($pdo, $telefono)) {
+    fail('Este número no ha escrito en las últimas 24 horas -- WhatsApp no deja que le escribas tú primero (solo lo sabrías horas después, cuando fallara la entrega en silencio). Pídele que te escriba cualquier cosa para reabrir la conversación, o llámalo directo.', 409);
+}
+
 if (!whatsapp_enviar($telefono, $texto)) {
     fail('No se pudo enviar el mensaje de WhatsApp. Revisa las credenciales del bot.', 502);
 }

@@ -53,6 +53,10 @@ if ($user['rol'] !== 'administrador') {
     }
 }
 
+if (!whatsapp_dentro_ventana_24h($pdo, $telefono)) {
+    fail('Este número no ha escrito en las últimas 24 horas -- WhatsApp no deja que le escribas tú primero (solo lo sabrías horas después, cuando fallara la entrega en silencio). Pídele que te escriba cualquier cosa para reabrir la conversación, o llámalo directo.', 409);
+}
+
 $mediaId = whatsapp_subir_media($archivo['tmp_name'], $archivo['name'], $mimeReal);
 if ($mediaId === null) {
     fail('No se pudo subir el archivo a WhatsApp. Revisa las credenciales del bot.', 502);

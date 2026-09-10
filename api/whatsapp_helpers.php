@@ -4,6 +4,27 @@ declare(strict_types=1);
 // Envío de mensajes de texto por WhatsApp Cloud API (Meta), usando el
 // número dedicado configurado en whatsapp_credentials.php.
 
+// WhatsApp solo deja que el despacho le escriba primero a alguien (texto
+// libre, imagen, documento, lo que sea) si esa persona escribió en las
+// últimas 24 horas -- fuera de esa ventana, Meta "acepta" la petición al
+// instante (por eso el sistema pensaba que sí se mandó) pero la entrega
+// falla después, en silencio, y solo se ve horas más tarde en
+// whatsapp_send_debug.log (error 131047 "Re-engagement message"). Bug
+// real detectado en producción: un abogado mandó un PDF a un cliente que
+// no escribía desde hace 5 días, el sistema dijo "enviado" y nunca le
+// llegó. Esta función se usa para avisar ANTES de intentar el envío, en
+// vez de fallar en silencio.
+function whatsapp_dentro_ventana_24h(PDO $pdo, string $telefono): bool
+{
+    $stmt = $pdo->prepare(
+        "SELECT creado_en FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante' ORDER BY id DESC LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    $ultimo = $stmt->fetchColumn();
+    if (!$ultimo) return false;
+    return strtotime((string)$ultimo) >= time() - 24 * 3600;
+}
+
 function whatsapp_enviar(string $telefono, string $texto): bool
 {
     $credentialsFile = __DIR__ . '/whatsapp_credentials.php';
