@@ -136,6 +136,9 @@ let RESUMEN_SEMANAL_STATE = {cargando:false, texto:null, error:null, generadoEn:
 // que se pide a mano con un botón en vez de cargarse en cada visita al
 // Tablero/Ingresos.
 let CURSOS_POR_MES_STATE = {cargando:false, meses:null, error:null, generadoEn:null};
+// Igual que CURSOS_POR_MES_STATE: también consulta Mercado Pago en vivo
+// (para los cursos), así que se pide a mano con un botón.
+let COSTOS_MENSUALES_STATE = {cargando:false, meses:null, error:null, guardando:false};
 
 // Campos que puede llenar/editar el abogado asignado. Cubre lo necesario
 // para el seguimiento del asunto y para generar la demanda por combinación
@@ -3880,6 +3883,53 @@ function ingresosHTML(){
   </div>
   `;
   })()}
+  ${isAdmin ? costosVsIngresosHTML() : ''}
+  `;
+}
+
+function costosVsIngresosHTML(){
+  const s = COSTOS_MENSUALES_STATE;
+  const meses = s.meses || [];
+  const mesActual = new Date().toISOString().slice(0,7);
+  return `
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Costos vs. Ingresos (¿vale la pena?)</h3>
+      <button class="btn secondary" data-consultar-costos style="font-size:11px; padding:5px 10px;" ${s.cargando?'disabled':''}>${s.cargando?'Consultando...':(meses.length?'Actualizar':'Consultar')}</button>
+    </div>
+    <div class="panel-body" style="padding:16px 20px;">
+      <div class="notice">Los ingresos (asesorías + cursos) se calculan solos. Los costos (IA, hosting, WhatsApp Business API, comisión de Mercado Pago) los capturas tú a mano cada mes aquí abajo — sobre todo el de IA, que solo se ve en el dashboard de Anthropic Console.</div>
+      ${s.error ? `<div class="notice" style="color:var(--danger, #b3261e); margin-top:10px;">${escapeHTML(s.error)}</div>` : ''}
+      <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-top:14px;">
+        <div class="field"><label>Mes</label><input type="month" id="costoMesInput" value="${mesActual}"></div>
+        <div class="field"><label>Costo IA ($)</label><input type="number" id="costoIaInput" step="0.01" min="0" placeholder="0" style="width:110px;"></div>
+        <div class="field"><label>Hosting ($)</label><input type="number" id="costoHostingInput" step="0.01" min="0" placeholder="0" style="width:100px;"></div>
+        <div class="field"><label>WhatsApp API ($)</label><input type="number" id="costoWhatsappInput" step="0.01" min="0" placeholder="0" style="width:110px;"></div>
+        <div class="field"><label>Comisión Mercado Pago ($)</label><input type="number" id="costoMpInput" step="0.01" min="0" placeholder="0" style="width:130px;"></div>
+        <button class="btn" id="guardarCostosBtn" ${s.guardando?'disabled':''}>${s.guardando?'Guardando...':'Guardar mes'}</button>
+      </div>
+    </div>
+    ${meses.length ? `
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr>
+        <th>Mes</th><th>Costos</th><th>Ingresos</th><th>Margen</th><th>%</th><th></th>
+      </tr></thead>
+      <tbody>${meses.map(m=>{
+        const [y,mm] = m.mes.split('-');
+        const nombreMes = capitalize(MESES_ES[parseInt(mm)-1]) + ' ' + y;
+        const margenColor = m.margen >= 0 ? 'var(--ok, #2e7d32)' : 'var(--danger, #b3261e)';
+        return `<tr>
+          <td>${nombreMes}${!m.tiene_costos_capturados ? ' <span style="color:var(--gray); font-size:11px;">(sin costos capturados)</span>' : ''}</td>
+          <td>${fmtMoney(m.costos_totales)}</td>
+          <td>${fmtMoney(m.ingresos_totales)} <span style="color:var(--gray); font-size:11px;">(${m.asesorias_vendidas} asesoría${m.asesorias_vendidas===1?'':'s'}, ${fmtMoney(m.ingreso_cursos)} cursos)</span></td>
+          <td style="color:${margenColor}; font-weight:700;">${fmtMoney(m.margen)}</td>
+          <td style="color:${margenColor};">${m.margen_pct!=null ? m.margen_pct+'%' : '—'}</td>
+          <td><button class="btn secondary" data-editar-costos-mes="${m.mes}" data-costos='${escapeHTML(JSON.stringify({costo_ia:m.costo_ia, costo_hosting:m.costo_hosting, costo_whatsapp:m.costo_whatsapp, comision_mercadopago:m.comision_mercadopago}))}' style="font-size:11px; padding:4px 10px;">Editar</button></td>
+        </tr>`;
+      }).join("")}</tbody></table>
+    </div>
+    ` : (meses.length===0 && !s.cargando ? `<div class="panel-body" style="padding:0 20px 16px;"><div class="notice" style="margin:0;">Dale clic a "Consultar" para ver el historial.</div></div>` : '')}
+  </div>
   `;
 }
 
@@ -4182,6 +4232,32 @@ async function cargarCursosPorMes(){
     CURSOS_POR_MES_STATE = {cargando:false, meses:CURSOS_POR_MES_STATE.meses, error:'No se pudo consultar: ' + err.message, generadoEn:null};
   }
   renderViewBody();
+}
+
+async function cargarCostosMensuales(){
+  if(COSTOS_MENSUALES_STATE.cargando) return;
+  COSTOS_MENSUALES_STATE = {cargando:true, meses:COSTOS_MENSUALES_STATE.meses, error:null, guardando:false};
+  renderViewBody();
+  try{
+    const r = await api('GET', 'costos_mensuales_resumen.php');
+    COSTOS_MENSUALES_STATE = {cargando:false, meses:r.meses, error:null, guardando:false};
+  }catch(err){
+    COSTOS_MENSUALES_STATE = {cargando:false, meses:COSTOS_MENSUALES_STATE.meses, error:'No se pudo consultar: ' + err.message, guardando:false};
+  }
+  renderViewBody();
+}
+
+async function guardarCostosMensuales(datos){
+  if(COSTOS_MENSUALES_STATE.guardando) return;
+  COSTOS_MENSUALES_STATE = {...COSTOS_MENSUALES_STATE, guardando:true};
+  renderViewBody();
+  try{
+    await api('POST', 'costos_mensuales_guardar.php', datos);
+    await cargarCostosMensuales();
+  }catch(err){
+    COSTOS_MENSUALES_STATE = {...COSTOS_MENSUALES_STATE, guardando:false, error:'No se pudo guardar: ' + err.message};
+    renderViewBody();
+  }
 }
 
 async function cargarResumenSemanal(){
@@ -5890,6 +5966,33 @@ function bindViewBody(){
   if(generarResumenSemanalBtn) generarResumenSemanalBtn.addEventListener('click', ()=> cargarResumenSemanal());
   const consultarCursosBtn = document.querySelector('[data-consultar-cursos]');
   if(consultarCursosBtn) consultarCursosBtn.addEventListener('click', ()=> cargarCursosPorMes());
+  const consultarCostosBtn = document.querySelector('[data-consultar-costos]');
+  if(consultarCostosBtn) consultarCostosBtn.addEventListener('click', ()=> cargarCostosMensuales());
+  const guardarCostosBtn = document.getElementById('guardarCostosBtn');
+  if(guardarCostosBtn){
+    guardarCostosBtn.addEventListener('click', ()=>{
+      const mes = document.getElementById('costoMesInput').value;
+      if(!mes){ alert('Elige un mes.'); return; }
+      guardarCostosMensuales({
+        mes,
+        costo_ia: parseFloat(document.getElementById('costoIaInput').value) || 0,
+        costo_hosting: parseFloat(document.getElementById('costoHostingInput').value) || 0,
+        costo_whatsapp: parseFloat(document.getElementById('costoWhatsappInput').value) || 0,
+        comision_mercadopago: parseFloat(document.getElementById('costoMpInput').value) || 0,
+      });
+    });
+  }
+  document.querySelectorAll('[data-editar-costos-mes]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const datos = JSON.parse(el.dataset.costos);
+      document.getElementById('costoMesInput').value = el.dataset.editarCostosMes;
+      document.getElementById('costoIaInput').value = datos.costo_ia || '';
+      document.getElementById('costoHostingInput').value = datos.costo_hosting || '';
+      document.getElementById('costoWhatsappInput').value = datos.costo_whatsapp || '';
+      document.getElementById('costoMpInput').value = datos.comision_mercadopago || '';
+      document.getElementById('costoMesInput').scrollIntoView({behavior:'smooth', block:'center'});
+    });
+  });
   document.querySelectorAll('[data-asesoria-mes-toggle]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const mes = el.dataset.asesoriaMesToggle;
