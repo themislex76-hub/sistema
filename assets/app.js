@@ -4454,6 +4454,15 @@ function prospectosHTML(){
   // misma persona (ej. una duda antes de su cita) sigue contando como
   // pendiente igual que siempre.
   const esPendiente = p => (p.estatus === 'nuevo' && !p.tiene_asesoria_confirmada) || (p.mensaje_nuevo && p.estatus !== 'descartado');
+  // Red de seguridad aparte del badge de "mensaje nuevo": ese badge se
+  // apaga en cuanto se abre el chat (marcar_visto), aunque nadie le haya
+  // contestado de verdad -- si el bot está pausado (un humano lleva el
+  // caso) y el ÚLTIMO mensaje sigue siendo del cliente, es algo real sin
+  // responder sin importar si ya se vio o no. Caso real detectado: un
+  // cliente con asesoría pagada preguntó si podía cambiar su cita y se
+  // quedó sin respuesta varios días porque el bot estaba pausado (correcto,
+  // un humano lleva ese caso) pero nadie se dio cuenta.
+  const pausadosSinContestar = PROSPECTOS.filter(p => p.pausado_bot && p.estatus !== 'descartado' && p.ultimo_mensaje_direccion === 'entrante');
   // La casilla de búsqueda del topbar (nombre o teléfono) también aplica
   // aquí — antes solo filtraba Expedientes (ver visibleCases()). Mientras
   // se busca, se ignora el filtro de "solo pendientes": alguien que busca
@@ -4483,7 +4492,23 @@ function prospectosHTML(){
   </div>`;
 
   const TITULOS_TAB = {despido:'Prospectos de despido', asesoria_paga:'Prospectos de asesoría paga', control_expedientes:'Despachos interesados en Control de Expedientes', reclamo:'Reclamos y conversaciones urgentes', atencion_directa:'Piden que les llamen (sin queja de por medio)', interes_curso:'Interés en cursos en línea'};
-  return tabsHTML + `
+  const pausadosSinContestarHTML = pausadosSinContestar.length ? `
+  <div class="panel" style="margin-bottom:16px; border-left:3px solid var(--red);">
+    <div class="panel-head"><h3>⚠️ Pausados con algo sin contestar</h3><span class="count">${pausadosSinContestar.length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      ${pausadosSinContestar.map(p=>`
+      <div class="alert-row" style="align-items:flex-start; cursor:pointer;" data-prospecto-abrir="${p.id}">
+        <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'warn'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
+        <div class="alert-info">
+          <div class="name">${escapeHTML(p.nombre || p.telefono)}</div>
+          <div class="detail" style="color:var(--gray);">${escapeHTML(truncate(p.ultimo_mensaje_texto||'', 100))}</div>
+        </div>
+        <div style="flex-shrink:0; font-size:11px; color:var(--gray); white-space:nowrap;">${fmtDate(p.ultima_actividad)}</div>
+      </div>`).join("")}
+    </div>
+  </div>
+  ` : '';
+  return pausadosSinContestarHTML + tabsHTML + `
   <div class="panel">
     <div class="panel-head"><h3>${TITULOS_TAB[PROSPECTOS_TAB]}</h3><span class="count">${visibles.length}</span></div>
     <div class="panel-body" style="padding:0;">
