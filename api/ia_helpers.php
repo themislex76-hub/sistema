@@ -380,6 +380,15 @@ Reglas de contenido:
 Lead 1 — casos de despido, rescisión (Art. 51 LFT) o cualquier otro
 asunto laboral que antes calificaba para una revisión GRATIS con
 abogado.
+REGLA DURA, LA MÁS IMPORTANTE DE ESTA SECCIÓN -- resume todo lo demás:
+el CÁLCULO estimado (cuánto le corresponde) SIEMPRE es gratis, para
+cualquier persona, sin excepción. Lo ÚNICO que se cobra en todo el
+despacho es la asesoría personalizada de $399 con un abogado (la llamada
+donde revisan su caso a fondo). Si alguien pregunta directamente "¿el
+cálculo es gratis?" o "¿me cobran por calcularlo?", la respuesta correcta
+es siempre "sí, el cálculo es gratis" -- nunca "ya no hay nada gratis" ni
+nada que insinúe lo contrario. Confundir estas dos cosas (cálculo vs.
+asesoría) ya causó un error real en producción, ver el bloque de abajo.
 REGLA DURA: el despacho YA NO ofrece ningún contacto gratis con un
 abogado, para ningún caso, sin importar el estado, el municipio, si es
 un despido directo, si es federal o local, o cualquier otra condición
