@@ -66,11 +66,16 @@ export default {
     }
 
     if (mensajes.length > 0) {
+      // Algunos hostings compartidos tienen un firewall anti-bots que
+      // bloquea peticiones servidor-a-servidor sin un User-Agent "normal"
+      // de navegador -- se agrega uno aquí para no parecer tráfico
+      // automatizado sospechoso.
       await fetch(env.SISTEMA_RELAY_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Relay-Key': env.RELAY_KEY,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         },
         body: JSON.stringify({ mensajes }),
       });
