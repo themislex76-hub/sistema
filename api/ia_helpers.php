@@ -1299,6 +1299,20 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         $texto = 'Antes de confirmarte, déjame verificar bien tu pago directo con el sistema -- en un momento un abogado del despacho te contacta por aquí mismo para confirmarte con toda seguridad.';
     }
 
+    // Misma idea que el guardrail de pago de arriba, para otro caso real
+    // detectado en producción (Eli, sep-2026): a pesar de la REGLA DURA
+    // que dice que el CÁLCULO siempre es gratis (solo la revisión de un
+    // abogado se cobra), la IA le dijo por su cuenta que ya no había
+    // cálculos gratis y que tenía que pagar la asesoría -- contradiciendo
+    // su propia instrucción. No depende de que la IA se acuerde: si el
+    // texto que va a mandarse niega que el cálculo sea gratis, se
+    // sustituye aquí mismo por un mensaje correcto, sin excepción.
+    if (ia_texto_niega_calculo_gratis($texto)) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [calculo_gratis_bloqueado] tel=$telefono | texto_bloqueado=\"" . $texto . "\"\n", FILE_APPEND);
+        $texto = 'El cálculo estimado siempre es gratis, no tiene ningún costo -- cuéntame tu caso (qué pasó, tu salario, las fechas) y te lo calculo aquí mismo. Lo único que sí tiene costo es la asesoría personalizada con el abogado, si más adelante quieres que revise tu caso a fondo.';
+    }
+
     // A diferencia de la asesoría de pago (que sigue su flujo solo y solo
     // se guarda como prospecto si se atora o se confirma el pago), un
     // interés en curso SIEMPRE se guarda aquí mismo -- no hay ningún
@@ -1344,6 +1358,26 @@ function ia_texto_confirma_pago_sin_evidencia(PDO $pdo, string $telefono, string
     $stmt = $pdo->prepare("SELECT 1 FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' LIMIT 1");
     $stmt->execute([':t' => $telefono]);
     return !$stmt->fetchColumn();
+}
+
+/**
+ * true si el texto de salida niega (por error) que el CÁLCULO estimado
+ * sea gratis -- ver el caso real que motivó esto (Eli) en
+ * ia_responder_whatsapp() arriba. Primero descarta las formas CORRECTAS
+ * ("el cálculo no tiene costo", "es gratis", etc.) antes de buscar las
+ * incorrectas, con el mismo motivo que ia_texto_confirma_pago_sin_evidencia:
+ * si no se hace así, un mensaje honesto y correcto se bloquearía por error.
+ */
+function ia_texto_niega_calculo_gratis(string $texto): bool
+{
+    if (preg_match('/c[aá]lculo.{0,45}(es\s+)?(totalmente\s+)?gratis|c[aá]lculo.{0,45}(no\s+tiene|sin)\s*(ning[uú]n\s*)?costo|c[aá]lculo.{0,45}no\s+cuesta|gratis.{0,45}c[aá]lculo|sin\s*costo.{0,45}c[aá]lculo/iu', $texto)) {
+        return false;
+    }
+
+    return preg_match(
+        '/ya\s+no\s+(manejamos|hacemos|ofrecemos|hay)\s+c[aá]lculos?|no\s+(ofrece|ofrecemos|manejamos|hacemos)\s+c[aá]lculos?|c[aá]lculo.{0,40}(es|forma)\s+parte\s+de.{0,20}asesor|c[aá]lculo.{0,25}(tiene|con)\s*(un\s*)?costo|c[aá]lculo.{0,25}no\s+es\s+gratis|para.{0,30}c[aá]lculo.{0,30}(pagar|asesor[ií]a)/iu',
+        $texto
+    ) === 1;
 }
 
 // URL pública del webhook de Mercado Pago — a donde Mercado Pago avisa
