@@ -561,6 +561,29 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         }
     }
 
+    // Segunda revisión, justo antes de mandar -- la primera (arriba, antes
+    // de llamar a la IA) solo cubre los primeros WHATSAPP_ESPERA_AGRUPAR_SEGUNDOS
+    // segundos, pero el proceso completo (llamada a la IA + el retraso
+    // natural de 20-28s de más abajo) tarda 35-45 segundos en total. Bug
+    // real detectado en producción: docenas de clientes recibieron 2
+    // respuestas casi idénticas seguidas en un solo día porque mandaban una
+    // segunda burbuja DESPUÉS de los primeros segundos pero DENTRO de esos
+    // 35-45s totales, y nadie volvía a checar hasta que ya era tarde. Si ya
+    // hay algo más nuevo, esta respuesta quedó desactualizada -- se
+    // descarta sin mandarla (ni guardarla ni mandar su PDF si traía): el
+    // procesamiento del mensaje nuevo, que sí va a incluir este último
+    // mensaje en su historial completo, es el que contesta.
+    if ($idPropio !== null) {
+        $stmtRecheck = $pdo->prepare(
+            "SELECT id FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante' ORDER BY id DESC LIMIT 1"
+        );
+        $stmtRecheck->execute([':t' => $telefono]);
+        $masRecienteAhora = $stmtRecheck->fetch();
+        if ($masRecienteAhora && (int)$masRecienteAhora['id'] !== $idPropio) {
+            return;
+        }
+    }
+
     whatsapp_enviar($telefono, $respuesta);
 
     $stmt = $pdo->prepare(
