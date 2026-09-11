@@ -27,7 +27,16 @@ const WHATSAPP_LIMITE_MENSAJES_DIA = 30;
 // mandó su explicación en 6 mensajes seguidos y el bot le contestó 6
 // veces, con textos distintos entre sí (6x el gasto de IA para un solo
 // intercambio real). Ver el bloque "espera para agrupar" más abajo.
-const WHATSAPP_ESPERA_AGRUPAR_SEGUNDOS = 8;
+// Subido de 8 a 18 segundos -- bug real detectado en producción: alguien
+// preguntó el precio de la asesoría y, unos segundos después (más de 8,
+// menos de 18), mandó su nombre en una burbuja aparte ("Mi nombre es
+// Kevin Rojas") -- como pasaron más de 8 segundos, la primera burbuja ya
+// se había alcanzado a contestar sola, y la segunda generó una SEGUNDA
+// respuesta casi idéntica (repitiendo el precio) antes de que llegara la
+// tercera, ya correcta, que sí agrupaba ambos mensajes. 18 segundos cubre
+// mejor ese patrón real (preguntar algo y mandar el nombre poco después)
+// sin alargar demasiado la espera de alguien que solo manda un mensaje.
+const WHATSAPP_ESPERA_AGRUPAR_SEGUNDOS = 18;
 
 // Horario de atención: todos los días, 8:00-19:00 hora de Ciudad de México
 // (date_default_timezone_set ya se fija globalmente en db.php, que carga
