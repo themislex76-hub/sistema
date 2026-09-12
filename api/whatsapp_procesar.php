@@ -94,10 +94,12 @@ const WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO = 'Recibí tu documento, lo rev
 // nunca ha pagado nada) pausara el bot y mandara una alerta urgente, el
 // despacho se llenaría de avisos que no son nada urgente -- solo se
 // escala de verdad cuando hay un pago pendiente de cobrar de por medio
-// (el escenario real: alguien insistiendo en que ya pagó su asesoría). En
-// cualquier otro caso, el archivo queda guardado y visible igual, pero el
-// bot sigue la conversación normal, dejando claro que no revisa
-// documentos por este medio.
+// (el escenario más común: alguien insistiendo en que ya pagó su
+// asesoría) o cuando el propio caption ya se parece a un reclamo (ver
+// whatsapp_texto_parece_reclamo, más abajo). En cualquier otro caso, el
+// archivo queda guardado y visible igual, pero el bot sigue la
+// conversación normal, dejando claro que no revisa documentos por este
+// medio.
 function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string $tipo, ?string $nombrePerfil): void
 {
     $messageId = (string)($msg['id'] ?? '');
@@ -161,17 +163,28 @@ function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string 
     $stmt = $pdo->prepare('UPDATE whatsapp_conversaciones SET media_ruta = :ruta, media_mime = :mime WHERE id = :id');
     $stmt->execute([':ruta' => $rutaRelativa, ':mime' => $descarga['mime_type'], ':id' => $idPropio]);
 
-    // ¿Hay algún pago pendiente de cobrar para este número? Es la única
-    // señal de contexto que tenemos para saber si este archivo es
-    // probablemente un comprobante de pago (lo urgente de verdad) y no
-    // solo un documento cualquiera.
+    // ¿Hay algún pago pendiente de cobrar para este número? Es una señal
+    // de contexto fuerte de que este archivo es probablemente un
+    // comprobante de pago (lo urgente de verdad) y no solo un documento
+    // cualquiera.
     $stmt = $pdo->prepare("SELECT id FROM citas_asesoria WHERE telefono = :t AND estado = 'pendiente_pago' LIMIT 1");
     $stmt->execute([':t' => $telefono]);
     $tienePagoPendiente = (bool)$stmt->fetch();
 
-    if ($tienePagoPendiente) {
+    // Además del pago pendiente, el propio caption puede ya ser un
+    // reclamo (mismo criterio que para un mensaje de texto normal -- ver
+    // whatsapp_texto_parece_reclamo) -- ej. "aquí está mi comprobante, YA
+    // PAGUÉ y nadie me contesta". El Lic. Buerhend solo necesita
+    // enterarse de los archivos que de verdad son parte de un reclamo, no
+    // de cualquier foto o documento que le manden.
+    $captionPareceReclamo = $caption !== '' && whatsapp_texto_parece_reclamo($caption);
+
+    if ($tienePagoPendiente || $captionPareceReclamo) {
         whatsapp_enviar($telefono, 'Recibí tu archivo — un abogado del despacho lo va a revisar directamente contigo. 🙏');
-        ia_registrar_prospecto_atorado($pdo, $telefono, ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''], 'Mandó un archivo (' . $tipo . ') con un pago de asesoría pendiente de cobrar -- probable comprobante, revisarlo en Conversaciones (WhatsApp) o Prospectos.', $nombrePerfil);
+        $motivo = $tienePagoPendiente
+            ? 'con un pago de asesoría pendiente de cobrar -- probable comprobante'
+            : 'con un caption que se parece a un reclamo';
+        ia_registrar_prospecto_atorado($pdo, $telefono, ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''], 'Mandó un archivo (' . $tipo . ') ' . $motivo . ' -- revisarlo en Conversaciones (WhatsApp) o Prospectos.', $nombrePerfil);
     } else {
         whatsapp_enviar($telefono, WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO);
         $stmt = $pdo->prepare(
@@ -404,47 +417,7 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     // haya una cita de por medio: un reclamo es un reclamo aunque no sea
     // sobre un pago). Contesta con un mensaje fijo, pausa el bot y avisa
     // a un humano, siempre.
-    $pareceReclamo =
-        // "fraude/estafa/robo/engaño" NO cuenta si el cliente está
-        // describiendo una acusación que ÉL recibió (de su jefe, en su
-        // trabajo) -- ej. "me culparon de un fraude", "me acusaron de
-        // robo y me despidieron" -- eso es información normal de su
-        // caso, no una queja contra el despacho. Tampoco cuenta si habla
-        // de fraudes telefónicos en general (ej. "por los fraudes ya no
-        // contesto números desconocidos") -- eso es contexto cultural,
-        // no una acusación contra nosotros.
-        (preg_match('/estafa|fraude|enga[ñn]|es un robo/iu', $texto) === 1
-            && preg_match('/me (culp(an|aron)?|acus(an|aron)?|despidieron|corrieron).{0,30}(fraude|estafa|robo|enga[ñn])|(fraude|estafa|robo|enga[ñn]).{0,30}me (culp|acus)|(jefe|patr[oó]n|empresa|trabajo).{0,30}(fraude|estafa|robo|enga[ñn])|(contest(amos?|an|o)|llamada|tel[eé]fono|n[uú]mero).{0,60}(fraude|estafa)|(fraude|estafa).{0,60}(contest(amos?|an|o)|llamada|tel[eé]fono|n[uú]mero)/iu', $texto) !== 1)
-        // "tiktok"/"redes sociales" solos NO cuentan -- un cliente real
-        // puede decir "lo vi en tiktok" sin ninguna amenaza. Solo cuenta
-        // si va junto con un verbo de amenaza (exhibir/exponer/publicar/
-        // denunciar/quemar), en cualquier orden.
-        || preg_match('/(exhib|expon|public|denunci|quem).{0,40}(tik\s*tok|redes sociales)|(tik\s*tok|redes sociales).{0,40}(exhib|expon|public|denunci|quem)|voy a (publicar|denunciar|quemar|exponer|exhibir)/iu', $texto) === 1
-        // "devolución"/"reembolso" solos NO cuentan -- un cliente puede
-        // mencionar una devolución ajena dentro de su propio caso (ej. "un
-        // proveedor no generó la devolución de un pago de arrendamiento"
-        // narrando su despido) sin que sea un reclamo contra el despacho.
-        // Solo cuenta si está en primera persona, sobre SU dinero.
-        || preg_match('/mi\s+(devoluci[oó]n|reembolso)|(devoluci[oó]n|reembolso)\s+de\s+mi\s+(pago|dinero|asesor[ií]a)|regr[eé]same mi dinero|quiero mi dinero|no me han (devuelto|reembolsado)|me (devuelvan|reembolsen)\b/iu', $texto) === 1
-        // REGLA DURA: "ya" tiene que estar pegado a un verbo de pago en
-        // primera persona (ya pagué/deposité/transferí) -- no basta con
-        // que "ya" y "pag" aparezcan cerca por cualquier motivo (ej. "no
-        // firmé YA QUE dije que me PAGaran" es una conjunción normal, no
-        // una afirmación de pago, y no debe escalar).
-        || preg_match('/\bya\s+(te\s+|le\s+|les\s+)?(pagu[eé]|deposit[eé]|transfer[ií])\b/iu', $texto) === 1
-        // Caso real detectado en producción: alguien escribió "Ya esta el
-        // pago solo quiero que se me confirme" -- no calzaba con el
-        // patrón de arriba (no es "ya pagué", es "ya está el pago"), así
-        // que se coló al flujo normal de la IA en vez de escalar aquí, y
-        // la IA terminó confirmándole el pago/cita sin haberlo verificado
-        // de verdad (la cita nunca se pagó). Se cubren aquí las variantes
-        // más comunes de "afirmar que el pago ya se hizo" sin usar
-        // exactamente pagué/deposité/transferí en primera persona.
-        || preg_match('/\bya\s+(hice|realic[eé]|efectu[eé])\s+(el\s+)?pago\b/iu', $texto) === 1
-        || preg_match('/\b(el\s+)?pago\s+ya\s+(est[aá]|qued[oó]|se\s+(hizo|realiz[oó]))\b/iu', $texto) === 1
-        || preg_match('/\bya\s+est[aá]\s+(el\s+)?pago\b/iu', $texto) === 1
-        || preg_match('/\bacabo\s+de\s+(pagar|hacer\s+el\s+pago|realizar\s+el\s+pago|transferir|depositar)\b/iu', $texto) === 1
-        || preg_match('/\bya\s+((est[aá]|qued[oó])\s+)?(pagado|depositado|transferido)\b/iu', $texto) === 1;
+    $pareceReclamo = whatsapp_texto_parece_reclamo($texto);
     if ($pareceReclamo) {
         file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
             . " | [respaldo_reclamo] escalando de $telefono | texto=\"" . mb_strimwidth($texto, 0, 80, '…') . "\"\n", FILE_APPEND);
