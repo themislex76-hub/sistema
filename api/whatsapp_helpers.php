@@ -52,7 +52,12 @@ function whatsapp_texto_parece_reclamo(string $texto): bool
         // de fraudes telefónicos en general (ej. "por los fraudes ya no
         // contesto números desconocidos") -- eso es contexto cultural,
         // no una acusación contra nosotros.
-        (preg_match('/estafa|fraude|enga[ñn]|es un robo/iu', $texto) === 1
+        // Bug real detectado en producción: "es un robo" (sin \b al
+        // final) hacía match dentro de la palabra "robot" -- alguien
+        // preguntó "¿Eres un robot?" y el sistema lo tomó como una
+        // acusación de robo/fraude, contestándole el mensaje de
+        // escalación en vez de la pregunta real que hizo.
+        (preg_match('/estafa|fraude|enga[ñn]|es un robo\b/iu', $texto) === 1
             && preg_match('/me (culp(an|aron)?|acus(an|aron)?|despidieron|corrieron).{0,30}(fraude|estafa|robo|enga[ñn])|(fraude|estafa|robo|enga[ñn]).{0,30}me (culp|acus)|(jefe|patr[oó]n|empresa|trabajo).{0,30}(fraude|estafa|robo|enga[ñn])|(contest(amos?|an|o)|llamada|tel[eé]fono|n[uú]mero).{0,60}(fraude|estafa)|(fraude|estafa).{0,60}(contest(amos?|an|o)|llamada|tel[eé]fono|n[uú]mero)/iu', $texto) !== 1)
         // "tiktok"/"redes sociales" solos NO cuentan -- un cliente real
         // puede decir "lo vi en tiktok" sin ninguna amenaza. Solo cuenta
