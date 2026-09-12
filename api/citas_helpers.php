@@ -128,6 +128,50 @@ function citas_calcular_horarios_disponibles(PDO $pdo, int $diasAdelante = 12, i
 }
 
 /**
+ * Encuentra el primer abogado activo que siga libre en una fecha+hora ya
+ * calculadas como disponibles (ver citas_calcular_horarios_disponibles),
+ * sin crear ninguna cita. Se usa en mercadopago_webhook.php para el caso
+ * raro de un pago que llega días después de que la cita original ya
+ * pasó (el link de Mercado Pago no expira solo) -- ahí hace falta
+ * reasignar la cita ya existente a un horario nuevo, no crear una desde
+ * cero como hace citas_crear_pendiente. No usa FOR UPDATE (a diferencia
+ * de citas_crear_pendiente): es un caso raro de un pago ya aprobado, no
+ * dos clientes eligiendo el mismo horario en vivo, así que el riesgo de
+ * carrera es mínimo y no vale la pena la complejidad de una transacción
+ * aquí.
+ */
+function citas_asignar_usuario_libre_en_slot(PDO $pdo, string $fecha, string $horaInicio): ?int
+{
+    $fechaObj = DateTimeImmutable::createFromFormat('Y-m-d', $fecha);
+    if (!$fechaObj) return null;
+    $diaSemana = (int)$fechaObj->format('N');
+
+    $stmt = $pdo->prepare(
+        "SELECT d.usuario_id
+         FROM disponibilidad_asesorias d
+         JOIN usuarios u ON u.id = d.usuario_id
+         WHERE u.activo = 1 AND d.dia_semana = :dia
+           AND d.hora_inicio <= :hora_a AND d.hora_fin >= ADDTIME(:hora_b, '01:00:00')
+         ORDER BY d.usuario_id"
+    );
+    $stmt->execute([':dia' => $diaSemana, ':hora_a' => $horaInicio . ':00', ':hora_b' => $horaInicio . ':00']);
+    $candidatos = array_column($stmt->fetchAll(), 'usuario_id');
+    if (!$candidatos) return null;
+
+    $stmt = $pdo->prepare(
+        "SELECT usuario_id FROM citas_asesoria
+         WHERE fecha = :fecha AND hora_inicio = :hora AND estado IN ('confirmada', 'pendiente_pago')"
+    );
+    $stmt->execute([':fecha' => $fecha, ':hora' => $horaInicio . ':00']);
+    $ocupados = array_column($stmt->fetchAll(), 'usuario_id');
+
+    foreach ($candidatos as $usuarioId) {
+        if (!in_array($usuarioId, $ocupados)) return (int)$usuarioId;
+    }
+    return null;
+}
+
+/**
  * Aparta un horario (fecha + hora_inicio, ya validados contra lo que se le
  * ofreció al cliente) asignando el primer abogado que de verdad siga
  * libre en ese momento — se vuelve a checar aquí por si dos clientes

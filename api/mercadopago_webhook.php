@@ -85,6 +85,35 @@ if (!$cita) {
     mp_webhook_responder(200);
 }
 
+// Bug real detectado en producción (caso Rosa Isela, sep-2026): el link de
+// pago de Mercado Pago no expira solo -- si alguien paga días después de
+// que su horario original ya pasó (aquí, tras platicarlo directo con un
+// abogado por un problema con el pago), este webhook confirmaba la cita
+// IGUAL para la fecha/hora original ya vencida, mandándole al cliente "tu
+// asesoría queda agendada para el lunes 7 de septiembre" cuando ya era 12
+// de septiembre. Si el horario original ya pasó, se reagenda
+// automáticamente al horario disponible más próximo ANTES de confirmar.
+$citaYaPaso = strtotime($cita['fecha'] . ' ' . $cita['hora_inicio']) < time();
+$seReagendoAutomaticamente = false;
+if ($citaYaPaso) {
+    $nuevoHorario = citas_calcular_horarios_disponibles($pdo, 12, 1)[0] ?? null;
+    if ($nuevoHorario !== null) {
+        $nuevoUsuarioId = citas_asignar_usuario_libre_en_slot($pdo, $nuevoHorario['fecha'], $nuevoHorario['hora_inicio']);
+        if ($nuevoUsuarioId !== null) {
+            $cita['fecha'] = $nuevoHorario['fecha'];
+            $cita['hora_inicio'] = $nuevoHorario['hora_inicio'] . ':00';
+            $cita['hora_fin'] = $nuevoHorario['hora_fin'] . ':00';
+            $cita['usuario_id'] = $nuevoUsuarioId;
+            $seReagendoAutomaticamente = true;
+        }
+    }
+    // Si no se encontró ningún horario nuevo (caso extremo: agenda llena),
+    // se sigue adelante y se confirma el pago igual -- el dinero es real y
+    // no se puede perder de vista -- pero más abajo el mensaje al cliente
+    // y al abogado deja claro que hay que coordinar un horario a mano, en
+    // vez de citar la fecha vieja ya vencida.
+}
+
 // El UPDATE solo afecta una fila si todavía NO estaba confirmada — esto es
 // atómico a nivel de base de datos, así que aunque Mercado Pago mande el
 // mismo aviso dos veces casi al mismo tiempo (le pasa seguido), solo uno de
@@ -101,10 +130,14 @@ if (!$cita) {
 // precio real cobrado -- el cobro en Mercado Pago sí era correcto, pero
 // los reportes del sistema mostraban el precio viejo para todo mundo.
 $stmt = $pdo->prepare(
-    "UPDATE citas_asesoria SET estado = 'confirmada', mp_payment_id = :pago_id, pagado_en = NOW(), monto = :monto
+    "UPDATE citas_asesoria SET estado = 'confirmada', mp_payment_id = :pago_id, pagado_en = NOW(), monto = :monto,
+            fecha = :fecha, hora_inicio = :hora_inicio, hora_fin = :hora_fin, usuario_id = :usuario_id
      WHERE id = :id AND estado != 'confirmada'"
 );
-$stmt->execute([':pago_id' => $paymentId, ':id' => $citaId, ':monto' => (float)($pago['transaction_amount'] ?? 0)]);
+$stmt->execute([
+    ':pago_id' => $paymentId, ':id' => $citaId, ':monto' => (float)($pago['transaction_amount'] ?? 0),
+    ':fecha' => $cita['fecha'], ':hora_inicio' => $cita['hora_inicio'], ':hora_fin' => $cita['hora_fin'], ':usuario_id' => $cita['usuario_id'],
+]);
 
 if ($stmt->rowCount() === 0) {
     // Ya estaba confirmada (aviso duplicado) o perdió la carrera contra otro
@@ -112,7 +145,12 @@ if ($stmt->rowCount() === 0) {
     mp_webhook_responder(200);
 }
 
-$horarioTexto = citas_formatear_fecha_hora($cita['fecha'], substr($cita['hora_inicio'], 0, 5));
+// Si no se pudo reagendar y el horario original ya pasó, no hay ninguna
+// fecha válida que mostrar -- ver los mensajes de abajo, que usan
+// $citaYaPaso/$seReagendoAutomaticamente en vez de $horarioTexto en ese caso.
+$horarioTexto = ($citaYaPaso && !$seReagendoAutomaticamente)
+    ? 'un horario por coordinar'
+    : citas_formatear_fecha_hora($cita['fecha'], substr($cita['hora_inicio'], 0, 5));
 
 // Mientras el bot ofrecía horarios y generaba el link de pago solo, esta
 // persona nunca se guardó en Prospectos (para no llenarle la lista al
@@ -133,7 +171,8 @@ $stmtPrimerMsg = $pdo->prepare(
 $stmtPrimerMsg->execute([':t' => $cita['telefono']]);
 $primerMensaje = trim((string)($stmtPrimerMsg->fetchColumn() ?: ''));
 
-$resumenPago = "Asesoría pagada (\${$cita['monto']} MXN) y agendada para {$horarioTexto}.";
+$resumenPago = "Asesoría pagada (\${$cita['monto']} MXN) y agendada para {$horarioTexto}."
+    . ($seReagendoAutomaticamente ? ' (el pago llegó después de la fecha original, se reagendó automáticamente -- confirmar con la clienta).' : '');
 $resumenCompleto = $primerMensaje !== ''
     ? $resumenPago . ' Consulta original del cliente: "' . mb_strimwidth($primerMensaje, 0, 300, '…') . '"'
     : $resumenPago;
@@ -148,20 +187,35 @@ guardar_prospecto($pdo, $cita['telefono'], $cita['nombre_cliente'], [
 // Se avisa directo al abogado que le tocó la cita (no al "asignado" del
 // prospecto, que normalmente está vacío en este punto) — es quien tiene
 // que hacer la llamada.
+$notaPush = '';
+if ($seReagendoAutomaticamente) {
+    $notaPush = ' (pago llegó tarde, se reagendó automático -- confírmalo con la clienta)';
+} elseif ($citaYaPaso) {
+    $notaPush = ' (pago llegó tarde y no se encontró horario libre automático -- coordina el horario directo con la clienta)';
+}
 push_enviar_a_usuario(
     $pdo,
     (int)$cita['usuario_id'],
     '¡Pago confirmado!',
-    ($cita['nombre_cliente'] ?: $cita['telefono']) . ' — asesoría agendada para ' . $horarioTexto,
+    ($cita['nombre_cliente'] ?: $cita['telefono']) . ' — asesoría agendada para ' . $horarioTexto . $notaPush,
     '/sistema/?abrir=' . urlencode($cita['telefono'])
 );
 
 // Se agenda sola en el Google Calendar del abogado que le tocó la cita —
 // sin esto, solo se sincronizaba cuando alguien entraba al sistema y le
-// daba clic a "Sincronizar ahora".
-google_sincronizar_cita_pagada($pdo, $cita, $horarioTexto);
+// daba clic a "Sincronizar ahora". Si no hay una fecha válida (no se pudo
+// reagendar), no hay nada que sincronizar todavía.
+if (!($citaYaPaso && !$seReagendoAutomaticamente)) {
+    google_sincronizar_cita_pagada($pdo, $cita, $horarioTexto);
+}
 
-$mensaje = "¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada para el {$horarioTexto}. Un abogado del despacho te va a llamar a este mismo número de WhatsApp a esa hora — por favor ten tu teléfono a la mano. Si no contestas la llamada en 2 intentos, no habrá devolución del pago. Cualquier cosa antes, aquí mismo nos puedes escribir.";
+if ($citaYaPaso && !$seReagendoAutomaticamente) {
+    $mensaje = '¡Tu pago quedó confirmado! Como tu cita original ya había pasado y no encontramos un horario libre automáticamente, un abogado del despacho te va a contactar directo por este mismo WhatsApp para coordinar un nuevo horario para tu asesoría telefónica de 1 hora.';
+} elseif ($seReagendoAutomaticamente) {
+    $mensaje = "¡Tu pago quedó confirmado! Como llegó después de la fecha que teníamos agendada, reagendamos tu asesoría automáticamente para el {$horarioTexto} -- si ese horario no te funciona, aquí mismo me avisas y lo movemos. Un abogado del despacho te va a llamar a este mismo número de WhatsApp a esa hora, por favor ten tu teléfono a la mano. Si no contestas la llamada en 2 intentos, no habrá devolución del pago.";
+} else {
+    $mensaje = "¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada para el {$horarioTexto}. Un abogado del despacho te va a llamar a este mismo número de WhatsApp a esa hora — por favor ten tu teléfono a la mano. Si no contestas la llamada en 2 intentos, no habrá devolución del pago. Cualquier cosa antes, aquí mismo nos puedes escribir.";
+}
 whatsapp_enviar($cita['telefono'], $mensaje);
 
 $stmt = $pdo->prepare(
