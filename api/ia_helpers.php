@@ -1421,6 +1421,30 @@ const MERCADOPAGO_WEBHOOK_URL = 'https://sistema.expertoslaborales.com/sistema/a
  */
 function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead): string
 {
+    // Bug real detectado en producción: un cliente pagó y agendó su
+    // asesoría, no se pudo completar la llamada (iba manejando, no podía
+    // hablar, etc.), y al pedir reagendar el bot simplemente le ofreció
+    // horarios nuevos y terminó generándole un SEGUNDO link de pago -- sin
+    // avisarle que, según la política del despacho, esa cita ya se perdió
+    // y no hay devolución ni reagendado automático. Esa decisión (si se le
+    // cobra otra vez, si se le hace una excepción, etc.) es del Lic. Rubén
+    // caso por caso, nunca del bot solo -- si ya tiene una asesoría pagada
+    // cuya fecha/hora ya pasó, se corta aquí y se escala.
+    $stmtPasada = $pdo->prepare(
+        "SELECT id FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' AND CONCAT(fecha, ' ', hora_inicio) < NOW() LIMIT 1"
+    );
+    $stmtPasada->execute([':t' => $telefono]);
+    if ($stmtPasada->fetch()) {
+        ia_registrar_prospecto_atorado(
+            $pdo, $telefono, $lead,
+            'Ya tiene una asesoría pagada cuya fecha/hora ya pasó (posible llamada perdida o no completada) y está pidiendo agendar de nuevo -- según política del despacho no hay devolución ni reagendado automático; el Lic. Rubén Buerhend debe decidir directamente si se le cobra otra vez o se le hace una excepción.'
+        );
+        return json_encode([
+            'horarios' => [],
+            'nota' => 'Esta persona ya tiene una asesoría pagada cuya fecha ya pasó -- NO le ofrezcas horarios nuevos ni le digas que puede reagendar, y no le prometas ni le niegues nada sobre si tiene que pagar de nuevo. Dile que el Lic. Rubén Buerhend la va a contactar directo para resolver su situación.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
     $horarios = citas_calcular_horarios_disponibles($pdo);
     if (!$horarios) {
         ia_registrar_prospecto_atorado($pdo, $telefono, $lead, 'Mostró interés en la asesoría de pago pero no hay horarios disponibles en este momento.');
