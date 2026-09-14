@@ -202,7 +202,7 @@ if ($citaYaPaso) {
         $mensaje = '¡Tu pago quedó confirmado! Como tu cita original ya había pasado y no encontramos horarios disponibles en este momento, un abogado del despacho te va a contactar directo por este mismo WhatsApp para coordinar un nuevo horario para tu asesoría telefónica de 1 hora.';
     }
 } else {
-    $mensaje = "¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada para el {$horarioTexto}. El Lic. Rubén Buerhend te va a llamar a este mismo número de WhatsApp a esa hora — por favor ten tu teléfono a la mano.\n\nImportante: este horario ya quedó vendido y reservado especialmente para ti, así que no es posible reprogramarlo antes de la cita. Y si no fue posible contactarte en 2 intentos a la hora acordada, tampoco aplica devolución del pago.\n\nCualquier cosa antes, aquí mismo nos puedes escribir.";
+    $mensaje = "¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada para el {$horarioTexto}. El Lic. Rubén Buerhend te va a llamar a este mismo número de WhatsApp a esa hora — por favor ten tu teléfono a la mano.\n\nImportante: este horario ya quedó reservado especialmente para ti, así que no es posible reprogramarlo antes de la cita. Y si no fue posible contactarte en 2 intentos a la hora acordada, tampoco aplica devolución del pago ni reprogramación.\n\nCualquier cosa antes, aquí mismo nos puedes escribir.";
 }
 whatsapp_enviar($cita['telefono'], $mensaje);
 
