@@ -85,6 +85,20 @@ function citas_calcular_horarios_disponibles(PDO $pdo, int $diasAdelante = 12, i
         $ocupados[$r['usuario_id'] . '|' . $r['fecha'] . '|' . substr($r['hora_inicio'], 0, 5)] = true;
     }
 
+    // Días inhábiles (ver "Días inhábiles" en el sistema) -- el despacho no
+    // atiende asesorías telefónicas ese día sin importar el ámbito
+    // (federal/cdmx/edomex), así que cualquier fecha marcada ahí se excluye
+    // por completo, aunque el abogado tenga disponibilidad semanal
+    // configurada para ese día de la semana. Antes esta tabla solo se usaba
+    // para calcular plazos legales, nunca para bloquear la agenda de
+    // asesorías -- por eso se seguían vendiendo citas en días feriados.
+    $stmtInhabiles = $pdo->prepare('SELECT DISTINCT fecha FROM dias_inhabiles WHERE fecha BETWEEN :desde AND :hasta');
+    $stmtInhabiles->execute([
+        ':desde' => date('Y-m-d'),
+        ':hasta' => date('Y-m-d', strtotime("+{$diasAdelante} days")),
+    ]);
+    $diasInhabiles = array_flip($stmtInhabiles->fetchAll(PDO::FETCH_COLUMN));
+
     $ahora = new DateTimeImmutable();
     $limiteMinimo = $ahora->modify("+{$anticipacionMinimaHoras} hours");
     $hoy = new DateTimeImmutable('today');
@@ -95,6 +109,7 @@ function citas_calcular_horarios_disponibles(PDO $pdo, int $diasAdelante = 12, i
         $diaSemana = (int)$fechaObj->format('N');
         if (empty($bloquesPorDia[$diaSemana])) continue;
         $fechaStr = $fechaObj->format('Y-m-d');
+        if (isset($diasInhabiles[$fechaStr])) continue;
         $vistosEsteDia = [];
 
         foreach ($bloquesPorDia[$diaSemana] as $bloque) {
