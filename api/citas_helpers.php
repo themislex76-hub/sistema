@@ -215,14 +215,30 @@ function citas_crear_pendiente(PDO $pdo, string $telefono, string $fecha, string
             "INSERT INTO citas_asesoria (telefono, usuario_id, fecha, hora_inicio, hora_fin, nombre_cliente, estado)
              VALUES (:telefono, :usuario_id, :fecha, :hora_inicio, :hora_fin, :nombre, 'pendiente_pago')"
         );
-        $stmt->execute([
-            ':telefono' => $telefono,
-            ':usuario_id' => $usuarioLibre['usuario_id'],
-            ':fecha' => $fecha,
-            ':hora_inicio' => $horaInicio . ':00',
-            ':hora_fin' => $horaFin,
-            ':nombre' => $nombreCliente,
-        ]);
+        try {
+            $stmt->execute([
+                ':telefono' => $telefono,
+                ':usuario_id' => $usuarioLibre['usuario_id'],
+                ':fecha' => $fecha,
+                ':hora_inicio' => $horaInicio . ':00',
+                ':hora_fin' => $horaFin,
+                ':nombre' => $nombreCliente,
+            ]);
+        } catch (\PDOException $e) {
+            // Último respaldo contra el doble-booking (ver migración
+            // 047_citas_slot_unico.sql): el candado FOR UPDATE de arriba
+            // ya debería evitarlo, pero por si acaso una carrera se le
+            // cuela, el índice único uq_citas_slot_ocupado en la base de
+            // datos hace IMPOSIBLE insertar dos citas activas para el
+            // mismo abogado/fecha/hora -- si esto choca contra ese
+            // índice, es que alguien más ganó la carrera justo ahora, no
+            // un error real.
+            if ($e->getCode() === '23000') {
+                $pdo->rollBack();
+                return null;
+            }
+            throw $e;
+        }
         $citaId = (int)$pdo->lastInsertId();
         $pdo->commit();
         return $citaId;
