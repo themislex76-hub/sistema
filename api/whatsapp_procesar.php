@@ -459,6 +459,25 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         return;
     }
 
+    // Patrón real detectado revisando conversaciones completas: cuando el
+    // bot ya se había despedido y la persona solo contesta con un
+    // agradecimiento/cierre corto ("gracias", "ok", un emoji), el bot le
+    // seguía mandando OTRA despedida completa -- se veían cadenas de hasta
+    // 15 mensajes seguidos de "gracias"/"con gusto", algo que ningún
+    // humano hace. Si el mensaje nuevo es un cierre simple y el ÚLTIMO
+    // mensaje saliente ya sonaba a despedida, no se contesta nada más (se
+    // corta aquí, antes de gastar IA).
+    if (whatsapp_texto_es_cierre_simple($texto)) {
+        $stmtUltimoSaliente = $pdo->prepare(
+            "SELECT texto FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'saliente' ORDER BY id DESC LIMIT 1"
+        );
+        $stmtUltimoSaliente->execute([':t' => $telefono]);
+        $ultimoSaliente = (string)($stmtUltimoSaliente->fetchColumn() ?: '');
+        if (whatsapp_texto_parece_despedida($ultimoSaliente)) {
+            return;
+        }
+    }
+
     // Espera para agrupar: si la persona sigue escribiendo (varias burbujas
     // seguidas), se le da tiempo antes de gastar una llamada de IA. Al
     // terminar la espera se checa si llegó un mensaje MÁS NUEVO de este

@@ -108,6 +108,43 @@ function whatsapp_texto_parece_declinar(string $texto): bool
     ) === 1;
 }
 
+// Patrón real detectado revisando conversaciones completas para mejorar
+// qué tan "humano" se siente el bot: cuando alguien solo manda un
+// agradecimiento/cierre corto ("gracias", "ok", un emoji) DESPUÉS de que
+// el bot ya se había despedido, el bot le seguía contestando con otra
+// despedida completa -- se veían cadenas de hasta 15 mensajes de
+// "gracias"/"con gusto" seguidos, algo que ningún humano hace. Estas dos
+// funciones, usadas juntas en procesar_mensaje_entrante(), cortan esa
+// cadena: si el mensaje nuevo es un cierre simple Y el ÚLTIMO mensaje
+// saliente ya sonaba a despedida, no se contesta nada más.
+function whatsapp_texto_es_cierre_simple(string $texto): bool
+{
+    $limpio = trim($texto);
+    if ($limpio === '' || mb_strlen($limpio) > 20 || strpos($limpio, '?') !== false) {
+        return false;
+    }
+    // Sin ninguna letra (puro emoji o puntuación, ej. "😊", "👍") cuenta
+    // como cierre por sí solo.
+    if (preg_match('/\p{L}/u', $limpio) !== 1) {
+        return true;
+    }
+    // Debe ser SOLO la palabra de cierre (con puntuación/emoji después, si
+    // acaso) -- no basta con que empiece así, porque "gracias, pero..." o
+    // "ok, mi salario es..." traen contenido nuevo que sí hay que contestar.
+    return preg_match(
+        '/^(muchas\s+)?gracias[\s!.,👍🙏😊❤️]*$|^(ok(?:ay|ey)?|va|s[ií]+|vale|listo|perfecto|entendido|de\s+acuerdo|de\s+nada|claro\s+que\s+s[ií])[\s!.,👍🙏😊]*$/iu',
+        $limpio
+    ) === 1;
+}
+
+function whatsapp_texto_parece_despedida(string $texto): bool
+{
+    return preg_match(
+        '/buen[ao]s?\s+(d[ií]as?|tardes?|noches?)|que\s+tengas|que\s+est[eé]s?\s+(muy\s+)?bien|cu[ií]date|nos\s+vemos|con\s+gusto|aqu[ií]\s+(estoy|sigo|quedo|ando)|[eé]xito|saludos/iu',
+        $texto
+    ) === 1;
+}
+
 function whatsapp_enviar(string $telefono, string $texto): bool
 {
     $credentialsFile = __DIR__ . '/whatsapp_credentials.php';
