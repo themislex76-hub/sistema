@@ -44,6 +44,20 @@ $prospectos = $stmt->fetchAll();
 
 $enviados = 0;
 foreach ($prospectos as $p) {
+    // Mismo criterio que cron_seguimiento_calculadora.php: si su último
+    // mensaje ya suena a un rechazo ("no gracias", "no me interesa"), no
+    // insistir con el recordatorio -- se marca seguimiento_en igual, para
+    // no volver a evaluarlo después.
+    $chkUltimo = $pdo->prepare(
+        "SELECT texto FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante' ORDER BY id DESC LIMIT 1"
+    );
+    $chkUltimo->execute([':t' => $p['telefono']]);
+    $ultimoTexto = $chkUltimo->fetchColumn();
+    if ($ultimoTexto !== false && whatsapp_texto_parece_declinar((string)$ultimoTexto)) {
+        $pdo->prepare('UPDATE prospectos SET seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $p['id']]);
+        continue;
+    }
+
     $info = CURSOS_INFO[$p['curso_interes']] ?? null;
     $saludo = $p['nombre'] ? "Hola {$p['nombre']}" : 'Hola';
 

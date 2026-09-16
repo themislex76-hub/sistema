@@ -91,6 +91,23 @@ function whatsapp_texto_parece_reclamo(string $texto): bool
         || preg_match('/\bya\s+((est[aá]|qued[oó])\s+)?(pagado|depositado|transferido)\b/iu', $texto) === 1;
 }
 
+// Bug real detectado en producción: el seguimiento automático de
+// calculadora (ver cron_seguimiento_calculadora.php) le insistía a
+// clientes que YA habían dicho claramente que no les interesaba la
+// asesoría de pago (ej. "No, muchas gracias", "no así está bien") --
+// el cron solo revisaba si un humano había tomado el caso o si ya
+// había pagado, nunca si la persona ya había declinado. Sesgado a
+// propósito hacia "sí parece que declinó" en casos dudosos: el costo de
+// no mandar un seguimiento de más es mínimo, pero insistirle a alguien
+// que ya dijo que no genera desconfianza real.
+function whatsapp_texto_parece_declinar(string $texto): bool
+{
+    return preg_match(
+        '/\bno\b.{0,25}(gracias|me interesa|por ahora|por el momento|as[ií]\s+est[aá]\s+bien)/iu',
+        $texto
+    ) === 1;
+}
+
 function whatsapp_enviar(string $telefono, string $texto): bool
 {
     $credentialsFile = __DIR__ . '/whatsapp_credentials.php';

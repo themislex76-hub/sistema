@@ -60,15 +60,27 @@ foreach ($calculos as $c) {
     // Silencio medido desde el último mensaje del CLIENTE (no desde nuestros
     // propios seguimientos), para no reiniciar el conteo con nuestro propio mensaje.
     $chkUltimo = $pdo->prepare(
-        "SELECT MAX(creado_en) AS ultimo FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante'"
+        "SELECT creado_en, texto FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante' ORDER BY id DESC LIMIT 1"
     );
     $chkUltimo->execute([':t' => $c['telefono']]);
-    $ultimoEntrante = $chkUltimo->fetch()['ultimo'] ?? null;
-    if (!$ultimoEntrante) {
+    $ultimoMsg = $chkUltimo->fetch();
+    if (!$ultimoMsg) {
         $omitidos++;
         continue;
     }
-    $minutosSilencio = (int)((time() - strtotime($ultimoEntrante)) / 60);
+
+    // Bug real detectado en producción: se le seguía insistiendo con este
+    // recordatorio a gente que ya había dicho claramente que no le
+    // interesaba (ej. "No, muchas gracias", "no así está bien") -- antes
+    // solo se revisaba si un humano había tomado el caso o si ya había
+    // pagado, nunca si la persona ya había declinado. Si su último
+    // mensaje suena a un rechazo, se corta aquí antes de insistir más.
+    if (whatsapp_texto_parece_declinar((string)$ultimoMsg['texto'])) {
+        $omitidos++;
+        continue;
+    }
+
+    $minutosSilencio = (int)((time() - strtotime($ultimoMsg['creado_en'])) / 60);
 
     $montoTxt = $c['monto_total'] ? '$' . number_format((float)$c['monto_total'], 0) : null;
 
