@@ -20,6 +20,27 @@ require_once __DIR__ . '/ia_helpers.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
 require_once __DIR__ . '/whatsapp_procesar.php';
 
+// Bug real detectado en producción (revisando TODAS las respuestas del
+// 15-sep): decenas de números distintos recibieron dos "Buenos días..."
+// casi idénticos, a 0-3 segundos uno del otro, todos entre las 8:15 y
+// las 8:17 am -- justo cuando abre el horario de atención y hay un
+// backlog grande acumulado de toda la noche. Este script llama a la IA
+// completa UNA VEZ POR CADA número pendiente, en fila -- si el backlog es
+// grande, la corrida puede tardar más que el intervalo del Cron Job
+// (15-30 min), y la SIGUIENTE corrida arranca antes de que la anterior
+// termine, encuentra los mismos números todavía "pendientes" (la
+// anterior no ha alcanzado a contestarles) y los vuelve a contestar por
+// su cuenta -- dos respuestas de IA distintas para el mismo mensaje,
+// multiplicado por todo el backlog. Un candado de archivo (flock) evita
+// que dos corridas de este script se traslapen: si ya hay una en curso,
+// esta simplemente no hace nada y el siguiente Cron Job (15-30 min
+// después) retoma lo que haya quedado pendiente.
+$lockHandle = fopen(__DIR__ . '/cron_reanudar_horario.lock', 'c');
+if ($lockHandle === false || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
+    echo "Ya hay una corrida de este cron en curso -- se omite esta para no duplicar respuestas.\n";
+    exit;
+}
+
 if (!dentro_de_horario_atencion()) {
     echo "Fuera de horario de atención — no se hace nada en esta corrida.\n";
     exit;
