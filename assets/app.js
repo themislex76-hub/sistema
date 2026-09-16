@@ -3132,6 +3132,22 @@ function alertRowHTML(k, p, lvl){
 function dateToISO(d){ if(!d) return ""; return d.toISOString().slice(0,10); }
 function truncate(s,n){ if(!s) return ""; return s.length>n? s.slice(0,n-1)+"…" : s; }
 function escapeHTML(s){ if(s===null||s===undefined) return ""; return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+// Hallazgo real: el panel "Pausados con algo sin contestar" se llenaba de
+// casos donde el último mensaje del cliente era solo un cierre ("Gracias",
+// "Listo", "Sale. Gracias", "Ok mil gracias"), que no necesita ninguna
+// respuesta real. A diferencia de whatsapp_texto_es_cierre_simple() en
+// whatsapp_helpers.php (que solo deja pasar una palabra exacta, para ser
+// muy conservador en el backend), aquí basta con que TODAS las palabras
+// del mensaje sean de este vocabulario de cierre -- es solo para no
+// ensuciar una lista visual, no para decidir si el bot contesta o no.
+function esCierreSimple(texto){
+  const limpio = (texto||'').trim();
+  if(!limpio || limpio.length>25 || limpio.includes('?')) return false;
+  const palabras = limpio.toLowerCase().match(/\p{L}+/gu);
+  if(!palabras || !palabras.length) return !/\p{L}/u.test(limpio); // puro emoji/puntuación
+  const vocabulario = new Set(['gracias','mil','muchas','ok','oka','okay','okey','va','si','sii','vale','listo','perfecto','entendido','de','acuerdo','nada','sale','claro','que','gusto']);
+  return palabras.every(w => vocabulario.has(w));
+}
 
 // Contenido de una burbuja de mensaje de WhatsApp -- normalmente solo
 // texto, pero si el cliente mandó una imagen o documento (comprobante,
@@ -4462,7 +4478,10 @@ function prospectosHTML(){
   // cliente con asesoría pagada preguntó si podía cambiar su cita y se
   // quedó sin respuesta varios días porque el bot estaba pausado (correcto,
   // un humano lleva ese caso) pero nadie se dio cuenta.
-  const pausadosSinContestar = PROSPECTOS.filter(p => p.pausado_bot && p.estatus !== 'descartado' && p.ultimo_mensaje_direccion === 'entrante');
+  // Se excluyen los cierres simples ("Gracias", "Listo", "Sale. Gracias")
+  // -- hallazgo real: el panel se llenaba de casos así, que no necesitan
+  // ninguna respuesta real, tapando los que sí importan.
+  const pausadosSinContestar = PROSPECTOS.filter(p => p.pausado_bot && p.estatus !== 'descartado' && p.ultimo_mensaje_direccion === 'entrante' && !esCierreSimple(p.ultimo_mensaje_texto));
   // La casilla de búsqueda del topbar (nombre o teléfono) también aplica
   // aquí — antes solo filtraba Expedientes (ver visibleCases()). Mientras
   // se busca, se ignora el filtro de "solo pendientes": alguien que busca
