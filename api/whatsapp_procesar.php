@@ -576,12 +576,7 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         }
     }
 
-    whatsapp_enviar($telefono, $respuesta);
-
-    $stmt = $pdo->prepare(
-        "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
-    );
-    $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
+    whatsapp_enviar_respuesta($pdo, $telefono, $respuesta);
 
     // El PDF del cálculo (si lo hubo) se manda AL FINAL, después del
     // texto — nunca al mismo tiempo, para que no se sienta como un envío
@@ -662,14 +657,9 @@ function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
         return ['ok' => false, 'motivo' => 'La IA no pudo contestar (revisa credenciales/saldo de Anthropic).'];
     }
 
-    if (!whatsapp_enviar($telefono, $respuesta)) {
+    if (!whatsapp_enviar_respuesta($pdo, $telefono, $respuesta)) {
         return ['ok' => false, 'motivo' => 'No se pudo enviar el mensaje por WhatsApp (revisa whatsapp_send_debug.log — puede ser que ya pasaron más de 24h desde su último mensaje).'];
     }
-
-    $stmt = $pdo->prepare(
-        "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
-    );
-    $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
 
     if ($resultado['pdf_calculo'] !== null) {
         sleep(random_int(4, 9));
@@ -727,14 +717,9 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
         return ['ok' => false, 'motivo' => 'La IA sigue sin poder contestar (revisa las credenciales o el saldo de Anthropic).'];
     }
 
-    if (!whatsapp_enviar($telefono, $respuesta)) {
+    if (!whatsapp_enviar_respuesta($pdo, $telefono, $respuesta)) {
         return ['ok' => false, 'motivo' => 'No se pudo enviar el mensaje por WhatsApp.'];
     }
-
-    $stmt = $pdo->prepare(
-        "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
-    );
-    $stmt->execute([':t' => $telefono, ':texto' => $respuesta]);
 
     if ($resultado['pdf_calculo'] !== null) {
         sleep(random_int(4, 9));

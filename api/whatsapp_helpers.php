@@ -186,6 +186,51 @@ function whatsapp_enviar(string $telefono, string $texto): bool
     return true;
 }
 
+// Hallazgo real revisando conversaciones completas para que el bot se
+// sienta más humano: siempre mandaba TODA su respuesta en un solo
+// mensaje largo con viñetas, aunque tuviera varias ideas separadas --
+// una persona real en WhatsApp normalmente parte sus pensamientos en
+// varias burbujas cortas. Esta función parte el texto por párrafos
+// (doble salto de línea -- ver la instrucción correspondiente en
+// IA_SYSTEM_PROMPT) y manda cada uno como su propio mensaje, con una
+// pausa corta entre cada uno.
+//
+// Si el texto no trae ningún doble salto de línea (un solo párrafo, o
+// una lista de horarios con saltos simples que debe quedarse junta),
+// esto no cambia nada: se manda igual que antes, en un solo mensaje --
+// o sea, es un cambio sin riesgo para cualquier respuesta que ya venía
+// como un solo bloque.
+//
+// Cada parte se guarda como su propio mensaje 'saliente' en el
+// historial (no rompe el contexto de la IA: ia_mensajes_desde_historial()
+// ya fusiona mensajes consecutivos del mismo rol en un solo turno). Si
+// falla el envío de una parte, se detiene ahí -- igual que whatsapp_enviar(),
+// la parte que sí se alcanzó a mandar se guarda de todos modos, para no
+// perder rastro de qué llegó de verdad -- y regresa false.
+function whatsapp_enviar_respuesta(PDO $pdo, string $telefono, string $texto): bool
+{
+    $partes = preg_split('/\n{2,}/', trim($texto));
+    $partes = array_values(array_filter(array_map('trim', $partes), fn($p) => $p !== ''));
+    if (!$partes) {
+        return true;
+    }
+
+    foreach ($partes as $i => $parte) {
+        if ($i > 0) {
+            usleep(random_int(2, 4) * 1_000_000);
+        }
+        $ok = whatsapp_enviar($telefono, $parte);
+        $stmt = $pdo->prepare(
+            "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+        );
+        $stmt->execute([':t' => $telefono, ':texto' => $parte]);
+        if (!$ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // Marca el mensaje entrante como leído y activa el indicador nativo de
 // WhatsApp "escribiendo..." (dura hasta 25 segundos o hasta que se manda
 // el siguiente mensaje) — para que la espera antes de la respuesta se
