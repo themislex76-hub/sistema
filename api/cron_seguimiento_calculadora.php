@@ -18,9 +18,8 @@ require_once __DIR__ . '/whatsapp_helpers.php';
 
 $pdo = db();
 
-$horaActual = (int)date('G');
-if ($horaActual < 8 || $horaActual > 21) {
-    echo "Fuera de horario razonable (son las {$horaActual}h) — no se manda nada en esta corrida.\n";
+if (!dentro_de_horario_atencion()) {
+    echo "Fuera del horario de atención (" . date('G') . "h) — no se manda nada en esta corrida, para no escribirle a un cliente fuera del horario que el bot mismo respeta.\n";
     exit;
 }
 

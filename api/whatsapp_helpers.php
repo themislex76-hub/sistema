@@ -4,6 +4,23 @@ declare(strict_types=1);
 // Envío de mensajes de texto por WhatsApp Cloud API (Meta), usando el
 // número dedicado configurado en whatsapp_credentials.php.
 
+// Horario de atención: todos los días, 8:00-19:00 hora de Ciudad de México
+// (date_default_timezone_set ya se fija globalmente en db.php). Único punto
+// de verdad para "está abierto el despacho" -- lo usa tanto
+// whatsapp_procesar.php (para contestar o no en tiempo real) como los crons
+// de seguimiento (cron_seguimiento_calculadora.php, cron_seguimiento_cursos.php),
+// para que ningún mensaje saliente (proactivo o de respuesta) se mande fuera
+// de este rango. Antes cada script tenía su propio límite de hora (uno
+// cortaba a las 19h, otro a las 21h, y uno no revisaba la hora en
+// absoluto) -- eso causaba que un cron le escribiera a un cliente a las
+// 8:30pm y, en cuanto contestaba, el bot le respondía con el aviso de
+// "estamos cerrados", como si no lo conociera.
+function dentro_de_horario_atencion(): bool
+{
+    $hora = (int)date('G');
+    return $hora >= 8 && $hora < 19;
+}
+
 // WhatsApp solo deja que el despacho le escriba primero a alguien (texto
 // libre, imagen, documento, lo que sea) si esa persona escribió en las
 // últimas 24 horas -- fuera de esa ventana, Meta "acepta" la petición al

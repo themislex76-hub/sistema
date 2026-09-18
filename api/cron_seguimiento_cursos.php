@@ -18,6 +18,11 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
 
+if (!dentro_de_horario_atencion()) {
+    echo "Fuera del horario de atención (" . date('G') . "h) — no se manda nada en esta corrida, para no escribirle a un cliente fuera del horario que el bot mismo respeta.\n";
+    exit;
+}
+
 const CURSOS_INFO = [
     'Nuevo Procedimiento Laboral Mexicano' => ['precio' => 499, 'link' => 'https://thriving-madeleine-5fe918.netlify.app/'],
     'El Juicio de Amparo en Materia del Trabajo' => ['precio' => 499, 'link' => 'https://silver-bubblegum-8c4a03.netlify.app/'],

@@ -7,6 +7,7 @@ declare(strict_types=1);
 // través de un puente externo porque el hosting bloquea la conexión
 // directa — ver docs/DEPLOY_CPANEL.md).
 
+require_once __DIR__ . '/whatsapp_helpers.php';
 require_once __DIR__ . '/prospectos_helpers.php';
 require_once __DIR__ . '/push_helpers.php';
 require_once __DIR__ . '/soporte_tecnico_helpers.php';
@@ -38,22 +39,16 @@ const WHATSAPP_LIMITE_MENSAJES_DIA = 30;
 // sin alargar demasiado la espera de alguien que solo manda un mensaje.
 const WHATSAPP_ESPERA_AGRUPAR_SEGUNDOS = 18;
 
-// Horario de atención: todos los días, 8:00-19:00 hora de Ciudad de México
-// (date_default_timezone_set ya se fija globalmente en db.php, que carga
-// antes que este archivo en la cadena de whatsapp_webhook.php). Domingo
-// tiene el mismo horario que el resto de la semana — cerrarlo perdía leads
-// que escriben en fin de semana sin necesidad, ya que la IA no depende de
-// que haya un humano despierto para contestar bien. Fuera de este horario
-// (noche/madrugada) no se contesta como si alguien estuviera despierto a
-// las 3am — se manda un aviso de "fuera de horario" genérico, igual que
-// cualquier negocio, en vez de simular presencia en tiempo real.
+// Horario de atención: todos los días, 8:00-19:00 hora de Ciudad de México.
+// Domingo tiene el mismo horario que el resto de la semana — cerrarlo
+// perdía leads que escriben en fin de semana sin necesidad, ya que la IA no
+// depende de que haya un humano despierto para contestar bien. Fuera de
+// este horario (noche/madrugada) no se contesta como si alguien estuviera
+// despierto a las 3am — se manda un aviso de "fuera de horario" genérico,
+// igual que cualquier negocio, en vez de simular presencia en tiempo real.
+// dentro_de_horario_atencion() vive en whatsapp_helpers.php (único punto de
+// verdad, también lo usan los crons de seguimiento).
 const WHATSAPP_MENSAJE_FUERA_HORARIO = 'Gracias por escribir a Expertos Laborales Abogados. Te recordamos que nuestro horario de atención es de 8:00 am a 7:00 pm — en cuanto uno de nuestros abogados pueda, con gusto te contestamos.';
-
-function dentro_de_horario_atencion(): bool
-{
-    $hora = (int)date('G');
-    return $hora >= 8 && $hora < 19;
-}
 
 // Tipos de mensaje de WhatsApp CON archivo adjunto que sí guardamos, para
 // que un abogado los revise (típicamente un comprobante de pago) -- audio,
