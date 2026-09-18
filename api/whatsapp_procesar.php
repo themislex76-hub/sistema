@@ -174,18 +174,41 @@ function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string 
     // de cualquier foto o documento que le manden.
     $captionPareceReclamo = $caption !== '' && whatsapp_texto_parece_reclamo($caption);
 
+    // A diferencia de un mensaje de texto, aquí no hay "espera para
+    // agrupar" -- cada archivo entra en su propia llamada al webhook y se
+    // contesta al instante. Si alguien manda varios archivos seguidos (muy
+    // común: fotos de varias hojas de un mismo documento), sin esto se le
+    // manda el mismo aviso una vez por archivo -- se detectó en producción
+    // a alguien mandando 6 documentos y recibiendo "Recibí tu documento..."
+    // 5 veces seguidas, lo más robótico que hay. Se evita mandando el
+    // aviso solo si no se le mandó ya ese mismo texto en el último minuto.
+    $ventanaAvisoArchivo = date('Y-m-d H:i:s', time() - 60);
+
     if ($tienePagoPendiente || $captionPareceReclamo) {
-        whatsapp_enviar($telefono, 'Recibí tu archivo — un abogado del despacho lo va a revisar directamente contigo. 🙏');
-        $motivo = $tienePagoPendiente
-            ? 'con un pago de asesoría pendiente de cobrar -- probable comprobante'
-            : 'con un caption que se parece a un reclamo';
-        ia_registrar_prospecto_atorado($pdo, $telefono, ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''], 'Mandó un archivo (' . $tipo . ') ' . $motivo . ' -- revisarlo en Conversaciones (WhatsApp) o Prospectos.', $nombrePerfil);
-    } else {
-        whatsapp_enviar($telefono, WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO);
-        $stmt = $pdo->prepare(
-            "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+        $textoAviso = 'Recibí tu archivo — un abogado del despacho lo va a revisar directamente contigo. 🙏';
+        $stmtChk = $pdo->prepare(
+            "SELECT 1 FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'saliente' AND texto = :texto AND creado_en >= :desde ORDER BY id DESC LIMIT 1"
         );
-        $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO]);
+        $stmtChk->execute([':t' => $telefono, ':texto' => $textoAviso, ':desde' => $ventanaAvisoArchivo]);
+        if (!$stmtChk->fetch()) {
+            whatsapp_enviar($telefono, $textoAviso);
+            $motivo = $tienePagoPendiente
+                ? 'con un pago de asesoría pendiente de cobrar -- probable comprobante'
+                : 'con un caption que se parece a un reclamo';
+            ia_registrar_prospecto_atorado($pdo, $telefono, ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''], 'Mandó un archivo (' . $tipo . ') ' . $motivo . ' -- revisarlo en Conversaciones (WhatsApp) o Prospectos.', $nombrePerfil);
+        }
+    } else {
+        $stmtChk = $pdo->prepare(
+            "SELECT 1 FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'saliente' AND texto = :texto AND creado_en >= :desde ORDER BY id DESC LIMIT 1"
+        );
+        $stmtChk->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO, ':desde' => $ventanaAvisoArchivo]);
+        if (!$stmtChk->fetch()) {
+            whatsapp_enviar($telefono, WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO);
+            $stmt = $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+            );
+            $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO]);
+        }
     }
 }
 
