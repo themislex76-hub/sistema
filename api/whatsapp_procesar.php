@@ -50,6 +50,34 @@ const WHATSAPP_ESPERA_AGRUPAR_SEGUNDOS = 18;
 // verdad, también lo usan los crons de seguimiento).
 const WHATSAPP_MENSAJE_FUERA_HORARIO = 'Gracias por escribir a Expertos Laborales Abogados. Te recordamos que nuestro horario de atención es de 8:00 am a 7:00 pm — en cuanto uno de nuestros abogados pueda, con gusto te contestamos.';
 
+// Manda el aviso de "fuera de horario" si corresponde (una sola vez cada
+// 6h por número) y devuelve true si el llamador debe cortar aquí sin
+// seguir procesando -- true tanto si se acaba de mandar el aviso como si
+// ya se había mandado hace poco. Compartida entre el flujo de texto y el
+// de archivos para que ambos respeten exactamente el mismo criterio.
+function whatsapp_avisar_fuera_horario_si_aplica(PDO $pdo, string $telefono): bool
+{
+    if (dentro_de_horario_atencion()) {
+        return false;
+    }
+    $stmt = $pdo->prepare(
+        "SELECT creado_en FROM whatsapp_conversaciones
+         WHERE telefono = :t AND direccion = 'saliente' AND texto = :texto
+         ORDER BY id DESC LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_FUERA_HORARIO]);
+    $ultimoAviso = $stmt->fetch();
+    $yaAvisado = $ultimoAviso && strtotime((string)$ultimoAviso['creado_en']) >= time() - 6 * 3600;
+    if (!$yaAvisado) {
+        whatsapp_enviar($telefono, WHATSAPP_MENSAJE_FUERA_HORARIO);
+        $stmt = $pdo->prepare(
+            "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+        );
+        $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_FUERA_HORARIO]);
+    }
+    return true;
+}
+
 // Tipos de mensaje de WhatsApp CON archivo adjunto que sí guardamos, para
 // que un abogado los revise (típicamente un comprobante de pago) -- audio,
 // video, stickers y ubicación quedan fuera de alcance por ahora y caen en
@@ -65,13 +93,6 @@ function whatsapp_extension_por_mime(string $mime): string
     return $mapa[$mime] ?? 'bin';
 }
 
-// Respuesta cuando se guarda un archivo pero NO se escala a un humano
-// (ver más abajo el criterio) -- deja claro que el bot no revisa
-// documentos por este medio, para no generar la expectativa de que
-// alguien le va a hacer una revisión gratis a un contrato u otro
-// documento que nada tiene que ver con un pago.
-const WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO = 'Recibí tu documento, lo revisaremos y te daremos una respuesta.';
-
 // Un cliente mandó una imagen o documento -- antes esto se perdía por
 // completo: el bot solo contestaba "no puedo leer esto" y el archivo
 // nunca quedaba guardado en ningún lado. Se detectó en producción con un
@@ -80,21 +101,14 @@ const WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO = 'Recibí tu documento, lo rev
 // Ahora se descarga de los servidores de Meta y se guarda siempre para
 // que un abogado lo pueda revisar desde Conversaciones/Prospectos.
 //
-// El bot NO interpreta el contenido del archivo (no se lo manda a la IA)
-// -- por costo, y porque un comprobante hay que revisarlo con cuidado, no
-// que lo "lea" un modelo y decida solo.
-//
-// Pero guardarlo no significa siempre interrumpir a un humano: si
-// cualquier archivo (una foto, un "revísame este contrato" de alguien que
-// nunca ha pagado nada) pausara el bot y mandara una alerta urgente, el
-// despacho se llenaría de avisos que no son nada urgente -- solo se
-// escala de verdad cuando hay un pago pendiente de cobrar de por medio
-// (el escenario más común: alguien insistiendo en que ya pagó su
-// asesoría) o cuando el propio caption ya se parece a un reclamo (ver
-// whatsapp_texto_parece_reclamo, más abajo). En cualquier otro caso, el
-// archivo queda guardado y visible igual, pero el bot sigue la
-// conversación normal, dejando claro que no revisa documentos por este
-// medio.
+// Un comprobante de pago nunca se le manda a la IA para que decida sola
+// -- eso siempre lo revisa un humano con cuidado (si hay un pago
+// pendiente de cobrar de por medio, o el propio caption ya se parece a un
+// reclamo -- ver whatsapp_texto_parece_reclamo, más abajo). Cualquier
+// OTRO archivo (contrato, recibo de nómina, acta) sí se le manda a la IA
+// como imagen/PDF para que siga la conversación con su contenido en vez
+// de solo guardarlo -- antes se guardaba pero nadie llegaba a revisarlo a
+// tiempo, así que en la práctica quedaba sin leer.
 function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string $tipo, ?string $nombrePerfil): void
 {
     $messageId = (string)($msg['id'] ?? '');
@@ -174,12 +188,12 @@ function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string 
     // de cualquier foto o documento que le manden.
     $captionPareceReclamo = $caption !== '' && whatsapp_texto_parece_reclamo($caption);
 
-    // A diferencia de un mensaje de texto, aquí no hay "espera para
-    // agrupar" -- cada archivo entra en su propia llamada al webhook y se
-    // contesta al instante. Si alguien manda varios archivos seguidos (muy
-    // común: fotos de varias hojas de un mismo documento), sin esto se le
-    // manda el mismo aviso una vez por archivo -- se detectó en producción
-    // a alguien mandando 6 documentos y recibiendo "Recibí tu documento..."
+    // Un archivo con contexto de pago/reclamo nunca se manda a la IA --
+    // eso se queda como decisión de un humano siempre. Aquí sí puede
+    // llegar más de un archivo en ráfaga (cada uno en su propia llamada al
+    // webhook, sin "espera para agrupar"), así que sin este freno el mismo
+    // aviso se mandaba una vez por archivo -- se detectó en producción a
+    // alguien mandando 6 documentos y recibiendo "Recibí tu documento..."
     // 5 veces seguidas, lo más robótico que hay. Se evita mandando el
     // aviso solo si no se le mandó ya ese mismo texto en el último minuto.
     $ventanaAvisoArchivo = date('Y-m-d H:i:s', time() - 60);
@@ -197,19 +211,85 @@ function procesar_media_entrante(PDO $pdo, string $telefono, array $msg, string 
                 : 'con un caption que se parece a un reclamo';
             ia_registrar_prospecto_atorado($pdo, $telefono, ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''], 'Mandó un archivo (' . $tipo . ') ' . $motivo . ' -- revisarlo en Conversaciones (WhatsApp) o Prospectos.', $nombrePerfil);
         }
-    } else {
-        $stmtChk = $pdo->prepare(
-            "SELECT 1 FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'saliente' AND texto = :texto AND creado_en >= :desde ORDER BY id DESC LIMIT 1"
-        );
-        $stmtChk->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO, ':desde' => $ventanaAvisoArchivo]);
-        if (!$stmtChk->fetch()) {
-            whatsapp_enviar($telefono, WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO);
-            $stmt = $pdo->prepare(
-                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
-            );
-            $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_ARCHIVO_SIN_CONTEXTO_PAGO]);
+        return;
+    }
+
+    // Sin contexto de pago/reclamo: en vez del aviso genérico de "lo
+    // revisaremos" (que en la práctica nadie llegaba a revisar -- no hay
+    // tiempo de entrar a ver cada documento uno por uno), el archivo se le
+    // manda a la IA como parte normal de la conversación, igual que un
+    // mensaje de texto -- mismos filtros (bloqueado, bot pausado, horario)
+    // y misma espera para agrupar (ver ia_generar_y_responder), para que
+    // varios archivos seguidos se contesten una sola vez con todos juntos
+    // en contexto, no uno por uno.
+    $stmtBloqueadoMedia = $pdo->prepare('SELECT 1 FROM numeros_bloqueados WHERE telefono = :t');
+    $stmtBloqueadoMedia->execute([':t' => $telefono]);
+    if ($stmtBloqueadoMedia->fetchColumn()) {
+        return;
+    }
+    $stmtProspectoMedia = $pdo->prepare('SELECT pausado_bot FROM prospectos WHERE telefono = :t LIMIT 1');
+    $stmtProspectoMedia->execute([':t' => $telefono]);
+    $prospectoMedia = $stmtProspectoMedia->fetch();
+    if ($prospectoMedia && (int)$prospectoMedia['pausado_bot'] === 1) {
+        return;
+    }
+    if (whatsapp_avisar_fuera_horario_si_aplica($pdo, $telefono)) {
+        return;
+    }
+
+    ia_generar_y_responder($pdo, $telefono, $messageId, $idPropio);
+}
+
+// Límites de tamaño para mandarle un archivo a la API de Claude como
+// imagen/documento -- más grande que esto y se omite el archivo (se queda
+// solo el texto/placeholder de la fila, degradando con calma en vez de
+// fallar la llamada completa). Bastante por debajo de los límites reales
+// de la API (esos son más generosos) -- el margen es a propósito, para no
+// quedar pegados justo en el límite con el peso real del payload JSON
+// completo (historial + imagen en base64 + prompt + tools).
+const IA_MEDIA_MAX_BYTES_IMAGEN = 5 * 1024 * 1024;
+const IA_MEDIA_MAX_BYTES_DOCUMENTO = 25 * 1024 * 1024;
+
+// Convierte una fila de whatsapp_conversaciones en los bloques de
+// contenido que espera la API de Claude -- normalmente un solo bloque de
+// texto, pero si la fila tiene un archivo adjunto (media_ruta/media_mime,
+// ver procesar_media_entrante) y es un tipo que Claude puede leer
+// (imagen, o PDF como documento), se le agrega el archivo real como
+// bloque aparte para que la IA vea su contenido, no solo el nombre. Otros
+// tipos de archivo (Word, Excel, etc.) o archivos que ya no se
+// encuentran en disco se quedan solo con el texto -- degradación
+// silenciosa, no un error.
+function ia_bloques_desde_fila(array $fila): array
+{
+    $bloques = [];
+    $texto = (string)($fila['texto'] ?? '');
+    if ($texto !== '') {
+        $bloques[] = ['type' => 'text', 'text' => $texto];
+    }
+
+    $mediaRuta = (string)($fila['media_ruta'] ?? '');
+    $mediaMime = (string)($fila['media_mime'] ?? '');
+    if ($mediaRuta !== '' && $mediaMime !== '') {
+        $esImagen = str_starts_with($mediaMime, 'image/');
+        $esPdf = $mediaMime === 'application/pdf';
+        if ($esImagen || $esPdf) {
+            $rutaCompleta = __DIR__ . '/../data/whatsapp_media/' . $mediaRuta;
+            $tamano = is_file($rutaCompleta) ? filesize($rutaCompleta) : false;
+            $limite = $esPdf ? IA_MEDIA_MAX_BYTES_DOCUMENTO : IA_MEDIA_MAX_BYTES_IMAGEN;
+            if ($tamano !== false && $tamano > 0 && $tamano <= $limite) {
+                $datos = base64_encode((string)file_get_contents($rutaCompleta));
+                $bloques[] = [
+                    'type' => $esPdf ? 'document' : 'image',
+                    'source' => ['type' => 'base64', 'media_type' => $mediaMime, 'data' => $datos],
+                ];
+            }
         }
     }
+
+    if (!$bloques) {
+        $bloques[] = ['type' => 'text', 'text' => '(mensaje vacío)'];
+    }
+    return $bloques;
 }
 
 // Convierte el historial de whatsapp_conversaciones (una fila por mensaje)
@@ -224,10 +304,12 @@ function ia_mensajes_desde_historial(array $historial): array
     $mensajes = [];
     foreach ($historial as $h) {
         $role = $h['direccion'] === 'entrante' ? 'user' : 'assistant';
+        $bloques = ia_bloques_desde_fila($h);
         if ($mensajes && end($mensajes)['role'] === $role) {
-            $mensajes[count($mensajes) - 1]['content'] .= "\n" . $h['texto'];
+            $ultimoIdx = count($mensajes) - 1;
+            $mensajes[$ultimoIdx]['content'] = array_merge($mensajes[$ultimoIdx]['content'], $bloques);
         } else {
-            $mensajes[] = ['role' => $role, 'content' => $h['texto']];
+            $mensajes[] = ['role' => $role, 'content' => $bloques];
         }
     }
     return $mensajes;
@@ -352,22 +434,7 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         return;
     }
 
-    if (!dentro_de_horario_atencion()) {
-        $stmt = $pdo->prepare(
-            "SELECT creado_en FROM whatsapp_conversaciones
-             WHERE telefono = :t AND direccion = 'saliente' AND texto = :texto
-             ORDER BY id DESC LIMIT 1"
-        );
-        $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_FUERA_HORARIO]);
-        $ultimoAviso = $stmt->fetch();
-        $yaAvisado = $ultimoAviso && strtotime((string)$ultimoAviso['creado_en']) >= time() - 6 * 3600;
-        if (!$yaAvisado) {
-            whatsapp_enviar($telefono, WHATSAPP_MENSAJE_FUERA_HORARIO);
-            $stmt = $pdo->prepare(
-                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
-            );
-            $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_FUERA_HORARIO]);
-        }
+    if (whatsapp_avisar_fuera_horario_si_aplica($pdo, $telefono)) {
         return;
     }
 
@@ -496,15 +563,27 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
         }
     }
 
+    ia_generar_y_responder($pdo, $telefono, $messageId, $idPropio);
+}
+
+// Genera la respuesta de la IA para lo último que llegó de este número
+// (mensaje de texto O archivo) y la manda -- extraído de
+// procesar_mensaje_entrante() para que procesar_media_entrante() use
+// exactamente el mismo mecanismo (espera para agrupar, doble revisión
+// anti-duplicado, retraso natural) en vez de un envío inmediato aparte.
+// $idPropio es el id de la fila (texto o archivo) que disparó esta
+// llamada -- puede ser null solo si el INSERT correspondiente no llegó a
+// correr, en cuyo caso se sigue de todos modos en vez de arriesgarse a
+// nunca contestar.
+function ia_generar_y_responder(PDO $pdo, string $telefono, string $messageId, ?int $idPropio): void
+{
     // Espera para agrupar: si la persona sigue escribiendo (varias burbujas
-    // seguidas), se le da tiempo antes de gastar una llamada de IA. Al
-    // terminar la espera se checa si llegó un mensaje MÁS NUEVO de este
-    // mismo número mientras tanto -- si sí, esta invocación se retira sin
-    // contestar (ni gastar IA): la más reciente hará este mismo checeo y
-    // será la que junte todo el bloque y conteste una sola vez. $idPropio
-    // puede quedar null solo si el INSERT de arriba no llegó a correr
-    // (no debería pasar a estas alturas), en cuyo caso se sigue de todos
-    // modos en vez de arriesgarse a nunca contestar.
+    // seguidas, o mandando varios archivos), se le da tiempo antes de
+    // gastar una llamada de IA. Al terminar la espera se checa si llegó
+    // algo MÁS NUEVO de este mismo número mientras tanto -- si sí, esta
+    // invocación se retira sin contestar (ni gastar IA): la más reciente
+    // hará este mismo checeo y será la que junte todo el bloque y conteste
+    // una sola vez.
     if ($idPropio !== null) {
         sleep(WHATSAPP_ESPERA_AGRUPAR_SEGUNDOS);
         $stmt = $pdo->prepare(
@@ -525,13 +604,16 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     }
     $tiempoInicio = microtime(true);
 
-    $stmt = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
+    $stmt = $pdo->prepare('SELECT direccion, texto, media_ruta, media_mime FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
     $stmt->execute([':t' => $telefono]);
     $historial = array_reverse($stmt->fetchAll());
 
     $mensajesIA = ia_mensajes_desde_historial($historial);
     if (!$mensajesIA || end($mensajesIA)['role'] !== 'user') {
-        $mensajesIA[] = ['role' => 'user', 'content' => $texto];
+        // No debería pasar -- el mensaje/archivo que disparó esta llamada
+        // ya quedó insertado en whatsapp_conversaciones antes de llegar
+        // aquí, así que el historial siempre debería terminar en 'user'.
+        return;
     }
 
     $resultado = ia_responder_whatsapp($pdo, $mensajesIA, $telefono);
@@ -627,7 +709,7 @@ function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
         return ['ok' => false, 'motivo' => 'Ya es un prospecto registrado (bot pausado a propósito) — pendiente de seguimiento personal en Prospectos (WhatsApp), no de una respuesta automática.'];
     }
 
-    $stmt = $pdo->prepare('SELECT direccion, texto, creado_en FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
+    $stmt = $pdo->prepare('SELECT direccion, texto, creado_en, media_ruta, media_mime FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
     $stmt->execute([':t' => $telefono]);
     $historial = array_reverse($stmt->fetchAll());
     if (!$historial) {
@@ -704,7 +786,7 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
         return ['ok' => false, 'motivo' => 'Un humano ya está atendiendo esta conversación.'];
     }
 
-    $stmt = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
+    $stmt = $pdo->prepare('SELECT direccion, texto, media_ruta, media_mime FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
     $stmt->execute([':t' => $telefono]);
     $historial = array_reverse($stmt->fetchAll());
     if (!$historial) {
