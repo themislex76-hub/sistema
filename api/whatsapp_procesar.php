@@ -630,26 +630,38 @@ function ia_generar_y_responder(PDO $pdo, string $telefono, string $messageId, ?
     // (ver ia_registrar_prospecto_atorado en ia_helpers.php y
     // mercadopago_webhook.php).
 
-    // Retraso natural antes de contestar: entre 20 y 28s (con variación
-    // al azar), restando lo que ya tardó la llamada a la IA. Tope duro de
-    // 28s: WhatsApp/Meta espera la confirmación del webhook en poco
-    // tiempo — pasarse mucho de ahí arriesga que reintente el mensaje y
-    // se duplique la respuesta, así que este es el máximo que se
-    // considera seguro dentro de este mecanismo (una espera mucho más
-    // larga y realista necesitaría contestar en segundo plano, no aquí).
+    // Retraso natural antes de contestar, proporcional a lo largo de la
+    // respuesta (con variación al azar), restando lo que ya tardó la
+    // llamada a la IA. El tope solía ser de 28s duros porque Meta esperaba
+    // la confirmación del webhook en poco tiempo -- pero eso ya no aplica:
+    // whatsapp_webhook.php/whatsapp_relay.php le confirman a Meta DE
+    // INMEDIATO, antes de llamar a procesar_mensaje_entrante(), así que
+    // todo esto ya corre en segundo plano y no hay riesgo de que Meta
+    // reintente por tardanza. Patrón real reportado por varios clientes:
+    // con el tope viejo, una respuesta larga (varios párrafos con
+    // desglose legal) se mandaba en el mismo tiempo que una corta de una
+    // línea -- imposible que alguien haya tecleado tanto texto tan
+    // rápido, delatando que contesta un sistema. Ahora el tope es 75s
+    // (bastante por debajo del set_time_limit del webhook, para no
+    // arriesgar que el script se corte antes de mandar la respuesta).
     $segundosBase = max(20, mb_strlen($respuesta) / 9) + random_int(-1, 3);
-    $segundosDeseados = min(28, max(20, $segundosBase));
+    $segundosDeseados = min(75, max(20, $segundosBase));
     $segundosFaltantes = $segundosDeseados - (microtime(true) - $tiempoInicio);
     if ($segundosFaltantes > 0) {
-        // Si la espera pasa de 15s, se vuelve a activar el "escribiendo..."
-        // a la mitad — el indicador nativo de WhatsApp dura máximo 25s y,
-        // si no se renueva, desaparece antes de que llegue la respuesta.
-        if ($segundosFaltantes > 15 && $messageId !== '') {
-            usleep((int)(($segundosFaltantes - 15) * 1_000_000));
+        // El indicador nativo de "escribiendo..." dura máximo ~25s y hay
+        // que renovarlo mientras dure la espera -- con el tope viejo de
+        // 28s alcanzaba con renovarlo una sola vez a la mitad, pero con
+        // esperas más largas hace falta renovarlo varias veces seguidas
+        // (cada 20s) para que no desaparezca antes de que llegue la
+        // respuesta.
+        $segundosRestantes = $segundosFaltantes;
+        while ($segundosRestantes > 20 && $messageId !== '') {
+            usleep(20 * 1_000_000);
+            $segundosRestantes -= 20;
             whatsapp_marcar_leido_y_escribiendo($messageId);
-            usleep(15 * 1_000_000);
-        } else {
-            usleep((int)($segundosFaltantes * 1_000_000));
+        }
+        if ($segundosRestantes > 0) {
+            usleep((int)($segundosRestantes * 1_000_000));
         }
     }
 
