@@ -1795,6 +1795,92 @@ function ia_generar_resumen_conversacion(array $historial): ?string
     return $texto !== '' ? $texto : null;
 }
 
+// Confirma, CON el contexto reciente de la conversación, si el último
+// mensaje del cliente es de verdad un reclamo contra el despacho -- se usa
+// como segundo filtro, DESPUÉS de que whatsapp_texto_parece_reclamo()
+// (regex simple, sin contexto, en whatsapp_helpers.php) ya marcó el mensaje
+// como candidato. El regex es deliberadamente amplio (detecta palabras
+// clave) pero no entiende contexto, así que puede confundir cosas como "que
+// TENGAN buen día" con "engaño" -- esta llamada, con el hilo completo
+// delante, no comete ese tipo de error. Solo se gasta esta llamada extra en
+// los candidatos que ya marcó el regex, no en cada mensaje que llega (el
+// regex sigue siendo el filtro barato de siempre). Usa Haiku 4.5, no
+// IA_MODEL/Sonnet -- es una clasificación sí/no acotada, no una respuesta
+// para el cliente.
+//
+// Por seguridad, ante cualquier duda (sin credenciales, falla de red, o una
+// respuesta inesperada) se prefiere ESCALAR DE MÁS que arriesgarse a dejar
+// pasar un reclamo real sin que un humano se entere -- solo se cancela la
+// escalación cuando la IA contesta claramente que no lo es.
+const IA_MODELO_CLASIFICAR_RECLAMO = 'claude-haiku-4-5-20251001';
+
+function ia_parece_reclamo_con_contexto(string $textoActual, array $historialReciente): bool
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        return true;
+    }
+    require_once $credentialsFile;
+
+    $transcript = '';
+    foreach ($historialReciente as $h) {
+        $quien = ($h['direccion'] ?? '') === 'entrante' ? 'Cliente' : 'Bot';
+        $transcript .= $quien . ': ' . ($h['texto'] ?? '') . "\n";
+    }
+
+    $payload = [
+        'model' => IA_MODELO_CLASIFICAR_RECLAMO,
+        'max_tokens' => 10,
+        'system' => 'Eres un clasificador para un despacho de abogados laborales. Te doy el HISTORIAL '
+            . 'RECIENTE de una conversación de WhatsApp entre un posible cliente y el bot de asesoría del '
+            . 'despacho, y el ÚLTIMO MENSAJE del cliente. Responde EXCLUSIVAMENTE con la palabra "SI" o la '
+            . 'palabra "NO" (nada más, sin explicación ni puntuación). Contesta "SI" solo si el último '
+            . 'mensaje es un reclamo o molestia real dirigida AL DESPACHO o al bot (ej. lo acusa de fraude/'
+            . 'estafa, amenaza con exhibirlo en redes sociales, exige la devolución de un pago, insiste en '
+            . 'que ya pagó y nadie se lo confirma, o expresa enojo/desconfianza hacia el despacho). Contesta '
+            . '"NO" en cualquier otro caso -- en particular: un cierre de conversación normal ("gracias", '
+            . '"que tengan buen día", un emoji), una pregunta o duda legal normal, o que el cliente esté '
+            . 'describiendo un problema que le pasó A ÉL en SU trabajo (que lo acusaron de fraude, que un '
+            . 'patrón no le paga, un "enganche" que le quieren cobrar, etc.) -- eso es información normal de '
+            . 'su caso, no un reclamo contra nosotros.',
+        'messages' => [['role' => 'user', 'content' => "HISTORIAL RECIENTE:\n{$transcript}\nÚLTIMO MENSAJE DEL CLIENTE: {$textoActual}"]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 15,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [clasificar_reclamo] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return true;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $respuesta = strtoupper(trim($texto));
+    // Solo se cancela la escalación si contestó CLARAMENTE "NO" -- cualquier
+    // respuesta ambigua o inesperada se trata como "sí, escalar" (ver nota
+    // arriba sobre preferir escalar de más).
+    return strpos($respuesta, 'NO') !== 0;
+}
+
 // Informe ejecutivo corto de un expediente, para que un jefe/socio entienda
 // el asunto sin tener que abrir el expediente completo. Recibe la fila ya
 // cargada (guard_expediente_access() ya trae todos los campos que hacen

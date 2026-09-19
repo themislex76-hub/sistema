@@ -8,6 +8,7 @@ declare(strict_types=1);
 // directa — ver docs/DEPLOY_CPANEL.md).
 
 require_once __DIR__ . '/whatsapp_helpers.php';
+require_once __DIR__ . '/ia_helpers.php';
 require_once __DIR__ . '/prospectos_helpers.php';
 require_once __DIR__ . '/push_helpers.php';
 require_once __DIR__ . '/soporte_tecnico_helpers.php';
@@ -502,7 +503,27 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     // haya una cita de por medio: un reclamo es un reclamo aunque no sea
     // sobre un pago). Contesta con un mensaje fijo, pausa el bot y avisa
     // a un humano, siempre.
+    //
+    // whatsapp_texto_parece_reclamo() es un regex por palabra clave, sin
+    // contexto -- deliberadamente amplio para no dejar pasar un reclamo
+    // real, pero por eso mismo puede marcar candidatos que no lo son (bug
+    // real detectado: "que TENGAN buen día" se confundía con "engaño").
+    // Antes de escalar de verdad, se le pide a una IA chica y rápida
+    // (Haiku, ver ia_parece_reclamo_con_contexto en ia_helpers.php) que
+    // confirme con el hilo reciente de la conversación -- esa llamada
+    // extra solo se gasta en estos candidatos, no en cada mensaje que
+    // llega, y por seguridad escala de todos modos si esa confirmación
+    // falla por cualquier motivo.
     $pareceReclamo = whatsapp_texto_parece_reclamo($texto);
+    if ($pareceReclamo) {
+        $stmtHistReclamo = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 10');
+        $stmtHistReclamo->execute([':t' => $telefono]);
+        $historialReclamo = array_reverse($stmtHistReclamo->fetchAll());
+        // El mensaje actual ya quedó como la última fila del historial --
+        // se excluye de ahí para no repetirlo también como "último mensaje".
+        array_pop($historialReclamo);
+        $pareceReclamo = ia_parece_reclamo_con_contexto($texto, $historialReclamo);
+    }
     if ($pareceReclamo) {
         file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
             . " | [respaldo_reclamo] escalando de $telefono | texto=\"" . mb_strimwidth($texto, 0, 80, '…') . "\"\n", FILE_APPEND);
