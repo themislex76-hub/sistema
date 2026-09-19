@@ -73,9 +73,14 @@ function whatsapp_texto_parece_reclamo(string $texto): bool
         // final) hacía match dentro de la palabra "robot" -- alguien
         // preguntó "¿Eres un robot?" y el sistema lo tomó como una
         // acusación de robo/fraude, contestándole el mensaje de
-        // escalación en vez de la pregunta real que hizo.
-        (preg_match('/estafa|fraude|enga[ñn]|es un robo\b/iu', $texto) === 1
-            && preg_match('/me (culp(an|aron)?|acus(an|aron)?|despidieron|corrieron).{0,30}(fraude|estafa|robo|enga[ñn])|(fraude|estafa|robo|enga[ñn]).{0,30}me (culp|acus)|(jefe|patr[oó]n|empresa|trabajo).{0,30}(fraude|estafa|robo|enga[ñn])|(contest(amos?|an|o)|llamada|tel[eé]fono|n[uú]mero).{0,60}(fraude|estafa)|(fraude|estafa).{0,60}(contest(amos?|an|o)|llamada|tel[eé]fono|n[uú]mero)/iu', $texto) !== 1)
+        // escalación en vez de la pregunta real que hizo. Mismo tipo de
+        // bug con "enga[ñn]" (sin \b al inicio ni negación de "ch"):
+        // hacía match dentro de "que TENGAN buen día"/"que VENGAN" (un
+        // cierre de conversación normalísimo) y dentro de "ENGANCHE"
+        // (anticipo de un carro, nada que ver con fraude) -- escalaba a
+        // un humano despedidas corteses y menciones de enganches.
+        (preg_match('/estafa|fraude|\benga[ñn](?!ch)|es un robo\b/iu', $texto) === 1
+            && preg_match('/me (culp(an|aron)?|acus(an|aron)?|despidieron|corrieron).{0,30}(fraude|estafa|robo|\benga[ñn](?!ch))|(fraude|estafa|robo|\benga[ñn](?!ch)).{0,30}me (culp|acus)|(jefe|patr[oó]n|empresa|trabajo).{0,30}(fraude|estafa|robo|\benga[ñn](?!ch))|(contest(amos?|an|o)|llamada|tel[eé]fono|n[uú]mero).{0,60}(fraude|estafa)|(fraude|estafa).{0,60}(contest(amos?|an|o)|llamada|tel[eé]fono|n[uú]mero)/iu', $texto) !== 1)
         // "tiktok"/"redes sociales" solos NO cuentan -- un cliente real
         // puede decir "lo vi en tiktok" sin ninguna amenaza. Solo cuenta
         // si va junto con un verbo de amenaza (exhibir/exponer/publicar/
