@@ -87,7 +87,16 @@ $datosVerificados = "DATOS VERIFICADOS (calculados directo de la base de datos, 
     . "- Calificaron como prospecto: {$totalCalificados} ("
     . round($totalConversaciones > 0 ? $totalCalificados / $totalConversaciones * 100 : 0, 1) . "%)\n"
     . "- Conversaciones donde el cliente SOLO mandó saludos genéricos (\"Hola\", \"Buenas tardes\") sin nunca "
-    . "explicar su caso: {$saludoSinAvance} (" . round($totalConversaciones > 0 ? $saludoSinAvance / $totalConversaciones * 100 : 0, 1) . "%)";
+    . "explicar su caso: {$saludoSinAvance} (" . round($totalConversaciones > 0 ? $saludoSinAvance / $totalConversaciones * 100 : 0, 1) . "%)\n"
+    . "\nHECHOS VERIFICADOS SOBRE EL BOT (revisado directo en su código -- si tu análisis de las conversaciones "
+    . "parece contradecir esto, EL CÓDIGO ES EL QUE MANDA, no lo que tú infieras):\n"
+    . "- El bot NO filtra ni descarta a nadie por ubicación/estado -- atiende y ofrece la asesoría de pago "
+    . "exactamente igual a alguien en Jalisco, Oaxaca o Sonora que a alguien en CDMX. Si ves mensajes de gente "
+    . "fuera de CDMX/Edomex que no calificó, la ubicación NO fue la causa -- no la menciones como motivo ni "
+    . "como oportunidad de negocio \"nueva\" (el despacho ya atiende foráneos igual que a los locales).\n"
+    . "- El bot SÍ ofrece activamente los cursos en línea cuando detecta interés, y tiene un recordatorio "
+    . "automático para quien mostró interés y no compró -- no es un interés que se esté desperdiciando sin "
+    . "atender.";
 
 $credentialsFile = __DIR__ . '/anthropic_credentials.php';
 if (!file_exists($credentialsFile)) {
