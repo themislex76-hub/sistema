@@ -42,6 +42,53 @@ foreach ($filas as $f) {
 
 $transcript = implode("\n", $lineas);
 
+// Números REALES calculados por SQL, no estimados por la IA -- se
+// detectó en producción que, con solo el primer mensaje de cada
+// conversación, la IA "adivinaba" porcentajes y patrones (ej. "casi 100
+// conversaciones mueren en un saludo") que al verificarlos contra la
+// base de datos resultaron muy alejados de la realidad (8 casos reales,
+// no ~100). Estos números sí están verificados y se le dan como dato
+// duro para que escriba sobre ellos, no para que los reinvente.
+$telefonos = array_column($filas, 'telefono');
+$totalConversaciones = count($filas);
+$totalCalificados = count(array_filter($filas, fn($f) => $f['prospecto_tipo'] !== null));
+
+$saludoSinAvance = 0;
+if ($telefonos) {
+    $placeholders = implode(',', array_fill(0, count($telefonos), '?'));
+    $stmtTodos = $pdo->prepare(
+        "SELECT telefono, texto FROM whatsapp_conversaciones
+         WHERE direccion = 'entrante' AND telefono IN ($placeholders)
+         ORDER BY telefono, id"
+    );
+    $stmtTodos->execute($telefonos);
+    $porTelefono = [];
+    foreach ($stmtTodos->fetchAll() as $r) {
+        $porTelefono[$r['telefono']][] = $r['texto'];
+    }
+    $palabraSaludo = '(hola+|oigan?|disculpe|se\s+podr[aá]|buenas?|tardes?|noches?|d[ií]as?|buen|lic\.?|licenciado[.,]?|licenciada[.,]?)';
+    $patronSaludo = '/^' . $palabraSaludo . '([\s.,!¡¿?]+' . $palabraSaludo . ')*[\s.,!¡¿?]*$/iu';
+    foreach ($porTelefono as $mensajes) {
+        if (count($mensajes) > 3) continue;
+        $todosSaludo = true;
+        foreach ($mensajes as $t) {
+            $t = trim((string)$t);
+            if ($t === '' || mb_strlen($t) > 25 || preg_match($patronSaludo, $t) !== 1) {
+                $todosSaludo = false;
+                break;
+            }
+        }
+        if ($todosSaludo) $saludoSinAvance++;
+    }
+}
+
+$datosVerificados = "DATOS VERIFICADOS (calculados directo de la base de datos, no los estimes ni los cambies):\n"
+    . "- Total de conversaciones en esta muestra: {$totalConversaciones}\n"
+    . "- Calificaron como prospecto: {$totalCalificados} ("
+    . round($totalConversaciones > 0 ? $totalCalificados / $totalConversaciones * 100 : 0, 1) . "%)\n"
+    . "- Conversaciones donde el cliente SOLO mandó saludos genéricos (\"Hola\", \"Buenas tardes\") sin nunca "
+    . "explicar su caso: {$saludoSinAvance} (" . round($totalConversaciones > 0 ? $saludoSinAvance / $totalConversaciones * 100 : 0, 1) . "%)";
+
 $credentialsFile = __DIR__ . '/anthropic_credentials.php';
 if (!file_exists($credentialsFile)) {
     echo "Falta anthropic_credentials.php.\n";
@@ -55,16 +102,26 @@ $payload = [
     'thinking' => ['type' => 'disabled'],
     'system' => 'Eres un asistente interno del despacho de derecho laboral Expertos Laborales Abogados. '
         . 'Te doy el primer mensaje de cada una de las últimas conversaciones de WhatsApp que la gente tuvo con '
-        . 'su bot de asesoría automática, junto con si esa persona calificó o no como prospecto (lead). '
+        . 'su bot de asesoría automática, junto con si esa persona calificó o no como prospecto (lead), y unos '
+        . 'DATOS VERIFICADOS calculados directo de la base de datos. '
         . 'Escribe un RESUMEN EJECUTIVO en español, claro y accionable, para el dueño del despacho (no técnico). '
         . 'Incluye: (1) los 4-6 temas/motivos de contacto más comunes, con aproximadamente cuántos casos de cada '
-        . 'uno viste (no exacto, aproximado está bien); (2) patrones que notes sobre por qué mucha gente NO '
-        . 'califica como prospecto (por ejemplo: ya renunció, fuera de CDMX/Edomex, ya tiene abogado, etc.); '
-        . '(3) cualquier oportunidad de negocio que notes (temas recurrentes que el despacho podría atender '
-        . 'mejor, o volumen alto en algo específico); (4) cierra con 2-3 recomendaciones concretas y accionables. '
-        . 'Usa encabezados simples con guiones, sin markdown de tablas, en un tono directo. No hagas un ensayo '
-        . 'largo — va a leerlo alguien ocupado.',
-    'messages' => [['role' => 'user', 'content' => "Aquí están las conversaciones (" . count($filas) . " en total):\n\n{$transcript}"]],
+        . 'uno viste (no exacto, aproximado está bien, y solo de LO QUE VES en los primeros mensajes, no '
+        . 'inventes categorías); (2) patrones que notes sobre por qué mucha gente NO califica como prospecto; '
+        . '(3) cualquier oportunidad de negocio que notes; (4) cierra con 2-3 recomendaciones concretas y '
+        . 'accionables. Usa encabezados simples con guiones, sin markdown de tablas, en un tono directo. No '
+        . 'hagas un ensayo largo — va a leerlo alguien ocupado. '
+        . 'REGLA DURA: solo tienes el PRIMER mensaje de cada conversación, no el resto del hilo -- NO sabes si '
+        . 'el bot dio seguimiento, si la persona contestó después, ni el motivo real por el que alguien no '
+        . 'calificó (podría ser ubicación, podría ser precio, podría ser que ya tiene abogado, podría ser que '
+        . 'nunca volvió a escribir). Nunca afirmes una causa específica de abandono o de no-calificación si no '
+        . 'la puedes ver literalmente en el texto del primer mensaje -- en vez de inventar un motivo, dilo como '
+        . 'lo que es: "no califican, pero con solo el primer mensaje no se puede saber por qué sin revisar la '
+        . 'conversación completa". Usa los DATOS VERIFICADOS tal cual te los doy (no los cambies, no calcules '
+        . 'los tuyos) para cualquier cifra que menciones sobre calificación o abandono en saludo -- para '
+        . 'cualquier OTRA cifra que menciones (temas, volúmenes por tipo de caso), dejala clara como estimado '
+        . 'aproximado tuyo, no como dato duro.',
+    'messages' => [['role' => 'user', 'content' => "{$datosVerificados}\n\nAquí están las conversaciones (" . count($filas) . " en total, mostrando el primer mensaje de cada una):\n\n{$transcript}"]],
 ];
 
 $ch = curl_init('https://api.anthropic.com/v1/messages');
