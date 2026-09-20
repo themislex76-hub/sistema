@@ -164,3 +164,19 @@ foreach (($data['content'] ?? []) as $bloque) {
 echo "RESUMEN EJECUTIVO — basado en " . count($filas) . " conversaciones\n";
 echo str_repeat('=', 60) . "\n\n";
 echo trim($texto) !== '' ? trim($texto) : "(la IA no devolvió texto — revisa ia_debug.log)\n";
+
+// Nota de corrección puesta por CÓDIGO, no por instrucción a la IA --
+// se detectó en producción que, pese a decirle explícitamente en el
+// prompt que el bot no filtra por ubicación y sí ofrece los cursos
+// activamente, el modelo seguía repitiendo esas dos afirmaciones falsas
+// en el reporte (una "regla dura" en el prompt no es 100% dura para un
+// modelo probabilístico). En vez de seguir peleando con el wording del
+// prompt, esto garantiza que la corrección real SIEMPRE aparezca,
+// sin importar lo que haya escrito la IA arriba.
+echo "\n\n" . str_repeat('-', 60) . "\n";
+echo "NOTA (agregada siempre por el sistema, no por la IA -- verificado en el código):\n";
+echo "Si el reporte de arriba dice que se \"descartan\", \"pierden\" o \"filtran\" leads por estar fuera de\n";
+echo "CDMX/Edomex, eso NO es cierto: el bot ofrece la asesoría de pago exactamente igual sin importar el\n";
+echo "estado. Y si dice que el interés en cursos \"no se explota\" o \"se desperdicia\", tampoco es cierto:\n";
+echo "el bot ya los ofrece activamente y tiene un recordatorio automático para quien no compró. Ignora\n";
+echo "esas dos afirmaciones si aparecen arriba.\n";
