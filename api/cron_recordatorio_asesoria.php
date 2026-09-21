@@ -13,6 +13,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
 require_once __DIR__ . '/citas_helpers.php';
+require_once __DIR__ . '/push_helpers.php';
 
 $pdo = db();
 
@@ -31,8 +32,34 @@ $citas = $stmt->fetchAll();
 
 $enviados = 0;
 $fallidos = 0;
+$sinVentana = 0;
 
 foreach ($citas as $cita) {
+    // WhatsApp no deja mandar un mensaje libre si el cliente no ha escrito
+    // en las últimas 24h -- Meta "acepta" la petición al instante (por eso
+    // whatsapp_enviar() de abajo devolvería true igual) pero la entrega
+    // falla después, en silencio (error 131047), y el cliente nunca se
+    // entera de que le van a llamar en 1 hora. Bug real detectado: este
+    // cron no revisaba esto (a diferencia de un mensaje manual desde el
+    // panel, que sí lo checa) -- con la política de "no hay devolución si
+    // no se contesta la llamada", que el recordatorio se pierda es
+    // particularmente grave. Si no se puede mandar, se avisa a un humano
+    // para que contacte al cliente por su cuenta antes de la hora de la
+    // llamada, en vez de fallar sin que nadie se entere.
+    if (!whatsapp_dentro_ventana_24h($pdo, $cita['telefono'])) {
+        $sinVentana++;
+        $upd = $pdo->prepare('UPDATE citas_asesoria SET recordatorio_enviado = 1 WHERE id = :id');
+        $upd->execute([':id' => $cita['id']]);
+        $horaTxt = citas_formatear_hora(substr($cita['hora_inicio'], 0, 5));
+        push_notificar_prospecto(
+            $pdo, null,
+            'Recordatorio de asesoría NO se pudo mandar',
+            "No se le pudo mandar el recordatorio automático a {$cita['telefono']} (su asesoría es hoy a las {$horaTxt}) -- no ha escrito en las últimas 24h y WhatsApp no deja mandarle un mensaje libre. Contáctalo tú directo antes de la llamada.",
+            '/sistema/?abrir=' . urlencode($cita['telefono'])
+        );
+        continue;
+    }
+
     $saludo = $cita['nombre_cliente'] ? "¡Hola {$cita['nombre_cliente']}!" : '¡Hola!';
     $horaTxt = citas_formatear_hora(substr($cita['hora_inicio'], 0, 5));
     $mensaje = "{$saludo} Tu asesoría con el abogado es en 1 hora, a las {$horaTxt} — te va a llamar a este mismo número de WhatsApp. Aprovecha para tener a la mano cualquier documento o dato de tu caso que quieras comentarle. ¡Nos vemos al rato!";
@@ -51,4 +78,4 @@ foreach ($citas as $cita) {
     }
 }
 
-echo count($citas) . " cita(s) encontrada(s), $enviados enviado(s), $fallidos fallido(s).\n";
+echo count($citas) . " cita(s) encontrada(s), $enviados enviado(s), $fallidos fallido(s), $sinVentana sin ventana de 24h (se avisó a un humano).\n";

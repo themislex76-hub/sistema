@@ -57,6 +57,18 @@ foreach ($citas as $cita) {
         continue;
     }
 
+    // Muy poco probable que pase aquí (el cliente acaba de escribir hace
+    // ~20 minutos para pedir el link), pero por consistencia con el resto
+    // del sistema se revisa igual -- si de plano no se puede, no tiene
+    // caso reintentar más tarde (el horario ya se habrá liberado), así que
+    // solo se marca como atendido sin más.
+    if (!whatsapp_dentro_ventana_24h($pdo, $cita['telefono'])) {
+        $omitidos++;
+        $upd = $pdo->prepare('UPDATE citas_asesoria SET recordatorio_pago_enviado = 1 WHERE id = :id');
+        $upd->execute([':id' => $cita['id']]);
+        continue;
+    }
+
     $mensaje = "¡No se te vaya a ir tu horario! Te quedan {$minutosRestantes} minutos para completar el pago de tu asesoría antes de que se libere. Aquí está tu link de nuevo:\n{$cita['link_pago']}\n\nSolo acepta tarjeta de crédito/débito o saldo de Mercado Pago.";
 
     if (whatsapp_enviar($cita['telefono'], $mensaje)) {
