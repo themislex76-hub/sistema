@@ -33,16 +33,28 @@ function llamar_graph(string $url): array
     return [$status, $raw];
 }
 
-// Paso 1: del número del bot, sacar a qué cuenta de WhatsApp Business
-// (WABA) pertenece.
+// Paso 1: confirmar que el token/PHONE_ID sí funcionan (con campos que sí
+// existen en este nodo -- "whatsapp_business_account" no es un campo válido
+// aquí, así que se dejó fuera).
 [$status1, $raw1] = llamar_graph(
-    'https://graph.facebook.com/v23.0/' . WHATSAPP_PHONE_ID . '?fields=display_phone_number,verified_name,whatsapp_business_account'
+    'https://graph.facebook.com/v23.0/' . WHATSAPP_PHONE_ID . '?fields=id,display_phone_number,verified_name'
 );
 echo "=== Paso 1: datos del número (PHONE_ID={" . WHATSAPP_PHONE_ID . "}) ===\n";
 echo "status=$status1\n$raw1\n\n";
 
-$data1 = json_decode((string)$raw1, true);
-$wabaId = $data1['whatsapp_business_account']['id'] ?? null;
+// Paso 1b: el business_id que se ve en la URL del Administrador de
+// WhatsApp (916653940845141) es el ID de la EMPRESA en Meta Business
+// Manager -- de ahí se puede listar qué cuentas de WhatsApp Business
+// (WABA) son dueñas de esa empresa, y sacar el ID real de cada una.
+$businessId = '916653940845141';
+[$status1b, $raw1b] = llamar_graph(
+    "https://graph.facebook.com/v23.0/{$businessId}/owned_whatsapp_business_accounts?fields=id,name"
+);
+echo "=== Paso 1b: WABAs de la empresa (business_id={$businessId}) ===\n";
+echo "status=$status1b\n$raw1b\n\n";
+
+$data1b = json_decode((string)$raw1b, true);
+$wabaId = $data1b['data'][0]['id'] ?? null;
 
 if (!$wabaId) {
     echo "No se pudo sacar el WABA ID de esa respuesta -- copia todo este texto y mándamelo, ahí seguimos.\n";
