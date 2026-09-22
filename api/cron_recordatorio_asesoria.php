@@ -53,7 +53,7 @@ foreach ($citas as $cita) {
         $nombrePlantilla = trim((string)$cita['nombre_cliente']) !== '' ? $cita['nombre_cliente'] : 'estimado(a) cliente';
         $mensajePlantilla = "Hola {$nombrePlantilla}, tu asesoría con el Lic. Rubén Buerhend es en 1 hora, a las {$horaTxt} — te va a llamar del número 55 7991 3025 — guárdalo para que reconozcas la llamada. Ten a la mano cualquier documento o dato de tu caso que quieras comentarle.";
 
-        if (whatsapp_enviar_plantilla($cita['telefono'], 'recordatorio_1', [$nombrePlantilla, $horaTxt])) {
+        if (whatsapp_enviar_plantilla($cita['telefono'], 'recordatorio_1_hora', [$nombrePlantilla, $horaTxt])) {
             $enviados++;
             $upd = $pdo->prepare('UPDATE citas_asesoria SET recordatorio_enviado = 1 WHERE id = :id');
             $upd->execute([':id' => $cita['id']]);

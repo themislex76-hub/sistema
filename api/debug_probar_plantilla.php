@@ -19,6 +19,6 @@ if ($telefono === '') {
     exit;
 }
 
-echo "Mandando recordatorio_1 a {$telefono}...\n";
-$ok = whatsapp_enviar_plantilla($telefono, 'recordatorio_1', ['Prueba', '12:00 pm']);
+echo "Mandando recordatorio_1_hora a {$telefono}...\n";
+$ok = whatsapp_enviar_plantilla($telefono, 'recordatorio_1_hora', ['Prueba', '12:00 pm']);
 echo $ok ? "OK -- la API aceptó el envío.\n" : "FALLÓ -- revisa la última línea de whatsapp_send_debug.log para el detalle exacto.\n";
