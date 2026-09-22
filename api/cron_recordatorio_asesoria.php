@@ -43,25 +43,41 @@ foreach ($citas as $cita) {
     // cron no revisaba esto (a diferencia de un mensaje manual desde el
     // panel, que sí lo checa) -- con la política de "no hay devolución si
     // no se contesta la llamada", que el recordatorio se pierda es
-    // particularmente grave. Si no se puede mandar, se avisa a un humano
-    // para que contacte al cliente por su cuenta antes de la hora de la
-    // llamada, en vez de fallar sin que nadie se entere.
+    // particularmente grave. Fuera de la ventana, se manda la plantilla
+    // aprobada por Meta "recordatorio_1" (esa SÍ llega fuera de las 24h,
+    // es justo para eso). Solo si ni eso funciona se avisa a un humano
+    // para que contacte al cliente por su cuenta antes de la llamada.
+    $horaTxt = citas_formatear_hora(substr($cita['hora_inicio'], 0, 5));
+
     if (!whatsapp_dentro_ventana_24h($pdo, $cita['telefono'])) {
+        $nombrePlantilla = trim((string)$cita['nombre_cliente']) !== '' ? $cita['nombre_cliente'] : 'estimado(a) cliente';
+        $mensajePlantilla = "Hola {$nombrePlantilla}, tu asesoría con el Lic. Rubén Buerhend es en 1 hora, a las {$horaTxt} — te va a llamar del número 55 7991 3025 — guárdalo para que reconozcas la llamada. Ten a la mano cualquier documento o dato de tu caso que quieras comentarle.";
+
+        if (whatsapp_enviar_plantilla($cita['telefono'], 'recordatorio_1', [$nombrePlantilla, $horaTxt])) {
+            $enviados++;
+            $upd = $pdo->prepare('UPDATE citas_asesoria SET recordatorio_enviado = 1 WHERE id = :id');
+            $upd->execute([':id' => $cita['id']]);
+
+            $ins = $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+            );
+            $ins->execute([':t' => $cita['telefono'], ':texto' => $mensajePlantilla]);
+            continue;
+        }
+
         $sinVentana++;
         $upd = $pdo->prepare('UPDATE citas_asesoria SET recordatorio_enviado = 1 WHERE id = :id');
         $upd->execute([':id' => $cita['id']]);
-        $horaTxt = citas_formatear_hora(substr($cita['hora_inicio'], 0, 5));
         push_notificar_prospecto(
             $pdo, null,
             'Recordatorio de asesoría NO se pudo mandar',
-            "No se le pudo mandar el recordatorio automático a {$cita['telefono']} (su asesoría es hoy a las {$horaTxt}) -- no ha escrito en las últimas 24h y WhatsApp no deja mandarle un mensaje libre. Contáctalo tú directo antes de la llamada.",
+            "No se le pudo mandar el recordatorio automático a {$cita['telefono']} (su asesoría es hoy a las {$horaTxt}) -- no ha escrito en las últimas 24h y falló también el envío de la plantilla recordatorio_1. Contáctalo tú directo antes de la llamada.",
             '/sistema/?abrir=' . urlencode($cita['telefono'])
         );
         continue;
     }
 
     $saludo = $cita['nombre_cliente'] ? "¡Hola {$cita['nombre_cliente']}!" : '¡Hola!';
-    $horaTxt = citas_formatear_hora(substr($cita['hora_inicio'], 0, 5));
     $mensaje = "{$saludo} Tu asesoría con el abogado es en 1 hora, a las {$horaTxt} — te va a llamar a este mismo número de WhatsApp. Aprovecha para tener a la mano cualquier documento o dato de tu caso que quieras comentarle. ¡Nos vemos al rato!";
 
     if (whatsapp_enviar($cita['telefono'], $mensaje)) {

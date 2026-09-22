@@ -208,6 +208,60 @@ function whatsapp_enviar(string $telefono, string $texto): bool
     return true;
 }
 
+// Manda un mensaje de PLANTILLA (HSM) aprobada por Meta -- a diferencia de
+// whatsapp_enviar(), esta SÍ puede llegar fuera de la ventana de 24h (es
+// justo su propósito: recordatorio_1 se usa cuando whatsapp_dentro_ventana_24h()
+// da false). $parametros son los valores de las variables {{1}}, {{2}}...
+// del cuerpo de la plantilla, en orden -- deben coincidir exacto con lo que
+// Meta aprobó, si no la API regresa error.
+function whatsapp_enviar_plantilla(string $telefono, string $nombrePlantilla, array $parametros, string $idioma = 'es_MX'): bool
+{
+    $credentialsFile = __DIR__ . '/whatsapp_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/whatsapp_credentials.php');
+        return false;
+    }
+    require_once $credentialsFile;
+
+    $url = 'https://graph.facebook.com/v23.0/' . WHATSAPP_PHONE_ID . '/messages';
+    $payload = [
+        'messaging_product' => 'whatsapp',
+        'to' => $telefono,
+        'type' => 'template',
+        'template' => [
+            'name' => $nombrePlantilla,
+            'language' => ['code' => $idioma],
+            'components' => [[
+                'type' => 'body',
+                'parameters' => array_map(fn($v) => ['type' => 'text', 'text' => (string)$v], $parametros),
+            ]],
+        ],
+    ];
+
+    $ch = curl_init($url);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . WHATSAPP_TOKEN,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+            . " | plantilla=$nombrePlantilla | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return false;
+    }
+    return true;
+}
+
 // Hallazgo real revisando conversaciones completas para que el bot se
 // sienta más humano: siempre mandaba TODA su respuesta en un solo
 // mensaje largo con viñetas, aunque tuviera varias ideas separadas --
