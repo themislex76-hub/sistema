@@ -1652,9 +1652,34 @@ function ia_resultado_consultar_cita_pago(PDO $pdo, string $telefono): string
         ], JSON_UNESCAPED_UNICODE);
     }
 
+    // Bug real detectado en producción: un cliente escribió un mes después
+    // de su asesoría (ya realizada y pagada) por un asunto NUEVO -- como
+    // las dos consultas de arriba solo ven citas futuras/pendientes, esto
+    // regresaba "no hay ninguna cita", y la IA, sin ese dato, terminó
+    // inventando que un comprobante que el cliente mandó correspondía a un
+    // curso en vez de a la asesoría que sí tuvo (nadie verificó eso, se lo
+    // inventó). Ahora también se busca la asesoría CONFIRMADA más
+    // reciente sin importar la fecha, para distinguir "nunca ha tenido
+    // una asesoría" de "ya tuvo una, pero ya pasó y esto es un asunto
+    // nuevo".
+    $stmt = $pdo->prepare(
+        "SELECT fecha, hora_inicio FROM citas_asesoria
+         WHERE telefono = :t AND estado = 'confirmada'
+         ORDER BY fecha DESC, hora_inicio DESC LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    $pasada = $stmt->fetch();
+    if ($pasada) {
+        return json_encode([
+            'pago_confirmado' => false,
+            'asesoria_anterior_ya_realizada' => citas_formatear_fecha_hora($pasada['fecha'], substr($pasada['hora_inicio'], 0, 5)),
+            'instruccion' => 'No hay ninguna cita pendiente ni futura, PERO este número SÍ tuvo una asesoría confirmada antes (la fecha de arriba), seguramente ya realizada. NUNCA digas que "no aparece ninguna cita" -- si pregunta por algo nuevo, explícale con calidez que esa asesoría anterior ya se usó y que, si el asunto de ahora es distinto, se necesita agendar y pagar una asesoría nueva (usa ofrecer_horarios_asesoria). NUNCA inventes a qué corresponde algún comprobante o pago que haya mandado (por ejemplo, que es de un curso) -- eso no lo puedes verificar tú, no lo digas. Si insiste en que esto debería estar cubierto por su pago anterior, o hay cualquier confusión sobre pagos, usa escalar_a_humano en vez de resolverlo tú mismo.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
     return json_encode([
         'pago_confirmado' => false,
-        'instruccion' => 'No hay ninguna cita (ni pendiente ni confirmada) registrada para este número en el sistema. Sigue la REGLA DURA sobre pagos: no confirmes nada por lo que diga el cliente.',
+        'instruccion' => 'No hay ninguna cita (ni pendiente, ni confirmada, ni pasada) registrada para este número en el sistema. Sigue la REGLA DURA sobre pagos: no confirmes nada por lo que diga el cliente, y nunca inventes a qué corresponde algún comprobante que te haya mandado -- eso no lo puedes verificar tú.',
     ], JSON_UNESCAPED_UNICODE);
 }
 
