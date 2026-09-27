@@ -7,6 +7,34 @@ declare(strict_types=1);
 
 const MERCADOPAGO_MONTO_ASESORIA = 399.00;
 
+// Catálogo de los 3 cursos en línea -- antes el bot solo mandaba a la
+// persona a la página aparte de Netlify a pagar (fricción real: salir de
+// WhatsApp, pagar en otro sitio, esperar un correo). 'sitio' es la página
+// del curso en sí (para el link de acceso una vez pagado), 'acceso_param'
+// es el nombre del parámetro de URL que espera esa página para verificar
+// el pago (?llave=... o ?payment_id=..., según cómo se armó cada sitio --
+// ambos aceptan el payment_id real de Mercado Pago como valor).
+const CURSOS_CATALOGO = [
+    'amparo' => [
+        'titulo' => 'El Juicio de Amparo en Materia del Trabajo',
+        'precio' => 499.00,
+        'sitio' => 'https://silver-bubblegum-8c4a03.netlify.app/',
+        'acceso_param' => 'llave',
+    ],
+    'actas' => [
+        'titulo' => 'Actas Administrativas Laborales',
+        'precio' => 299.00,
+        'sitio' => 'https://regal-lollipop-90d889.netlify.app/',
+        'acceso_param' => 'payment_id',
+    ],
+    'procesal' => [
+        'titulo' => 'Nuevo Procedimiento Laboral Mexicano',
+        'precio' => 499.00,
+        'sitio' => 'https://thriving-madeleine-5fe918.netlify.app/',
+        'acceso_param' => 'llave',
+    ],
+];
+
 /**
  * Carga el Access Token desde mercadopago_credentials.php si ya existe en
  * el servidor, o null si todavía no se ha configurado — para que, antes
@@ -142,6 +170,82 @@ function mercadopago_crear_preferencia_asesoria(int $citaId, string $telefono, s
     if ($raw === false || $status < 200 || $status >= 300) {
         file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
             . " | crear_preferencia | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    if (!isset($data['id'], $data['init_point'])) return null;
+
+    return ['id' => (string)$data['id'], 'init_point' => (string)$data['init_point']];
+}
+
+/**
+ * Crea una preferencia de pago para uno de los 3 cursos en línea (ver
+ * CURSOS_CATALOGO) y devuelve el link de pago (init_point), igual que
+ * mercadopago_crear_preferencia_asesoria pero para cursos. $compraId se
+ * manda como external_reference con el prefijo "curso_compra_" para que
+ * mercadopago_webhook.php pueda distinguir un pago de curso de un pago de
+ * asesoría (que manda solo el id numérico de la cita, sin prefijo). El
+ * título del curso se manda tal cual está en CURSOS_CATALOGO a propósito:
+ * cursos_ingresos_mensual.php ya clasifica los pagos reales de Mercado
+ * Pago por palabra clave en el título ("amparo", "actas", "procesal"),
+ * así que estos pagos aparecen solos en ese reporte sin tocar nada ahí.
+ */
+function mercadopago_crear_preferencia_curso(int $compraId, string $cursoSlug, string $notificationUrl): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+    $info = CURSOS_CATALOGO[$cursoSlug] ?? null;
+    if ($info === null) return null;
+
+    $payload = [
+        'items' => [[
+            'title' => $info['titulo'],
+            'quantity' => 1,
+            'currency_id' => 'MXN',
+            'unit_price' => $info['precio'],
+        ]],
+        'payment_methods' => [
+            'excluded_payment_types' => [
+                ['id' => 'ticket'],
+                ['id' => 'bank_transfer'],
+                ['id' => 'atm'],
+                ['id' => 'mercado_credito'],
+            ],
+            'installments' => 1,
+        ],
+        'external_reference' => 'curso_compra_' . $compraId,
+        'notification_url' => $notificationUrl,
+        'back_urls' => [
+            'success' => 'https://www.expertoslaborales.com/',
+            'pending' => 'https://www.expertoslaborales.com/',
+            'failure' => 'https://www.expertoslaborales.com/',
+        ],
+        'statement_descriptor' => 'EXPERTOSLABORALES',
+    ];
+
+    $ch = curl_init('https://api.mercadopago.com/checkout/preferences');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+            . " | crear_preferencia_curso | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
         return null;
     }
 

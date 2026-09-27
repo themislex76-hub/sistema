@@ -27,6 +27,67 @@ function mp_webhook_responder(int $status = 200): void
     exit;
 }
 
+/**
+ * Procesa el webhook de un pago de curso (external_reference con prefijo
+ * "curso_compra_", ver mercadopago_crear_preferencia_curso). A diferencia
+ * de una asesoría, comprar un curso no necesita que un humano haga nada
+ * (no hay llamada que agendar) — el acceso se manda solo, por WhatsApp,
+ * en cuanto se confirma el pago. Solo se avisa al abogado como aviso de
+ * venta, sin pausar el bot ni requerir seguimiento manual.
+ */
+function mp_webhook_procesar_curso(PDO $pdo, array $pago, string $paymentId, string $externalReference): void
+{
+    $compraId = (int)substr($externalReference, strlen('curso_compra_'));
+    if ($compraId <= 0) return;
+
+    $stmt = $pdo->prepare('SELECT * FROM compras_curso WHERE id = :id LIMIT 1');
+    $stmt->execute([':id' => $compraId]);
+    $compra = $stmt->fetch();
+    if (!$compra) return;
+
+    $estadoPago = $pago['status'] ?? '';
+
+    // Mismo criterio que con las asesorías: si se reembolsa después, se
+    // refleja aquí para no dejar la compra marcada como "confirmada" para
+    // siempre sin que haya un cobro real detrás.
+    if (in_array($estadoPago, ['refunded', 'charged_back', 'cancelled'], true)) {
+        $pdo->prepare("UPDATE compras_curso SET estado = 'cancelada' WHERE id = :id AND estado = 'confirmada'")
+            ->execute([':id' => $compraId]);
+        return;
+    }
+
+    if ($estadoPago !== 'approved') return;
+
+    $info = CURSOS_CATALOGO[$compra['curso_slug']] ?? null;
+    if ($info === null) return;
+
+    // UPDATE atómico igual que en las citas: si Mercado Pago manda el
+    // mismo aviso dos veces, solo el primero "gana" y manda el WhatsApp.
+    $upd = $pdo->prepare(
+        "UPDATE compras_curso SET estado = 'confirmada', mp_payment_id = :pago_id, pagado_en = NOW()
+         WHERE id = :id AND estado != 'confirmada'"
+    );
+    $upd->execute([':pago_id' => $paymentId, ':id' => $compraId]);
+    if ($upd->rowCount() === 0) return;
+
+    $accesoLink = $info['sitio'] . '?' . $info['acceso_param'] . '=' . urlencode($paymentId) . '&pago=ok';
+    $saludo = $compra['nombre_cliente'] ? "¡Hola {$compra['nombre_cliente']}!" : '¡Hola!';
+    $mensaje = "{$saludo} Tu pago del curso *{$info['titulo']}* quedó confirmado. 🎉\n\nAquí está tu acceso (de por vida, entra las veces que quieras):\n{$accesoLink}\n\nCualquier duda sobre el contenido, aquí mismo nos puedes escribir.";
+
+    whatsapp_enviar($compra['telefono'], $mensaje);
+    $ins = $pdo->prepare(
+        "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+    );
+    $ins->execute([':t' => $compra['telefono'], ':texto' => $mensaje]);
+
+    push_notificar_prospecto(
+        $pdo, null,
+        '¡Venta de curso confirmada!',
+        ($compra['nombre_cliente'] ?: $compra['telefono']) . " compró \"{$info['titulo']}\" (\${$compra['monto']} MXN) — ya se le mandó el acceso por WhatsApp.",
+        '/sistema/?abrir=' . urlencode($compra['telefono'])
+    );
+}
+
 $body = json_decode(file_get_contents('php://input') ?: '', true) ?: [];
 
 // El aviso trae el id del pago ya sea en el cuerpo JSON (webhooks v2) o en
@@ -47,8 +108,18 @@ if ($pago === null) {
 }
 
 $estadoPago = $pago['status'] ?? '';
-$citaId = (int)($pago['external_reference'] ?? 0);
+$externalReference = (string)($pago['external_reference'] ?? '');
 $pdo = db();
+
+// Un pago de curso trae el prefijo "curso_compra_" en external_reference
+// (ver mercadopago_crear_preferencia_curso) -- se procesa aparte, nunca se
+// mezcla con la lógica de citas de abajo (que espera un id numérico puro).
+if (str_starts_with($externalReference, 'curso_compra_')) {
+    mp_webhook_procesar_curso($pdo, $pago, $paymentId, $externalReference);
+    mp_webhook_responder(200);
+}
+
+$citaId = (int)$externalReference;
 
 // Si el abogado hace una devolución directo en el panel de Mercado Pago
 // (fuera de este sistema, como pasa hoy), MP manda este mismo webhook de

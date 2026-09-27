@@ -391,20 +391,23 @@ memoria — es la fuente más común de errores):
     trabajador), evaluación final de 12 preguntas con retroalimentación
     inmediata, acceso de por vida. También en formato de lectura
     interactiva. Link directo: https://regal-lollipop-90d889.netlify.app/
-  · REGLA DURA sobre el link: en cuanto sepas CUÁL de los 3 cursos le
-    interesa (lo preguntó por nombre, o ya le recomendaste uno específico
-    y lo aceptó), mándale el link DIRECTO de ESE curso (de la lista de
-    arriba) — nunca el link genérico de la página general de cursos. Cada
-    paso de más que tenga que dar (buscar el curso correcto entre varios)
-    es una persona que se puede perder en el camino; el link directo ya
-    trae el botón de pago con Mercado Pago listo. Solo manda el link
-    general (https://www.expertoslaborales.com/cursos) si todavía no
-    sabes cuál le interesa y quiere ver los 3 para comparar.
-  · El pago se procesa automático con Mercado Pago desde esa misma
-    página; al pagar les llega un correo con el link de acceso. Tú NO
-    puedes procesar el pago ni generar un link de pago tú mismo — siempre
-    manda a la persona a la página del curso (directa o general, según el
-    punto anterior).
+  · REGLA DURA sobre el pago: en cuanto la persona muestre intención REAL
+    de comprar un curso específico (dijo que sí, pidió el link de pago, o
+    ya se lo recomendaste y lo aceptó explícitamente), usa
+    confirmar_compra_curso — esto genera el link de pago de Mercado Pago
+    REAL, directo en el chat, sin que tenga que salir a ninguna página
+    aparte. Nunca mandes el link "Link directo" de la lista de arriba
+    como si fuera para pagar — esos links de arriba son solo la página
+    informativa del curso (útiles si quiere leer el contenido completo o
+    comparar antes de decidir), NO el paso de pago.
+  · El único caso en el que sí mandas el link informativo de un curso (o
+    el general, https://www.expertoslaborales.com/cursos, si todavía no
+    sabe cuál le interesa) es cuando la persona quiere VER el contenido
+    completo o comparar los 3 antes de decidir, no cuando ya quiere pagar.
+  · En cuanto confirmar_compra_curso te regrese el link de pago, mándaselo
+    tal cual con un mensaje breve y claro (monto, que es pago único). No
+    hace falta que le digas nada sobre correos ni acceso — en cuanto pague
+    se le manda todo automático por aquí mismo.
   · Cuando alguien pregunte por un curso (o por prepararse/estudiar el
     tema), no te quedes solo en informar — véndelo de verdad: pregúntale
     qué necesita o en qué anda metido (¿es abogado, litigante, RH, o
@@ -412,20 +415,18 @@ memoria — es la fuente más común de errores):
     sirve, explícale con entusiasmo genuino qué problema concreto le
     resuelve (formatos listos para usar, ahorrarse horas de investigar
     jurisprudencia, ir preparado a una audiencia, etc.), dale el precio
-    exacto y ciérralo invitándolo directamente a inscribirse con el link.
-    Igual que con la asesoría de pago: ofrécelo con confianza esta
-    primera vez, pero si ya lo ofreciste en esta conversación no insistas
-    de nuevo por tu cuenta — retómalo solo si la persona pregunta algo
-    relacionado (precio, contenido, cómo pagar).
+    exacto y ciérralo invitándolo directamente a inscribirse. Igual que
+    con la asesoría de pago: ofrécelo con confianza esta primera vez, pero
+    si ya lo ofreciste en esta conversación no insistas de nuevo por tu
+    cuenta — retómalo solo si la persona pregunta algo relacionado
+    (precio, contenido, cómo pagar).
   · REGLA DURA: en cuanto la persona muestre interés real en un curso
     específico (no solo "qué cursos hay" sino que responda con intención
     de comprarlo, pida el link de pago, o pregunte detalles concretos de
     precio/contenido/inscripción de UNO en particular), llama
-    registrar_interes_curso ADEMÁS de mandarle el link directo, en el
-    mismo turno — nunca en lugar del link, y nunca sin haberle dado ya el
-    link. No hay forma automática de saber si completa la compra en la
-    página del curso, así que esta herramienta es la única forma de que
-    el abogado se entere y le pueda dar seguimiento si no compra.
+    registrar_interes_curso ADEMÁS de confirmar_compra_curso, en el mismo
+    turno — así el abogado se entera y le puede dar seguimiento si al
+    final no completa el pago.
 
 Reglas de contenido:
 - Cita el artículo específico de la Ley Federal del Trabajo (o de la Ley
@@ -817,6 +818,25 @@ const IA_TOOLS = [
         ],
     ],
     [
+        'name' => 'confirmar_compra_curso',
+        'description' => 'Genera el link de pago REAL de Mercado Pago (directo en el chat, sin salir a la página del curso) para el curso que la persona ya decidió comprar. Llama esta herramienta SOLO cuando ya sabes con certeza cuál de los 3 cursos quiere (lo pidió por nombre, o ya se lo recomendaste y lo aceptó explícitamente) y mostró intención real de comprarlo -- nunca la llames solo porque preguntó qué cursos hay o cuánto cuestan. Llámala ADEMÁS de registrar_interes_curso (nunca en su lugar), en el mismo turno.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'curso' => [
+                    'type' => 'string',
+                    'enum' => ['Nuevo Procedimiento Laboral Mexicano', 'El Juicio de Amparo en Materia del Trabajo', 'Actas Administrativas Laborales'],
+                    'description' => 'Cuál de los 3 cursos quiere comprar.',
+                ],
+                'nombre' => [
+                    'type' => 'string',
+                    'description' => 'Nombre de la persona si lo sabes, o cadena vacía si no.',
+                ],
+            ],
+            'required' => ['curso'],
+        ],
+    ],
+    [
         'name' => 'consultar_cita_pago',
         'description' => 'Consulta en el sistema, en tiempo real, si este número de teléfono tiene una cita de asesoría con el pago de verdad confirmado (o, si no, si tiene un horario apartado pendiente de pago). Es la ÚNICA forma real de saberlo -- tu propia memoria de la conversación NO es confiable para esto (ver REGLA DURA sobre pagos). Llama esta herramienta SIEMPRE antes de decirle a alguien que su pago "no aparece confirmado", antes de confirmarle a alguien la hora de su cita, y siempre que alguien pregunte por el estado de su cita/pago (aunque tú "recuerdes" que ya se había confirmado antes en la conversación) -- nunca respondas sobre esto de memoria.',
         'input_schema' => [
@@ -1152,7 +1172,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // y, una vez elegido el horario, confirmar_horario_asesoria) sin
     // escribir texto todavía — por eso esto es un ciclo y no una sola
     // "segunda llamada", con un tope de rondas por seguridad.
-    $herramientasConSeguimiento = ['calcular_sdi_con_variable', 'calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_plazo_prestaciones', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'consultar_cita_pago'];
+    $herramientasConSeguimiento = ['calcular_sdi_con_variable', 'calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_plazo_prestaciones', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'confirmar_compra_curso', 'consultar_cita_pago'];
     $mensajesActuales = $mensajes;
     $lead = null;
     $texto = '';
@@ -1293,6 +1313,9 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead);
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
                 $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in, $lead);
+            } elseif ($bloque['name'] === 'confirmar_compra_curso') {
+                $nombreCompra = trim((string)($in['nombre'] ?? '')) ?: null;
+                $contenido = ia_resultado_confirmar_compra_curso($pdo, $telefono, (string)($in['curso'] ?? ''), $nombreCompra);
             } elseif ($bloque['name'] === 'consultar_cita_pago') {
                 $contenido = ia_resultado_consultar_cita_pago($pdo, $telefono);
             } elseif ($bloque['name'] === 'escalar_a_humano') {
@@ -1609,6 +1632,58 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         'horario' => citas_formatear_fecha_hora($fecha, $horaInicio),
         'vigencia_minutos' => CITAS_HOLD_MINUTOS,
         'monto' => $monto,
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+// Nombre completo del curso (el que usa la IA y registrar_interes_curso)
+// -> slug interno (el que usa CURSOS_CATALOGO en mercadopago_helpers.php).
+const CURSOS_NOMBRE_A_SLUG = [
+    'Nuevo Procedimiento Laboral Mexicano' => 'procesal',
+    'El Juicio de Amparo en Materia del Trabajo' => 'amparo',
+    'Actas Administrativas Laborales' => 'actas',
+];
+
+/**
+ * Resultado (como JSON) de la herramienta confirmar_compra_curso: crea el
+ * registro de la compra y genera el link de pago real de Mercado Pago,
+ * directo en el chat -- ya no hace falta mandar a la persona a la página
+ * aparte de Netlify solo para pagar. mercadopago_webhook.php confirma el
+ * pago y manda el link de acceso al curso por WhatsApp en cuanto se
+ * aprueba (ver ahí).
+ */
+function ia_resultado_confirmar_compra_curso(PDO $pdo, string $telefono, string $cursoNombre, ?string $nombre): string
+{
+    $slug = CURSOS_NOMBRE_A_SLUG[$cursoNombre] ?? null;
+    if ($slug === null) {
+        return json_encode(['ok' => false, 'motivo' => 'Curso no reconocido — usa exactamente uno de los 3 nombres de curso.'], JSON_UNESCAPED_UNICODE);
+    }
+    $info = CURSOS_CATALOGO[$slug];
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO compras_curso (telefono, curso_slug, nombre_cliente, monto) VALUES (:t, :c, :n, :m)"
+    );
+    $stmt->execute([':t' => $telefono, ':c' => $slug, ':n' => $nombre, ':m' => $info['precio']]);
+    $compraId = (int)$pdo->lastInsertId();
+
+    $pref = mercadopago_crear_preferencia_curso($compraId, $slug, MERCADOPAGO_WEBHOOK_URL);
+    if ($pref === null) {
+        $pdo->prepare("UPDATE compras_curso SET estado = 'cancelada' WHERE id = :id")->execute([':id' => $compraId]);
+        return json_encode([
+            'ok' => false,
+            'motivo' => 'Hubo un problema técnico generando el link de pago. Como respaldo, manda el link directo de la página del curso para que pueda pagar ahí mientras se resuelve.',
+            'link_alternativo' => $info['sitio'],
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    $stmt = $pdo->prepare("UPDATE compras_curso SET mp_preference_id = :pref, link_pago = :link WHERE id = :id");
+    $stmt->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':id' => $compraId]);
+
+    return json_encode([
+        'ok' => true,
+        'link_pago' => $pref['init_point'],
+        'curso' => $info['titulo'],
+        'monto' => $info['precio'],
+        'instruccion' => 'Manda este link de pago tal cual -- en cuanto pague, el acceso al curso se le manda automáticamente por aquí mismo, no hace falta que tú hagas nada más ni que revises su correo.',
     ], JSON_UNESCAPED_UNICODE);
 }
 
