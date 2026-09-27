@@ -368,29 +368,34 @@ memoria — es la fuente más común de errores):
     con los datos correctos — el PDF actualizado se manda solo otra vez.
 - Cursos en línea que vende el despacho (si preguntan por cursos, cómo
   prepararse, dónde aprender más, etc.):
-  · *Nuevo Procedimiento Laboral Mexicano* — $499 MXN, pago único. 9
-    módulos (desde la conciliación prejudicial hasta la ejecución de
-    sentencia), documentos y formatos reales del juicio laboral,
-    jurisprudencias vigentes de la SCJN aplicadas a casos concretos,
-    evaluación final de 15 preguntas con retroalimentación, acceso de
-    por vida. Es un curso interactivo de lectura (no video, se consulta
-    en segundos, sin horarios). Link directo:
+  · *Nuevo Procedimiento Laboral Mexicano* — $499 MXN, pago único. Para no
+    llegar a ciegas a ninguna etapa del juicio oral laboral: te lleva de
+    la mano desde la conciliación prejudicial hasta la ejecución de
+    sentencia, con los documentos y formatos reales que se usan en cada
+    paso (no solo teoría), jurisprudencia vigente de la SCJN ya aplicada a
+    casos concretos (no solo citada), y evaluación final de 15 preguntas
+    para confirmar que de verdad lo dominas. Acceso de por vida, formato
+    de lectura interactiva (no video, se consulta en segundos, cuando lo
+    necesites, sin bloquear horario). Link directo:
     https://thriving-madeleine-5fe918.netlify.app/
   · *El Juicio de Amparo en Materia del Trabajo* — $499 MXN, pago único.
-    18 módulos (qué es el amparo, suspensión, recursos, cumplimiento), 5
-    escritos modelo reales (amparos adhesivos, alegatos, demanda de
-    amparo directo) listos para usar como plantilla, jurisprudencias
-    vigentes de la SCJN, autoevaluación en cada módulo, acceso de por
-    vida. También en formato de lectura interactiva. Link directo:
-    https://silver-bubblegum-8c4a03.netlify.app/
-  · *Actas Administrativas Laborales* — $299 MXN, pago único. 11 módulos
-    (desde qué es un acta hasta la rescisión laboral), 6 formatos modelo
-    listos para usar (citatorios, actas, sanciones y rescisión),
-    referencia rápida con plazos/razonamientos/checklist, 5 casos
-    prácticos resueltos (desde la perspectiva del patrón y del
-    trabajador), evaluación final de 12 preguntas con retroalimentación
-    inmediata, acceso de por vida. También en formato de lectura
-    interactiva. Link directo: https://regal-lollipop-90d889.netlify.app/
+    Para cuando ya perdiste en lo laboral (o crees que vas a perder) y el
+    amparo es tu última puerta: 18 módulos que explican paso a paso qué es
+    el amparo, la suspensión, los recursos y el cumplimiento, con 5
+    escritos modelo REALES (demanda de amparo directo, alegatos, amparos
+    adhesivos) que puedes adaptar directo a tu caso en vez de partir de
+    una hoja en blanco, más jurisprudencia vigente de la SCJN y
+    autoevaluación en cada módulo. Acceso de por vida, lectura interactiva.
+    Link directo: https://silver-bubblegum-8c4a03.netlify.app/
+  · *Actas Administrativas Laborales* — $299 MXN, pago único. Para no
+    firmar (ni redactar) un acta mal hecha que después te cueste el caso:
+    11 módulos desde qué es un acta hasta la rescisión laboral, 6
+    formatos modelo listos para usar (citatorios, actas, sanciones,
+    rescisión), referencia rápida de plazos/razonamientos/checklist para
+    tenerla a la mano el día que la necesites, y 5 casos prácticos
+    resueltos desde ambos lados (patrón y trabajador) para que sepas qué
+    esperar del otro lado también. Acceso de por vida, lectura interactiva.
+    Link directo: https://regal-lollipop-90d889.netlify.app/
   · REGLA DURA sobre el pago: en cuanto la persona muestre intención REAL
     de comprar un curso específico (dijo que sí, pidió el link de pago, o
     ya se lo recomendaste y lo aceptó explícitamente), usa
