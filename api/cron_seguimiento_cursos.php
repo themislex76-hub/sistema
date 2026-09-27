@@ -2,21 +2,28 @@
 declare(strict_types=1);
 
 // Script pensado para correr solo, vía un Cron Job (Tareas programadas en
-// DonWeb/cPanel) cada varias horas -- NO se abre desde el navegador ni
-// tiene sesión. Le manda a cada prospecto de interés en curso (ver
+// DonWeb/cPanel) cada hora -- NO se abre desde el navegador ni tiene
+// sesión. Le manda a cada prospecto de interés en curso (ver
 // registrar_interes_curso en ia_helpers.php) UN recordatorio, UNA sola
-// vez, si pasaron 24 horas sin que compre -- nunca se repite (seguimiento_en
+// vez, entre 3 y 20 horas de silencio -- nunca se repite (seguimiento_en
 // se marca en cuanto se manda), para no hostigar a nadie. No hay forma
 // automática de saber si de verdad compró (el pago pasa en una página
 // aparte, fuera de este sistema), así que este recordatorio se manda
 // igual aunque ya haya comprado -- es un costo aceptable frente al
 // beneficio real de recuperar a los que no compraron.
 //
+// Bug real detectado en producción: antes esto disparaba hasta las 24h de
+// silencio -- justo cuando WhatsApp ya NO deja mandar un mensaje libre (la
+// ventana de 24h ya se cerró), así que el recordatorio fallaba en
+// silencio casi siempre. Ahora dispara ANTES de que se cierre esa ventana
+// (entre 3 y 20 horas), igual que ya hace cron_seguimiento_calculadora.php.
+//
 // Config del Cron Job: comando "php /ruta/completa/a/este/archivo.php",
-// frecuencia sugerida: cada 6 horas.
+// frecuencia cada hora.
 
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
+require_once __DIR__ . '/push_helpers.php';
 
 if (!dentro_de_horario_atencion()) {
     echo "Fuera del horario de atención (" . date('G') . "h) — no se manda nada en esta corrida, para no escribirle a un cliente fuera del horario que el bot mismo respeta.\n";
@@ -38,16 +45,18 @@ $stmt = $pdo->prepare(
        AND p.estatus = 'nuevo'
        AND p.seguimiento_en IS NULL
        AND p.pausado_bot = 0
-       AND p.actualizado_en <= NOW() - INTERVAL 24 HOUR
+       AND p.actualizado_en <= NOW() - INTERVAL 3 HOUR
+       AND p.actualizado_en >= NOW() - INTERVAL 20 HOUR
        AND NOT EXISTS (
          SELECT 1 FROM whatsapp_conversaciones w
-         WHERE w.telefono = p.telefono AND w.creado_en > NOW() - INTERVAL 12 HOUR
+         WHERE w.telefono = p.telefono AND w.creado_en > NOW() - INTERVAL 2 HOUR
        )"
 );
 $stmt->execute();
 $prospectos = $stmt->fetchAll();
 
 $enviados = 0;
+$sinVentana = 0;
 foreach ($prospectos as $p) {
     // Mismo criterio que cron_seguimiento_calculadora.php: si su último
     // mensaje ya suena a un rechazo ("no gracias", "no me interesa"), no
@@ -75,7 +84,22 @@ foreach ($prospectos as $p) {
         $texto = "{$saludo}, vi que te interesaron nuestros cursos en línea. Si quieres que te pase la información de nuevo, aquí ando. 🙂";
     }
 
-    if (whatsapp_enviar($p['telefono'], $texto)) {
+    // Bug real detectado: este cron por diseño solo dispara después de 24h
+    // de silencio -- justo cuando WhatsApp ya NO deja mandar un mensaje
+    // libre (la ventana de 24h ya se cerró), así que este recordatorio
+    // estaba fallando en silencio casi siempre. No hay plantilla aprobada
+    // por Meta para este caso, así que si está fuera de ventana se avisa a
+    // un humano para que lo contacte él mismo en vez de perder el lead sin
+    // que nadie se entere.
+    if (!whatsapp_dentro_ventana_24h($pdo, $p['telefono'])) {
+        $sinVentana++;
+        push_notificar_prospecto(
+            $pdo, null,
+            'Seguimiento de curso NO se pudo mandar',
+            "No se le pudo mandar el recordatorio automático del curso \"{$p['curso_interes']}\" a {$p['telefono']} -- no ha escrito en las últimas 24h y WhatsApp no deja mandarle un mensaje libre. Contáctalo tú directo si quieres darle seguimiento.",
+            '/sistema/?abrir=' . urlencode($p['telefono'])
+        );
+    } elseif (whatsapp_enviar($p['telefono'], $texto)) {
         $ins = $pdo->prepare(
             "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
         );
@@ -92,4 +116,4 @@ foreach ($prospectos as $p) {
     $upd->execute([':id' => $p['id']]);
 }
 
-echo count($prospectos) . " prospecto(s) de interés en curso listo(s) para seguimiento, " . $enviados . " mensaje(s) enviado(s).\n";
+echo count($prospectos) . " prospecto(s) de interés en curso listo(s) para seguimiento, " . $enviados . " mensaje(s) enviado(s), $sinVentana sin ventana de 24h (se avisó a un humano).\n";
