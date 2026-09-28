@@ -129,15 +129,20 @@ let BUSQUEDA_IA_ACTIVA = false; // true cuando se muestra el cuadro de búsqueda
 let BUSQUEDA_IA_PREGUNTA = '';
 let BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:null}; // resultados: [{id, razon}] en orden de relevancia, o null si no se ha buscado
 let RESUMEN_SEMANAL_STATE = {cargando:false, texto:null, error:null, generadoEn:null}; // Resumen semanal del despacho (solo Administrador, ver resumenSemanalHTML())
-// Cursos vendidos por mes -- a diferencia de ASESORIAS_POR_MES (que se
-// carga solo, viene de la base de datos local), esto consulta en vivo el
-// historial de pagos de Mercado Pago (los cursos se venden en
-// expertoslaborales.com/cursos, sin registro propio en este sistema), así
-// que se pide a mano con un botón en vez de cargarse en cada visita al
-// Tablero/Ingresos.
-let CURSOS_POR_MES_STATE = {cargando:false, meses:null, error:null, generadoEn:null};
-// Igual que CURSOS_POR_MES_STATE: también consulta Mercado Pago en vivo
-// (para los cursos), así que se pide a mano con un botón.
+// Cursos vendidos por mes -- igual que ASESORIAS_POR_MES, se carga solo
+// desde la base de datos local (compras_curso, las hechas desde el bot).
+// Ya no cubre las ventas de la página vieja de Netlify (esas no dejan
+// registro en esta base de datos) -- decisión consciente a cambio de
+// tener un panel simple y confiable en vez de depender de consultar
+// Mercado Pago en vivo cada vez.
+let CURSOS_POR_MES = []; // {mes:'YYYY-MM', vendidos, total, cursos:[{titulo,vendidos,total}]}
+let CURSO_MES_ABIERTO = null; // 'YYYY-MM' del mes desplegado en ese panel, o null si ninguno
+async function loadCursosPorMes(){
+  try{ CURSOS_POR_MES = (await api('GET', 'cursos_ingresos_mensual.php')).meses; }
+  catch(e){ CURSOS_POR_MES = []; }
+}
+// Los costos mensuales sí siguen consultando algo en vivo (no tienen tabla
+// propia), así que se piden a mano con un botón.
 let COSTOS_MENSUALES_STATE = {cargando:false, meses:null, error:null, guardando:false};
 
 // Campos que puede llenar/editar el abogado asignado. Cubre lo necesario
@@ -2317,6 +2322,7 @@ async function refreshBootstrap(){
     await loadDisponibilidad();
     await loadCitas();
     await loadAsesoriasPorMes();
+    await loadCursosPorMes();
   }
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadConversaciones();
@@ -3875,40 +3881,41 @@ function ingresosHTML(){
   })()}
 
   ${(()=>{
-    const s = CURSOS_POR_MES_STATE;
-    const totalVendidosHist = (s.meses||[]).reduce((acc,m)=>acc+m.vendidos,0);
-    const totalGanadoHist = (s.meses||[]).reduce((acc,m)=>acc+m.total,0);
+    const totalVendidosHist = CURSOS_POR_MES.reduce((s,m)=>s+m.vendidos,0);
+    const totalGanadoHist = CURSOS_POR_MES.reduce((s,m)=>s+m.total,0);
     return `
   <div class="panel">
-    <div class="panel-head">
-      <h3>Cursos vendidos por mes</h3>
-      <button class="btn secondary" data-consultar-cursos style="font-size:11px; padding:5px 10px;" ${s.cargando?'disabled':''}>${s.cargando?'Consultando Mercado Pago...':(s.meses?'Actualizar':'Consultar')}</button>
-    </div>
-    <div class="panel-body" style="padding:16px 20px;">
-      <div class="notice" style="margin-bottom:${s.meses?'16px':'0'};">Los cursos (Nuevo Procedimiento Laboral Mexicano, El Juicio de Amparo, Actas Administrativas Laborales) se venden en expertoslaborales.com/cursos, aparte de este sistema — este panel consulta en vivo el historial de pagos de la cuenta de Mercado Pago del despacho, por eso se pide a mano en vez de cargarse solo.</div>
-      ${s.error ? `<div class="notice" style="color:var(--danger, #b3261e);">${escapeHTML(s.error)}</div>` : ""}
-      ${s.meses ? `
+    <div class="panel-head"><h3>Cursos vendidos por mes</h3><span class="count">${CURSOS_POR_MES.length} mes(es)</span></div>
+    <div class="panel-body" style="padding:16px 20px 0;">
+      <div class="notice" style="margin-bottom:16px;">Solo cuenta las compras hechas desde el bot de WhatsApp (Nuevo Procedimiento Laboral Mexicano, El Juicio de Amparo, Actas Administrativas Laborales) — no incluye ventas hechas directo en la página vieja de expertoslaborales.com/cursos, esas no dejan registro aquí.</div>
       <div class="stat-grid" style="grid-template-columns:repeat(2,1fr); margin-bottom:16px;">
-        <div class="stat-card"><div class="bar"></div><div class="num">${totalVendidosHist}</div><div class="label">Cursos vendidos en total (últimos 24 meses)</div></div>
+        <div class="stat-card"><div class="bar"></div><div class="num">${totalVendidosHist}</div><div class="label">Cursos vendidos en total (por el bot)</div></div>
         <div class="stat-card ok"><div class="bar"></div><div class="num">${fmtMoney(totalGanadoHist)}</div><div class="label">Total ganado</div></div>
       </div>
-      ` : ""}
     </div>
-    ${s.meses ? `
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Mes</th><th>Curso</th><th>Vendidos</th><th>Ganado</th></tr></thead>
-      <tbody>${s.meses.flatMap(m=>{
+      <table><thead><tr><th>Mes</th><th>Vendidos</th><th>Ganado</th><th></th></tr></thead>
+      <tbody>${CURSOS_POR_MES.map(m=>{
         const [y,mm] = m.mes.split('-');
-        const nombreMes = capitalize(MESES_ES[parseInt(mm)-1]) + ' ' + y;
-        return (m.cursos.length ? m.cursos : [{titulo:'—', vendidos:0, total:0}]).map((c,i)=> `<tr>
-          <td>${i===0 ? nombreMes : ""}</td>
-          <td>${escapeHTML(c.titulo)}</td>
-          <td>${c.vendidos}</td>
-          <td><strong>${fmtMoney(c.total)}</strong></td>
-        </tr>`);
-      }).join("") || `<tr><td colspan="4" class="empty">Sin cursos vendidos en los últimos 24 meses.</td></tr>`}</tbody></table>
+        const nombreMes = MESES_ES[parseInt(mm)-1];
+        const abierto = CURSO_MES_ABIERTO === m.mes;
+        const fila = `<tr data-curso-mes-toggle="${m.mes}" style="cursor:pointer;">
+          <td>${capitalize(nombreMes)} ${y}</td><td>${m.vendidos}</td><td><strong>${fmtMoney(m.total)}</strong></td>
+          <td style="color:var(--gray); font-size:11px; white-space:nowrap;">${abierto ? 'Ocultar ▲' : 'Ver desglose ▼'}</td>
+        </tr>`;
+        const detalle = abierto ? `<tr><td colspan="4" style="padding:0;">
+          <table style="width:100%; background:var(--parchment);"><tbody>
+            ${(m.cursos||[]).map(c=>`<tr>
+              <td style="padding-left:36px; color:var(--gray);">${escapeHTML(c.titulo)}</td>
+              <td>${c.vendidos}</td>
+              <td><strong>${fmtMoney(c.total)}</strong></td>
+              <td></td>
+            </tr>`).join("")}
+          </tbody></table>
+        </td></tr>` : "";
+        return fila + detalle;
+      }).join("") || `<tr><td colspan="4" class="empty">Sin cursos vendidos todavía.</td></tr>`}</tbody></table>
     </div>
-    ` : ""}
   </div>
   `;
   })()}
@@ -4251,18 +4258,6 @@ function metricsResumenSemanal(){
   };
 }
 
-async function cargarCursosPorMes(){
-  if(CURSOS_POR_MES_STATE.cargando) return;
-  CURSOS_POR_MES_STATE = {cargando:true, meses:CURSOS_POR_MES_STATE.meses, error:null, generadoEn:null};
-  renderViewBody();
-  try{
-    const r = await api('GET', 'cursos_ingresos_mensual.php');
-    CURSOS_POR_MES_STATE = {cargando:false, meses:r.meses, error:null, generadoEn:new Date().toISOString()};
-  }catch(err){
-    CURSOS_POR_MES_STATE = {cargando:false, meses:CURSOS_POR_MES_STATE.meses, error:'No se pudo consultar: ' + err.message, generadoEn:null};
-  }
-  renderViewBody();
-}
 
 async function cargarCostosMensuales(){
   if(COSTOS_MENSUALES_STATE.cargando) return;
@@ -6047,8 +6042,13 @@ function bindViewBody(){
   if(busquedaIALimpiarBtn) busquedaIALimpiarBtn.addEventListener('click', ()=>{ BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:null}; renderViewBody(); });
   const generarResumenSemanalBtn = document.getElementById('generarResumenSemanalBtn');
   if(generarResumenSemanalBtn) generarResumenSemanalBtn.addEventListener('click', ()=> cargarResumenSemanal());
-  const consultarCursosBtn = document.querySelector('[data-consultar-cursos]');
-  if(consultarCursosBtn) consultarCursosBtn.addEventListener('click', ()=> cargarCursosPorMes());
+  document.querySelectorAll('[data-curso-mes-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const mes = el.dataset.cursoMesToggle;
+      CURSO_MES_ABIERTO = CURSO_MES_ABIERTO === mes ? null : mes;
+      renderViewBody();
+    });
+  });
   const consultarCostosBtn = document.querySelector('[data-consultar-costos]');
   if(consultarCostosBtn) consultarCostosBtn.addEventListener('click', ()=> cargarCostosMensuales());
   const guardarCostosBtn = document.getElementById('guardarCostosBtn');
