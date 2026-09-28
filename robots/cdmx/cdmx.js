@@ -119,13 +119,22 @@ function extraerSeccionLaboral(texto) {
 }
 
 function extraerCasos(seccionTexto) {
-  const partes = seccionTexto.split(/(?<=N[uú]m\.\s*Exp\.\s*\d+\/\d{4}\.)/);
+  // Un caso puede citar más de un número de expediente seguido (ej.
+  // expediente + cuaderno de amparo: "Núm. Exp. 2079/2024 3334/2026.") --
+  // si el separador solo esperaba un número, ese caso completo se quedaba
+  // pegado al siguiente en vez de separarse, mezclando el resumen de dos
+  // asuntos distintos. Ahora acepta uno o más números antes del punto
+  // final, y registra el caso bajo cada número que mencione.
+  const partes = seccionTexto.split(/(?<=N[uú]m\.\s*Exp\.\s*(?:\d+\/\d{4}\s*)+\.)/);
   const casos = [];
   for (const parte of partes) {
-    const m = /N[uú]m\.\s*Exp\.\s*(\d+\/\d{4})\./.exec(parte);
+    const m = /N[uú]m\.\s*Exp\.\s*((?:\d+\/\d{4}\s*)+)\./.exec(parte);
     if (!m) continue;
     const resumen = parte.replace(/\s+/g, ' ').trim().slice(-500);
-    casos.push({ exp: m[1], resumen });
+    const numeros = m[1].match(/\d+\/\d{4}/g) || [];
+    for (const exp of numeros) {
+      casos.push({ exp, resumen });
+    }
   }
   return casos;
 }
@@ -152,6 +161,12 @@ async function main() {
   const expedientes = await obtenerExpedientesMonitoreados();
   const porNumero = new Map();
   for (const e of expedientes) {
+    // Se confía en 'es_federal' para descartar tribunales federales antes
+    // de mirar la sede -- un tribunal FEDERAL puede tener su sede física
+    // en Ciudad de México y mencionarlo en su nombre, sin ser un tribunal
+    // local de CDMX (bug real detectado: reportaba casos federales como
+    // si fueran locales solo por mencionar "Ciudad de México").
+    if (e.es_federal) continue;
     const candidatos = [e.junta, e.tribunal].filter(Boolean);
     const esCdmx = candidatos.some(c => /ciudad de m[eé]xico|cdmx/i.test(c));
     if (esCdmx && e.exp) porNumero.set(normalizeExp(e.exp), e);
