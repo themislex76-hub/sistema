@@ -2508,6 +2508,19 @@ async function pollActualizaciones(){
         renderizarModalPreservandoInput('conversacionRespuestaInput', renderConversacionModal);
       }
     }
+
+    // El robot de Edomex va publicando un captcha nuevo cada vez que
+    // termina uno (uno por juzgado) -- sin este poll, quien lo está
+    // resolviendo tenía que recargar la página (F5) a mano para ver el
+    // siguiente.
+    const captchaIdAntes = EDOMEX_CAPTCHA_PENDIENTE ? EDOMEX_CAPTCHA_PENDIENTE.id : null;
+    await loadEdomexCaptchaPendiente();
+    const captchaIdDespues = EDOMEX_CAPTCHA_PENDIENTE ? EDOMEX_CAPTCHA_PENDIENTE.id : null;
+    if(captchaIdDespues !== captchaIdAntes){
+      const y = window.scrollY;
+      render();
+      window.scrollTo(0, y);
+    }
   }catch(e){ /* silencioso: un hipo de red no debe interrumpir cada 8s */ }
 }
 
