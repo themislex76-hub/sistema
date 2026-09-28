@@ -35,6 +35,15 @@ function fechaDDMMYYYY(d) {
   return dd + '/' + mm + '/' + d.getFullYear();
 }
 
+// El Boletin de Edomex nunca se publica en sabado ni domingo -- retrocede
+// al menos un dia y sigue retrocediendo mientras caiga en fin de semana,
+// para no gastar intentos/captchas en fechas que nunca van a tener boletin.
+function retrocederFecha(fecha) {
+  do {
+    fecha.setDate(fecha.getDate() - 1);
+  } while (fecha.getDay() === 0 || fecha.getDay() === 6);
+}
+
 async function obtenerExpedientesMonitoreados() {
   const res = await axios.get(config.sistema.apiBase + '/expedientes_monitorear.php', {
     headers: { 'X-Robot-Key': config.sistema.robotKey },
@@ -109,7 +118,7 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
   await abrirFormulario(page, juzgadoTexto);
 
   let fecha = new Date();
-  fecha.setDate(fecha.getDate() - 1);
+  retrocederFecha(fecha);
   let pdfUrl = null;
   let intentos = 0;
 
@@ -132,7 +141,7 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
       console.log('  Aviso al llenar la fecha: "' + mensaje + '"');
       if (/car[aá]tula|existe/i.test(mensaje)) {
         console.log('  Sin boletin ese dia, probando el dia anterior (sin gastar captcha)...');
-        fecha.setDate(fecha.getDate() - 1);
+        retrocederFecha(fecha);
         continue;
       }
     } else {
@@ -146,7 +155,7 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
         await page.waitForTimeout(500);
         if (/car[aá]tula|existe/i.test(mensaje)) {
           console.log('  Sin boletin ese dia, probando el dia anterior (sin gastar captcha)...');
-          fecha.setDate(fecha.getDate() - 1);
+          retrocederFecha(fecha);
           continue;
         }
       }
@@ -184,7 +193,7 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
       await resultado.accept();
       if (/car[aá]tula|existe/i.test(mensaje)) {
         console.log('  Sin boletin ese dia ("' + mensaje + '"), probando el dia anterior...');
-        fecha.setDate(fecha.getDate() - 1);
+        retrocederFecha(fecha);
       } else {
         console.log('  Aviso del sitio: "' + mensaje + '" -- reintentando el mismo dia con un nuevo captcha.');
       }
@@ -211,7 +220,7 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
           await resultado2.accept();
           if (/car[aá]tula|existe/i.test(mensaje2)) {
             console.log('  Sin boletin ese dia ("' + mensaje2 + '"), probando el dia anterior...');
-            fecha.setDate(fecha.getDate() - 1);
+            retrocederFecha(fecha);
           } else {
             console.log('  Aviso del sitio: "' + mensaje2 + '" -- reintentando el mismo dia con un nuevo captcha.');
           }
@@ -221,7 +230,7 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
           await page.locator('.swal2-confirm').first().click({ force: true }).catch(() => {});
           if (/car[aá]tula|existe/i.test(mensaje2)) {
             console.log('  Sin boletin ese dia, probando el dia anterior...');
-            fecha.setDate(fecha.getDate() - 1);
+            retrocederFecha(fecha);
           } else {
             console.log('  Reintentando el mismo dia con un nuevo captcha.');
           }
@@ -230,7 +239,7 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
         }
       } else if (/car[aá]tula|existe/i.test(mensaje)) {
         console.log('  Sin boletin ese dia, probando el dia anterior...');
-        fecha.setDate(fecha.getDate() - 1);
+        retrocederFecha(fecha);
       } else {
         console.log('  Reintentando el mismo dia con un nuevo captcha.');
       }
