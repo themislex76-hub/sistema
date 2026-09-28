@@ -240,11 +240,6 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
             }
           } else {
             console.log('  El sitio no dio un resultado claro tras la espera, reintentando el mismo dia...');
-            // Diagnostico temporal: guarda como quedo la pantalla para
-            // revisarla despues aunque nadie la haya visto en vivo.
-            const nombreDebug = path.join(__dirname, 'debug_' + Date.now() + '.png');
-            await page.screenshot({ path: nombreDebug }).catch(() => {});
-            console.log('  (Captura de diagnostico guardada en ' + nombreDebug + ')');
           }
         }
         await page.locator('.swal2-confirm').first().click({ force: true }).catch(() => {});
@@ -305,9 +300,9 @@ async function main() {
   }
   console.log(porNumero.size + ' expediente(s) con tribunal local de Edomex (Tlalnepantla) capturado.');
 
-  // Temporalmente visible (headless: false) para diagnosticar por que
-  // las consultas se quedan sin respuesta -- ver que hace el sitio de
-  // verdad en pantalla. Volver a headless: true una vez resuelto.
+  // headless: false a propósito -- el sitio abre el boletín en el visor
+  // de PDF integrado de Chrome, que no funciona en modo headless (sin
+  // pantalla); en headless la consulta nunca da resultado.
   const browser = await chromium.launch({ headless: false });
   const page = await browser.newPage({ viewport: { width: 1300, height: 900 } });
 
