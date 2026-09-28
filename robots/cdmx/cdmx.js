@@ -31,6 +31,10 @@ function normalizeExp(s) {
   return (s || '').replace(/\s+/g, '').toUpperCase();
 }
 
+function sinAcentos(s) {
+  return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+}
+
 // El numero de expediente NO es unico entre tribunales -- distintos
 // juzgados reutilizan el mismo numero cada año, así que hicieron falta
 // las partes para confirmar que de verdad es el mismo caso (se detectó
@@ -52,6 +56,28 @@ function pareceElMismoCaso(resumen, actor, demandado) {
     return tokens.length > 0 && tokens.every(t => texto.includes(t));
   };
   return coincideTodo(actor) || coincideTodo(demandado);
+}
+
+// El boletin agrupa los casos bajo su propio encabezado de tribunal (ej.
+// "SEGUNDO TRIBUNAL LABORAL DE ASUNTOS INDIVIDUALES DE LA CIUDAD DE
+// MÉXICO") -- confirmado revisando el PDF real. Se identifica el
+// ordinal (PRIMER/SEGUNDO/...) y el tipo (COLECTIVOS/INDIVIDUALES) por
+// separado, en vez de comparar el texto completo, porque el sistema
+// puede tener capturado el mismo tribunal con una redacción/sufijo
+// distinto (ej. sin "de la Ciudad de México").
+function analizarTribunalLaboral(texto) {
+  const m = /(PRIMER|SEGUNDO|TERCER|CUARTO|QUINTO|SEXTO|S[EÉ]PTIMO|OCTAVO|NOVENO|D[EÉ]CIMO)\s+TRIBUNAL\s+LABORAL\s+DE\s+ASUNTOS\s+(COLECTIVOS|INDIVIDUALES)/i.exec(sinAcentos(texto || ''));
+  if (!m) return null;
+  return { ordinal: m[1].toUpperCase(), tipo: m[2].toUpperCase() };
+}
+// true = mismo tribunal, false = tribunales distintos confirmados,
+// null = no se pudo identificar el tribunal en alguno de los dos lados
+// (formato inesperado) -- en ese caso no se puede usar como criterio.
+function tribunalCoincide(tribunalBoletin, tribunalSistema) {
+  const a = analizarTribunalLaboral(tribunalBoletin);
+  const b = analizarTribunalLaboral(tribunalSistema);
+  if (!a || !b) return null;
+  return a.ordinal === b.ordinal && a.tipo === b.tipo;
 }
 
 function cargarProcesados() {
@@ -141,14 +167,16 @@ function extraerSeccionLaboral(texto) {
   return texto.slice(inicio, fin);
 }
 
-function extraerCasos(seccionTexto) {
+const ENCABEZADO_TRIBUNAL_RE = /((?:PRIMER|SEGUNDO|TERCER|CUARTO|QUINTO|SEXTO|S[EÉ]PTIMO|OCTAVO|NOVENO|D[EÉ]CIMO)\s+TRIBUNAL\s+LABORAL\s+DE\s+ASUNTOS\s+(?:COLECTIVOS|INDIVIDUALES)\s+DE\s+LA\s+CIUDAD\s+DE\s+M[EÉ]XICO)/gi;
+
+function extraerCasosDeTramo(tramo, tribunal) {
   // Un caso puede citar más de un número de expediente seguido (ej.
   // expediente + cuaderno de amparo: "Núm. Exp. 2079/2024 3334/2026.") --
   // si el separador solo esperaba un número, ese caso completo se quedaba
   // pegado al siguiente en vez de separarse, mezclando el resumen de dos
   // asuntos distintos. Ahora acepta uno o más números antes del punto
   // final, y registra el caso bajo cada número que mencione.
-  const partes = seccionTexto.split(/(?<=N[uú]m\.\s*Exp\.\s*(?:\d+\/\d{4}\s*)+\.)/);
+  const partes = tramo.split(/(?<=N[uú]m\.\s*Exp\.\s*(?:\d+\/\d{4}\s*)+\.)/);
   const casos = [];
   for (const parte of partes) {
     const m = /N[uú]m\.\s*Exp\.\s*((?:\d+\/\d{4}\s*)+)\./.exec(parte);
@@ -156,8 +184,38 @@ function extraerCasos(seccionTexto) {
     const resumen = parte.replace(/\s+/g, ' ').trim().slice(-500);
     const numeros = m[1].match(/\d+\/\d{4}/g) || [];
     for (const exp of numeros) {
-      casos.push({ exp, resumen });
+      casos.push({ exp, resumen, tribunal });
     }
+  }
+  return casos;
+}
+
+function extraerCasos(seccionTexto) {
+  // El boletin agrupa los casos bajo su propio encabezado de tribunal --
+  // se recorre cada tramo entre un encabezado y el siguiente, para saber
+  // a qué tribunal exacto pertenece cada caso (el número de expediente se
+  // repite entre tribunales distintos, confirmado con datos reales).
+  const encabezados = [];
+  let m;
+  ENCABEZADO_TRIBUNAL_RE.lastIndex = 0;
+  while ((m = ENCABEZADO_TRIBUNAL_RE.exec(seccionTexto))) {
+    encabezados.push({ index: m.index, tribunal: m[1].replace(/\s+/g, ' ').trim() });
+  }
+
+  // Respaldo por si el sitio cambia de formato y no se reconoce ningún
+  // encabezado -- sigue funcionando como antes (sin tribunal), en vez de
+  // perder todos los casos en silencio.
+  if (!encabezados.length) {
+    console.log('  AVISO: no se reconoció ningún encabezado de tribunal en esta sección -- se sigue sin ese dato (solo se comparará por expediente y partes).');
+    return extraerCasosDeTramo(seccionTexto, null);
+  }
+
+  const casos = [];
+  for (let i = 0; i < encabezados.length; i++) {
+    const inicio = encabezados[i].index;
+    const fin = i + 1 < encabezados.length ? encabezados[i + 1].index : seccionTexto.length;
+    const tramo = seccionTexto.slice(inicio, fin);
+    casos.push(...extraerCasosDeTramo(tramo, encabezados[i].tribunal));
   }
   return casos;
 }
@@ -222,9 +280,20 @@ async function main() {
     for (const c of casos) {
       const match = porNumero.get(normalizeExp(c.exp));
       if (!match) continue;
-      if (!pareceElMismoCaso(c.resumen, match.actor, match.demandado)) {
-        console.log('  Coincide el numero de expediente ' + c.exp + ' pero NO las partes (seguramente '
-          + 'otro tribunal con el mismo numero) -- se omite. Esperaba "' + match.actor + ' vs ' + match.demandado
+
+      const tribunalSistema = match.tribunal || match.junta;
+      const mismoTribunal = tribunalCoincide(c.tribunal, tribunalSistema);
+      if (mismoTribunal === false) {
+        console.log('  Coincide el numero de expediente ' + c.exp + ' pero es OTRO TRIBUNAL ("' + c.tribunal
+          + '" vs "' + tribunalSistema + '") -- se omite.');
+        continue;
+      }
+      // Si el tribunal coincidió con certeza, ya no hace falta el respaldo
+      // de nombres; si no se pudo determinar (formato inesperado en algún
+      // lado), se exige que las partes coincidan antes de reportar.
+      if (mismoTribunal !== true && !pareceElMismoCaso(c.resumen, match.actor, match.demandado)) {
+        console.log('  Coincide el numero de expediente ' + c.exp + ' pero no se pudo confirmar tribunal ni '
+          + 'partes -- se omite por seguridad. Esperaba "' + match.actor + ' vs ' + match.demandado
           + '", el boletin dice: "' + c.resumen.slice(0, 150) + '..."');
         continue;
       }
