@@ -6,7 +6,7 @@
 module.exports = {
   sistema: {
     // URL base de la API del sistema, sin diagonal al final.
-    apiBase: 'https://sistema.expertoslaborales.com/api',
+    apiBase: 'https://sistema.expertoslaborales.com/sistema/api',
     // Misma llave que ROBOT_API_KEY en api/robot_credentials.php del
     // servidor.
     robotKey: 'CAMBIA_ESTO_POR_LA_MISMA_LLAVE_DE_robot_credentials.php',
