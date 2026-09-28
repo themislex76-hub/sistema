@@ -53,6 +53,33 @@ function normalizeExp(s) {
   return (s || '').replace(/\s+/g, '').toUpperCase();
 }
 
+function sinAcentos(s) {
+  return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+}
+
+// El numero de expediente NO es unico entre tribunales -- distintos
+// órganos reutilizan el mismo numero cada año (bug real detectado en el
+// robot de CDMX con datos de producción: casos totalmente ajenos, de otro
+// tribunal, coincidieron por número con el expediente de una clienta
+// real). Se exige además que el resumen mencione a las partes.
+const PALABRAS_VACIAS = new Set([
+  'DE', 'DEL', 'LA', 'LAS', 'LOS', 'EL', 'Y', 'S', 'A', 'C', 'V', 'SA', 'CV', 'SC', 'SRL', 'VS',
+]);
+function tokensSignificativos(nombre) {
+  return sinAcentos(nombre)
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 1 && !PALABRAS_VACIAS.has(t));
+}
+function pareceElMismoCaso(resumen, actor, demandado) {
+  const texto = sinAcentos(resumen);
+  const coincideTodo = (nombre) => {
+    const tokens = tokensSignificativos(nombre);
+    return tokens.length > 0 && tokens.every(t => texto.includes(t));
+  };
+  return coincideTodo(actor) || coincideTodo(demandado);
+}
+
 // dd/mm/yyyy (formato del portal) -> yyyy-mm-dd (formato que usa el sistema)
 function parseFechaMX(s) {
   const m = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s || '');
@@ -98,6 +125,12 @@ async function revisarCuenta(cuenta, porNumero) {
       const match = porNumero.get(normalizeExp(f.expediente));
       if (!match) continue; // no es un expediente que monitoreamos
       const resumen = `${f.tipoAsunto} — ${f.materia} — ${f.tribunal} — Parte: ${f.parte}. ${f.sintesis}`;
+      if (!pareceElMismoCaso(resumen, match.actor, match.demandado)) {
+        console.log(`    Coincide el numero de expediente ${f.expediente} pero NO las partes (seguramente `
+          + `otro organo con el mismo numero) -- se omite. Esperaba "${match.actor} vs ${match.demandado}", `
+          + `el portal dice: "${resumen.slice(0, 150)}..."`);
+        continue;
+      }
       await reportarAviso(match.id, resumen, parseFechaMX(f.fecha));
       reportados++;
       console.log(`    Aviso reportado: expediente ${f.expediente}`);

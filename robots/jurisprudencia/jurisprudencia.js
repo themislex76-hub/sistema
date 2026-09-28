@@ -462,7 +462,16 @@ async function main() {
   const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
   let totalGuardadas = 0;
   try {
-    const resultados = await buscarTesisRecientes(page, procesados, MODO_COMPLETO);
+    let resultados;
+    try {
+      resultados = await buscarTesisRecientes(page, procesados, MODO_COMPLETO);
+    } catch (err) {
+      // Primera corrida real contra el sitio -- si algo truena, esta
+      // captura muestra exactamente cómo se veía la página en ese momento,
+      // en vez de tener que adivinar a ciegas desde el mensaje de error.
+      await page.screenshot({ path: require('path').join(__dirname, 'debug_error.png'), fullPage: true }).catch(() => {});
+      throw err;
+    }
     const nuevos = resultados.filter(r => r.registro && !procesados.has(r.registro));
     console.log(nuevos.length + ' tesis nueva(s) sin procesar de ' + resultados.length + ' revisadas.');
 

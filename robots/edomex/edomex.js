@@ -34,6 +34,29 @@ function normalizeExp(s) {
   return m ? m[1] + '/' + m[2] : limpio;
 }
 
+// El numero de expediente NO es unico entre tribunales -- distintos
+// juzgados reutilizan el mismo numero cada año (bug real detectado en el
+// robot de CDMX con datos de producción: casos totalmente ajenos, de otro
+// tribunal, coincidieron por número con el expediente de una clienta
+// real). Se exige además que el resumen mencione a las partes.
+const PALABRAS_VACIAS = new Set([
+  'DE', 'DEL', 'LA', 'LAS', 'LOS', 'EL', 'Y', 'S', 'A', 'C', 'V', 'SA', 'CV', 'SC', 'SRL', 'VS',
+]);
+function tokensSignificativos(nombre) {
+  return sinAcentos(nombre)
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(t => t.length > 1 && !PALABRAS_VACIAS.has(t));
+}
+function pareceElMismoCaso(resumen, actor, demandado) {
+  const texto = sinAcentos(resumen);
+  const coincideTodo = (nombre) => {
+    const tokens = tokensSignificativos(nombre);
+    return tokens.length > 0 && tokens.every(t => texto.includes(t));
+  };
+  return coincideTodo(actor) || coincideTodo(demandado);
+}
+
 function fechaDDMMYYYY(d) {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -287,6 +310,12 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
   for (const c of casos) {
     const match = porNumero.get(normalizeExp(c.exp));
     if (!match) continue;
+    if (!pareceElMismoCaso(c.resumen, match.actor, match.demandado)) {
+      console.log('    Coincide el numero de expediente ' + c.exp + ' pero NO las partes (seguramente '
+        + 'otro juzgado con el mismo numero) -- se omite. Esperaba "' + match.actor + ' vs ' + match.demandado
+        + '", el boletin dice: "' + c.resumen.slice(0, 150) + '..."');
+      continue;
+    }
     await reportarAviso(match.id, c.resumen, fecha.toISOString().slice(0, 10));
     reportados++;
     console.log('    Aviso reportado: expediente ' + c.exp);
