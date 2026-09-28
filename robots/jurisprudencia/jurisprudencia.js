@@ -321,10 +321,31 @@ async function buscarTesisRecientes(page, procesados, modoCompleto) {
   // mas nuevo a lo mas viejo, parar en la primera tesis ya conocida podria
   // saltarse tesis nuevas que aparecieran despues en el listado).
   try {
-    await page.locator('text=/Ordenar por/i').locator('..').locator('select, [role="combobox"]').first().click();
-    await page.waitForTimeout(500);
-    await page.getByText(/Fecha de publicaci[oó]n \(reciente/i).click();
-    await page.waitForTimeout(1500);
+    // Mismo problema que en otros controles de este sitio (ver
+    // clickTextoVisible): el elemento existe duplicado en el DOM (version
+    // de escritorio y otra de movil oculta con CSS) -- clickear el
+    // PRIMERO que encuentra Playwright, sin fijarse si esta visible,
+    // hacia que se quedara esperando 30s un elemento oculto que nunca
+    // se vuelve clickeable. Ahora busca entre todos los candidatos el
+    // primero que de verdad este visible.
+    const selectorOrdenar = page.locator('text=/Ordenar por/i').locator('..').locator('select, [role="combobox"]');
+    const n = await selectorOrdenar.count();
+    let abierto = false;
+    for (let i = 0; i < n; i++) {
+      const el = selectorOrdenar.nth(i);
+      if (await el.isVisible().catch(() => false)) {
+        await el.click();
+        abierto = true;
+        break;
+      }
+    }
+    if (abierto) {
+      await page.waitForTimeout(500);
+      await clickTextoVisible(page, /Fecha de publicaci[oó]n \(reciente/i, false);
+      await page.waitForTimeout(1500);
+    } else {
+      console.log('No se encontro un selector de "Ordenar por" visible (puede que ya viniera ordenado asi).');
+    }
   } catch (e) {
     console.log('No se pudo forzar el orden por fecha reciente (puede que ya viniera asi): ' + e.message);
   }
