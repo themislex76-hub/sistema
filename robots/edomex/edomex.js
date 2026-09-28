@@ -92,9 +92,7 @@ function extraerCasos(texto) {
   return casos;
 }
 
-async function procesarJuzgado(page, juzgadoTexto, porNumero) {
-  console.log('--- Juzgado: ' + juzgadoTexto + ' ---');
-
+async function abrirFormulario(page, juzgadoTexto) {
   await page.goto(URL_CONSULTA, { waitUntil: 'networkidle' });
   await page.waitForTimeout(1000);
   await seleccionarPorTexto(page, '#divCmbRegion', REGION_TEXTO);
@@ -103,6 +101,12 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
   await page.waitForTimeout(1500);
   await seleccionarPorTexto(page, '#divCmbJuzgado', juzgadoTexto);
   await page.waitForTimeout(500);
+}
+
+async function procesarJuzgado(page, juzgadoTexto, porNumero) {
+  console.log('--- Juzgado: ' + juzgadoTexto + ' ---');
+
+  await abrirFormulario(page, juzgadoTexto);
 
   let fecha = new Date();
   fecha.setDate(fecha.getDate() - 1);
@@ -149,8 +153,13 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
     }
 
     if (intentos > 1) {
-      await page.locator('.refresh-captcha').click({ force: true }).catch(() => {});
-      await page.waitForTimeout(1000);
+      // No hay garantía de que exista un botón de "refrescar captcha" en el
+      // sitio -- recargar el formulario completo siempre da una imagen
+      // nueva y valida, sin depender de adivinar ese selector.
+      await abrirFormulario(page, juzgadoTexto);
+      await page.fill('#txtFechaBoletin', fechaTexto);
+      await page.locator('#txtFechaBoletin').blur();
+      await page.waitForTimeout(2000);
     }
     const imagen = await page.locator('img.captcha-image').screenshot();
     const captchaId = await publicarCaptcha(imagen, juzgadoTexto + ' - ' + fechaTexto);
