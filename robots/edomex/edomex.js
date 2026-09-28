@@ -26,7 +26,12 @@ function sinAcentos(s) {
 }
 
 function normalizeExp(s) {
-  return (s || '').replace(/\s+/g, '').toUpperCase();
+  const limpio = (s || '').replace(/\s+/g, '').toUpperCase();
+  // El boletin de Edomex trae el numero de expediente con ceros a la
+  // izquierda (ej. "00247/2026"), pero en el sistema se capturan sin
+  // ellos (ej. "247/2026") -- hay que quitarlos para poder emparejar.
+  const m = /^0*(\d+)\/(\d{4})$/.exec(limpio);
+  return m ? m[1] + '/' + m[2] : limpio;
 }
 
 function fechaDDMMYYYY(d) {
@@ -92,10 +97,15 @@ async function seleccionarPorTexto(page, contenedor, textoBuscado) {
 }
 
 function extraerCasos(texto) {
+  // Formato real del boletin: "2._ 00247/2026 ORDINAR PAOLA ALVA ..." --
+  // numero de item, PUNTO, guion bajo, expediente/año, y el resumen sigue
+  // en varias lineas hasta el siguiente item.
   const casos = [];
-  const re = /(\d+)_\s*(\d+\/\d{4})\s+([^\n\r]*)/g;
-  let m;
-  while ((m = re.exec(texto))) {
+  const partes = texto.split(/(?=\d+\.\s*_\s*\d+\/\d{4}\s)/);
+  const re = /^(\d+)\.\s*_\s*(\d+\/\d{4})\s+([\s\S]*)/;
+  for (const parte of partes) {
+    const m = re.exec(parte.trim());
+    if (!m) continue;
     casos.push({ exp: m[2], resumen: (m[3] || '').replace(/\s+/g, ' ').trim().slice(0, 500) });
   }
   return casos;
