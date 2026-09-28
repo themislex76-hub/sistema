@@ -6282,8 +6282,10 @@ function bindViewBody(){
       try{
         await api('POST', 'avisos_mark.php', {id: parseInt(btn.dataset.avisoMark), estado: btn.dataset.estado});
         await loadAvisosBoletin();
-        if(ACTIVE_CASE) ACTIVE_CASE = findCase(ACTIVE_CASE.id);
-        renderModal();
+        if(ACTIVE_CASE){
+          ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+          renderModal();
+        }
         renderViewBody();
       }catch(err){ alert('No se pudo actualizar: ' + err.message); }
     });
