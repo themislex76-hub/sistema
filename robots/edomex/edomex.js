@@ -201,17 +201,15 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
     } else if (resultado) {
       const mensaje = await resultado.evaluate(el => el.innerText || el.textContent || '').catch(() => '');
       console.log('  Ventana emergente del sitio: "' + mensaje.trim() + '"');
-      await page.locator('.swal2-confirm').first().click({ force: true }).catch(() => {});
-      await page.waitForTimeout(500);
 
       if (/consultando|espere un momento/i.test(mensaje)) {
-        // Es un aviso de "cargando", no el resultado final -- hay que
-        // esperar a que el sitio termine de verdad (PDF, dialogo nativo,
-        // o una ventana nueva con el resultado real) antes de asumir que
-        // fallo y reintentar con un captcha nuevo.
-        console.log('  (Aviso de espera, esperando el resultado real...)');
-        const swalReal = page.waitForSelector('.swal2-modal, .swal2-popup', { state: 'visible', timeout: 20000 }).catch(() => null);
-        const resultado2 = await Promise.race([pdfEsperado, alertaEsperada, swalReal]);
+        // Es un aviso de "cargando" -- NO lo cerramos nosotros (cerrarlo a
+        // fuerza puede interrumpir la consulta real que el sitio sigue
+        // haciendo en segundo plano). Solo seguimos esperando con las
+        // mismas promesas que ya estaban activas desde antes del clic en
+        // Consultar (pdfEsperado/alertaEsperada no se gastan por esto).
+        console.log('  (Aviso de espera, esperando el resultado real sin cerrarlo...)');
+        const resultado2 = await Promise.race([pdfEsperado, alertaEsperada]);
 
         if (resultado2 && typeof resultado2.url === 'function') {
           pdfUrl = resultado2.url();
@@ -224,24 +222,36 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
           } else {
             console.log('  Aviso del sitio: "' + mensaje2 + '" -- reintentando el mismo dia con un nuevo captcha.');
           }
-        } else if (resultado2) {
-          const mensaje2 = await resultado2.evaluate(el => el.innerText || el.textContent || '').catch(() => '');
-          console.log('  Ventana emergente (resultado real): "' + mensaje2.trim() + '"');
-          await page.locator('.swal2-confirm').first().click({ force: true }).catch(() => {});
-          if (/car[aá]tula|existe/i.test(mensaje2)) {
-            console.log('  Sin boletin ese dia, probando el dia anterior...');
-            retrocederFecha(fecha);
-          } else {
-            console.log('  Reintentando el mismo dia con un nuevo captcha.');
-          }
         } else {
-          console.log('  El sitio no dio un resultado claro tras la espera, reintentando el mismo dia...');
+          // Puede que el resultado real haya llegado dentro del mismo
+          // modal (el sitio actualiza el texto en vez de abrir uno nuevo).
+          const swalActual = page.locator('.swal2-modal, .swal2-popup');
+          const haySwal = (await swalActual.count()) > 0 && await swalActual.first().isVisible().catch(() => false);
+          const mensaje2 = haySwal
+            ? await swalActual.first().evaluate(el => el.innerText || el.textContent || '').catch(() => '')
+            : '';
+          if (mensaje2 && !/consultando|espere un momento/i.test(mensaje2)) {
+            console.log('  Ventana emergente tras la espera: "' + mensaje2.trim() + '"');
+            if (/car[aá]tula|existe/i.test(mensaje2)) {
+              console.log('  Sin boletin ese dia, probando el dia anterior...');
+              retrocederFecha(fecha);
+            } else {
+              console.log('  Reintentando el mismo dia con un nuevo captcha.');
+            }
+          } else {
+            console.log('  El sitio no dio un resultado claro tras la espera, reintentando el mismo dia...');
+          }
         }
-      } else if (/car[aá]tula|existe/i.test(mensaje)) {
-        console.log('  Sin boletin ese dia, probando el dia anterior...');
-        retrocederFecha(fecha);
+        await page.locator('.swal2-confirm').first().click({ force: true }).catch(() => {});
       } else {
-        console.log('  Reintentando el mismo dia con un nuevo captcha.');
+        await page.locator('.swal2-confirm').first().click({ force: true }).catch(() => {});
+        await page.waitForTimeout(500);
+        if (/car[aá]tula|existe/i.test(mensaje)) {
+          console.log('  Sin boletin ese dia, probando el dia anterior...');
+          retrocederFecha(fecha);
+        } else {
+          console.log('  Reintentando el mismo dia con un nuevo captcha.');
+        }
       }
       await page.waitForTimeout(1000);
     } else {
