@@ -194,7 +194,41 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
       console.log('  Ventana emergente del sitio: "' + mensaje.trim() + '"');
       await page.locator('.swal2-confirm').first().click({ force: true }).catch(() => {});
       await page.waitForTimeout(500);
-      if (/car[aá]tula|existe/i.test(mensaje)) {
+
+      if (/consultando|espere un momento/i.test(mensaje)) {
+        // Es un aviso de "cargando", no el resultado final -- hay que
+        // esperar a que el sitio termine de verdad (PDF, dialogo nativo,
+        // o una ventana nueva con el resultado real) antes de asumir que
+        // fallo y reintentar con un captcha nuevo.
+        console.log('  (Aviso de espera, esperando el resultado real...)');
+        const swalReal = page.waitForSelector('.swal2-modal, .swal2-popup', { state: 'visible', timeout: 20000 }).catch(() => null);
+        const resultado2 = await Promise.race([pdfEsperado, alertaEsperada, swalReal]);
+
+        if (resultado2 && typeof resultado2.url === 'function') {
+          pdfUrl = resultado2.url();
+        } else if (resultado2 && typeof resultado2.accept === 'function') {
+          const mensaje2 = resultado2.message();
+          await resultado2.accept();
+          if (/car[aá]tula|existe/i.test(mensaje2)) {
+            console.log('  Sin boletin ese dia ("' + mensaje2 + '"), probando el dia anterior...');
+            fecha.setDate(fecha.getDate() - 1);
+          } else {
+            console.log('  Aviso del sitio: "' + mensaje2 + '" -- reintentando el mismo dia con un nuevo captcha.');
+          }
+        } else if (resultado2) {
+          const mensaje2 = await resultado2.evaluate(el => el.innerText || el.textContent || '').catch(() => '');
+          console.log('  Ventana emergente (resultado real): "' + mensaje2.trim() + '"');
+          await page.locator('.swal2-confirm').first().click({ force: true }).catch(() => {});
+          if (/car[aá]tula|existe/i.test(mensaje2)) {
+            console.log('  Sin boletin ese dia, probando el dia anterior...');
+            fecha.setDate(fecha.getDate() - 1);
+          } else {
+            console.log('  Reintentando el mismo dia con un nuevo captcha.');
+          }
+        } else {
+          console.log('  El sitio no dio un resultado claro tras la espera, reintentando el mismo dia...');
+        }
+      } else if (/car[aá]tula|existe/i.test(mensaje)) {
         console.log('  Sin boletin ese dia, probando el dia anterior...');
         fecha.setDate(fecha.getDate() - 1);
       } else {
