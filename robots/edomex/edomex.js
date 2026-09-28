@@ -57,6 +57,26 @@ function pareceElMismoCaso(resumen, actor, demandado) {
   return coincideTodo(actor) || coincideTodo(demandado);
 }
 
+// A diferencia de CDMX (un solo boletín con los 3 juzgados mezclados),
+// aquí cada boletín que se descarga ya es específico de UN juzgado (el
+// sitio lo filtra antes de generar el PDF) -- el ordinal (PRIMER/
+// SEGUNDO/TERCER) de ese juzgado ya se conoce sin tener que parsear el
+// PDF, y solo hace falta compararlo contra el tribunal capturado en el
+// sistema para ese expediente. true = mismo juzgado, false = juzgados
+// distintos confirmados, null = no se pudo identificar el ordinal en el
+// tribunal del sistema (formato inesperado) -- no se puede usar como
+// criterio en ese caso.
+function extraerOrdinal(texto) {
+  const m = /(PRIMER|SEGUNDO|TERCER|CUARTO|QUINTO)/i.exec(sinAcentos(texto || ''));
+  return m ? m[1].toUpperCase() : null;
+}
+function tribunalCoincide(juzgadoTexto, tribunalSistema) {
+  const a = extraerOrdinal(juzgadoTexto);
+  const b = extraerOrdinal(tribunalSistema);
+  if (!a || !b) return null;
+  return a === b;
+}
+
 function fechaDDMMYYYY(d) {
   const dd = String(d.getDate()).padStart(2, '0');
   const mm = String(d.getMonth() + 1).padStart(2, '0');
@@ -310,9 +330,17 @@ async function procesarJuzgado(page, juzgadoTexto, porNumero) {
   for (const c of casos) {
     const match = porNumero.get(normalizeExp(c.exp));
     if (!match) continue;
-    if (!pareceElMismoCaso(c.resumen, match.actor, match.demandado)) {
-      console.log('    Coincide el numero de expediente ' + c.exp + ' pero NO las partes (seguramente '
-        + 'otro juzgado con el mismo numero) -- se omite. Esperaba "' + match.actor + ' vs ' + match.demandado
+
+    const tribunalSistema = match.tribunal || match.junta;
+    const mismoJuzgado = tribunalCoincide(juzgadoTexto, tribunalSistema);
+    if (mismoJuzgado === false) {
+      console.log('    Coincide el numero de expediente ' + c.exp + ' pero es OTRO JUZGADO ("' + juzgadoTexto
+        + '" vs "' + tribunalSistema + '") -- se omite.');
+      continue;
+    }
+    if (mismoJuzgado !== true && !pareceElMismoCaso(c.resumen, match.actor, match.demandado)) {
+      console.log('    Coincide el numero de expediente ' + c.exp + ' pero no se pudo confirmar juzgado ni '
+        + 'partes -- se omite por seguridad. Esperaba "' + match.actor + ' vs ' + match.demandado
         + '", el boletin dice: "' + c.resumen.slice(0, 150) + '..."');
       continue;
     }
