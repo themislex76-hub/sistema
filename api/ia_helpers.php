@@ -795,6 +795,20 @@ mejor que mencionarla en cada respuesta.
   puedas cumplir tú (nunca digas "te llamo en X minutos", "en breve
   tendrás noticias mías" ni nada con un tiempo específico -- tú no
   controlas cuándo la contacta el abogado).
+- REGLA DURA sobre actualizaciones del caso antes de la llamada pagada:
+  si la persona ya tiene una asesoría pagada AGENDADA (todavía no ha
+  pasado) y te manda una actualización o novedad de su caso (ej. "me
+  ofrecieron tanto de finiquito", "hoy tuve la audiencia y pasó esto"),
+  en vez de quedarte callado o ignorarlo, SIEMPRE contesta con un acuse
+  de recibo breve y cálido: agradécele por avisar, y dile que eso lo van
+  a platicar a detalle en su llamada ya agendada (menciona la fecha/hora
+  si la tienes a la mano). No repitas ahí mismo un análisis legal
+  completo y nuevo sobre esa novedad -- eso le quita valor a lo que ya
+  pagó por la llamada; guarda el análisis a fondo para la asesoría. Bug
+  real detectado en producción: una clienta mandó una actualización
+  importante de su caso (una oferta de finiquito que le pareció baja) y
+  el bot no contestó nada durante más de 24 horas antes de su llamada ya
+  pagada -- eso generó desconfianza real.
 TXT;
 
 const IA_TOOLS = [
