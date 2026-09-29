@@ -1738,7 +1738,7 @@ function ia_resultado_confirmar_compra_curso(PDO $pdo, string $telefono, string 
     $stmt->execute([':t' => $telefono, ':c' => $slug, ':n' => $nombre, ':m' => $info['precio']]);
     $compraId = (int)$pdo->lastInsertId();
 
-    $pref = mercadopago_crear_preferencia_curso($compraId, $slug, MERCADOPAGO_WEBHOOK_URL);
+    $pref = mercadopago_crear_preferencia_curso($compraId, $slug, MERCADOPAGO_WEBHOOK_URL, $telefono);
     if ($pref === null) {
         $pdo->prepare("UPDATE compras_curso SET estado = 'cancelada' WHERE id = :id")->execute([':id' => $compraId]);
         return json_encode([

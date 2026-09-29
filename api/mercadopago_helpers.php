@@ -7,6 +7,28 @@ declare(strict_types=1);
 
 const MERCADOPAGO_MONTO_ASESORIA = 399.00;
 
+// Las preferencias de pago no llevaban NINGÚN dato del comprador (ni
+// teléfono, ni nombre, ni correo) -- Mercado Pago usa esos datos en su
+// motor antifraude, así que una transacción "sin identificar" es más
+// propensa a que la rechace con el error genérico "Tuvimos un problema".
+// Se detectó con datos reales: 28 números insistieron varias veces sin
+// lograr pagar nunca en 14 días. Esto no garantiza arreglarlo del todo
+// (Mercado Pago no explica su ponderación exacta), pero es información
+// que siempre tenemos disponible (el teléfono de WhatsApp) y que
+// Mercado Pago recomienda incluir para reducir rechazos falsos.
+function mercadopago_telefono_a_payer_phone(string $telefono): array
+{
+    $digitos = preg_replace('/\D/', '', $telefono) ?? '';
+    // Quita el 52 (México) y el 1 extra de celular que trae el wa_id.
+    if (str_starts_with($digitos, '521')) {
+        $digitos = substr($digitos, 3);
+    } elseif (str_starts_with($digitos, '52')) {
+        $digitos = substr($digitos, 2);
+    }
+    if (strlen($digitos) < 10) return ['area_code' => '', 'number' => $digitos];
+    return ['area_code' => substr($digitos, 0, 2), 'number' => substr($digitos, 2)];
+}
+
 // Catálogo de los 3 cursos en línea -- antes el bot solo mandaba a la
 // persona a la página aparte de Netlify a pagar (fricción real: salir de
 // WhatsApp, pagar en otro sitio, esperar un correo). 'sitio' es la página
@@ -149,6 +171,9 @@ function mercadopago_crear_preferencia_asesoria(int $citaId, string $telefono, s
             'failure' => 'https://www.expertoslaborales.com/gracias-asesoria',
         ],
         'statement_descriptor' => 'EXPERTOSLABORALES',
+        'payer' => [
+            'phone' => mercadopago_telefono_a_payer_phone($telefono),
+        ],
     ];
 
     $ch = curl_init('https://api.mercadopago.com/checkout/preferences');
@@ -191,7 +216,7 @@ function mercadopago_crear_preferencia_asesoria(int $citaId, string $telefono, s
  * Pago por palabra clave en el título ("amparo", "actas", "procesal"),
  * así que estos pagos aparecen solos en ese reporte sin tocar nada ahí.
  */
-function mercadopago_crear_preferencia_curso(int $compraId, string $cursoSlug, string $notificationUrl): ?array
+function mercadopago_crear_preferencia_curso(int $compraId, string $cursoSlug, string $notificationUrl, string $telefono): ?array
 {
     $token = mercadopago_token();
     if ($token === null) {
@@ -225,6 +250,9 @@ function mercadopago_crear_preferencia_curso(int $compraId, string $cursoSlug, s
             'failure' => 'https://www.expertoslaborales.com/',
         ],
         'statement_descriptor' => 'EXPERTOSLABORALES',
+        'payer' => [
+            'phone' => mercadopago_telefono_a_payer_phone($telefono),
+        ],
     ];
 
     $ch = curl_init('https://api.mercadopago.com/checkout/preferences');
