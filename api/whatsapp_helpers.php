@@ -293,7 +293,16 @@ function whatsapp_enviar_respuesta(PDO $pdo, string $telefono, string $texto): b
 
     foreach ($partes as $i => $parte) {
         if ($i > 0) {
-            usleep(random_int(2, 4) * 1_000_000);
+            // La pausa fija (2-4s) no bastaba para sentirse real -- se
+            // detectó revisando una conversación real donde el cliente
+            // recibió 4 párrafos completos de análisis legal casi
+            // juntos, en menos de 15s en total (nadie escribe eso tan
+            // rápido). Ahora la pausa depende del tamaño del mensaje que
+            // sigue, simulando el tiempo real que tomaría escribirlo
+            // (con un tope para no hacer esperar de más en respuestas ya
+            // de por sí largas).
+            $segundos = min(9.0, max(2.0, strlen($parte) / 12)) + (random_int(0, 800) / 1000);
+            usleep((int)round($segundos * 1_000_000));
         }
         $ok = whatsapp_enviar($telefono, $parte);
         $stmt = $pdo->prepare(
