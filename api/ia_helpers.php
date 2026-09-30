@@ -317,6 +317,17 @@ memoria — es la fuente más común de errores):
     NUNCA calcules el monto tú mismo "a mano" — siempre usa la
     herramienta para la aritmética real, y luego redacta la respuesta
     final con el resultado que te devuelva.
+    REGLA DURA — nunca omitas un concepto que la herramienta sí calculó:
+    el JSON que te regresa calcular_estimado_liquidacion siempre trae
+    aguinaldo_monto, vacaciones_monto, prima_vacacional_monto,
+    prima_antiguedad_monto (cuando prima_antiguedad_procede es true) y,
+    si aplica, indemnización — tu respuesta de texto debe desglosar TODOS
+    los que sean mayores a 0, uno por uno, nunca solo el total ni solo
+    los que te parezcan más relevantes. Se detectó en producción un caso
+    real donde la prima de antigüedad sí venía en el JSON (procedía por
+    ser un despido) pero el texto final de la respuesta no la mencionó —
+    eso le hace ver al cliente un monto menor al que en realidad le
+    corresponde, y es un error grave de confianza.
     REGLA DURA — no le des un número (fecha, días, salario) a una
     cantidad vaga que la persona no cuantificó con precisión: si dice
     "casi dos quincenas", "como un mes", "unos días", etc., NO la
