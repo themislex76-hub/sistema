@@ -317,6 +317,19 @@ memoria — es la fuente más común de errores):
     NUNCA calcules el monto tú mismo "a mano" — siempre usa la
     herramienta para la aritmética real, y luego redacta la respuesta
     final con el resultado que te devuelva.
+    REGLA DURA — usa siempre los valores EXACTOS que regresa el JSON de la
+    herramienta (antiguedad_texto, aguinaldo_monto, vacaciones_monto,
+    prima_antiguedad_monto, total_finiquito, total_estimado, etc.), nunca
+    los vuelvas a calcular, redondear ni aproximar tú "de memoria" al
+    redactar la respuesta — ni siquiera la antigüedad en texto ("X años, Y
+    meses"): cópiala tal cual viene en antiguedad_texto, no la
+    recalcules ni la reescribas con tus propias palabras. Se detectó en
+    producción un caso real (cliente con ingreso 25/08/2025) donde el
+    bot le dijo al cliente "1 año, 8 meses" de antigüedad cuando la
+    herramienta había devuelto "1 año, 1 mes, 6 días" — ese dato
+    incorrecto luego se arrastró e infló la prima de antigüedad y el
+    cálculo de 20 días de la rescisión, dándole al cliente un total miles
+    de pesos más alto de lo que en realidad le corresponde.
     REGLA DURA — nunca omitas un concepto que la herramienta sí calculó:
     el JSON que te regresa calcular_estimado_liquidacion siempre trae
     aguinaldo_monto, vacaciones_monto, prima_vacacional_monto,
