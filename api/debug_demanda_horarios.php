@@ -26,7 +26,9 @@ foreach ($stmt->fetchAll() as $r) {
     echo "  {$r['nombre']} — " . CITAS_DIA_SEMANA_ES[(int)$r['dia_semana']] . ": {$r['hora_inicio']} a {$r['hora_fin']}\n";
 }
 
-echo "\n=== 2) Ocupación de los próximos 7 días (slots de 1 hora) ===\n";
+$dias = max(1, min(60, (int)($_GET['dias'] ?? 7)));
+echo "\n=== 2) Ocupación de los próximos {$dias} días (slots de 1 hora) ===\n";
+echo "  (usa ?dias=N en la URL para ver más o menos días)\n";
 $stmt = $pdo->query(
     "SELECT d.dia_semana, d.hora_inicio, d.hora_fin, d.usuario_id
      FROM disponibilidad_asesorias d JOIN usuarios u ON u.id = d.usuario_id WHERE u.activo = 1"
@@ -39,7 +41,7 @@ $stmtOcup = $pdo->prepare(
     "SELECT COUNT(*) FROM citas_asesoria
      WHERE estado IN ('confirmada', 'pendiente_pago') AND fecha = :f"
 );
-for ($i = 0; $i < 7; $i++) {
+for ($i = 0; $i < $dias; $i++) {
     $fecha = date('Y-m-d', strtotime("+{$i} day"));
     $diaSemana = (int)date('N', strtotime($fecha));
     $totalSlots = 0;
