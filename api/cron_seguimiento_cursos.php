@@ -6,11 +6,18 @@ declare(strict_types=1);
 // sesión. Le manda a cada prospecto de interés en curso (ver
 // registrar_interes_curso en ia_helpers.php) UN recordatorio, UNA sola
 // vez, entre 3 y 20 horas de silencio -- nunca se repite (seguimiento_en
-// se marca en cuanto se manda), para no hostigar a nadie. No hay forma
-// automática de saber si de verdad compró (el pago pasa en una página
-// aparte, fuera de este sistema), así que este recordatorio se manda
-// igual aunque ya haya comprado -- es un costo aceptable frente al
-// beneficio real de recuperar a los que no compraron.
+// se marca en cuanto se manda), para no hostigar a nadie. Antes de
+// mandarlo se checa en compras_curso si ya pagó ESE curso -- si ya
+// compró, se marca seguimiento_en sin mandar nada.
+//
+// Bug real detectado en producción: a un cliente que ya había pagado el
+// curso, ya tenía el acceso activo y ya estaba leyendo el módulo 3
+// haciendo preguntas, este cron le volvió a mandar "vi que te interesó
+// el curso... sigue disponible, aquí tienes el link para inscribirte" --
+// el comentario original de este archivo decía que no había forma de
+// saber si ya había comprado, pero eso quedó desactualizado desde que
+// compras_curso se agregó al sistema (ver confirmar_compra_curso en
+// ia_helpers.php).
 //
 // Bug real detectado en producción: antes esto disparaba hasta las 24h de
 // silencio -- justo cuando WhatsApp ya NO deja mandar un mensaje libre (la
@@ -31,9 +38,9 @@ if (!dentro_de_horario_atencion()) {
 }
 
 const CURSOS_INFO = [
-    'Nuevo Procedimiento Laboral Mexicano' => ['precio' => 499, 'link' => 'https://thriving-madeleine-5fe918.netlify.app/'],
-    'El Juicio de Amparo en Materia del Trabajo' => ['precio' => 499, 'link' => 'https://silver-bubblegum-8c4a03.netlify.app/'],
-    'Actas Administrativas Laborales' => ['precio' => 299, 'link' => 'https://regal-lollipop-90d889.netlify.app/'],
+    'Nuevo Procedimiento Laboral Mexicano' => ['precio' => 499, 'link' => 'https://thriving-madeleine-5fe918.netlify.app/', 'slug' => 'procesal'],
+    'El Juicio de Amparo en Materia del Trabajo' => ['precio' => 499, 'link' => 'https://silver-bubblegum-8c4a03.netlify.app/', 'slug' => 'amparo'],
+    'Actas Administrativas Laborales' => ['precio' => 299, 'link' => 'https://regal-lollipop-90d889.netlify.app/', 'slug' => 'actas'],
 ];
 
 $pdo = db();
@@ -73,6 +80,19 @@ foreach ($prospectos as $p) {
     }
 
     $info = CURSOS_INFO[$p['curso_interes']] ?? null;
+
+    // Si ya pagó ESE curso, no tiene caso mandarle el recordatorio de
+    // "sigue disponible, aquí está el link" -- ver el bug real arriba.
+    if ($info) {
+        $chkCompra = $pdo->prepare(
+            "SELECT id FROM compras_curso WHERE telefono = :t AND curso_slug = :s AND estado = 'confirmada' LIMIT 1"
+        );
+        $chkCompra->execute([':t' => $p['telefono'], ':s' => $info['slug']]);
+        if ($chkCompra->fetchColumn()) {
+            $pdo->prepare('UPDATE prospectos SET seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $p['id']]);
+            continue;
+        }
+    }
     $saludo = $p['nombre'] ? "Hola {$p['nombre']}" : 'Hola';
 
     if ($info) {
