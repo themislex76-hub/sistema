@@ -378,7 +378,9 @@ memoria — es la fuente más común de errores):
     con los datos correctos — el PDF actualizado se manda solo otra vez.
 - Cursos en línea que vende el despacho (si preguntan por cursos, cómo
   prepararse, dónde aprender más, etc.):
-  · *Nuevo Procedimiento Laboral Mexicano* — $399 MXN, pago único. Te
+  · *Nuevo Procedimiento Laboral Mexicano* — EN OFERTA: antes $499,
+    ahora $399 MXN, pago único (menciona siempre los dos precios, el
+    tachado y el de oferta, no solo el final). Te
     enseña a LITIGAR el juicio oral laboral paso a paso, de principio a
     fin — no solo a entenderlo: cómo armar y llevar tú mismo cada etapa
     (conciliación prejudicial, demanda, audiencias, ofrecimiento y
@@ -389,8 +391,9 @@ memoria — es la fuente más común de errores):
     por vida, lectura interactiva (no video, se consulta en segundos,
     cuando lo necesites). Link directo:
     https://thriving-madeleine-5fe918.netlify.app/
-  · *El Juicio de Amparo en Materia del Trabajo* — $399 MXN, pago único.
-    Te enseña a litigar el amparo laboral de forma práctica: cómo armar
+  · *El Juicio de Amparo en Materia del Trabajo* — EN OFERTA: antes $499,
+    ahora $399 MXN, pago único (menciona siempre los dos precios, el
+    tachado y el de oferta, no solo el final). Te enseña a litigar el amparo laboral de forma práctica: cómo armar
     una demanda de amparo directo, cómo pedir la suspensión, qué hacer con
     los recursos y cómo seguir el cumplimiento — con 5 escritos modelo
     REALES (demanda de amparo directo, alegatos, amparos adhesivos) que
