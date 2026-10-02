@@ -39,7 +39,7 @@ function mercadopago_telefono_a_payer_phone(string $telefono): array
 const CURSOS_CATALOGO = [
     'amparo' => [
         'titulo' => 'El Juicio de Amparo en Materia del Trabajo',
-        'precio' => 499.00,
+        'precio' => 399.00,
         'sitio' => 'https://silver-bubblegum-8c4a03.netlify.app/',
         'acceso_param' => 'llave',
     ],
@@ -51,7 +51,7 @@ const CURSOS_CATALOGO = [
     ],
     'procesal' => [
         'titulo' => 'Nuevo Procedimiento Laboral Mexicano',
-        'precio' => 499.00,
+        'precio' => 399.00,
         'sitio' => 'https://thriving-madeleine-5fe918.netlify.app/',
         'acceso_param' => 'llave',
     ],

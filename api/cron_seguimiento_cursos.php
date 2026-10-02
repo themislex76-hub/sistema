@@ -38,8 +38,8 @@ if (!dentro_de_horario_atencion()) {
 }
 
 const CURSOS_INFO = [
-    'Nuevo Procedimiento Laboral Mexicano' => ['precio' => 499, 'link' => 'https://thriving-madeleine-5fe918.netlify.app/', 'slug' => 'procesal'],
-    'El Juicio de Amparo en Materia del Trabajo' => ['precio' => 499, 'link' => 'https://silver-bubblegum-8c4a03.netlify.app/', 'slug' => 'amparo'],
+    'Nuevo Procedimiento Laboral Mexicano' => ['precio' => 399, 'link' => 'https://thriving-madeleine-5fe918.netlify.app/', 'slug' => 'procesal'],
+    'El Juicio de Amparo en Materia del Trabajo' => ['precio' => 399, 'link' => 'https://silver-bubblegum-8c4a03.netlify.app/', 'slug' => 'amparo'],
     'Actas Administrativas Laborales' => ['precio' => 299, 'link' => 'https://regal-lollipop-90d889.netlify.app/', 'slug' => 'actas'],
 ];
 
