@@ -665,8 +665,17 @@ function ia_generar_y_responder(PDO $pdo, string $telefono, string $messageId, ?
     // rápido, delatando que contesta un sistema. Ahora el tope es 75s
     // (bastante por debajo del set_time_limit del webhook, para no
     // arriesgar que el script se corte antes de mandar la respuesta).
+    // Cuando la respuesta trae un cálculo de liquidación (pdf_calculo no
+    // nulo), el tope normal de 75s sigue delatando que es un sistema: un
+    // abogado de verdad haciendo a mano un desglose de aguinaldo,
+    // vacaciones, prima de antigüedad e indemnización con centavos
+    // exactos tarda bastante más que eso. Reportado por un cliente real:
+    // "se nota que es la IA porque hace muy rápido los cálculos".
+    $esCalculo = $resultado['pdf_calculo'] !== null;
     $segundosBase = max(20, mb_strlen($respuesta) / 9) + random_int(-1, 3);
-    $segundosDeseados = min(75, max(20, $segundosBase));
+    $segundosDeseados = $esCalculo
+        ? min(130, max(60, $segundosBase + random_int(45, 90)))
+        : min(75, max(20, $segundosBase));
     $segundosFaltantes = $segundosDeseados - (microtime(true) - $tiempoInicio);
     if ($segundosFaltantes > 0) {
         // El indicador nativo de "escribiendo..." dura máximo ~25s y hay
