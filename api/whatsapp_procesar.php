@@ -671,10 +671,16 @@ function ia_generar_y_responder(PDO $pdo, string $telefono, string $messageId, ?
     // vacaciones, prima de antigüedad e indemnización con centavos
     // exactos tarda bastante más que eso. Reportado por un cliente real:
     // "se nota que es la IA porque hace muy rápido los cálculos".
+    // Tope de 110s (no más) -- el script completo tiene 200s de límite
+    // duro (set_time_limit en whatsapp_relay.php/whatsapp_webhook.php):
+    // 18s de espera para agrupar + esta espera + las pausas entre
+    // burbujas + la generación/envío del PDF pueden sumar ~35-40s más
+    // después de este punto, así que un tope más alto se come el margen
+    // de seguridad real.
     $esCalculo = $resultado['pdf_calculo'] !== null;
     $segundosBase = max(20, mb_strlen($respuesta) / 9) + random_int(-1, 3);
     $segundosDeseados = $esCalculo
-        ? min(130, max(60, $segundosBase + random_int(45, 90)))
+        ? min(110, max(50, $segundosBase + random_int(30, 70)))
         : min(75, max(20, $segundosBase));
     $segundosFaltantes = $segundosDeseados - (microtime(true) - $tiempoInicio);
     if ($segundosFaltantes > 0) {
