@@ -2,12 +2,15 @@
 declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 
-// Informe fijo de asesorías de pago ($299/$399) vendidas por mes -- antes
-// solo se podía sacar por SQL directo en phpMyAdmin. Administrador ve
-// todos los socios; un socio normal solo ve las suyas (las que le tocó
-// atender). Además del total por mes, trae el desglose por monto (cuántas
-// a $299, cuántas a $399, etc.) -- útil sobre todo alrededor de un cambio
-// de precio, para ver la mezcla real en vez de solo el total.
+// Informe fijo de asesorías de pago ($299/$399/$499) vendidas por mes --
+// antes solo se podía sacar por SQL directo en phpMyAdmin. Administrador
+// ve todos los socios; un socio normal solo ve las suyas (las que le
+// tocó atender). Además del total por mes, trae el desglose por monto
+// (cuántas a $299, cuántas a $399, cuántas a $499, etc.) -- útil sobre
+// todo alrededor de un cambio de precio, para ver la mezcla real en vez
+// de solo el total. Se agrupa directo por el monto real en la base de
+// datos, así que no hace falta actualizar nada aquí cuando cambie el
+// precio otra vez.
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') fail('Método no permitido.', 405);
 $user = require_login();
 

@@ -5,7 +5,7 @@ declare(strict_types=1);
 // pago vía la API de Mercado Pago (Checkout Pro / Preferencias). Ver
 // mercadopago_credentials.example.php para configurar el Access Token.
 
-const MERCADOPAGO_MONTO_ASESORIA = 399.00;
+const MERCADOPAGO_MONTO_ASESORIA = 499.00;
 
 // Las preferencias de pago no llevaban NINGÚN dato del comprador (ni
 // teléfono, ni nombre, ni correo) -- Mercado Pago usa esos datos en su
@@ -108,6 +108,21 @@ function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): floa
     $stmt->execute([':t' => $telefono]);
     if ($stmt->fetchColumn()) {
         return MERCADOPAGO_MONTO_ASESORIA;
+    }
+
+    // Se checa el precio viejo más reciente primero ($399, vigente hasta
+    // la subida a $499 de octubre 2026) y luego el más antiguo ($299) --
+    // mismo criterio de "OJO 2" de arriba, ahora con dos precios viejos
+    // posibles en vez de uno.
+    $stmt = $pdo->prepare(
+        "SELECT 1 FROM whatsapp_conversaciones
+         WHERE telefono = :t AND direccion = 'saliente'
+           AND texto LIKE '%\$399%' AND texto LIKE '%asesor%'
+         LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    if ($stmt->fetchColumn()) {
+        return 399.00;
     }
 
     $stmt = $pdo->prepare(
