@@ -148,6 +148,13 @@ async function loadDocumentosPorMes(){
   try{ DOCUMENTOS_POR_MES = (await api('GET', 'documentos_calculo_ingresos_mensual.php')).meses; }
   catch(e){ DOCUMENTOS_POR_MES = []; }
 }
+// Mensajes de WhatsApp enviados por día (últimos 30 días) -- lo que le
+// importa a Meta para el cobro por mensaje arriba de 1,000/mes por número.
+let MENSAJES_POR_DIA = { dias: [], mes_actual_total: 0, umbral_gratis: 1000 };
+async function loadMensajesPorDia(){
+  try{ MENSAJES_POR_DIA = await api('GET', 'mensajes_enviados_diarios.php'); }
+  catch(e){ MENSAJES_POR_DIA = { dias: [], mes_actual_total: 0, umbral_gratis: 1000 }; }
+}
 // Los costos mensuales sí siguen consultando algo en vivo (no tienen tabla
 // propia), así que se piden a mano con un botón.
 let COSTOS_MENSUALES_STATE = {cargando:false, meses:null, error:null, guardando:false};
@@ -2331,6 +2338,7 @@ async function refreshBootstrap(){
     await loadAsesoriasPorMes();
     await loadCursosPorMes();
     await loadDocumentosPorMes();
+    await loadMensajesPorDia();
   }
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadConversaciones();
@@ -3954,6 +3962,28 @@ function ingresosHTML(){
   </div>
   `;
   })()}
+
+  ${isAdmin ? (()=>{
+    const mp = MENSAJES_POR_DIA;
+    const sobreUmbral = mp.mes_actual_total > mp.umbral_gratis;
+    return `
+  <div class="panel">
+    <div class="panel-head"><h3>Mensajes de WhatsApp enviados por día</h3><span class="count">últimos 30 días</span></div>
+    <div class="panel-body" style="padding:16px 20px 0;">
+      <div class="notice" style="margin-bottom:16px;">Cuenta TODO mensaje saliente (bot + recordatorios automáticos + mensajes manuales), un registro = un mensaje real cobrable por Meta. El umbral gratis de Meta es ${mp.umbral_gratis} mensajes de servicio al mes por número de negocio -- arriba de eso, cada uno se cobra.</div>
+      <div class="stat-grid" style="grid-template-columns:repeat(1,1fr); margin-bottom:16px;">
+        <div class="stat-card ${sobreUmbral ? '' : 'ok'}"><div class="bar"></div><div class="num">${mp.mes_actual_total}</div><div class="label">Enviados este mes ${sobreUmbral ? `(ya pasó el umbral gratis de ${mp.umbral_gratis})` : `(de ${mp.umbral_gratis} gratis)`}</div></div>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Fecha</th><th>Mensajes enviados</th></tr></thead>
+      <tbody>${(mp.dias||[]).map(d=>`<tr>
+          <td>${d.dia}</td><td>${d.enviados}</td>
+        </tr>`).join("") || `<tr><td colspan="2" class="empty">Sin datos todavía.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+  })() : ''}
   ${isAdmin ? costosVsIngresosHTML() : ''}
   `;
 }
