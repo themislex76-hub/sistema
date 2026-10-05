@@ -2027,6 +2027,7 @@ function ia_generar_resumen_conversacion(array $historial): ?string
     $payload = [
         'model' => IA_MODEL,
         'max_tokens' => 400,
+        'thinking' => ['type' => 'disabled'],
         'system' => 'Eres un asistente interno del despacho Expertos Laborales. Te doy la transcripción '
             . 'completa de una conversación de WhatsApp entre un posible cliente y el bot de asesoría '
             . 'laboral del despacho. Escribe un resumen breve (4-6 líneas, en español, sin encabezados ni '
@@ -2105,6 +2106,7 @@ function ia_parece_reclamo_con_contexto(string $textoActual, array $historialRec
     $payload = [
         'model' => IA_MODELO_CLASIFICAR_RECLAMO,
         'max_tokens' => 10,
+        'thinking' => ['type' => 'disabled'],
         'system' => 'Eres un clasificador para un despacho de abogados laborales. Te doy el HISTORIAL '
             . 'RECIENTE de una conversación de WhatsApp entre un posible cliente y el bot de asesoría del '
             . 'despacho, y el ÚLTIMO MENSAJE del cliente. Responde EXCLUSIVAMENTE con la palabra "SI" o la '
