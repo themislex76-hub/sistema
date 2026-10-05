@@ -665,19 +665,18 @@ function ia_generar_y_responder(PDO $pdo, string $telefono, string $messageId, ?
     // rápido, delatando que contesta un sistema. Ahora el tope es 75s
     // (bastante por debajo del set_time_limit del webhook, para no
     // arriesgar que el script se corte antes de mandar la respuesta).
-    // Cuando la respuesta trae un cálculo de liquidación (pdf_calculo no
-    // nulo), el tope normal de 75s sigue delatando que es un sistema: un
-    // abogado de verdad haciendo a mano un desglose de aguinaldo,
-    // vacaciones, prima de antigüedad e indemnización con centavos
-    // exactos tarda bastante más que eso. Reportado por un cliente real:
-    // "se nota que es la IA porque hace muy rápido los cálculos".
-    // Tope de 110s (no más) -- el script completo tiene 200s de límite
-    // duro (set_time_limit en whatsapp_relay.php/whatsapp_webhook.php):
-    // 18s de espera para agrupar + esta espera + las pausas entre
-    // burbujas + la generación/envío del PDF pueden sumar ~35-40s más
-    // después de este punto, así que un tope más alto se come el margen
-    // de seguridad real.
-    $esCalculo = $resultado['pdf_calculo'] !== null;
+    // Cuando la respuesta usó calcular_estimado_liquidacion (uso_calculo),
+    // el tope normal de 75s sigue delatando que es un sistema: un abogado
+    // de verdad haciendo a mano un desglose de aguinaldo, vacaciones,
+    // prima de antigüedad e indemnización con centavos exactos tarda
+    // bastante más que eso. Reportado por un cliente real: "se nota que
+    // es la IA porque hace muy rápido los cálculos". Ya no se detecta por
+    // pdf_calculo (el PDF ya no se manda automático gratis, ver REGLA
+    // DURA del documento oficial membretado) -- ahora cada respuesta se
+    // manda en una sola burbuja (sin pausas entre burbujas), así que el
+    // margen hasta el límite de 200s del script es más holgado que antes,
+    // pero se deja el mismo tope de 110s por seguridad.
+    $esCalculo = $resultado['uso_calculo'] ?? false;
     $segundosBase = max(20, mb_strlen($respuesta) / 9) + random_int(-1, 3);
     $segundosDeseados = $esCalculo
         ? min(110, max(50, $segundosBase + random_int(30, 70)))
@@ -725,16 +724,6 @@ function ia_generar_y_responder(PDO $pdo, string $telefono, string $messageId, ?
     }
 
     whatsapp_enviar_respuesta($pdo, $telefono, $respuesta);
-
-    // El PDF del cálculo (si lo hubo) se manda AL FINAL, después del
-    // texto — nunca al mismo tiempo, para que no se sienta como un envío
-    // automatizado de golpe. Retraso corto (4-9s) en vez de otro de
-    // 20-28s completo: ya se esperó lo normal para el texto, esto es
-    // nada más la sensación de "ahora te mando el PDF".
-    if ($resultado['pdf_calculo'] !== null) {
-        usleep(random_int(4, 9) * 1_000_000);
-        whatsapp_enviar_pdf_calculo($telefono, $resultado['pdf_calculo']['calc'], $resultado['pdf_calculo']['salario_diario']);
-    }
 }
 
 // Contesta automáticamente, en cuanto abre el horario de atención, la
@@ -809,11 +798,6 @@ function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
         return ['ok' => false, 'motivo' => 'No se pudo enviar el mensaje por WhatsApp (revisa whatsapp_send_debug.log — puede ser que ya pasaron más de 24h desde su último mensaje).'];
     }
 
-    if ($resultado['pdf_calculo'] !== null) {
-        sleep(random_int(4, 9));
-        whatsapp_enviar_pdf_calculo($telefono, $resultado['pdf_calculo']['calc'], $resultado['pdf_calculo']['salario_diario']);
-    }
-
     return ['ok' => true, 'motivo' => ''];
 }
 
@@ -867,11 +851,6 @@ function reintentar_conversacion_fallida(PDO $pdo, string $telefono): array
 
     if (!whatsapp_enviar_respuesta($pdo, $telefono, $respuesta)) {
         return ['ok' => false, 'motivo' => 'No se pudo enviar el mensaje por WhatsApp.'];
-    }
-
-    if ($resultado['pdf_calculo'] !== null) {
-        sleep(random_int(4, 9));
-        whatsapp_enviar_pdf_calculo($telefono, $resultado['pdf_calculo']['calc'], $resultado['pdf_calculo']['salario_diario']);
     }
 
     return ['ok' => true, 'motivo' => ''];

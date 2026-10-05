@@ -366,16 +366,22 @@ memoria — es la fuente más común de errores):
     coincide con algo que la persona ya había dicho en mensajes
     anteriores, corrígelo por tu cuenta y explica qué encontraste.
   · NUNCA recomiendes la calculadora del sitio web
-    (expertoslaborales.com/calculadora) — eso ya quedó obsoleto. En vez
-    de eso, cada vez que uses esta herramienta con éxito, automáticamente
-    (por fuera de ti, no lo haces tú) se le manda a la persona el PDF
-    formal del cálculo por este mismo WhatsApp unos segundos después de
-    tu respuesta — con el mismo desglose por concepto y artículo de ley.
-    Si la persona pregunta por el PDF o pide que se lo mandes, dile con
-    naturalidad que en un momento le llega por aquí mismo (nunca la
-    mandes a una página aparte). Si corriges o recalculas (p. ej. porque
-    te dio una fecha o dato distinto), vuelve a llamar la herramienta
-    con los datos correctos — el PDF actualizado se manda solo otra vez.
+    (expertoslaborales.com/calculadora) — eso ya quedó obsoleto.
+  · REGLA DURA sobre el documento oficial membretado ($49 MXN): el
+    cálculo en TEXTO siempre es gratis y completo, como ya se explica
+    arriba -- pero el PDF formal con membrete del despacho (para
+    presentar a RH, al patrón, o en el Centro de Conciliación) YA NO se
+    manda automático ni gratis. Después de dar el cálculo y ofrecer la
+    asesoría de pago (en ese orden, siempre), SOLO si la persona dice que
+    no le interesa la asesoría, o se queda callada ante esa oferta y
+    retoma el tema más adelante, ofrécele el documento oficial como
+    opción intermedia: explica que es un PDF con membrete del despacho,
+    listo para presentar donde haga falta, por $49 MXN. Si acepta, llama
+    confirmar_compra_documento_calculo (usa automáticamente el cálculo
+    más reciente, no hace falta repetir los datos). NUNCA ofrezcas el
+    documento ANTES de ofrecer la asesoría, ni lo presentes como
+    sustituto de ella -- es una opción aparte, más barata, para quien de
+    plano no quiere la llamada.
 - Cursos en línea que vende el despacho (si preguntan por cursos, cómo
   prepararse, dónde aprender más, etc.):
   · *Nuevo Procedimiento Laboral Mexicano* — cuesta $499 MXN, pago
@@ -1087,6 +1093,13 @@ const IA_TOOLS = [
             'required' => ['fecha_despido', 'salario_diario'],
         ],
     ],
+    [
+        'name' => 'confirmar_compra_documento_calculo',
+        'description' => 'Genera el link de pago REAL de Mercado Pago ($49 MXN) para el documento oficial con membrete del despacho del ÚLTIMO cálculo de liquidación que se le hizo a esta persona en la conversación -- usa automáticamente los datos del cálculo más reciente, no hace falta volver a pedírselos. Llama esta herramienta SOLO después de haber dado ya el cálculo gratis en texto Y de haberle ofrecido la asesoría de pago -- nunca antes, y nunca como sustituto de ofrecer la asesoría primero. Se usa cuando la persona, tras decir que no le interesa la asesoría (o quedarse callada ante esa oferta), muestra interés en tener el documento formal para presentar.',
+        'input_schema' => [
+            'type' => 'object',
+        ],
+    ],
 ];
 
 // Fecha/hora real de México en español, para que la IA nunca tenga que
@@ -1230,11 +1243,13 @@ function ia_llamar_claude(array $mensajes): ?array
  * herramientas de agendado para saber a nombre de quién apartar la cita.
  *
  * Devuelve ['texto' => string, 'lead' => null|['tipo','estado','nombre','resumen'],
- * 'pdf_calculo' => null|['calc' => array, 'salario_diario' => float]].
- * tipo es 'despido' o 'asesoria_paga'. pdf_calculo, cuando no es null, es
- * el PDF formal del cálculo pendiente de mandar por WhatsApp — lo manda
- * quien llama a esta función (whatsapp_procesar.php), DESPUÉS de la
- * respuesta de texto y con su propio retraso, no aquí.
+ * 'pdf_calculo' => null (ya no se usa -- se deja en null siempre, el PDF
+ * del documento oficial membretado ya no se manda automático gratis, se
+ * compra aparte por $49 vía confirmar_compra_documento_calculo),
+ * 'uso_calculo' => bool (true si esta ronda usó
+ * calcular_estimado_liquidacion -- whatsapp_procesar.php lo usa para
+ * alargar la espera natural antes de contestar)].
+ * tipo es 'despido' o 'asesoria_paga'.
  */
 function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): array
 {
@@ -1261,22 +1276,27 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // y, una vez elegido el horario, confirmar_horario_asesoria) sin
     // escribir texto todavía — por eso esto es un ciclo y no una sola
     // "segunda llamada", con un tope de rondas por seguridad.
-    $herramientasConSeguimiento = ['calcular_sdi_con_variable', 'calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_plazo_prestaciones', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'confirmar_compra_curso', 'consultar_cita_pago'];
+    $herramientasConSeguimiento = ['calcular_sdi_con_variable', 'calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_plazo_prestaciones', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'confirmar_compra_curso', 'consultar_cita_pago', 'confirmar_compra_documento_calculo'];
     $mensajesActuales = $mensajes;
     $lead = null;
     $texto = '';
     $maxRondas = 4;
     $rondasResumen = [];
-    // Cálculo pendiente de mandar como PDF — se guarda aquí en vez de
-    // mandarlo al instante, para que whatsapp_procesar.php lo mande
-    // DESPUÉS de la respuesta de texto (con su propio retraso natural),
-    // no al mismo tiempo que se calculó.
+    // Ya no se arma ningún PDF automático gratis (ver REGLA DURA del
+    // documento oficial membretado, $49) -- este campo se queda en null
+    // siempre, se conserva solo para no tener que tocar whatsapp_procesar.php.
     $pdfCalculoPendiente = null;
+    // Si esta ronda usó calcular_estimado_liquidacion -- whatsapp_procesar.php
+    // lo usa para alargar la espera natural antes de contestar (un abogado
+    // real tardaría más haciendo ese desglose a mano que una respuesta
+    // normal), ver el bug real "se nota que es la IA porque hace muy rápido
+    // los cálculos".
+    $usoCalculoLiquidacion = false;
 
     for ($ronda = 0; $ronda < $maxRondas; $ronda++) {
         $data = ia_llamar_claude($mensajesActuales);
         if ($data === null) {
-            return ['texto' => IA_FALLBACK_TEXTO, 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente];
+            return ['texto' => IA_FALLBACK_TEXTO, 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente, 'uso_calculo' => $usoCalculoLiquidacion];
         }
 
         [$textoRonda, $leadRonda, $bloques] = ia_extraer_respuesta($data);
@@ -1352,20 +1372,28 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 );
                 if ($calc !== null) {
                     $contenido = json_encode($calc, JSON_UNESCAPED_UNICODE);
+                    $usoCalculoLiquidacion = true;
                     // Se registra el cálculo (aunque la persona nunca llegue a
                     // decir "sí, quiero agendar") — es la señal más confiable
                     // de que tiene un caso real y mostró interés, y se usa
                     // para el seguimiento proactivo si se queda callada. Ver
-                    // cron_seguimiento_calculadora.php.
+                    // cron_seguimiento_calculadora.php. Se guarda también el
+                    // cálculo completo (JSON) y el salario diario -- ya NO se
+                    // manda el PDF automático gratis (decisión del despacho,
+                    // oct-2026: el documento oficial membretado ahora se
+                    // ofrece por separado a $49, ver
+                    // confirmar_compra_documento_calculo) -- esto permite
+                    // regenerarlo exacto cuando lo compre, sin volver a pedir
+                    // los datos.
                     $insCalc = $pdo->prepare(
-                        'INSERT INTO calculos_liquidacion (telefono, monto_total) VALUES (:t, :m)'
+                        'INSERT INTO calculos_liquidacion (telefono, monto_total, calculo_json, salario_diario) VALUES (:t, :m, :j, :s)'
                     );
-                    $insCalc->execute([':t' => $telefono, ':m' => $calc['total_estimado'] ?? null]);
-
-                    // El PDF formal (mismo diseño que la calculadora del
-                    // sitio) se manda después, junto con la respuesta de
-                    // texto, no aquí — ver el retorno de esta función.
-                    $pdfCalculoPendiente = ['calc' => $calc, 'salario_diario' => (float)($in['salario_diario'] ?? 0)];
+                    $insCalc->execute([
+                        ':t' => $telefono,
+                        ':m' => $calc['total_estimado'] ?? null,
+                        ':j' => json_encode($calc, JSON_UNESCAPED_UNICODE),
+                        ':s' => (float)($in['salario_diario'] ?? 0),
+                    ]);
                 } else {
                     $contenido = json_encode([
                         'error' => 'Datos insuficientes o inválidos para calcular.',
@@ -1407,6 +1435,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 $contenido = ia_resultado_confirmar_compra_curso($pdo, $telefono, (string)($in['curso'] ?? ''), $nombreCompra);
             } elseif ($bloque['name'] === 'consultar_cita_pago') {
                 $contenido = ia_resultado_consultar_cita_pago($pdo, $telefono);
+            } elseif ($bloque['name'] === 'confirmar_compra_documento_calculo') {
+                $contenido = ia_resultado_confirmar_compra_documento_calculo($pdo, $telefono);
             } elseif ($bloque['name'] === 'escalar_a_humano') {
                 $nombreEscalar = trim((string)($in['nombre'] ?? '')) ?: null;
                 $resumenEscalar = trim((string)($in['resumen'] ?? '')) ?: 'La conversación necesita que un abogado la atienda en persona.';
@@ -1545,7 +1575,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         guardar_prospecto($pdo, $telefono, null, $lead);
     }
 
-    return ['texto' => $texto, 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente];
+    return ['texto' => $texto, 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente, 'uso_calculo' => $usoCalculoLiquidacion];
 }
 
 /**
@@ -1773,6 +1803,61 @@ function ia_resultado_confirmar_compra_curso(PDO $pdo, string $telefono, string 
         'curso' => $info['titulo'],
         'monto' => $info['precio'],
         'instruccion' => 'Manda este link de pago tal cual -- en cuanto pague, el acceso al curso se le manda automáticamente por aquí mismo, no hace falta que tú hagas nada más ni que revises su correo.',
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Resultado (como JSON) de la herramienta confirmar_compra_documento_calculo:
+ * toma el cálculo de liquidación más reciente guardado para este teléfono
+ * (calculos_liquidacion.calculo_json, ver calcular_estimado_liquidacion
+ * arriba) y genera el link de pago real de Mercado Pago ($49 MXN) para el
+ * documento oficial membretado. mercadopago_webhook.php confirma el pago y
+ * manda el PDF regenerado con esos mismos datos por WhatsApp.
+ */
+function ia_resultado_confirmar_compra_documento_calculo(PDO $pdo, string $telefono): string
+{
+    $stmt = $pdo->prepare(
+        "SELECT calculo_json, salario_diario FROM calculos_liquidacion
+         WHERE telefono = :t AND calculo_json IS NOT NULL
+         ORDER BY id DESC LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    $ultimo = $stmt->fetch();
+    if (!$ultimo) {
+        return json_encode([
+            'ok' => false,
+            'motivo' => 'No hay ningún cálculo de liquidación reciente guardado para este número -- vuelve a calcularlo con calcular_estimado_liquidacion antes de ofrecer el documento.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    $stmt = $pdo->prepare(
+        "INSERT INTO compras_documento_calculo (telefono, calculo_json, salario_diario, monto) VALUES (:t, :j, :s, :m)"
+    );
+    $stmt->execute([
+        ':t' => $telefono,
+        ':j' => $ultimo['calculo_json'],
+        ':s' => $ultimo['salario_diario'],
+        ':m' => DOCUMENTO_CALCULO_PRECIO,
+    ]);
+    $compraId = (int)$pdo->lastInsertId();
+
+    $pref = mercadopago_crear_preferencia_documento_calculo($compraId, $telefono, MERCADOPAGO_WEBHOOK_URL);
+    if ($pref === null) {
+        $pdo->prepare("UPDATE compras_documento_calculo SET estado = 'cancelada' WHERE id = :id")->execute([':id' => $compraId]);
+        return json_encode([
+            'ok' => false,
+            'motivo' => 'Hubo un problema técnico generando el link de pago. Dile a la persona que lo intentarás de nuevo en un momento.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    $stmt = $pdo->prepare("UPDATE compras_documento_calculo SET mp_preference_id = :pref, link_pago = :link WHERE id = :id");
+    $stmt->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':id' => $compraId]);
+
+    return json_encode([
+        'ok' => true,
+        'link_pago' => $pref['init_point'],
+        'monto' => DOCUMENTO_CALCULO_PRECIO,
+        'instruccion' => 'Manda este link de pago tal cual -- en cuanto pague, el documento oficial se le manda automáticamente por aquí mismo con los mismos datos del cálculo que ya le diste.',
     ], JSON_UNESCAPED_UNICODE);
 }
 

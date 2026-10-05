@@ -298,6 +298,80 @@ function mercadopago_crear_preferencia_curso(int $compraId, string $cursoSlug, s
     return ['id' => (string)$data['id'], 'init_point' => (string)$data['init_point']];
 }
 
+const DOCUMENTO_CALCULO_PRECIO = 49.00;
+
+/**
+ * Crea la preferencia de pago para el documento oficial membretado del
+ * despacho con el cálculo de liquidación ($49 MXN) -- distinto del
+ * cálculo en texto, que sigue siendo gratis siempre. $compraId se manda
+ * como external_reference con el prefijo "doc_calculo_" para que
+ * mercadopago_webhook.php lo distinga de una asesoría o un curso.
+ */
+function mercadopago_crear_preferencia_documento_calculo(int $compraId, string $telefono, string $notificationUrl): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+
+    $payload = [
+        'items' => [[
+            'title' => 'Documento oficial de cálculo de liquidación - Expertos Laborales Abogados',
+            'quantity' => 1,
+            'currency_id' => 'MXN',
+            'unit_price' => DOCUMENTO_CALCULO_PRECIO,
+        ]],
+        'payment_methods' => [
+            'excluded_payment_types' => [
+                ['id' => 'ticket'],
+                ['id' => 'bank_transfer'],
+                ['id' => 'atm'],
+                ['id' => 'mercado_credito'],
+            ],
+            'installments' => 1,
+        ],
+        'external_reference' => 'doc_calculo_' . $compraId,
+        'notification_url' => $notificationUrl,
+        'back_urls' => [
+            'success' => 'https://www.expertoslaborales.com/',
+            'pending' => 'https://www.expertoslaborales.com/',
+            'failure' => 'https://www.expertoslaborales.com/',
+        ],
+        'statement_descriptor' => 'EXPERTOSLABORALES',
+        'payer' => [
+            'phone' => mercadopago_telefono_a_payer_phone($telefono),
+        ],
+    ];
+
+    $ch = curl_init('https://api.mercadopago.com/checkout/preferences');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+            . " | crear_preferencia_documento_calculo | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    if (!isset($data['id'], $data['init_point'])) return null;
+
+    return ['id' => (string)$data['id'], 'init_point' => (string)$data['init_point']];
+}
+
 /**
  * Consulta el estado real de un pago directo en la API de Mercado Pago —
  * nunca hay que confiar en lo que trae el aviso del webhook por sí solo,
