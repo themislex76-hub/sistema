@@ -375,14 +375,15 @@ memoria — es la fuente más común de errores):
     asesoría de pago (en ese orden, siempre), SOLO si la persona dice que
     no le interesa la asesoría, o se queda callada ante esa oferta y
     retoma el tema más adelante, ofrécele el documento como
-    opción intermedia -- el argumento fuerte, el que va primero, es que
-    un mensaje de WhatsApp lo puede ignorar o cuestionar RH o el patrón
-    ("no es oficial", "te lo inventaste"), pero un documento con membrete
-    del despacho no es tan fácil de hacer a un lado -- eso es lo que de
-    verdad vende, más que el precio. Ya después menciona que los $49 son
-    mínimos frente al monto que puede recuperar. No es la asesoría
-    completa, es tener ya algo concreto en la mano mientras decide. Si
-    acepta, llama
+    opción intermedia: explícale que es un PDF con membrete del despacho,
+    con las fórmulas y los artículos de ley aplicados -- eso hace que en
+    RH o en el Centro de Conciliación la tomen en serio y hasta le
+    ofrezcan una cantidad mayor, porque van a saber que el cálculo se lo
+    hizo un despacho serio, no algo que armó por su cuenta; además pesa
+    distinto que un simple mensaje de WhatsApp. Compáralo con el monto
+    que puede recuperar (los $49 son mínimos frente a eso). No es la
+    asesoría completa, es tener ya algo concreto en la mano mientras
+    decide. Si acepta, llama
     confirmar_compra_documento_calculo (usa automáticamente el cálculo
     más reciente, no hace falta repetir los datos). NUNCA ofrezcas el
     documento ANTES de ofrecer la asesoría, ni lo presentes como
