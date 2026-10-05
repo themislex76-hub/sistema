@@ -141,6 +141,13 @@ async function loadCursosPorMes(){
   try{ CURSOS_POR_MES = (await api('GET', 'cursos_ingresos_mensual.php')).meses; }
   catch(e){ CURSOS_POR_MES = []; }
 }
+// Documentos membretados de cálculo vendidos por mes ($49) -- mismo
+// criterio que CURSOS_POR_MES.
+let DOCUMENTOS_POR_MES = []; // {mes:'YYYY-MM', vendidos, total}
+async function loadDocumentosPorMes(){
+  try{ DOCUMENTOS_POR_MES = (await api('GET', 'documentos_calculo_ingresos_mensual.php')).meses; }
+  catch(e){ DOCUMENTOS_POR_MES = []; }
+}
 // Los costos mensuales sí siguen consultando algo en vivo (no tienen tabla
 // propia), así que se piden a mano con un botón.
 let COSTOS_MENSUALES_STATE = {cargando:false, meses:null, error:null, guardando:false};
@@ -2323,6 +2330,7 @@ async function refreshBootstrap(){
     await loadCitas();
     await loadAsesoriasPorMes();
     await loadCursosPorMes();
+    await loadDocumentosPorMes();
   }
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadConversaciones();
@@ -3915,6 +3923,33 @@ function ingresosHTML(){
         </td></tr>` : "";
         return fila + detalle;
       }).join("") || `<tr><td colspan="4" class="empty">Sin cursos vendidos todavía.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+  })()}
+
+  ${(()=>{
+    const totalVendidosHist = DOCUMENTOS_POR_MES.reduce((s,m)=>s+m.vendidos,0);
+    const totalGanadoHist = DOCUMENTOS_POR_MES.reduce((s,m)=>s+m.total,0);
+    return `
+  <div class="panel">
+    <div class="panel-head"><h3>Documentos de cálculo vendidos por mes</h3><span class="count">${DOCUMENTOS_POR_MES.length} mes(es)</span></div>
+    <div class="panel-body" style="padding:16px 20px 0;">
+      <div class="notice" style="margin-bottom:16px;">Documento con membrete del despacho del cálculo de liquidación, \$49 MXN -- se ofrece solo después de dar el cálculo gratis en texto y de que la persona no tomó (o ignoró) la asesoría de pago.</div>
+      <div class="stat-grid" style="grid-template-columns:repeat(2,1fr); margin-bottom:16px;">
+        <div class="stat-card"><div class="bar"></div><div class="num">${totalVendidosHist}</div><div class="label">Documentos vendidos en total</div></div>
+        <div class="stat-card ok"><div class="bar"></div><div class="num">${fmtMoney(totalGanadoHist)}</div><div class="label">Total ganado</div></div>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Mes</th><th>Vendidos</th><th>Ganado</th></tr></thead>
+      <tbody>${DOCUMENTOS_POR_MES.map(m=>{
+        const [y,mm] = m.mes.split('-');
+        const nombreMes = MESES_ES[parseInt(mm)-1];
+        return `<tr>
+          <td>${capitalize(nombreMes)} ${y}</td><td>${m.vendidos}</td><td><strong>${fmtMoney(m.total)}</strong></td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="3" class="empty">Sin documentos vendidos todavía.</td></tr>`}</tbody></table>
     </div>
   </div>
   `;
