@@ -204,7 +204,20 @@ if (in_array($estadoPago, ['refunded', 'charged_back', 'cancelled'], true) && $c
 if ($estadoPago !== 'approved') {
     // Pago rechazado, pendiente, etc. — no hay nada que confirmar
     // todavía. Si llega un aviso posterior con "approved" se procesa
-    // entonces.
+    // entonces. Antes de salir, se guarda el motivo real del rechazo
+    // (status_detail que manda Mercado Pago -- tarjeta rechazada, fondos
+    // insuficientes, código de seguridad, etc.) para poder diagnosticar
+    // después por qué alguien no logra pagar, en vez de solo saber que
+    // no pagó.
+    if ($citaId > 0) {
+        $pdo->prepare(
+            'UPDATE citas_asesoria SET ultimo_estado_pago = :estado, ultimo_motivo_rechazo = :detalle, intentos_fallidos = intentos_fallidos + 1 WHERE id = :id'
+        )->execute([
+            ':estado' => $estadoPago,
+            ':detalle' => (string)($pago['status_detail'] ?? ''),
+            ':id' => $citaId,
+        ]);
+    }
     mp_webhook_responder(200);
 }
 
