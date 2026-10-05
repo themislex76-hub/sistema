@@ -35,10 +35,16 @@ const WHATSAPP_LIMITE_MENSAJES_DIA = 30;
 // Kevin Rojas") -- como pasaron más de 8 segundos, la primera burbuja ya
 // se había alcanzado a contestar sola, y la segunda generó una SEGUNDA
 // respuesta casi idéntica (repitiendo el precio) antes de que llegara la
-// tercera, ya correcta, que sí agrupaba ambos mensajes. 18 segundos cubre
-// mejor ese patrón real (preguntar algo y mandar el nombre poco después)
-// sin alargar demasiado la espera de alguien que solo manda un mensaje.
-const WHATSAPP_ESPERA_AGRUPAR_SEGUNDOS = 18;
+// tercera, ya correcta, que sí agrupaba ambos mensajes. Subido de 18 a
+// 30 segundos (oct-2026, decisión del despacho): entre más burbujas
+// sueltas del cliente se agrupen en una sola llamada, menos se paga de
+// IA y de WhatsApp (cada burbuja de respuesta es ahora un mensaje de
+// servicio facturable aparte, ver REGLA DURA del documento oficial
+// membretado) -- el único costo es que el bot tarda un poco más en
+// empezar a contestar, lo cual el despacho prefiere sobre el gasto
+// extra. Sigue dejando margen de sobra contra el límite de 200s del
+// script (set_time_limit en whatsapp_relay.php/whatsapp_webhook.php).
+const WHATSAPP_ESPERA_AGRUPAR_SEGUNDOS = 30;
 
 // Horario de atención: todos los días, 8:00-19:00 hora de Ciudad de México.
 // Domingo tiene el mismo horario que el resto de la semana — cerrarlo
