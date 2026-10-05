@@ -291,6 +291,17 @@ function whatsapp_enviar_respuesta(PDO $pdo, string $telefono, string $texto): b
         return true;
     }
 
+    // Tope de 2 burbujas -- desde el 1 de octubre de 2026 Meta cobra cada
+    // mensaje de servicio que pasa de 1,000 al mes por número de negocio
+    // (antes todos eran gratis), así que cada burbuja de más ya es un
+    // costo real, no solo una pausa cosmética. Si la respuesta trae más
+    // de 2 partes, se juntan las de más en la segunda -- sigue sin verse
+    // como un bloque gigante de texto, pero deja de inflar el conteo de
+    // mensajes facturables en respuestas largas.
+    if (count($partes) > 2) {
+        $partes = [$partes[0], implode("\n\n", array_slice($partes, 1))];
+    }
+
     foreach ($partes as $i => $parte) {
         if ($i > 0) {
             // La pausa fija (2-4s) no bastaba para sentirse real -- se
