@@ -39,7 +39,7 @@ const WHATSAPP_LIMITE_MENSAJES_DIA = 30;
 // 30 segundos (oct-2026, decisión del despacho): entre más burbujas
 // sueltas del cliente se agrupen en una sola llamada, menos se paga de
 // IA y de WhatsApp (cada burbuja de respuesta es ahora un mensaje de
-// servicio facturable aparte, ver REGLA DURA del documento oficial
+// servicio facturable aparte, ver REGLA DURA del documento
 // membretado) -- el único costo es que el bot tarda un poco más en
 // empezar a contestar, lo cual el despacho prefiere sobre el gasto
 // extra. Sigue dejando margen de sobra contra el límite de 200s del
@@ -678,7 +678,7 @@ function ia_generar_y_responder(PDO $pdo, string $telefono, string $messageId, ?
     // bastante más que eso. Reportado por un cliente real: "se nota que
     // es la IA porque hace muy rápido los cálculos". Ya no se detecta por
     // pdf_calculo (el PDF ya no se manda automático gratis, ver REGLA
-    // DURA del documento oficial membretado) -- ahora cada respuesta se
+    // DURA del documento membretado) -- ahora cada respuesta se
     // manda en una sola burbuja (sin pausas entre burbujas), así que el
     // margen hasta el límite de 200s del script es más holgado que antes,
     // pero se deja el mismo tope de 110s por seguridad.

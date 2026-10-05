@@ -89,7 +89,7 @@ function mp_webhook_procesar_curso(PDO $pdo, array $pago, string $paymentId, str
 }
 
 /**
- * Procesa el webhook del documento oficial membretado con el cálculo de
+ * Procesa el webhook del documento membretado con el cálculo de
  * liquidación (external_reference con prefijo "doc_calculo_", ver
  * mercadopago_crear_preferencia_documento_calculo). El cálculo completo
  * ya se guardó en calculo_json al generar el link de pago -- así no
@@ -129,7 +129,7 @@ function mp_webhook_procesar_documento_calculo(PDO $pdo, array $pago, string $pa
         whatsapp_enviar_pdf_calculo($compra['telefono'], $calc, (float)$compra['salario_diario'], (string)($compra['nombre_cliente'] ?? ''));
     }
 
-    $mensaje = '¡Tu pago quedó confirmado! Aquí tienes tu documento oficial.';
+    $mensaje = '¡Tu pago quedó confirmado! Aquí tienes tu documento.';
     whatsapp_enviar($compra['telefono'], $mensaje);
     $ins = $pdo->prepare(
         "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
@@ -139,7 +139,7 @@ function mp_webhook_procesar_documento_calculo(PDO $pdo, array $pago, string $pa
     push_notificar_prospecto(
         $pdo, null,
         '¡Venta de documento de cálculo confirmada!',
-        ($compra['nombre_cliente'] ?: $compra['telefono']) . " compró el documento oficial de cálculo (\${$compra['monto']} MXN).",
+        ($compra['nombre_cliente'] ?: $compra['telefono']) . " compró el documento de cálculo (\${$compra['monto']} MXN).",
         '/sistema/?abrir=' . urlencode($compra['telefono'])
     );
 }
@@ -175,7 +175,7 @@ if (str_starts_with($externalReference, 'curso_compra_')) {
     mp_webhook_responder(200);
 }
 
-// Documento oficial membretado del cálculo ($49) -- mismo criterio que
+// Documento membretado del cálculo ($49) -- mismo criterio que
 // un curso: no hay llamada que agendar, el documento se manda solo por
 // WhatsApp en cuanto se confirma el pago.
 if (str_starts_with($externalReference, 'doc_calculo_')) {

@@ -367,14 +367,14 @@ memoria — es la fuente más común de errores):
     anteriores, corrígelo por tu cuenta y explica qué encontraste.
   · NUNCA recomiendes la calculadora del sitio web
     (expertoslaborales.com/calculadora) — eso ya quedó obsoleto.
-  · REGLA DURA sobre el documento oficial membretado ($49 MXN): el
+  · REGLA DURA sobre el documento membretado ($49 MXN): el
     cálculo en TEXTO siempre es gratis y completo, como ya se explica
     arriba -- pero el PDF formal con membrete del despacho (para
     presentar a RH, al patrón, o en el Centro de Conciliación) YA NO se
     manda automático ni gratis. Después de dar el cálculo y ofrecer la
     asesoría de pago (en ese orden, siempre), SOLO si la persona dice que
     no le interesa la asesoría, o se queda callada ante esa oferta y
-    retoma el tema más adelante, ofrécele el documento oficial como
+    retoma el tema más adelante, ofrécele el documento como
     opción intermedia: explica que es un PDF con membrete del despacho,
     listo para presentar donde haga falta, por $49 MXN. Si acepta, llama
     confirmar_compra_documento_calculo (usa automáticamente el cálculo
@@ -1095,7 +1095,7 @@ const IA_TOOLS = [
     ],
     [
         'name' => 'confirmar_compra_documento_calculo',
-        'description' => 'Genera el link de pago REAL de Mercado Pago ($49 MXN) para el documento oficial con membrete del despacho del ÚLTIMO cálculo de liquidación que se le hizo a esta persona en la conversación -- usa automáticamente los datos del cálculo más reciente, no hace falta volver a pedírselos. Llama esta herramienta SOLO después de haber dado ya el cálculo gratis en texto Y de haberle ofrecido la asesoría de pago -- nunca antes, y nunca como sustituto de ofrecer la asesoría primero. Se usa cuando la persona, tras decir que no le interesa la asesoría (o quedarse callada ante esa oferta), muestra interés en tener el documento formal para presentar.',
+        'description' => 'Genera el link de pago REAL de Mercado Pago ($49 MXN) para el documento con membrete del despacho del ÚLTIMO cálculo de liquidación que se le hizo a esta persona en la conversación -- usa automáticamente los datos del cálculo más reciente, no hace falta volver a pedírselos. Llama esta herramienta SOLO después de haber dado ya el cálculo gratis en texto Y de haberle ofrecido la asesoría de pago -- nunca antes, y nunca como sustituto de ofrecer la asesoría primero. Se usa cuando la persona, tras decir que no le interesa la asesoría (o quedarse callada ante esa oferta), muestra interés en tener el documento formal para presentar.',
         'input_schema' => [
             'type' => 'object',
         ],
@@ -1244,7 +1244,7 @@ function ia_llamar_claude(array $mensajes): ?array
  *
  * Devuelve ['texto' => string, 'lead' => null|['tipo','estado','nombre','resumen'],
  * 'pdf_calculo' => null (ya no se usa -- se deja en null siempre, el PDF
- * del documento oficial membretado ya no se manda automático gratis, se
+ * del documento membretado ya no se manda automático gratis, se
  * compra aparte por $49 vía confirmar_compra_documento_calculo),
  * 'uso_calculo' => bool (true si esta ronda usó
  * calcular_estimado_liquidacion -- whatsapp_procesar.php lo usa para
@@ -1283,7 +1283,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     $maxRondas = 4;
     $rondasResumen = [];
     // Ya no se arma ningún PDF automático gratis (ver REGLA DURA del
-    // documento oficial membretado, $49) -- este campo se queda en null
+    // documento membretado, $49) -- este campo se queda en null
     // siempre, se conserva solo para no tener que tocar whatsapp_procesar.php.
     $pdfCalculoPendiente = null;
     // Si esta ronda usó calcular_estimado_liquidacion -- whatsapp_procesar.php
@@ -1380,7 +1380,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     // cron_seguimiento_calculadora.php. Se guarda también el
                     // cálculo completo (JSON) y el salario diario -- ya NO se
                     // manda el PDF automático gratis (decisión del despacho,
-                    // oct-2026: el documento oficial membretado ahora se
+                    // oct-2026: el documento membretado ahora se
                     // ofrece por separado a $49, ver
                     // confirmar_compra_documento_calculo) -- esto permite
                     // regenerarlo exacto cuando lo compre, sin volver a pedir
@@ -1811,7 +1811,7 @@ function ia_resultado_confirmar_compra_curso(PDO $pdo, string $telefono, string 
  * toma el cálculo de liquidación más reciente guardado para este teléfono
  * (calculos_liquidacion.calculo_json, ver calcular_estimado_liquidacion
  * arriba) y genera el link de pago real de Mercado Pago ($49 MXN) para el
- * documento oficial membretado. mercadopago_webhook.php confirma el pago y
+ * documento membretado. mercadopago_webhook.php confirma el pago y
  * manda el PDF regenerado con esos mismos datos por WhatsApp.
  */
 function ia_resultado_confirmar_compra_documento_calculo(PDO $pdo, string $telefono): string
@@ -1857,7 +1857,7 @@ function ia_resultado_confirmar_compra_documento_calculo(PDO $pdo, string $telef
         'ok' => true,
         'link_pago' => $pref['init_point'],
         'monto' => DOCUMENTO_CALCULO_PRECIO,
-        'instruccion' => 'Manda este link de pago tal cual -- en cuanto pague, el documento oficial se le manda automáticamente por aquí mismo con los mismos datos del cálculo que ya le diste.',
+        'instruccion' => 'Manda este link de pago tal cual -- en cuanto pague, el documento se le manda automáticamente por aquí mismo con los mismos datos del cálculo que ya le diste.',
     ], JSON_UNESCAPED_UNICODE);
 }
 

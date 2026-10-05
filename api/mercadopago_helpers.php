@@ -301,7 +301,7 @@ function mercadopago_crear_preferencia_curso(int $compraId, string $cursoSlug, s
 const DOCUMENTO_CALCULO_PRECIO = 49.00;
 
 /**
- * Crea la preferencia de pago para el documento oficial membretado del
+ * Crea la preferencia de pago para el documento membretado del
  * despacho con el cálculo de liquidación ($49 MXN) -- distinto del
  * cálculo en texto, que sigue siendo gratis siempre. $compraId se manda
  * como external_reference con el prefijo "doc_calculo_" para que
@@ -317,7 +317,7 @@ function mercadopago_crear_preferencia_documento_calculo(int $compraId, string $
 
     $payload = [
         'items' => [[
-            'title' => 'Documento oficial de cálculo de liquidación - Expertos Laborales Abogados',
+            'title' => 'Documento membretado de cálculo de liquidación - Expertos Laborales Abogados',
             'quantity' => 1,
             'currency_id' => 'MXN',
             'unit_price' => DOCUMENTO_CALCULO_PRECIO,
