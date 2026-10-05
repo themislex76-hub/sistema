@@ -3966,6 +3966,24 @@ function ingresosHTML(){
   ${isAdmin ? (()=>{
     const mp = MENSAJES_POR_DIA;
     const sobreUmbral = mp.mes_actual_total > mp.umbral_gratis;
+    // La API manda los días más recientes primero (para la tabla); la
+    // gráfica se lee de izquierda a derecha en orden cronológico, así que
+    // aquí se invierte nada más para dibujarla.
+    const diasAsc = [...(mp.dias||[])].reverse();
+    const max = diasAsc.reduce((m,d)=>Math.max(m, d.enviados), 0) || 1;
+    const n = diasAsc.length;
+    const grafica = diasAsc.map((d,i)=>{
+      const pct = Math.round((d.enviados / max) * 100);
+      // Solo se etiqueta cada ~5 días (y el último) para que las fechas no
+      // se encimen con 30 barras angostas.
+      const mostrarEtiqueta = (i % 5 === 0) || i === n - 1;
+      const [, mm, dd] = d.dia.split('-');
+      return `
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; min-width:0;" title="${d.dia}: ${d.enviados} mensaje(s)">
+          <div style="width:100%; max-width:14px; height:${pct}%; min-height:${d.enviados>0?'2px':'0'}; background:var(--brass); border-radius:3px 3px 0 0;"></div>
+          <div style="font-size:9px; color:var(--gray); margin-top:4px; white-space:nowrap; height:12px;">${mostrarEtiqueta ? `${dd}/${mm}` : ''}</div>
+        </div>`;
+    }).join("");
     return `
   <div class="panel">
     <div class="panel-head"><h3>Mensajes de WhatsApp enviados por día</h3><span class="count">últimos 30 días</span></div>
@@ -3974,6 +3992,12 @@ function ingresosHTML(){
       <div class="stat-grid" style="grid-template-columns:repeat(1,1fr); margin-bottom:16px;">
         <div class="stat-card ${sobreUmbral ? '' : 'ok'}"><div class="bar"></div><div class="num">${mp.mes_actual_total}</div><div class="label">Enviados este mes ${sobreUmbral ? `(ya pasó el umbral gratis de ${mp.umbral_gratis})` : `(de ${mp.umbral_gratis} gratis)`}</div></div>
       </div>
+      ${diasAsc.length ? `
+      <div style="display:flex; align-items:flex-end; gap:3px; height:140px; border-bottom:1px solid var(--border); padding-bottom:0;">
+        ${grafica}
+      </div>
+      <div style="font-size:10.5px; color:var(--gray); margin:6px 0 16px;">Pasa el cursor sobre una barra para ver la fecha y el total exacto.</div>
+      ` : ''}
     </div>
     <div class="panel-body" style="padding:0;">
       <table><thead><tr><th>Fecha</th><th>Mensajes enviados</th></tr></thead>
