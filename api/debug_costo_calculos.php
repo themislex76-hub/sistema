@@ -25,6 +25,10 @@ $stmt = $pdo->prepare("SELECT COUNT(*) FROM calculos_liquidacion WHERE creado_en
 $stmt->execute([':desde' => date('Y-m-d', strtotime('-7 days'))]);
 $total7dias = (int)$stmt->fetchColumn();
 
+$stmt = $pdo->prepare("SELECT COUNT(*) FROM calculos_liquidacion WHERE creado_en >= :desde");
+$stmt->execute([':desde' => date('Y-m-d')]);
+$totalHoy = (int)$stmt->fetchColumn();
+
 // Estimado de costo marginal por llamada extra de cálculo: el bloque
 // cacheado (system+tools, ~18,500 tokens) a precio de lectura de caché
 // (~10% del precio base) + historial de conversación ya cacheado
@@ -37,6 +41,7 @@ $costoSalida = 400 / 1_000_000 * 15;
 $costoPorCalculo = round($costoEntradaCacheada + $costoSalida, 4);
 
 echo "=== Estimado de costo de IA por cálculos de liquidación ===\n\n";
+echo "Cálculos hechos hoy: {$totalHoy}\n";
 echo "Cálculos hechos este mes (desde el 1): {$totalMes}\n";
 echo "Cálculos hechos en los últimos 7 días: {$total7dias}\n\n";
 echo "Costo estimado por cada llamada extra de cálculo: ~\${$costoPorCalculo} USD\n";
