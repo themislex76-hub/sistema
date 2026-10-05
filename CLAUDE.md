@@ -35,6 +35,27 @@
   truene en la primera corrida real — pedir el error completo de la
   terminal si pasa).
 
+## Plantillas de WhatsApp aprobadas por Meta
+- Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
+  a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
+  la ventana de 24h desde el último mensaje del cliente. Se administran en
+  business.facebook.com/wa/manage/message-templates/ (ahí se ve el nombre
+  técnico exacto que exige la API, el texto aprobado y el orden de las
+  variables {{1}}, {{2}}...).
+- `recordatorio_1_hora` — única integrada en el código hasta ahora (ver
+  api/cron_recordatorio_asesoria.php). Avisa 1h antes de la llamada:
+  "Hola {{1}}, tu asesoría con el Lic. Rubén Buerhend es en 1 hora, a las
+  {{2}} — te va a llamar del número 55 7991 3025...". Params: nombre, hora.
+- Plantilla para llamada que no se pudo realizar (nombre técnico
+  pendiente de confirmar con el usuario -- preguntarle la próxima vez que
+  haga falta, está en "Administrar plantillas" dentro de Meta): "Hola
+  {{1}}, tu asesoría legal agendada para hoy a las {{2}} no se pudo
+  realizar porque no logramos comunicarnos contigo por teléfono. Vamos a
+  intentar llamarte de nuevo en los próximos minutos a este mismo
+  número." Params: nombre, hora. Todavía NO está integrada a ningún cron
+  ni botón del panel -- por ahora se manda a mano con
+  api/debug_probar_plantilla.php una vez que se tenga el nombre técnico.
+
 ## Costos de IA
 - Bitácora de gasto (créditos, gasto del mes, costo por resultado del
   embudo de WhatsApp): https://claude.ai/code/artifact/fdbe25d4-5fba-41f8-a0d3-f389dfb8cb61
