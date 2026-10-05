@@ -99,8 +99,8 @@ foreach ($calculos as $c) {
         // como opción más barata, para quien de plano no quiere la llamada
         // pero sí se quedó con el dato de que tiene un caso real.
         $mensaje = $montoTxt
-            ? "¡Hola de nuevo! Sigo por aquí para cuando gustes — según lo que calculamos, podrías recuperar cerca de {$montoTxt}. Si quieres que el Lic. revise tu caso a fondo por teléfono, la asesoría cuesta \$499. Y si por ahora solo te sirve tener el cálculo por escrito con membrete del despacho para presentarlo donde haga falta, ese documento cuesta \$49. Nomás dime cuál te late y te mando el link de pago."
-            : "¡Hola de nuevo! Sigo por aquí para cuando gustes platicar tu caso con el abogado a fondo — la asesoría telefónica cuesta \$499. Y si por ahora solo necesitas tu cálculo por escrito con membrete del despacho, ese documento cuesta \$49. Nomás avísame cuál prefieres.";
+            ? "¡Hola de nuevo! Sigo por aquí para cuando gustes — según lo que calculamos, podrías recuperar cerca de {$montoTxt}. Si quieres que el Lic. revise tu caso a fondo por teléfono, la asesoría cuesta \$499. Y si por ahora solo necesitas tener ese número por escrito, con membrete del despacho (pesa distinto que un mensaje de WhatsApp si lo presentas con RH o el patrón), ese documento cuesta \$49 -- mínimo frente a lo que podrías recuperar. Nomás dime cuál te late y te mando el link de pago."
+            : "¡Hola de nuevo! Sigo por aquí para cuando gustes platicar tu caso con el abogado a fondo — la asesoría telefónica cuesta \$499. Y si por ahora solo necesitas tu cálculo por escrito, con membrete del despacho (pesa distinto que un mensaje de WhatsApp si lo presentas con RH o el patrón), ese documento cuesta \$49. Nomás avísame cuál prefieres.";
         if (whatsapp_enviar($c['telefono'], $mensaje)) {
             $enviados2++;
             $pdo->prepare('UPDATE calculos_liquidacion SET segundo_seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $c['id']]);
