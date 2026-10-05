@@ -150,11 +150,18 @@ function whatsapp_texto_es_cierre_simple(string $texto): bool
     if (preg_match('/\p{L}/u', $limpio) !== 1) {
         return true;
     }
-    // Debe ser SOLO la palabra de cierre (con puntuación/emoji después, si
-    // acaso) -- no basta con que empiece así, porque "gracias, pero..." o
-    // "ok, mi salario es..." traen contenido nuevo que sí hay que contestar.
+    // Debe ser SOLO palabras de cierre (con puntuación/emoji entre o
+    // después, si acaso) -- no basta con que empiece así, porque "gracias,
+    // pero..." o "ok, mi salario es..." traen contenido nuevo que sí hay
+    // que contestar. Caso real detectado en producción: "Si gracias" y "Si
+    // muchas gracias" NO se contaban como cierre (la versión anterior solo
+    // reconocía "gracias" o "sí" SOLOS, no combinados) -- eso le seguía
+    // gastando una llamada completa a la IA a algo que es, en los hechos,
+    // puro cierre. Ahora se permite CUALQUIER combinación de estas mismas
+    // palabras de cierre, una tras otra.
+    $palabra = '(?:muchas\s+gracias|gracias|ok(?:ay|ey)?|va|s[ií]+|vale|listo|perfecto|entendido|de\s+acuerdo|de\s+nada|claro\s+que\s+s[ií])';
     return preg_match(
-        '/^(muchas\s+)?gracias[\s!.,👍🙏😊❤️]*$|^(ok(?:ay|ey)?|va|s[ií]+|vale|listo|perfecto|entendido|de\s+acuerdo|de\s+nada|claro\s+que\s+s[ií])[\s!.,👍🙏😊]*$/iu',
+        '/^' . $palabra . '(?:[\s!.,👍🙏😊❤️]+' . $palabra . ')*[\s!.,👍🙏😊❤️]*$/iu',
         $limpio
     ) === 1;
 }
