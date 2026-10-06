@@ -1265,6 +1265,12 @@ function fechasConciliacionEfectivas(kase){
 // capturados de cada asunto.
 // ---------------------------------------------------------------
 const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const DIAS_ES_CORTO = ['dom','lun','mar','mié','jué','vie','sáb'];
+// 'T00:00:00' evita que el navegador interprete la fecha en UTC y se
+// recorra un día en zonas con offset negativo (México).
+function diaSemanaCorto(fechaYMD){
+  return DIAS_ES_CORTO[new Date(fechaYMD + 'T00:00:00').getDay()];
+}
 function fechaLetras(iso){
   const d = parseDate(iso);
   if(!d) return '____________';
@@ -3978,8 +3984,9 @@ function ingresosHTML(){
       // se encimen con 30 barras angostas.
       const mostrarEtiqueta = (i % 5 === 0) || i === n - 1;
       const [, mm, dd] = d.dia.split('-');
+      const diaSemana = diaSemanaCorto(d.dia);
       return `
-        <div style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; min-width:0;" title="${d.dia}: ${d.enviados} mensaje(s)">
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; min-width:0;" title="${capitalize(diaSemana)} ${d.dia}: ${d.enviados} mensaje(s)">
           <div style="width:100%; max-width:14px; height:${pct}%; min-height:${d.enviados>0?'2px':'0'}; background:var(--brass); border-radius:3px 3px 0 0;"></div>
           <div style="font-size:9px; color:var(--gray); margin-top:4px; white-space:nowrap; height:12px;">${mostrarEtiqueta ? `${dd}/${mm}` : ''}</div>
         </div>`;
@@ -4000,10 +4007,10 @@ function ingresosHTML(){
       ` : ''}
     </div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Fecha</th><th>Mensajes enviados</th></tr></thead>
+      <table><thead><tr><th>Fecha</th><th>Día</th><th>Mensajes enviados</th></tr></thead>
       <tbody>${(mp.dias||[]).map(d=>`<tr>
-          <td>${d.dia}</td><td>${d.enviados}</td>
-        </tr>`).join("") || `<tr><td colspan="2" class="empty">Sin datos todavía.</td></tr>`}</tbody></table>
+          <td>${d.dia}</td><td>${capitalize(diaSemanaCorto(d.dia))}</td><td>${d.enviados}</td>
+        </tr>`).join("") || `<tr><td colspan="3" class="empty">Sin datos todavía.</td></tr>`}</tbody></table>
     </div>
   </div>
   `;
