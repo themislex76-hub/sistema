@@ -3988,7 +3988,7 @@ function ingresosHTML(){
       return `
         <div style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; min-width:0;" title="${capitalize(diaSemana)} ${d.dia}: ${d.enviados} mensaje(s)">
           <div style="width:100%; max-width:14px; height:${pct}%; min-height:${d.enviados>0?'2px':'0'}; background:var(--brass); border-radius:3px 3px 0 0;"></div>
-          <div style="font-size:9px; color:var(--gray); margin-top:4px; white-space:nowrap; height:12px;">${mostrarEtiqueta ? `${dd}/${mm}` : ''}</div>
+          <div style="font-size:9px; color:var(--ink); margin-top:4px; white-space:nowrap; height:22px; line-height:11px;">${mostrarEtiqueta ? `${capitalize(diaSemana)}<br>${dd}/${mm}` : ''}</div>
         </div>`;
     }).join("");
     return `
@@ -4000,7 +4000,7 @@ function ingresosHTML(){
         <div class="stat-card ${sobreUmbral ? '' : 'ok'}"><div class="bar"></div><div class="num">${mp.mes_actual_total}</div><div class="label">Enviados este mes ${sobreUmbral ? `(ya pasó el umbral gratis de ${mp.umbral_gratis})` : `(de ${mp.umbral_gratis} gratis)`}</div></div>
       </div>
       ${diasAsc.length ? `
-      <div style="display:flex; align-items:flex-end; gap:3px; height:140px; border-bottom:1px solid var(--border); padding-bottom:0;">
+      <div style="display:flex; align-items:flex-end; gap:3px; height:155px; border-bottom:1px solid var(--border); padding-bottom:0;">
         ${grafica}
       </div>
       <div style="font-size:10.5px; color:var(--gray); margin:6px 0 16px;">Pasa el cursor sobre una barra para ver la fecha y el total exacto.</div>
