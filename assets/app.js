@@ -1265,11 +1265,17 @@ function fechasConciliacionEfectivas(kase){
 // capturados de cada asunto.
 // ---------------------------------------------------------------
 const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
-const DIAS_ES_CORTO = ['dom','lun','mar','mié','jué','vie','sáb'];
+const DIAS_ES_CORTO = ['dom','lun','mar','mié','jue','vie','sáb'];
+// Convención del calendario en español -- "X" para miércoles, porque
+// "martes" y "miércoles" comparten la misma inicial ("M").
+const DIAS_ES_LETRA = ['D','L','M','X','J','V','S'];
 // 'T00:00:00' evita que el navegador interprete la fecha en UTC y se
 // recorra un día en zonas con offset negativo (México).
 function diaSemanaCorto(fechaYMD){
   return DIAS_ES_CORTO[new Date(fechaYMD + 'T00:00:00').getDay()];
+}
+function diaSemanaLetra(fechaYMD){
+  return DIAS_ES_LETRA[new Date(fechaYMD + 'T00:00:00').getDay()];
 }
 function fechaLetras(iso){
   const d = parseDate(iso);
@@ -3980,15 +3986,18 @@ function ingresosHTML(){
     const n = diasAsc.length;
     const grafica = diasAsc.map((d,i)=>{
       const pct = Math.round((d.enviados / max) * 100);
-      // Solo se etiqueta cada ~5 días (y el último) para que las fechas no
-      // se encimen con 30 barras angostas.
-      const mostrarEtiqueta = (i % 5 === 0) || i === n - 1;
+      // La fecha completa (dd/mm) solo se pone cada ~5 días para que no se
+      // encimen 30 barras angostas -- pero la letra del día de la semana
+      // sí va en TODAS, cabe bien porque es un solo carácter.
+      const mostrarFecha = (i % 5 === 0) || i === n - 1;
       const [, mm, dd] = d.dia.split('-');
       const diaSemana = diaSemanaCorto(d.dia);
+      const letraDia = diaSemanaLetra(d.dia);
       return `
         <div style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; min-width:0;" title="${capitalize(diaSemana)} ${d.dia}: ${d.enviados} mensaje(s)">
           <div style="width:100%; max-width:14px; height:${pct}%; min-height:${d.enviados>0?'2px':'0'}; background:var(--brass); border-radius:3px 3px 0 0;"></div>
-          <div style="font-size:9px; color:var(--ink); margin-top:4px; white-space:nowrap; height:22px; line-height:11px;">${mostrarEtiqueta ? `${capitalize(diaSemana)}<br>${dd}/${mm}` : ''}</div>
+          <div style="font-size:9px; font-weight:600; color:var(--ink); margin-top:4px; line-height:11px;">${letraDia}</div>
+          <div style="font-size:8px; color:var(--gray); white-space:nowrap; height:10px; line-height:10px;">${mostrarFecha ? `${dd}/${mm}` : ''}</div>
         </div>`;
     }).join("");
     return `
