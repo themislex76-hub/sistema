@@ -1266,16 +1266,10 @@ function fechasConciliacionEfectivas(kase){
 // ---------------------------------------------------------------
 const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 const DIAS_ES_CORTO = ['dom','lun','mar','mié','jue','vie','sáb'];
-// Convención del calendario en español -- "X" para miércoles, porque
-// "martes" y "miércoles" comparten la misma inicial ("M").
-const DIAS_ES_LETRA = ['D','L','M','X','J','V','S'];
 // 'T00:00:00' evita que el navegador interprete la fecha en UTC y se
 // recorra un día en zonas con offset negativo (México).
 function diaSemanaCorto(fechaYMD){
   return DIAS_ES_CORTO[new Date(fechaYMD + 'T00:00:00').getDay()];
-}
-function diaSemanaLetra(fechaYMD){
-  return DIAS_ES_LETRA[new Date(fechaYMD + 'T00:00:00').getDay()];
 }
 function fechaLetras(iso){
   const d = parseDate(iso);
@@ -3982,22 +3976,17 @@ function ingresosHTML(){
     // gráfica se lee de izquierda a derecha en orden cronológico, así que
     // aquí se invierte nada más para dibujarla.
     const diasAsc = [...(mp.dias||[])].reverse();
-    const max = diasAsc.reduce((m,d)=>Math.max(m, d.enviados), 0) || 1;
-    const n = diasAsc.length;
-    const grafica = diasAsc.map((d,i)=>{
-      const pct = Math.round((d.enviados / max) * 100);
-      // La fecha completa (dd/mm) solo se pone cada ~5 días para que no se
-      // encimen 30 barras angostas -- pero la letra del día de la semana
-      // sí va en TODAS, cabe bien porque es un solo carácter.
-      const mostrarFecha = (i % 5 === 0) || i === n - 1;
-      const [, mm, dd] = d.dia.split('-');
-      const diaSemana = diaSemanaCorto(d.dia);
-      const letraDia = diaSemanaLetra(d.dia);
+    const max = diasAsc.reduce((m,d)=>Math.max(m, d.enviados), 1);
+    const hoy = new Date().toISOString().slice(0,10);
+    const grafica = diasAsc.map(d=>{
+      const fecha = new Date(d.dia + 'T00:00:00');
+      const alto = Math.round((d.enviados / max) * 110) + (d.enviados>0 ? 4 : 0);
+      const esHoy = d.dia === hoy;
       return `
-        <div style="flex:1; display:flex; flex-direction:column; align-items:center; height:100%; justify-content:flex-end; min-width:0;" title="${capitalize(diaSemana)} ${d.dia}: ${d.enviados} mensaje(s)">
-          <div style="width:100%; max-width:14px; height:${pct}%; min-height:${d.enviados>0?'2px':'0'}; background:var(--brass); border-radius:3px 3px 0 0;"></div>
-          <div style="font-size:9px; font-weight:600; color:var(--ink); margin-top:4px; line-height:11px;">${letraDia}</div>
-          <div style="font-size:8px; color:var(--gray); white-space:nowrap; height:10px; line-height:10px;">${mostrarFecha ? `${dd}/${mm}` : ''}</div>
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;" title="${d.enviados} mensaje(s) -- ${capitalize(diaSemanaCorto(d.dia))} ${d.dia}">
+          <div style="font-size:10px; color:var(--ink); font-weight:700; margin-bottom:2px;">${d.enviados||''}</div>
+          <div style="width:100%; max-width:20px; height:${alto}px; background:${esHoy?'var(--ink)':'#b9c3d6'}; border-radius:4px 4px 0 0;"></div>
+          <div style="font-size:9px; color:var(--gray); margin-top:4px; text-align:center;">${DIAS_SEMANA_CORTO[fecha.getDay()]}<br>${fecha.getDate()}</div>
         </div>`;
     }).join("");
     return `
@@ -4009,7 +3998,7 @@ function ingresosHTML(){
         <div class="stat-card ${sobreUmbral ? '' : 'ok'}"><div class="bar"></div><div class="num">${mp.mes_actual_total}</div><div class="label">Enviados este mes ${sobreUmbral ? `(ya pasó el umbral gratis de ${mp.umbral_gratis})` : `(de ${mp.umbral_gratis} gratis)`}</div></div>
       </div>
       ${diasAsc.length ? `
-      <div style="display:flex; align-items:flex-end; gap:3px; height:155px; border-bottom:1px solid var(--border); padding-bottom:0;">
+      <div style="display:flex; align-items:flex-end; gap:4px; height:140px;">
         ${grafica}
       </div>
       <div style="font-size:10.5px; color:var(--gray); margin:6px 0 16px;">Pasa el cursor sobre una barra para ver la fecha y el total exacto.</div>
