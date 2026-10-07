@@ -210,6 +210,25 @@ function citas_crear_pendiente(PDO $pdo, string $telefono, string $fecha, string
             return null;
         }
 
+        // Bug real detectado en producción: si el mismo teléfono pedía varios
+        // horarios distintos en la misma conversación (porque los primeros
+        // que pidió se ocuparon antes de que confirmara), cada intento
+        // dejaba su PROPIA cita en 'pendiente_pago' con su PROPIO link de
+        // pago -- nada cancelaba las anteriores. El recordatorio automático
+        // de pago pendiente (cron_recordatorio_pago_pendiente.php) podía
+        // entonces reenviar el link de un horario VIEJO que el cliente ya
+        // había dejado atrás, y si lo pagaba, el sistema confirmaba ESE
+        // horario viejo en vez del que de verdad había quedado en la
+        // conversación (caso real: se le ofreció un horario de las 4 pm y,
+        // al pagar, se le agendó a las 12 pm). Para que nunca haya más de
+        // un horario "apartado" vigente por teléfono, se cancela aquí
+        // cualquier otra cita pendiente de pago de este mismo número antes
+        // de crear la nueva -- así solo el link más reciente sigue siendo
+        // válido y es el único que el recordatorio puede reenviar.
+        $pdo->prepare(
+            "UPDATE citas_asesoria SET estado = 'cancelada' WHERE telefono = :telefono AND estado = 'pendiente_pago'"
+        )->execute([':telefono' => $telefono]);
+
         $horaFin = (new DateTimeImmutable($horaInicio))->modify('+1 hour')->format('H:i:s');
         $stmt = $pdo->prepare(
             "INSERT INTO citas_asesoria (telefono, usuario_id, fecha, hora_inicio, hora_fin, nombre_cliente, estado)
