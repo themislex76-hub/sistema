@@ -124,13 +124,18 @@ function mp_webhook_procesar_documento_calculo(PDO $pdo, array $pago, string $pa
     $upd->execute([':pago_id' => $paymentId, ':id' => $compraId]);
     if ($upd->rowCount() === 0) return;
 
+    // El texto de confirmación va como caption del PDF (un solo mensaje de
+    // WhatsApp, un solo mensaje cobrable) en vez de mandarse aparte --
+    // antes eran 2 mensajes separados para el mismo evento sin necesidad.
+    $mensaje = '¡Tu pago quedó confirmado! Aquí tienes tu documento.';
     $calc = json_decode((string)$compra['calculo_json'], true);
     if (is_array($calc)) {
-        whatsapp_enviar_pdf_calculo($compra['telefono'], $calc, (float)$compra['salario_diario'], (string)($compra['nombre_cliente'] ?? ''));
+        whatsapp_enviar_pdf_calculo($compra['telefono'], $calc, (float)$compra['salario_diario'], (string)($compra['nombre_cliente'] ?? ''), $mensaje);
+    } else {
+        // Sin datos del cálculo guardados (no debería pasar) -- al menos
+        // avisa que el pago sí se confirmó, aunque no se pueda mandar el PDF.
+        whatsapp_enviar($compra['telefono'], $mensaje);
     }
-
-    $mensaje = '¡Tu pago quedó confirmado! Aquí tienes tu documento.';
-    whatsapp_enviar($compra['telefono'], $mensaje);
     $ins = $pdo->prepare(
         "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
     );

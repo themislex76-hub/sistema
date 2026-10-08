@@ -608,7 +608,7 @@ function whatsapp_enviar_documento(string $telefono, string $mediaId, string $no
 // temporal al final (se mande bien o falle). No lanza excepción si algo
 // falla (revisa whatsapp_send_debug.log): un PDF fallido no debe tumbar
 // la respuesta normal de texto que ya recibió el cliente.
-function whatsapp_enviar_pdf_calculo(string $telefono, array $calc, float $salarioDiario, string $nombre = ''): bool
+function whatsapp_enviar_pdf_calculo(string $telefono, array $calc, float $salarioDiario, string $nombre = '', string $caption = ''): bool
 {
     $carpetaTmp = __DIR__ . '/tmp';
     if (!is_dir($carpetaTmp)) {
@@ -634,7 +634,7 @@ function whatsapp_enviar_pdf_calculo(string $telefono, array $calc, float $salar
         if ($mediaId === null) {
             return false;
         }
-        $enviado = whatsapp_enviar_documento($telefono, $mediaId, 'Calculo_liquidacion_Expertos_Laborales.pdf');
+        $enviado = whatsapp_enviar_documento($telefono, $mediaId, 'Calculo_liquidacion_Expertos_Laborales.pdf', $caption);
         return $enviado;
     } catch (\Throwable $e) {
         // Cualquier error real (falta vendor/, falta una clase, permisos,
