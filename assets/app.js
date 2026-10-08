@@ -3864,6 +3864,55 @@ function ingresosHTML(){
   </div>
 
   ${(()=>{
+    // Concentrado de TODO lo que vende el robot (asesorías + cursos +
+    // documento de cálculo) en un solo total por mes, en vez de tener que
+    // sumar a mano los 3 paneles de abajo. Se arma aquí mismo con los
+    // datos que ya están cargados (ASESORIAS_POR_MES, CURSOS_POR_MES,
+    // DOCUMENTOS_POR_MES), sin pedir nada nuevo al servidor.
+    const porMesBot = {};
+    (ASESORIAS_POR_MES||[]).forEach(m=>{
+      if(!porMesBot[m.mes]) porMesBot[m.mes] = {asesorias:0, cursos:0, documentos:0, total:0};
+      porMesBot[m.mes].asesorias = m.total; porMesBot[m.mes].total += m.total;
+    });
+    (CURSOS_POR_MES||[]).forEach(m=>{
+      if(!porMesBot[m.mes]) porMesBot[m.mes] = {asesorias:0, cursos:0, documentos:0, total:0};
+      porMesBot[m.mes].cursos = m.total; porMesBot[m.mes].total += m.total;
+    });
+    (DOCUMENTOS_POR_MES||[]).forEach(m=>{
+      if(!porMesBot[m.mes]) porMesBot[m.mes] = {asesorias:0, cursos:0, documentos:0, total:0};
+      porMesBot[m.mes].documentos = m.total; porMesBot[m.mes].total += m.total;
+    });
+    const mesesBot = Object.keys(porMesBot).sort((a,b)=>b.localeCompare(a));
+    const totalGeneralBot = mesesBot.reduce((s,ym)=>s+porMesBot[ym].total,0);
+    return `
+  <div class="panel">
+    <div class="panel-head"><h3>Total vendido por el robot por mes</h3><span class="count">${mesesBot.length} mes(es)</span></div>
+    <div class="panel-body" style="padding:16px 20px 0;">
+      <div class="notice" style="margin-bottom:16px;">Suma asesorías + cursos + documento de cálculo, todo lo que el bot de WhatsApp vendió -- el desglose por concepto sigue abajo si lo necesitas.</div>
+      <div class="stat-grid" style="grid-template-columns:repeat(1,1fr); margin-bottom:16px;">
+        <div class="stat-card ok"><div class="bar"></div><div class="num">${fmtMoney(totalGeneralBot)}</div><div class="label">Total vendido por el robot (histórico)</div></div>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Mes</th><th>Asesorías</th><th>Cursos</th><th>Documentos</th><th>Total</th></tr></thead>
+      <tbody>${mesesBot.map(ym=>{
+        const [y,m] = ym.split('-');
+        const nombreMes = MESES_ES[parseInt(m)-1];
+        const d = porMesBot[ym];
+        return `<tr>
+          <td>${capitalize(nombreMes)} ${y}</td>
+          <td>${fmtMoney(d.asesorias)}</td>
+          <td>${fmtMoney(d.cursos)}</td>
+          <td>${fmtMoney(d.documentos)}</td>
+          <td><strong>${fmtMoney(d.total)}</strong></td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="5" class="empty">Sin ventas todavía.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+  })()}
+
+  ${(()=>{
     const totalVendidasHist = ASESORIAS_POR_MES.reduce((s,m)=>s+m.vendidas,0);
     const totalGanadoHist = ASESORIAS_POR_MES.reduce((s,m)=>s+m.total,0);
     return `
