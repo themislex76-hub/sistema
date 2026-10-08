@@ -46,15 +46,20 @@
   api/cron_recordatorio_asesoria.php). Avisa 1h antes de la llamada:
   "Hola {{1}}, tu asesoría con el Lic. Rubén Buerhend es en 1 hora, a las
   {{2}} — te va a llamar del número 55 7991 3025...". Params: nombre, hora.
-- Plantilla para llamada que no se pudo realizar (nombre técnico
-  pendiente de confirmar con el usuario -- preguntarle la próxima vez que
-  haga falta, está en "Administrar plantillas" dentro de Meta): "Hola
+- `sin_respuesta_llamada` — plantilla para llamada que no se pudo
+  realizar. OJO: está categorizada como **Marketing** en Meta (no
+  Utilidad/Servicio) -- eso la hace bastante más cara por mensaje que el
+  resto de los envíos del sistema (~$0.73 MXN vs. ~$0.16 MXN de un
+  mensaje de servicio normal, con el precio de oct-2026). Texto: "Hola
   {{1}}, tu asesoría legal agendada para hoy a las {{2}} no se pudo
   realizar porque no logramos comunicarnos contigo por teléfono. Vamos a
   intentar llamarte de nuevo en los próximos minutos a este mismo
   número." Params: nombre, hora. Todavía NO está integrada a ningún cron
-  ni botón del panel -- por ahora se manda a mano con
-  api/debug_probar_plantilla.php una vez que se tenga el nombre técnico.
+  ni botón del panel -- se manda a mano con api/debug_probar_plantilla.php
+  (`?telefono=...&plantilla=sin_respuesta_llamada&p1=NOMBRE&p2=HORA`).
+  El costo real por categoría se revisa en Meta: Administrador de
+  WhatsApp → Herramientas → Estadísticas → pestaña "Precio de los
+  mensajes".
 
 ## Costos de IA
 - Bitácora de gasto (créditos, gasto del mes, costo por resultado del
