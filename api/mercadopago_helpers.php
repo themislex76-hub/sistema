@@ -493,3 +493,80 @@ function mercadopago_buscar_pagos_aprobados(DateTimeInterface $desde, DateTimeIn
 
     return $pagos;
 }
+
+/**
+ * Trae TODOS los intentos de pago NO aprobados de la cuenta de Mercado
+ * Pago del despacho entre dos fechas (rechazados, pendientes, en
+ * proceso, etc.), con el motivo real que manda Mercado Pago
+ * (status_detail) -- se usa para diagnosticar por qué la gente no logra
+ * pagar, consultando el historial completo de la cuenta en vez de
+ * depender de lo que el webhook haya ido guardando localmente desde que
+ * se activó ese registro (ver migración 050_citas_motivo_rechazo.sql).
+ * Se filtra por date_created (no date_approved, que un pago rechazado
+ * nunca tiene). Mismo patrón de paginación que
+ * mercadopago_buscar_pagos_aprobados. Devuelve null si falló la
+ * consulta.
+ */
+function mercadopago_buscar_pagos_rechazados(DateTimeInterface $desde, DateTimeInterface $hasta): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+
+    $pagos = [];
+    $offset = 0;
+    $limit = 50;
+    $topeSeguridad = 2000;
+
+    do {
+        $query = http_build_query([
+            'range' => 'date_created',
+            'begin_date' => $desde->format('Y-m-d\TH:i:s.000P'),
+            'end_date' => $hasta->format('Y-m-d\TH:i:s.000P'),
+            'sort' => 'date_created',
+            'criteria' => 'desc',
+            'limit' => $limit,
+            'offset' => $offset,
+        ]);
+        $ch = curl_init('https://api.mercadopago.com/v1/payments/search?' . $query);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $token,
+            ],
+            CURLOPT_TIMEOUT => 20,
+        ]);
+        $raw = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($raw === false || $status < 200 || $status >= 300) {
+            file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+                . " | buscar_pagos_rechazados | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+            return null;
+        }
+
+        $data = json_decode($raw, true);
+        $resultados = $data['results'] ?? [];
+        foreach ($resultados as $p) {
+            if (($p['status'] ?? '') === 'approved') continue;
+            $pagos[] = [
+                'id' => (string)($p['id'] ?? ''),
+                'description' => (string)($p['description'] ?? ''),
+                'transaction_amount' => (float)($p['transaction_amount'] ?? 0),
+                'status' => (string)($p['status'] ?? ''),
+                'status_detail' => (string)($p['status_detail'] ?? ''),
+                'date_created' => (string)($p['date_created'] ?? ''),
+                'payer_phone' => (string)($p['payer']['phone']['number'] ?? ''),
+            ];
+        }
+
+        $total = (int)($data['paging']['total'] ?? count($resultados));
+        $offset += $limit;
+    } while ($offset < $total && $offset < $topeSeguridad && count($resultados) > 0);
+
+    return $pagos;
+}
