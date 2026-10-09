@@ -36,24 +36,39 @@ function mercadopago_telefono_a_payer_phone(string $telefono): array
 // es el nombre del parámetro de URL que espera esa página para verificar
 // el pago (?llave=... o ?payment_id=..., según cómo se armó cada sitio --
 // ambos aceptan el payment_id real de Mercado Pago como valor).
+//
+// 'producto_externo' (oct-2026): bug real detectado en producción -- cada
+// sitio de curso (hecho aparte, fuera de este repo) verifica el pago
+// comparando external_reference/metadata.producto contra una constante
+// PRODUCTO fija en SU código (ej. 'curso-amparo'). Como la compra hecha
+// desde el bot manda external_reference='curso_compra_<ID>' (genérico,
+// no ese valor) y nunca mandaba metadata.producto, esa verificación
+// SIEMPRE fallaba para cualquier curso comprado desde WhatsApp -- el
+// cliente pagaba, pero el sitio le decía "no se pudo verificar el pago".
+// Si está en null es porque todavía no se confirmó el valor exacto
+// revisando el código de ESE sitio (no hay que inventarlo) -- esos
+// cursos van a seguir fallando hasta que se confirme y se llene aquí.
 const CURSOS_CATALOGO = [
     'amparo' => [
         'titulo' => 'El Juicio de Amparo en Materia del Trabajo',
         'precio' => 399.00,
         'sitio' => 'https://silver-bubblegum-8c4a03.netlify.app/',
         'acceso_param' => 'llave',
+        'producto_externo' => 'curso-amparo',
     ],
     'actas' => [
         'titulo' => 'Actas Administrativas Laborales',
         'precio' => 299.00,
         'sitio' => 'https://regal-lollipop-90d889.netlify.app/',
         'acceso_param' => 'payment_id',
+        'producto_externo' => null,
     ],
     'procesal' => [
         'titulo' => 'Nuevo Procedimiento Laboral Mexicano',
         'precio' => 399.00,
         'sitio' => 'https://thriving-madeleine-5fe918.netlify.app/',
         'acceso_param' => 'llave',
+        'producto_externo' => null,
     ],
 ];
 
@@ -269,6 +284,14 @@ function mercadopago_crear_preferencia_curso(int $compraId, string $cursoSlug, s
             'phone' => mercadopago_telefono_a_payer_phone($telefono),
         ],
     ];
+
+    // Ver nota de 'producto_externo' en CURSOS_CATALOGO -- esto es lo que
+    // arregla que el sitio del curso pueda verificar el pago. Se omite
+    // del todo (no se manda metadata=null) cuando ese valor todavía no
+    // está confirmado para este curso.
+    if ($info['producto_externo'] !== null) {
+        $payload['metadata'] = ['producto' => $info['producto_externo']];
+    }
 
     $ch = curl_init('https://api.mercadopago.com/checkout/preferences');
     curl_setopt_array($ch, [
