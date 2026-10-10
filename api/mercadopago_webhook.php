@@ -70,7 +70,17 @@ function mp_webhook_procesar_curso(PDO $pdo, array $pago, string $paymentId, str
     $upd->execute([':pago_id' => $paymentId, ':id' => $compraId]);
     if ($upd->rowCount() === 0) return;
 
+    // Algunos sitios de curso (ver 'producto_externo' en CURSOS_CATALOGO)
+    // verifican el pago contra un identificador de producto fijo propio --
+    // unos lo leen de metadata.producto (ya se manda al crear la
+    // preferencia, ver mercadopago_crear_preferencia_curso), otros lo
+    // leen directo de este mismo link como parámetro ?producto=. Se manda
+    // en ambas formas cuando el valor está confirmado, para cubrir los
+    // dos patrones sin tener que saber cuál usa cada sitio.
     $accesoLink = $info['sitio'] . '?' . $info['acceso_param'] . '=' . urlencode($paymentId) . '&pago=ok';
+    if ($info['producto_externo'] !== null) {
+        $accesoLink .= '&producto=' . urlencode($info['producto_externo']);
+    }
     $saludo = $compra['nombre_cliente'] ? "¡Hola {$compra['nombre_cliente']}!" : '¡Hola!';
     $mensaje = "{$saludo} Tu pago del curso *{$info['titulo']}* quedó confirmado. 🎉\n\nAquí está tu acceso (de por vida, entra las veces que quieras):\n{$accesoLink}\n\nCualquier duda sobre el contenido, aquí mismo nos puedes escribir.";
 

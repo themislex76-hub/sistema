@@ -61,7 +61,7 @@ const CURSOS_CATALOGO = [
         'precio' => 299.00,
         'sitio' => 'https://regal-lollipop-90d889.netlify.app/',
         'acceso_param' => 'payment_id',
-        'producto_externo' => null,
+        'producto_externo' => 'curso-actas',
     ],
     'procesal' => [
         'titulo' => 'Nuevo Procedimiento Laboral Mexicano',
