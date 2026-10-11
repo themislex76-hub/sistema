@@ -1684,7 +1684,7 @@ function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead)
         ia_registrar_prospecto_atorado($pdo, $telefono, $lead, 'Mostró interés en la asesoría de pago pero no hay horarios disponibles en este momento.');
         return json_encode([
             'horarios' => [],
-            'nota' => 'No hay horarios disponibles en este momento. Dile a la persona que el Lic. Rubén Buerhend la va a contactar directo para coordinar — no le des ningún link de pago ni le prometas un horario.',
+            'nota' => 'No hay horarios disponibles en este momento. Dile a la persona que el Lic. Rubén Buerhend la va a contactar directo para coordinar un horario -- aclara que la asesoría sigue teniendo el costo normal (se paga al agendar, esto NO es una llamada gratis), no le des ningún link de pago todavía ni le prometas un horario exacto.',
         ], JSON_UNESCAPED_UNICODE);
     }
     return json_encode(['horarios' => $horarios], JSON_UNESCAPED_UNICODE);
