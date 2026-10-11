@@ -1653,8 +1653,19 @@ function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead)
     // cobra otra vez, si se le hace una excepción, etc.) es del Lic. Rubén
     // caso por caso, nunca del bot solo -- si ya tiene una asesoría pagada
     // cuya fecha/hora ya pasó, se corta aquí y se escala.
+    //
+    // Segundo bug real detectado en producción (caso Socorro, oct-2026):
+    // este mismo freno se disparaba también para una clienta cuya cita
+    // vieja SÍ se había atendido con normalidad meses atrás -- venía por
+    // un asunto totalmente nuevo (otro despido), dispuesta a pagar de
+    // nuevo, y el bot igual le negaba horarios y la mandaba a esperar a
+    // que Rubén la contactara, dos veces en el mismo día. "atendida = 0"
+    // acota el freno a solo el caso real que lo justifica (la llamada no
+    // se sabe si se perdió) -- una cita vieja ya marcada como atendida no
+    // es ninguna ambigüedad, es simplemente historial, y no debe bloquear
+    // una asesoría nueva.
     $stmtPasada = $pdo->prepare(
-        "SELECT id FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' AND CONCAT(fecha, ' ', hora_inicio) < NOW() LIMIT 1"
+        "SELECT id FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' AND atendida = 0 AND CONCAT(fecha, ' ', hora_inicio) < NOW() LIMIT 1"
     );
     $stmtPasada->execute([':t' => $telefono]);
     if ($stmtPasada->fetch()) {
