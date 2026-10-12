@@ -270,12 +270,31 @@ memoria — es la fuente más común de errores):
     diario — nunca lo calcules ni lo redondees tú mismo.
   · IMPORTANTE: los 20 días de salario por cada año de servicio NO
     corresponden automáticamente solo por haber un despido injustificado.
-    Solo proceden en dos supuestos: (a) cuando es el propio trabajador
+    Solo proceden en tres supuestos: (a) cuando es el propio trabajador
     quien rescinde la relación laboral por una causa imputable al patrón
-    (despido indirecto, ver "rescisión" abajo), o (b) cuando, al final de
-    un juicio, el patrón se niega a reinstalar al trabajador. No los
-    incluyas en la respuesta general de un despido salvo que se dé alguno
-    de esos dos supuestos.
+    (despido indirecto, ver "rescisión" abajo); (b) cuando, al final de
+    un juicio, el patrón se niega a reinstalar al trabajador; o (c)
+    cuando la persona es trabajador/a de CONFIANZA (Art. 9 y 49-II LFT
+    — funciones de dirección, inspección, vigilancia, fiscalización, o
+    de carácter general estrechamente vinculadas a la autoridad
+    patronal), porque la ley le niega el derecho a exigir reinstalación
+    y por eso automáticamente le corresponde el paquete del Art. 50
+    (igual que en rescisión). No los incluyas en la respuesta general de
+    un despido salvo que se dé alguno de esos tres supuestos. Bug real
+    detectado: una secretaria de dirección, SIN ser trabajadora de
+    confianza (confirmado después con el abogado), recibió un cálculo
+    con 20 días por año solo porque su caso había empezado como
+    rescisión hipotética y luego terminó en despido real sin volver a
+    verificar nada -- un puesto que "suena" a confianza (secretaria de
+    dirección, gerente, supervisor, etc.) NO lo es automáticamente; las
+    funciones reales del puesto son lo que importa. En un despido (no
+    rescisión), si la descripción del puesto sugiere posible confianza,
+    PREGUNTA EXPLÍCITAMENTE si sus funciones son de dirección,
+    supervisión de otros empleados, manejo de información confidencial
+    del patrón, o representarlo frente a terceros -- nunca lo asumas del
+    título del puesto ni lo arrastres de un cálculo anterior hecho bajo
+    otro supuesto (rescisión) sin volver a confirmarlo para el escenario
+    real.
   · Si es justificado (hubo una causa del Art. 47 LFT que se la
     comprobaron): solo corresponde el finiquito, sin indemnización.
   · La herramienta calcular_estimado_liquidacion también calcula
@@ -1063,6 +1082,10 @@ const IA_TOOLS = [
                     'enum' => ['justificado', 'injustificado'],
                     'description' => 'Solo se usa cuando modo="despido": si el despido es o sería justificado o injustificado. Si modo es "renuncia" o "rescision", pon "injustificado" (este campo se ignora en esos casos).',
                 ],
+                'trabajador_confianza' => [
+                    'type' => 'boolean',
+                    'description' => 'Solo aplica cuando modo="despido" y tipo="injustificado": true SOLO si confirmaste explícitamente con la persona que sus funciones reales son de dirección, inspección, vigilancia, fiscalización, o de carácter general estrechamente vinculadas a la autoridad del patrón (Art. 9/49-II LFT) -- NUNCA lo pongas true solo porque el puesto "suena" a confianza (secretaria, gerente, supervisor, etc.), sin haber preguntado y confirmado las funciones reales. Si es true, la ley le niega el derecho a exigir reinstalación y por eso se le suman los 20 días por año de servicio (Art. 50-II), igual que en rescisión. Default false.',
+                ],
                 'dias_vacaciones_anteriores' => [
                     'type' => 'number',
                     'description' => 'Días de vacaciones de años/periodos anteriores que la persona reporta que no disfrutó. 0 si no aplica o no sabe. La herramienta ya descuenta sola los que estén prescritos (no hace falta que tú calcules eso) — si el resultado trae "vacaciones_anteriores_dias_prescritos" mayor a 0, menciónaselo a la persona para explicar por qué el número final es menor a lo que reportó.',
@@ -1412,7 +1435,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     (string)($in['tipo'] ?? 'injustificado'),
                     (float)($in['dias_vacaciones_anteriores'] ?? 0),
                     (float)($in['dias_salarios_devengados'] ?? 0),
-                    (string)($in['modo'] ?? 'despido')
+                    (string)($in['modo'] ?? 'despido'),
+                    (bool)($in['trabajador_confianza'] ?? false)
                 );
                 if ($calc !== null) {
                     $contenido = json_encode($calc, JSON_UNESCAPED_UNICODE);

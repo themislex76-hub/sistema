@@ -181,7 +181,8 @@ function calcular_estimado_liquidacion(
     string $tipo,
     float $diasVacacionesAnteriores = 0,
     float $diasSalariosDevengados = 0,
-    string $modo = 'despido'
+    string $modo = 'despido',
+    bool $trabajadorConfianza = false
 ): ?array {
     if (!in_array($modo, ['despido', 'renuncia', 'rescision'], true)) {
         $modo = 'despido';
@@ -246,7 +247,13 @@ function calcular_estimado_liquidacion(
     $sdi = $salarioDiario * $factorIntegracion;
 
     // Indemnización — depende del modo:
-    // - despido injustificado (Art. 48 LFT): 90 días de SDI.
+    // - despido injustificado (Art. 48 LFT): 90 días de SDI. Más 20 días
+    //   por año (Art. 50-II) SOLO si es trabajador/a de confianza (Art.
+    //   9/49-II LFT) -- la ley le niega el derecho a exigir reinstalación,
+    //   así que automáticamente le corresponde el paquete del Art. 50,
+    //   igual que en rescisión (ver REGLA DURA del prompt de la IA: nunca
+    //   marcar esto true solo porque el puesto "suena" a confianza, solo
+    //   si se confirmaron las funciones reales con la persona).
     // - renuncia voluntaria: no hay indemnización.
     // - rescisión por causa imputable al patrón, ejercida dentro de los 30
     //   días (Arts. 51/52 LFT): 20 días por año de servicio (Art. 50-II)
@@ -255,6 +262,9 @@ function calcular_estimado_liquidacion(
     $indemnizacion90 = 0.0;
     if ($modo === 'despido' && $tipo === 'injustificado') {
         $indemnizacion90 = 90 * $sdi;
+        if ($trabajadorConfianza) {
+            $indemnizacion20 = 20 * $aniosDec * $sdi;
+        }
     } elseif ($modo === 'rescision') {
         $indemnizacion20 = 20 * $aniosDec * $sdi;
         $indemnizacion90 = 90 * $sdi;
