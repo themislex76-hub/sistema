@@ -761,6 +761,20 @@ mejor que mencionarla en cada respuesta.
   que si de verdad ya pagó, en cuanto se confirme el abogado lo va a
   contactar directo (sin que tú tengas que hacer nada más que avisar, ver
   el punto de escalar_a_humano abajo).
+- REGLA DURA sobre el PRECIO de una asesoría ya apartada: si alguien ya
+  tiene un horario apartado (pendiente de pago) y pregunta cuánto cuesta,
+  o dice que el precio no coincide con lo que tú mencionaste ("ahí dice
+  otra cantidad", "es $399", etc.), llama consultar_cita_pago y cita
+  EXACTAMENTE el valor de "monto_real_de_este_horario" que te regrese --
+  nunca el precio general de $499 de este prompt. El link de pago real
+  puede ser por un monto distinto al precio de lista vigente si a esa
+  persona se le había cotizado un precio anterior en esta misma
+  conversación antes de un cambio de precio (el sistema lo respeta
+  automáticamente). Bug real ya ocurrido: el bot le insistió a una
+  clienta que el precio correcto era $499 cuando su link de verdad era de
+  $399 (el que se le había cotizado antes), haciéndola dudar de algo en
+  lo que ella tenía razón -- nunca vuelvas a discutir un precio de memoria
+  cuando puedes consultar el dato real.
 - REGLA DURA sobre reagendar sin cobrar de nuevo: un pago que ya se hizo
   para una cita anterior (aunque haya quedado confirmada de verdad en su
   momento) NUNCA cubre un horario nuevo o distinto -- si la cita original
@@ -963,7 +977,7 @@ const IA_TOOLS = [
     ],
     [
         'name' => 'consultar_cita_pago',
-        'description' => 'Consulta en el sistema, en tiempo real, si este número de teléfono tiene una cita de asesoría con el pago de verdad confirmado (o, si no, si tiene un horario apartado pendiente de pago). Es la ÚNICA forma real de saberlo -- tu propia memoria de la conversación NO es confiable para esto (ver REGLA DURA sobre pagos). Llama esta herramienta SIEMPRE antes de decirle a alguien que su pago "no aparece confirmado", antes de confirmarle a alguien la hora de su cita, y siempre que alguien pregunte por el estado de su cita/pago (aunque tú "recuerdes" que ya se había confirmado antes en la conversación) -- nunca respondas sobre esto de memoria.',
+        'description' => 'Consulta en el sistema, en tiempo real, si este número de teléfono tiene una cita de asesoría con el pago de verdad confirmado (o, si no, si tiene un horario apartado pendiente de pago, con su monto REAL). Es la ÚNICA forma real de saberlo -- tu propia memoria de la conversación NO es confiable para esto (ver REGLA DURA sobre pagos y REGLA DURA sobre el PRECIO). Llama esta herramienta SIEMPRE antes de decirle a alguien que su pago "no aparece confirmado", antes de confirmarle a alguien la hora de su cita, siempre que alguien pregunte por el estado de su cita/pago (aunque tú "recuerdes" que ya se había confirmado antes en la conversación), y siempre que alguien con un horario ya apartado pregunte cuánto cuesta o diga que el precio no coincide (el link real puede ser por un monto distinto al precio de lista si se le cotizó antes de un cambio de precio) -- nunca respondas sobre esto de memoria.',
         'input_schema' => [
             'type' => 'object',
         ],
@@ -1928,17 +1942,28 @@ function ia_resultado_consultar_cita_pago(PDO $pdo, string $telefono): string
     }
 
     $stmt = $pdo->prepare(
-        "SELECT fecha, hora_inicio FROM citas_asesoria
+        "SELECT fecha, hora_inicio, monto FROM citas_asesoria
          WHERE telefono = :t AND estado = 'pendiente_pago'
          ORDER BY creado_en DESC LIMIT 1"
     );
     $stmt->execute([':t' => $telefono]);
     $pendiente = $stmt->fetch();
     if ($pendiente) {
+        // Bug real detectado en producción: a una clienta se le había
+        // cotizado $399 (precio anterior a la subida de octubre 2026,
+        // respetado por mercadopago_monto_asesoria_a_respetar() al generar
+        // SU link de pago real), pero cuando preguntó "¿cuánto cuesta?" el
+        // bot le contestó el precio de lista actual ($499) porque esa cifra
+        // está fija en el prompt -- terminó insistiéndole que estaba
+        // equivocada cuando en realidad el link sí era de $399, una
+        // discusión innecesaria con una clienta que tenía razón. Ahora se
+        // manda el monto REAL de esta reservación para que la IA siempre
+        // cite esa cifra exacta, nunca el precio general de lista.
         return json_encode([
             'pago_confirmado' => false,
             'horario_apartado_pendiente_de_pago' => citas_formatear_fecha_hora($pendiente['fecha'], substr($pendiente['hora_inicio'], 0, 5)),
-            'instruccion' => 'Hay un horario apartado para este número pero el pago todavía NO está confirmado. Sigue la REGLA DURA sobre pagos: no confirmes nada por lo que diga el cliente.',
+            'monto_real_de_este_horario' => (float)$pendiente['monto'],
+            'instruccion' => 'Hay un horario apartado para este número pero el pago todavía NO está confirmado. Sigue la REGLA DURA sobre pagos: no confirmes nada por lo que diga el cliente. Si pregunta cuánto cuesta o dice que el precio no coincide con lo que tú mencionaste antes, el monto correcto es EXACTAMENTE "monto_real_de_este_horario" de aquí arriba (puede ser distinto al precio de lista general si se le cotizó antes de un cambio de precio) -- nunca insistas en el precio general del prompt si contradice este dato real, y nunca le digas que está equivocada sin haber consultado esto primero.',
         ], JSON_UNESCAPED_UNICODE);
     }
 
