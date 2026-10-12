@@ -108,7 +108,14 @@ $costoIaManualPorMes = $pdo->query(
     "SELECT mes, costo_ia FROM costos_mensuales"
 )->fetchAll(PDO::FETCH_KEY_PAIR);
 
-$iaAdminDisponible = defined('ANTHROPIC_ADMIN_API_KEY');
+// Se prueba la Admin API UNA sola vez (mes actual) para saber si de
+// verdad funciona, en vez de llamarla por cada mes del historial --
+// mientras siga rechazada (403 permission_error) eso eran hasta 24
+// llamadas HTTP de ida y vuelta en la misma petición, suficiente para
+// que el servidor agotara su tiempo límite y el panel se quedara
+// "Consultando..." sin responder nunca.
+$iaAdminFunciona = defined('ANTHROPIC_ADMIN_API_KEY')
+    && anthropic_costo_mensual_usd(date('Y-m')) !== null;
 
 // 6) Se combinan todos los meses que aparezcan en cualquier fuente.
 $todosLosMeses = array_unique(array_merge(
@@ -134,7 +141,7 @@ foreach ($todosLosMeses as $mes) {
 
     $costoHosting = HOSTING_MENSUAL_MXN;
 
-    $costoIaUsd = $iaAdminDisponible ? anthropic_costo_mensual_usd($mes) : null;
+    $costoIaUsd = $iaAdminFunciona ? anthropic_costo_mensual_usd($mes) : null;
     if ($costoIaUsd !== null) {
         $costoIa = round($costoIaUsd * TIPO_CAMBIO_USD_MXN, 2);
         $costoIaFuente = 'api';
@@ -171,4 +178,4 @@ foreach ($todosLosMeses as $mes) {
     ];
 }
 
-respond(['meses' => $meses, 'mp_disponible' => $mpDisponible, 'ia_admin_disponible' => $iaAdminDisponible]);
+respond(['meses' => $meses, 'mp_disponible' => $mpDisponible, 'ia_admin_disponible' => $iaAdminFunciona]);
