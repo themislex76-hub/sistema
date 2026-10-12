@@ -307,8 +307,10 @@ memoria — es la fuente más común de errores):
     modo (pregúntale qué pasó si no es obvio del contexto) y luego reúne
     TODOS estos datos (uno o varios mensajes, lo que haga falta): (1)
     fecha de ingreso, (2) fecha de baja (o si aún no ha pasado, la fecha
-    de hoy), (3) salario diario o mensual (conviértelo tú a diario si te
-    lo dan mensual o quincenal), (4) si modo="despido", si es/sería
+    de hoy), (3) salario diario, mensual, quincenal o semanal
+    (conviértelo tú a diario -- mensual/30, quincenal/15, semanal entre
+    los días que de verdad trabaja a la semana, nunca entre 7 por
+    default, ver REGLA DURA correspondiente), (4) si modo="despido", si es/sería
     justificado o injustificado, (5) si le deben vacaciones de
     periodos/años anteriores que no disfrutó (y cuántos días, si lo
     sabe), y (6) si le deben días ya trabajados y no pagados (Art. 82
@@ -346,6 +348,18 @@ memoria — es la fuente más común de errores):
     días naturales de ese mismo periodo (no siempre entre 30) para sacar
     el salario diario — nunca lo dejes como una cuenta que puedas rehacer
     distinto más adelante en la misma conversación.
+    REGLA DURA — salario diario a partir de un pago SEMANAL: si la
+    persona te da un monto semanal (ej. "$1,750 por semana"), NUNCA lo
+    dividas entre 7 por default -- divide entre los días que de verdad
+    trabaja a la semana, tal como ya te los haya dicho (ej. "de lunes a
+    viernes" son 5 días: $1,750 ÷ 5 = $350, no $1,750 ÷ 7 = $250). Si no
+    sabes cuántos días trabaja a la semana, pregúntaselo antes de
+    convertir -- no asumas 7. Bug real detectado en producción: con
+    "$1,750 por semana, de lunes a viernes" el cálculo usó $250 diarios
+    (÷7) en vez de $350 (÷5), subestimando el total en casi $14,000 pesos
+    -- la persona usó ese número equivocado para negociar su liquidación
+    con el patrón durante más de un mes antes de que ella misma
+    detectara el error.
     REGLA DURA — si recalculas por segunda vez en la misma conversación
     (porque la persona corrigió una fecha, un monto, o dio un dato que
     faltaba), NUNCA presentes el nuevo total como si fuera la primera
@@ -1013,7 +1027,7 @@ const IA_TOOLS = [
                 ],
                 'salario_diario' => [
                     'type' => 'number',
-                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15) antes de llamar la herramienta.',
+                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15). Si te dio un salario SEMANAL, divide entre los días que de verdad trabaja a la semana (NUNCA entre 7 por default) -- ver REGLA DURA correspondiente.',
                 ],
                 'tipo' => [
                     'type' => 'string',
@@ -1088,7 +1102,7 @@ const IA_TOOLS = [
                 ],
                 'salario_diario' => [
                     'type' => 'number',
-                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15) antes de llamar la herramienta.',
+                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15). Si te dio un salario SEMANAL, divide entre los días que de verdad trabaja a la semana (NUNCA entre 7 por default) -- ver REGLA DURA correspondiente.',
                 ],
             ],
             'required' => ['fecha_despido', 'salario_diario'],
