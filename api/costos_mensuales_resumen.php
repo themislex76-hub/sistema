@@ -56,8 +56,12 @@ $documentosPorMes = $pdo->query(
 // comisión de compras personales que comparten la misma cuenta de MP.
 $cursosPorMes = [];
 $comisionMpPorMes = [];
+// 6 meses hacia atrás (no 24): suficiente para este panel mensual y
+// evita paginar un historial largo de Mercado Pago en cada consulta
+// -- con mucho volumen eso puede tardar más que el tiempo límite del
+// servidor y dejar el panel colgado sin responder nunca.
 $hasta = new DateTimeImmutable('now');
-$desde = $hasta->modify('-24 months')->modify('first day of this month')->setTime(0, 0, 0);
+$desde = $hasta->modify('-6 months')->modify('first day of this month')->setTime(0, 0, 0);
 $pagos = mercadopago_buscar_pagos_aprobados($desde, $hasta);
 $mpDisponible = $pagos !== null;
 $pagosPorId = [];
@@ -98,7 +102,8 @@ if ($pagos !== null) {
 // por arriba de los 1,000 gratis.
 $whatsappEnviadosPorMes = $pdo->query(
     "SELECT DATE_FORMAT(creado_en, '%Y-%m') AS mes, COUNT(*) AS enviados
-     FROM whatsapp_conversaciones WHERE direccion = 'saliente'
+     FROM whatsapp_conversaciones
+     WHERE direccion = 'saliente' AND creado_en >= NOW() - INTERVAL 12 MONTH
      GROUP BY mes"
 )->fetchAll(PDO::FETCH_KEY_PAIR);
 
