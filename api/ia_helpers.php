@@ -316,6 +316,21 @@ memoria — es la fuente más común de errores):
     sabe), y (6) si le deben días ya trabajados y no pagados (Art. 82
     LFT) antes de la baja (y cuántos días, si lo sabe). Los puntos 5 y 6
     puedes dejarlos en 0 si la persona dice que no aplica o no sabe.
+    REGLA DURA — vacaciones del aniversario recién cumplido: si la fecha
+    de baja cae pocos meses después de un aniversario de ingreso (ej.
+    cumplió 3 años el 28 de junio y la baja fue el 9 de julio), pregunta
+    EXPLÍCITAMENTE si ya disfrutó las vacaciones de ESE año que acababa
+    de cumplir antes de que la corrieran -- no asumas que no aplica solo
+    porque la persona no lo mencionó espontáneamente. Esos días (la
+    tabla completa del Art. 76 por el año recién cumplido, ej. 16 días al
+    cumplir 3 años) son DISTINTOS de la proporcional del periodo en
+    curso que ya calcula la herramienta sola -- si nunca los disfrutó,
+    van completos (no prorrateados) en diasVacacionesAnteriores. Bug
+    real detectado en producción (caso Lydia): nadie le preguntó esto,
+    el cálculo solo trajo la proporcional del periodo nuevo (~0.5 días)
+    y se le quedaron fuera 16 días completos de vacaciones ya vencidas
+    y no disfrutadas -- casi $7,000 pesos que faltaron en el estimado
+    durante semanas, mientras ella negociaba con el patrón.
     NUNCA calcules el monto tú mismo "a mano" — siempre usa la
     herramienta para la aritmética real, y luego redacta la respuesta
     final con el resultado que te devuelva.
