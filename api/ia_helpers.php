@@ -329,7 +329,15 @@ memoria — es la fuente más común de errores):
     de hoy), (3) salario diario, mensual, quincenal o semanal
     (conviértelo tú a diario -- mensual/30, quincenal/15, semanal entre
     los días que de verdad trabaja a la semana, nunca entre 7 por
-    default, ver REGLA DURA correspondiente), (4) si modo="despido", si es/sería
+    default, ver REGLA DURA correspondiente). REGLA DURA — salario
+    mínimo: si la persona dice que le pagaban/paga "el salario mínimo"
+    SIN darte un monto propio fijo, llama SIEMPRE
+    consultar_salario_minimo_vigente para obtener el dato real -- nunca
+    uses una cifra de tu propio entrenamiento (puede ser de un año
+    anterior) ni la que la persona diga que un tercero (el patrón, un
+    compañero) "le dijo" o "le comentó" que era el mínimo, sin
+    comprobante -- eso es rumor, no un hecho legal verificado. (4) si
+    modo="despido", si es/sería
     justificado o injustificado, (5) si le deben vacaciones de
     periodos/años anteriores que no disfrutó (y cuántos días, si lo
     sabe), y (6) si le deben días ya trabajados y no pagados (Art. 82
@@ -1002,6 +1010,13 @@ const IA_TOOLS = [
         ],
     ],
     [
+        'name' => 'consultar_salario_minimo_vigente',
+        'description' => 'Consulta el salario mínimo diario REAL y vigente guardado en el sistema (CONASAMI). Llama esta herramienta SIEMPRE que necesites el salario diario de alguien para calcular_estimado_liquidacion y la persona diga que le pagaban/paga "el salario mínimo" sin darte un monto fijo propio -- NUNCA uses un número de tu propio entrenamiento (puede estar desactualizado de un año anterior) ni uno que el cliente diga que un tercero (el patrón, un compañero) "le dijo" que era el mínimo, sin comprobante -- eso es rumor, no un dato legal confiable. Bug real detectado: el bot calculó con un salario mínimo desactualizado y luego lo "corrigió" aceptando sin verificar la cifra que el patrón le había dicho al cliente, cuando el salario mínimo es un dato fijo que debe salir de aquí, no de lo que recuerde o le cuenten a la persona.',
+        'input_schema' => [
+            'type' => 'object',
+        ],
+    ],
+    [
         'name' => 'escalar_a_humano',
         'description' => 'Detiene tus respuestas automáticas en esta conversación y avisa DE INMEDIATO (notificación push) a un abogado del despacho para que la atienda en persona -- a partir de aquí tú ya no le contestas más, un humano toma el chat desde Prospectos (WhatsApp). Úsala cuando: (a) la persona insiste en que ya hizo un pago y consultar_cita_pago confirma que en efecto NO aparece confirmado (nunca escales -ni tampoco confirmes nada- sin haber llamado consultar_cita_pago primero en este mismo turno); (b) acusa al despacho de fraude/estafa, amenaza con exhibirlo públicamente, o está claramente muy molesta y ya no avanza con tus respuestas; (c) pide explícitamente hablar por teléfono/que le llamen ya y no tienes forma de cumplirlo, SIN que haya ninguna queja o disputa de por medio. Llámala UNA sola vez por este tipo de situación -- si ya la llamaste antes en esta misma conversación, no la vuelvas a llamar, solo mantén tu respuesta breve y de espera.',
         'input_schema' => [
@@ -1503,6 +1518,11 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 $contenido = ia_resultado_confirmar_compra_curso($pdo, $telefono, (string)($in['curso'] ?? ''), $nombreCompra);
             } elseif ($bloque['name'] === 'consultar_cita_pago') {
                 $contenido = ia_resultado_consultar_cita_pago($pdo, $telefono);
+            } elseif ($bloque['name'] === 'consultar_salario_minimo_vigente') {
+                $contenido = json_encode([
+                    'salario_minimo_diario_vigente' => salario_minimo_diario_actual($pdo),
+                    'instruccion' => 'Este es el ÚNICO valor correcto a usar cuando alguien gana/ganaba el salario mínimo. Nunca uses un número que tú "recuerdes" de tu entrenamiento (puede estar desactualizado) ni uno que el cliente diga que "le dijeron" o "le comentaron" sin comprobante -- el salario mínimo es un dato legal fijo, no algo que varíe según lo que alguien recuerde. Si el cliente insiste en una cifra distinta, explícale con calidez que el salario mínimo vigente es este monto, y que si en realidad le pagaban un monto FIJO distinto (no "el mínimo"), lo que necesitas es ESE dato concreto (su recibo, lo que depositaban), no una cifra de memoria sobre cuál es el mínimo.',
+                ], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'confirmar_compra_documento_calculo') {
                 $contenido = ia_resultado_confirmar_compra_documento_calculo($pdo, $telefono);
             } elseif ($bloque['name'] === 'escalar_a_humano') {
