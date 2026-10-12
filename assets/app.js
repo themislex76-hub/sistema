@@ -6192,7 +6192,6 @@ function bindViewBody(){
       mesInput.scrollIntoView({behavior:'smooth', block:'center'});
     });
   });
-  actualizarSugerenciasCostos();
   document.querySelectorAll('[data-asesoria-mes-toggle]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const mes = el.dataset.asesoriaMesToggle;
