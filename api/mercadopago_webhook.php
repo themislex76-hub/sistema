@@ -137,19 +137,38 @@ function mp_webhook_procesar_documento_calculo(PDO $pdo, array $pago, string $pa
     // El texto de confirmación va como caption del PDF (un solo mensaje de
     // WhatsApp, un solo mensaje cobrable) en vez de mandarse aparte --
     // antes eran 2 mensajes separados para el mismo evento sin necesidad.
+    //
+    // Bug real detectado en producción: este bloque mandaba el mensaje de
+    // "¡Tu pago quedó confirmado! Aquí tienes tu documento." a
+    // whatsapp_conversaciones SIN importar si whatsapp_enviar_pdf_calculo()
+    // de verdad logró mandar el PDF -- un cliente que pagó nunca recibió
+    // el documento, pero en la pantalla de Conversaciones se veía como si
+    // sí se le hubiera mandado ("aquí tienes tu documento"), porque ese
+    // texto se guardaba igual aunque el envío real hubiera fallado. Ahora
+    // se revisa el resultado real del envío antes de decidir qué mensaje
+    // queda registrado, y si falló, se manda un mensaje de texto honesto
+    // (el pago sí se confirmó, pero el documento no) y se avisa al
+    // despacho para que lo mande a mano.
     $mensaje = '¡Tu pago quedó confirmado! Aquí tienes tu documento.';
     $calc = json_decode((string)$compra['calculo_json'], true);
+    $pdfEnviado = false;
     if (is_array($calc)) {
-        whatsapp_enviar_pdf_calculo($compra['telefono'], $calc, (float)$compra['salario_diario'], (string)($compra['nombre_cliente'] ?? ''), $mensaje);
-    } else {
-        // Sin datos del cálculo guardados (no debería pasar) -- al menos
-        // avisa que el pago sí se confirmó, aunque no se pueda mandar el PDF.
-        whatsapp_enviar($compra['telefono'], $mensaje);
+        $pdfEnviado = whatsapp_enviar_pdf_calculo($compra['telefono'], $calc, (float)$compra['salario_diario'], (string)($compra['nombre_cliente'] ?? ''), $mensaje);
     }
-    $ins = $pdo->prepare(
-        "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
-    );
-    $ins->execute([':t' => $compra['telefono'], ':texto' => $mensaje]);
+    if (!$pdfEnviado) {
+        // whatsapp_enviar_pdf_calculo() ya deja su propio registro de
+        // éxito/fracaso en whatsapp_conversaciones (no duplicar aquí) --
+        // solo falta avisarle al cliente que su pago sí se confirmó
+        // aunque el documento no haya salido, y avisarle al despacho.
+        whatsapp_enviar($compra['telefono'], 'Tu pago de $' . $compra['monto'] . ' MXN quedó confirmado. Tuvimos un problema técnico al mandarte el documento -- en breve te lo reenviamos por aquí mismo.');
+        push_notificar_prospecto(
+            $pdo, null,
+            '⚠️ Documento de cálculo pagado pero NO se pudo mandar',
+            ($compra['nombre_cliente'] ?: $compra['telefono']) . " pagó el documento (\${$compra['monto']} MXN) pero el envío del PDF falló -- mándaselo a mano.",
+            '/sistema/?abrir=' . urlencode($compra['telefono'])
+        );
+        return;
+    }
 
     push_notificar_prospecto(
         $pdo, null,
