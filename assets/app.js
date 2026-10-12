@@ -4070,6 +4070,7 @@ function costosVsIngresosHTML(){
   const s = COSTOS_MENSUALES_STATE;
   const meses = s.meses || [];
   const mesActual = new Date().toISOString().slice(0,7);
+  const iaAdminDisponible = meses.length && meses.some(m=>m.costo_ia_fuente==='api');
   return `
   <div class="panel">
     <div class="panel-head">
@@ -4077,34 +4078,35 @@ function costosVsIngresosHTML(){
       <button class="btn secondary" data-consultar-costos style="font-size:11px; padding:5px 10px;" ${s.cargando?'disabled':''}>${s.cargando?'Consultando...':(meses.length?'Actualizar':'Consultar')}</button>
     </div>
     <div class="panel-body" style="padding:16px 20px;">
-      <div class="notice">Los ingresos (asesorías + cursos) se calculan solos. La comisión de Mercado Pago y el costo de IA se sugieren solos (abajo del formulario, con el monto real de ese mes) si configuraste la llave de administrador de Anthropic en el servidor. El hosting y WhatsApp Business API los sigues capturando tú a mano.</div>
+      <div class="notice">Ingresos (asesorías + documentos + cursos), hosting, WhatsApp y comisión de Mercado Pago se calculan solos con datos reales. El costo de IA ${iaAdminDisponible ? 'también se trae solo de Anthropic' : 'todavía lo capturas tú una vez al mes (copiando el gasto real de Anthropic Console) porque la Admin API de Anthropic no acepta la llave de este plan'}.</div>
       ${s.error ? `<div class="notice" style="color:var(--danger, #b3261e); margin-top:10px;">${escapeHTML(s.error)}</div>` : ''}
+      ${!iaAdminDisponible ? `
       <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-top:14px;">
         <div class="field"><label>Mes</label><input type="month" id="costoMesInput" value="${mesActual}"></div>
         <div class="field"><label>Costo IA ($)</label><input type="number" id="costoIaInput" step="0.01" min="0" placeholder="0" style="width:110px;"></div>
-        <div class="field"><label>Hosting ($)</label><input type="number" id="costoHostingInput" step="0.01" min="0" placeholder="0" style="width:100px;"></div>
-        <div class="field"><label>WhatsApp API ($)</label><input type="number" id="costoWhatsappInput" step="0.01" min="0" placeholder="0" style="width:110px;"></div>
-        <div class="field"><label>Comisión Mercado Pago ($)</label><input type="number" id="costoMpInput" step="0.01" min="0" placeholder="0" style="width:130px;"></div>
-        <button class="btn" id="guardarCostosBtn" ${s.guardando?'disabled':''}>${s.guardando?'Guardando...':'Guardar mes'}</button>
+        <button class="btn" id="guardarCostosBtn" ${s.guardando?'disabled':''}>${s.guardando?'Guardando...':'Guardar costo IA'}</button>
       </div>
-      <div id="sugerenciasCostosHint" style="margin-top:8px; font-size:12px; color:var(--gray); display:flex; flex-direction:column; gap:2px;" data-meses='${escapeHTML(JSON.stringify(meses.map(m=>({mes:m.mes, comisionMp:m.comision_mercadopago_sugerida, costoIa:m.costo_ia_sugerido}))))}'></div>
+      ` : ''}
     </div>
     ${meses.length ? `
     <div class="panel-body" style="padding:0;">
       <table><thead><tr>
-        <th>Mes</th><th>Costos</th><th>Ingresos</th><th>Margen</th><th>%</th><th></th>
+        <th>Mes</th><th>Ingresos</th><th>Hosting</th><th>WhatsApp</th><th>Comisión MP</th><th>Costo IA</th><th>Margen</th><th>%</th><th></th>
       </tr></thead>
       <tbody>${meses.map(m=>{
         const [y,mm] = m.mes.split('-');
         const nombreMes = capitalize(MESES_ES[parseInt(mm)-1]) + ' ' + y;
         const margenColor = m.margen >= 0 ? 'var(--ok, #2e7d32)' : 'var(--danger, #b3261e)';
         return `<tr>
-          <td>${nombreMes}${!m.tiene_costos_capturados ? ' <span style="color:var(--gray); font-size:11px;">(sin costos capturados)</span>' : ''}</td>
-          <td>${fmtMoney(m.costos_totales)}</td>
-          <td>${fmtMoney(m.ingresos_totales)} <span style="color:var(--gray); font-size:11px;">(${m.asesorias_vendidas} asesoría${m.asesorias_vendidas===1?'':'s'}, ${fmtMoney(m.ingreso_cursos)} cursos)</span></td>
+          <td>${nombreMes}${!m.costos_completos ? ' <span style="color:var(--gray); font-size:11px;">(incompleto)</span>' : ''}</td>
+          <td>${fmtMoney(m.ingresos_totales)} <span style="color:var(--gray); font-size:11px;">(${m.asesorias_vendidas} asesoría${m.asesorias_vendidas===1?'':'s'}, ${m.documentos_vendidos} doc., ${fmtMoney(m.ingreso_cursos)} cursos)</span></td>
+          <td>${fmtMoney(m.costo_hosting)}</td>
+          <td>${fmtMoney(m.costo_whatsapp)} <span style="color:var(--gray); font-size:11px;">(${m.whatsapp_enviados})</span></td>
+          <td>${m.comision_mercadopago!=null ? fmtMoney(m.comision_mercadopago) : '—'}</td>
+          <td>${m.costo_ia!=null ? fmtMoney(m.costo_ia) : '<span style="color:var(--gray);">sin captura</span>'}</td>
           <td style="color:${margenColor}; font-weight:700;">${fmtMoney(m.margen)}</td>
           <td style="color:${margenColor};">${m.margen_pct!=null ? m.margen_pct+'%' : '—'}</td>
-          <td><button class="btn secondary" data-editar-costos-mes="${m.mes}" data-costos='${escapeHTML(JSON.stringify({costo_ia:m.costo_ia, costo_hosting:m.costo_hosting, costo_whatsapp:m.costo_whatsapp, comision_mercadopago:m.comision_mercadopago}))}' style="font-size:11px; padding:4px 10px;">Editar</button></td>
+          <td>${!iaAdminDisponible ? `<button class="btn secondary" data-editar-costos-mes="${m.mes}" data-costo-ia="${m.costo_ia ?? ''}" style="font-size:11px; padding:4px 10px;">Editar IA</button>` : ''}</td>
         </tr>`;
       }).join("")}</tbody></table>
     </div>
@@ -4413,31 +4415,6 @@ async function cargarCostosMensuales(){
     COSTOS_MENSUALES_STATE = {cargando:false, meses:COSTOS_MENSUALES_STATE.meses, error:'No se pudo consultar: ' + err.message, guardando:false};
   }
   renderViewBody();
-}
-
-function actualizarSugerenciasCostos(){
-  const hint = document.getElementById('sugerenciasCostosHint');
-  const mesInput = document.getElementById('costoMesInput');
-  if(!hint || !mesInput) return;
-  const meses = JSON.parse(hint.dataset.meses || '[]');
-  const encontrado = meses.find(m => m.mes === mesInput.value);
-  const lineas = [];
-
-  if(encontrado && encontrado.comisionMp != null){
-    lineas.push({texto: `Mercado Pago detectó <strong>${fmtMoney(encontrado.comisionMp)}</strong> de comisión real en cursos/asesorías de ese mes`, campo:'costoMpInput', valor: encontrado.comisionMp, id:'usarComisionMpSugerida'});
-  }
-  if(encontrado && encontrado.costoIa != null){
-    lineas.push({texto: `Anthropic Console reporta <strong>${fmtMoney(encontrado.costoIa)}</strong> de gasto real de IA ese mes`, campo:'costoIaInput', valor: encontrado.costoIa, id:'usarCostoIaSugerido'});
-  }
-
-  hint.innerHTML = lineas.map(l => `${l.texto} — <a href="#" id="${l.id}">usar este valor</a>.`).join('');
-  lineas.forEach(l=>{
-    const link = document.getElementById(l.id);
-    if(link) link.addEventListener('click', (e)=>{
-      e.preventDefault();
-      document.getElementById(l.campo).value = l.valor;
-    });
-  });
 }
 
 async function guardarCostosMensuales(datos){
@@ -6202,26 +6179,19 @@ function bindViewBody(){
       guardarCostosMensuales({
         mes,
         costo_ia: parseFloat(document.getElementById('costoIaInput').value) || 0,
-        costo_hosting: parseFloat(document.getElementById('costoHostingInput').value) || 0,
-        costo_whatsapp: parseFloat(document.getElementById('costoWhatsappInput').value) || 0,
-        comision_mercadopago: parseFloat(document.getElementById('costoMpInput').value) || 0,
       });
     });
   }
   document.querySelectorAll('[data-editar-costos-mes]').forEach(el=>{
     el.addEventListener('click', ()=>{
-      const datos = JSON.parse(el.dataset.costos);
-      document.getElementById('costoMesInput').value = el.dataset.editarCostosMes;
-      document.getElementById('costoIaInput').value = datos.costo_ia || '';
-      document.getElementById('costoHostingInput').value = datos.costo_hosting || '';
-      document.getElementById('costoWhatsappInput').value = datos.costo_whatsapp || '';
-      document.getElementById('costoMpInput').value = datos.comision_mercadopago || '';
-      document.getElementById('costoMesInput').scrollIntoView({behavior:'smooth', block:'center'});
-      actualizarSugerenciasCostos();
+      const mesInput = document.getElementById('costoMesInput');
+      const iaInput = document.getElementById('costoIaInput');
+      if(!mesInput || !iaInput) return;
+      mesInput.value = el.dataset.editarCostosMes;
+      iaInput.value = el.dataset.costoIa || '';
+      mesInput.scrollIntoView({behavior:'smooth', block:'center'});
     });
   });
-  const costoMesInputEl = document.getElementById('costoMesInput');
-  if(costoMesInputEl) costoMesInputEl.addEventListener('change', actualizarSugerenciasCostos);
   actualizarSugerenciasCostos();
   document.querySelectorAll('[data-asesoria-mes-toggle]').forEach(el=>{
     el.addEventListener('click', ()=>{
