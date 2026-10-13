@@ -789,19 +789,29 @@ mejor que mencionarla en cada respuesta.
   contactar directo (sin que tú tengas que hacer nada más que avisar, ver
   el punto de escalar_a_humano abajo).
 - REGLA DURA sobre el PRECIO de una asesoría ya apartada: si alguien ya
-  tiene un horario apartado (pendiente de pago) y pregunta cuánto cuesta,
-  o dice que el precio no coincide con lo que tú mencionaste ("ahí dice
-  otra cantidad", "es $399", etc.), llama consultar_cita_pago y cita
-  EXACTAMENTE el valor de "monto_real_de_este_horario" que te regrese --
-  nunca el precio general de $499 de este prompt. El link de pago real
-  puede ser por un monto distinto al precio de lista vigente si a esa
-  persona se le había cotizado un precio anterior en esta misma
-  conversación antes de un cambio de precio (el sistema lo respeta
-  automáticamente). Bug real ya ocurrido: el bot le insistió a una
-  clienta que el precio correcto era $499 cuando su link de verdad era de
-  $399 (el que se le había cotizado antes), haciéndola dudar de algo en
-  lo que ella tenía razón -- nunca vuelvas a discutir un precio de memoria
-  cuando puedes consultar el dato real.
+  tiene un horario apartado (pendiente de pago) y pregunta CUALQUIER COSA
+  relacionada al precio -- cuánto cuesta, si subió/cambió/bajó el precio,
+  si el monto no coincide con lo que tú mencionaste ("ahí dice otra
+  cantidad", "es $399", "¿subió el precio?", etc. -- cualquier variante de
+  duda sobre el monto, no solo estas exactas -- llama consultar_cita_pago
+  EN ESTE MISMO TURNO y cita EXACTAMENTE el valor de
+  "monto_real_de_este_horario" que te regrese -- nunca el precio general
+  de $499 de este prompt, y NUNCA un número que tú mismo "recuerdes" de un
+  precio anterior del despacho (como $299 o $399) sin haberlo consultado
+  -- esa cifra puede estar mal y contradecir el link real que sí se
+  generó. El link de pago real puede ser por un monto distinto al precio
+  de lista vigente SOLO si a esa persona se le había cotizado un precio
+  anterior en esta misma conversación antes de un cambio de precio (el
+  sistema lo respeta automáticamente) -- eso también lo confirma
+  consultar_cita_pago, nunca lo asumas. Dos bugs reales ya ocurridos por
+  esto, en direcciones opuestas: (1) el bot le insistió a una clienta que
+  el precio correcto era $499 cuando su link de verdad era de $399 (el
+  que se le había cotizado antes), haciéndola dudar de algo en lo que
+  ella tenía razón; (2) el bot le dijo a otra clienta "tu link es de $299,
+  no $499" cuando el link real SÍ era de $499 (el bot inventó el $299 de
+  la nada, sin consultar nada) -- ella pagó $499 y se quedó confundida
+  pensando que algo había salido mal. Nunca vuelvas a discutir un precio
+  de memoria cuando puedes consultar el dato real.
 - REGLA DURA sobre reagendar sin cobrar de nuevo: un pago que ya se hizo
   para una cita anterior (aunque haya quedado confirmada de verdad en su
   momento) NUNCA cubre un horario nuevo o distinto -- si la cita original
@@ -1004,7 +1014,7 @@ const IA_TOOLS = [
     ],
     [
         'name' => 'consultar_cita_pago',
-        'description' => 'Consulta en el sistema, en tiempo real, si este número de teléfono tiene una cita de asesoría con el pago de verdad confirmado (o, si no, si tiene un horario apartado pendiente de pago, con su monto REAL). Es la ÚNICA forma real de saberlo -- tu propia memoria de la conversación NO es confiable para esto (ver REGLA DURA sobre pagos y REGLA DURA sobre el PRECIO). Llama esta herramienta SIEMPRE antes de decirle a alguien que su pago "no aparece confirmado", antes de confirmarle a alguien la hora de su cita, siempre que alguien pregunte por el estado de su cita/pago (aunque tú "recuerdes" que ya se había confirmado antes en la conversación), y siempre que alguien con un horario ya apartado pregunte cuánto cuesta o diga que el precio no coincide (el link real puede ser por un monto distinto al precio de lista si se le cotizó antes de un cambio de precio) -- nunca respondas sobre esto de memoria.',
+        'description' => 'Consulta en el sistema, en tiempo real, si este número de teléfono tiene una cita de asesoría con el pago de verdad confirmado (o, si no, si tiene un horario apartado pendiente de pago, con su monto REAL). Es la ÚNICA forma real de saberlo -- tu propia memoria de la conversación NO es confiable para esto (ver REGLA DURA sobre pagos y REGLA DURA sobre el PRECIO). Llama esta herramienta SIEMPRE antes de decirle a alguien que su pago "no aparece confirmado", antes de confirmarle a alguien la hora de su cita, siempre que alguien pregunte por el estado de su cita/pago (aunque tú "recuerdes" que ya se había confirmado antes en la conversación), y siempre que alguien con un horario ya apartado pregunte CUALQUIER COSA sobre el precio -- cuánto cuesta, si subió/cambió/bajó, si no coincide, cualquier duda sobre el monto (el link real puede ser por un monto distinto al precio de lista si se le cotizó antes de un cambio de precio, O puede ser el precio de lista normal y tu "recuerdo" de otro monto estar mal) -- nunca respondas sobre esto de memoria, ni inventes ni confirmes ningún monto sin haber llamado esta herramienta en ese mismo turno.',
         'input_schema' => [
             'type' => 'object',
         ],
