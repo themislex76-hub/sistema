@@ -396,6 +396,47 @@ function mercadopago_crear_preferencia_documento_calculo(int $compraId, string $
 }
 
 /**
+ * Reembolsa PARCIALMENTE un pago ya aprobado, por el monto exacto que se
+ * le pase (nunca el total) -- usa el endpoint real de reembolsos de
+ * Mercado Pago (POST /v1/payments/{id}/refunds con {"amount": N}), para
+ * no depender de adivinar qué hace un botón del dashboard web cuando se
+ * trata de dinero real. Devuelve el arreglo decodificado de la respuesta
+ * (incluye el id del reembolso y el monto real aplicado) o null si falló.
+ */
+function mercadopago_reembolsar_parcial(string $paymentId, float $monto): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+
+    $ch = curl_init('https://api.mercadopago.com/v1/payments/' . urlencode($paymentId) . '/refunds');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode(['amount' => $monto], JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+            . " | reembolsar_parcial($paymentId, $monto) | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    return json_decode($raw, true);
+}
+
+/**
  * Consulta el estado real de un pago directo en la API de Mercado Pago —
  * nunca hay que confiar en lo que trae el aviso del webhook por sí solo,
  * siempre se vuelve a preguntar con el Access Token propio para
