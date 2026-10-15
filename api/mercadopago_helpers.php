@@ -204,6 +204,18 @@ function mercadopago_crear_preferencia_asesoria(int $citaId, string $telefono, s
         'payer' => [
             'phone' => mercadopago_telefono_a_payer_phone($telefono),
         ],
+        // El "30 minutos" para apartar el horario es solo una regla
+        // interna (ver CITAS_HOLD_MINUTOS) -- sin esto, el link de pago en
+        // sí seguía siendo válido en Mercado Pago indefinidamente. Bug
+        // real detectado: una clienta pagó un link casi 5 semanas después
+        // de haberlo abierto, cuando el horario original ya llevaba mucho
+        // tiempo vencido -- el sistema reaccionó bien (no la agendó en la
+        // fecha vieja, le pidió elegir una nueva), pero nadie se dio
+        // cuenta de inmediato y se quedó pagada sin cita real por horas.
+        // Ahora el link mismo deja de ser pagable a los 2 días.
+        'expires' => true,
+        'expiration_date_from' => (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.000P'),
+        'expiration_date_to' => (new DateTimeImmutable('+2 days'))->format('Y-m-d\TH:i:s.000P'),
     ];
 
     $ch = curl_init('https://api.mercadopago.com/checkout/preferences');
