@@ -50,8 +50,8 @@ if ($pref === null) {
     exit;
 }
 
-$upd = $pdo->prepare("UPDATE citas_asesoria SET mp_preference_id = :pref, link_pago = :link WHERE id = :id");
-$upd->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':id' => $cita['id']]);
+$upd = $pdo->prepare("UPDATE citas_asesoria SET mp_preference_id = :pref, link_pago = :link, monto = :monto WHERE id = :id");
+$upd->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':monto' => $monto, ':id' => $cita['id']]);
 
 $horaTxt = substr((string)$cita['hora_inicio'], 0, 5);
 echo "Cita #{$cita['id']} -- " . citas_formatear_fecha_hora((string)$cita['fecha'], $horaTxt) . " (\${$monto} MXN).\n\n";

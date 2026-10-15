@@ -58,8 +58,8 @@ if ($pref === null) {
     exit;
 }
 
-$upd = $pdo->prepare("UPDATE citas_asesoria SET mp_preference_id = :pref, link_pago = :link WHERE id = :id");
-$upd->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':id' => $citaId]);
+$upd = $pdo->prepare("UPDATE citas_asesoria SET mp_preference_id = :pref, link_pago = :link, monto = :monto WHERE id = :id");
+$upd->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':monto' => $monto, ':id' => $citaId]);
 
 echo "Cita #{$citaId} apartada para " . citas_formatear_fecha_hora($fecha, $hora) . " (\${$monto} MXN).\n";
 echo "Tiene " . CITAS_HOLD_MINUTOS . " minutos para pagar antes de que el horario se libere de nuevo.\n\n";

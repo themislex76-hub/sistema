@@ -1870,8 +1870,17 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         ], JSON_UNESCAPED_UNICODE);
     }
 
-    $stmt = $pdo->prepare("UPDATE citas_asesoria SET mp_preference_id = :pref, link_pago = :link WHERE id = :id");
-    $stmt->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':id' => $citaId]);
+    // Bug real detectado en producción: citas_crear_pendiente() nunca
+    // guardaba ningún monto, así que la columna se quedaba en su DEFAULT
+    // de la tabla (299.00) hasta que el pago se confirmaba de verdad --
+    // cualquier cliente que preguntara el precio de un horario todavía
+    // sin pagar (vía consultar_cita_pago) recibía ese 299 falso en vez
+    // del monto real que de verdad se le iba a cobrar (el mismo $monto
+    // que ya se usó arriba para generar el link real de Mercado Pago).
+    // Se guarda aquí mismo, apenas se crea la reservación, para que el
+    // dato esté bien desde el primer momento.
+    $stmt = $pdo->prepare("UPDATE citas_asesoria SET mp_preference_id = :pref, link_pago = :link, monto = :monto WHERE id = :id");
+    $stmt->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':monto' => $monto, ':id' => $citaId]);
 
     return json_encode([
         'ok' => true,
