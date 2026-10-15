@@ -2826,7 +2826,7 @@ function shellHTML(){
         <button data-v="expedientes" class="${VIEW==='expedientes'?'active':''}"><span class="ico">${ICONS.expedientes}</span> Expedientes</button>
         <button data-v="alertas" class="${VIEW==='alertas'?'active':''}"><span class="ico">${ICONS.alertas}</span> Alertas de prescripción</button>
         <button data-v="cobros" class="${VIEW==='cobros'?'active':''}"><span class="ico">&#128176;</span> Cobros de convenios</button>
-        <button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>
+        ${isAdmin ? `<button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>` : ""}
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
         <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
