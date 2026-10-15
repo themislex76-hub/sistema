@@ -33,9 +33,15 @@ if ($idParam !== '') {
     $stmt = $pdo->prepare("SELECT * FROM citas_asesoria WHERE id = :id AND telefono = :t AND estado = 'confirmada'");
     $stmt->execute([':id' => (int)$idParam, ':t' => $telefono]);
 } else {
+    // Sin filtrar por fecha >= CURDATE(): un pago que llega después de que
+    // la fecha original ya venció (ver mercadopago_webhook.php,
+    // $citaYaPaso) se queda confirmada con esa fecha vieja a propósito,
+    // esperando que alguien la mueva a mano a la fecha real que elija el
+    // cliente -- si se filtrara solo por futuras, esta herramienta nunca
+    // la encontraría.
     $stmt = $pdo->prepare(
-        "SELECT * FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' AND fecha >= CURDATE()
-         ORDER BY fecha, hora_inicio LIMIT 2"
+        "SELECT * FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada'
+         ORDER BY fecha DESC, hora_inicio DESC LIMIT 2"
     );
     $stmt->execute([':t' => $telefono]);
 }
