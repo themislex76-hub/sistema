@@ -129,10 +129,20 @@ function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): floa
     // la subida a $499 de octubre 2026) y luego el más antiguo ($299) --
     // mismo criterio de "OJO 2" de arriba, ahora con dos precios viejos
     // posibles en vez de uno.
+    //
+    // Bug real detectado en producción: el ancla exigía la palabra
+    // "asesor" en el mismo mensaje, pero el bot a veces describe la
+    // misma asesoría como "llamada telefónica de 1 hora" sin usar esa
+    // palabra -- un cliente cotizado así en $399 terminó con un link
+    // nuevo de $499 porque el mensaje real nunca hizo match. Se agregan
+    // anclas alternativas que también identifican sin ambigüedad que el
+    // mensaje habla de la asesoría (no de un cálculo con una cifra
+    // parecida).
+    $anclaAsesoria = "(texto LIKE '%asesor%' OR texto LIKE '%llamada telefónica%' OR texto LIKE '%Rubén Buerhend%')";
     $stmt = $pdo->prepare(
         "SELECT 1 FROM whatsapp_conversaciones
          WHERE telefono = :t AND direccion = 'saliente'
-           AND texto LIKE '%\$399%' AND texto LIKE '%asesor%'
+           AND texto LIKE '%\$399%' AND {$anclaAsesoria}
          LIMIT 1"
     );
     $stmt->execute([':t' => $telefono]);
@@ -143,7 +153,7 @@ function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): floa
     $stmt = $pdo->prepare(
         "SELECT 1 FROM whatsapp_conversaciones
          WHERE telefono = :t AND direccion = 'saliente'
-           AND texto LIKE '%\$299%' AND texto LIKE '%asesor%'
+           AND texto LIKE '%\$299%' AND {$anclaAsesoria}
          LIMIT 1"
     );
     $stmt->execute([':t' => $telefono]);
