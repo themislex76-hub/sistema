@@ -3432,6 +3432,10 @@ function alertasHTML(){
 }
 
 const HONORARIO_PCT = 0.30;
+// El honorario del despacho (30% del convenio) se reparte entre el socio
+// que cobró el caso y Rubén (despacho) -- 40/60 respectivamente.
+const HONORARIO_SOCIO_PCT = 0.40;
+const HONORARIO_RUBEN_PCT = 0.60;
 
 function conceptoRow(nombre, fundamento, monto, destacado){
   if(monto===null || monto===undefined) return '';
@@ -3815,7 +3819,7 @@ function ingresosHTML(){
   <div class="panel">
     <div class="panel-head"><h3>Cobrado por socio en el periodo</h3><span class="count">${fmtDate(rango.desde)} – ${fmtDate(rango.hasta)}</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Socio</th><th>Pagos cobrados</th><th>Total cobrado</th><th>% del total del periodo</th></tr></thead>
+      <table><thead><tr><th>Socio</th><th>Pagos cobrados</th><th>Total cobrado</th><th>Honorario (30%)</th><th>Socio (40%)</th><th>Despacho (60%)</th><th>% del total del periodo</th></tr></thead>
       <tbody>${(()=>{
         const porAbogado = {};
         enPeriodo.forEach(p=>{
@@ -3825,11 +3829,12 @@ function ingresosHTML(){
           porAbogado[nombre].count += 1;
         });
         const nombres = Object.keys(porAbogado).sort((a,b)=> porAbogado[b].total - porAbogado[a].total);
-        if(!nombres.length) return `<tr><td colspan="4" class="empty">Sin cobros en este periodo.</td></tr>`;
+        if(!nombres.length) return `<tr><td colspan="7" class="empty">Sin cobros en este periodo.</td></tr>`;
         return nombres.map(n=>{
           const d = porAbogado[n];
           const pct = totalPeriodo>0 ? (d.total/totalPeriodo*100) : 0;
-          return `<tr><td><strong>${escapeHTML(n)}</strong></td><td>${d.count}</td><td style="font-weight:700;">${fmtMoney(d.total)}</td><td>${pct.toFixed(1)}%</td></tr>`;
+          const honorario = d.total*HONORARIO_PCT;
+          return `<tr><td><strong>${escapeHTML(n)}</strong></td><td>${d.count}</td><td style="font-weight:700;">${fmtMoney(d.total)}</td><td style="color:var(--brass);">${fmtMoney(honorario)}</td><td>${fmtMoney(honorario*HONORARIO_SOCIO_PCT)}</td><td>${fmtMoney(honorario*HONORARIO_RUBEN_PCT)}</td><td>${pct.toFixed(1)}%</td></tr>`;
         }).join("");
       })()}</tbody></table>
     </div>
@@ -3838,28 +3843,33 @@ function ingresosHTML(){
   <div class="panel">
     <div class="panel-head"><h3>Detalle de pagos cobrados en el periodo</h3><span class="count">${enPeriodo.length}</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Fecha de cobro</th><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Socio</th></tr></thead>
-      <tbody>${enPeriodo.map(p=>`
+      <table><thead><tr><th>Fecha de cobro</th><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Socio (40%)</th><th>Despacho (60%)</th><th>Socio</th></tr></thead>
+      <tbody>${enPeriodo.map(p=>{
+        const honorario = p.monto!=null ? p.monto*HONORARIO_PCT : null;
+        return `
         <tr data-id="${p.k.id}">
           <td>${fmtDate(p.fecha)}</td>
           <td>${escapeHTML(p.k.actor)}</td>
           <td>${escapeHTML(truncate(p.k.demandado,34))}</td>
           <td><strong>${p.monto!=null? fmtMoney(p.monto) : 'sin monto capturado'}</strong></td>
-          <td style="color:var(--brass); font-weight:600;">${p.monto!=null? fmtMoney(p.monto*HONORARIO_PCT) : '—'}</td>
+          <td style="color:var(--brass); font-weight:600;">${honorario!=null? fmtMoney(honorario) : '—'}</td>
+          <td>${honorario!=null? fmtMoney(honorario*HONORARIO_SOCIO_PCT) : '—'}</td>
+          <td>${honorario!=null? fmtMoney(honorario*HONORARIO_RUBEN_PCT) : '—'}</td>
           <td class="abogado-tag">${escapeHTML(assignedLawyer(p.k))}</td>
-        </tr>`).join("") || `<tr><td colspan="6" class="empty">Sin pagos cobrados en este periodo.</td></tr>`}</tbody></table>
+        </tr>`;}).join("") || `<tr><td colspan="8" class="empty">Sin pagos cobrados en este periodo.</td></tr>`}</tbody></table>
     </div>
   </div>
 
   <div class="panel">
     <div class="panel-head"><h3>Resumen mensual (histórico completo)</h3><span class="count">${mesesOrdenados.length} mes(es)</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Mes</th><th>Total cobrado</th><th>Honorario (30%)</th></tr></thead>
+      <table><thead><tr><th>Mes</th><th>Total cobrado</th><th>Honorario (30%)</th><th>Socio (40%)</th><th>Despacho (60%)</th></tr></thead>
       <tbody>${mesesOrdenados.map(ym=>{
         const [y,m] = ym.split('-');
         const nombreMes = MESES_ES[parseInt(m)-1];
-        return `<tr><td>${capitalize(nombreMes)} ${y}</td><td><strong>${fmtMoney(porMes[ym])}</strong></td><td style="color:var(--brass);">${fmtMoney(porMes[ym]*HONORARIO_PCT)}</td></tr>`;
-      }).join("") || `<tr><td colspan="3" class="empty">Sin cobros registrados todavía.</td></tr>`}</tbody></table>
+        const honorario = porMes[ym]*HONORARIO_PCT;
+        return `<tr><td>${capitalize(nombreMes)} ${y}</td><td><strong>${fmtMoney(porMes[ym])}</strong></td><td style="color:var(--brass);">${fmtMoney(honorario)}</td><td>${fmtMoney(honorario*HONORARIO_SOCIO_PCT)}</td><td>${fmtMoney(honorario*HONORARIO_RUBEN_PCT)}</td></tr>`;
+      }).join("") || `<tr><td colspan="5" class="empty">Sin cobros registrados todavía.</td></tr>`}</tbody></table>
     </div>
   </div>
 
