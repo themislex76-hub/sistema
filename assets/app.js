@@ -3698,11 +3698,11 @@ function todosLosPagosCobrados(){
   const out = [];
   visibleCases().filter(tieneConvenio).forEach(k=>{
     const meta = getMeta(k.id);
-    (meta.pagos||[]).forEach(p=>{
+    (meta.pagos||[]).forEach((p,idx)=>{
       if(p.cobrado){
         const fecha = p.fecha_cobro || p.fecha;
         const monto = p.monto && !isNaN(parseFloat(p.monto)) ? parseFloat(p.monto) : null;
-        if(fecha) out.push({fecha, monto, k});
+        if(fecha) out.push({fecha, monto, k, idx, socioLiquidado: !!p.socio_liquidado});
       }
     });
   });
@@ -3814,7 +3814,25 @@ function ingresosHTML(){
     <div class="stat-card"><div class="bar"></div><div class="num">${enPeriodo.length}</div><div class="label">Pagos cobrados en el periodo</div></div>
     <div class="stat-card"><div class="bar" style="background:var(--brass);"></div><div class="num">${fmtMoney(totalPeriodo*HONORARIO_PCT)}</div><div class="label">Honorario del despacho (30%)</div></div>
   </div>
-  ${sinMontoCount ? `<div class="notice" style="margin-bottom:16px;">${sinMontoCount} pago(s) cobrado(s) en este periodo no tienen un monto capturado y no se incluyen en el total. Captúralos en la pestaña "Cobros" de cada expediente para que el resumen sea exacto.</div>` : ''}
+  ${(()=>{
+    // Cuánto del honorario le toca a cada quien, y de la parte de Rubén
+    // (60%), cuánto ya liquidó el socio vs. cuánto sigue pendiente de
+    // que te pague -- se marca pago por pago en la tabla de abajo
+    // ("¿Socio ya me pagó?").
+    const honorarioTotal = totalPeriodo * HONORARIO_PCT;
+    const socioTotal = honorarioTotal * HONORARIO_SOCIO_PCT;
+    const despachoTotal = honorarioTotal * HONORARIO_RUBEN_PCT;
+    const despachoLiquidado = enPeriodo.filter(p=>p.socioLiquidado).reduce((s,p)=> s + (p.monto||0)*HONORARIO_PCT*HONORARIO_RUBEN_PCT, 0);
+    const despachoPendiente = despachoTotal - despachoLiquidado;
+    return `
+    <div class="stat-grid" style="grid-template-columns:repeat(4,1fr); margin-top:12px;">
+      <div class="stat-card"><div class="bar"></div><div class="num">${fmtMoney(socioTotal)}</div><div class="label">Total socio (40% del honorario)</div></div>
+      <div class="stat-card"><div class="bar" style="background:var(--brass);"></div><div class="num">${fmtMoney(despachoTotal)}</div><div class="label">Total despacho (60% del honorario)</div></div>
+      <div class="stat-card ok"><div class="bar"></div><div class="num">${fmtMoney(despachoLiquidado)}</div><div class="label">Despacho ya liquidado por el socio</div></div>
+      <div class="stat-card ${despachoPendiente>0?'warn':''}"><div class="bar"></div><div class="num">${fmtMoney(despachoPendiente)}</div><div class="label">Despacho pendiente de cobrar al socio</div></div>
+    </div>`;
+  })()}
+  ${sinMontoCount ? `<div class="notice" style="margin-top:16px;">${sinMontoCount} pago(s) cobrado(s) en este periodo no tienen un monto capturado y no se incluyen en el total. Captúralos en la pestaña "Cobros" de cada expediente para que el resumen sea exacto.</div>` : ''}
 
   <div class="panel">
     <div class="panel-head"><h3>Cobrado por socio en el periodo</h3><span class="count">${fmtDate(rango.desde)} – ${fmtDate(rango.hasta)}</span></div>
@@ -3843,7 +3861,7 @@ function ingresosHTML(){
   <div class="panel">
     <div class="panel-head"><h3>Detalle de pagos cobrados en el periodo</h3><span class="count">${enPeriodo.length}</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Fecha de cobro</th><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Socio (40%)</th><th>Despacho (60%)</th><th>Socio</th></tr></thead>
+      <table><thead><tr><th>Fecha de cobro</th><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Socio (40%)</th><th>Despacho (60%)</th><th>Socio</th><th>¿Socio ya me pagó?</th></tr></thead>
       <tbody>${enPeriodo.map(p=>{
         const honorario = p.monto!=null ? p.monto*HONORARIO_PCT : null;
         return `
@@ -3856,7 +3874,11 @@ function ingresosHTML(){
           <td>${honorario!=null? fmtMoney(honorario*HONORARIO_SOCIO_PCT) : '—'}</td>
           <td>${honorario!=null? fmtMoney(honorario*HONORARIO_RUBEN_PCT) : '—'}</td>
           <td class="abogado-tag">${escapeHTML(assignedLawyer(p.k))}</td>
-        </tr>`;}).join("") || `<tr><td colspan="8" class="empty">Sin pagos cobrados en este periodo.</td></tr>`}</tbody></table>
+          <td><label style="display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="event.stopPropagation();">
+            <input type="checkbox" class="socio-liquidado-check" data-kid="${p.k.id}" data-idx="${p.idx}" ${p.socioLiquidado?'checked':''}>
+            ${p.socioLiquidado ? '<span style="color:var(--ok, #2e7d32); font-weight:600;">Sí</span>' : '<span style="color:var(--gray);">No</span>'}
+          </label></td>
+        </tr>`;}).join("") || `<tr><td colspan="9" class="empty">Sin pagos cobrados en este periodo.</td></tr>`}</tbody></table>
     </div>
   </div>
 
@@ -6342,6 +6364,27 @@ function bindViewBody(){
       renderViewBody();
     });
   }
+  document.querySelectorAll('.socio-liquidado-check').forEach(el=>{
+    el.addEventListener('change', async ()=>{
+      const kid = parseInt(el.dataset.kid);
+      const idx = parseInt(el.dataset.idx);
+      const meta = getMeta(kid);
+      const pagos = meta.pagos || [];
+      if(!pagos[idx]) return;
+      const valorNuevo = el.checked;
+      pagos[idx].socio_liquidado = valorNuevo;
+      el.disabled = true;
+      try{
+        await api('POST', 'expedientes_update_pagos.php', {id:kid, pagos});
+        renderViewBody();
+      }catch(err){
+        pagos[idx].socio_liquidado = !valorNuevo;
+        el.checked = !valorNuevo;
+        el.disabled = false;
+        alert('No se pudo guardar: ' + err.message);
+      }
+    });
+  });
   document.querySelectorAll('[data-demandado]').forEach(el=>{
     el.addEventListener('click', ()=>{
       SEARCH_TERM = el.dataset.demandado;

@@ -51,6 +51,7 @@ if ($ids) {
             'monto' => $r['monto'] !== null ? (float)$r['monto'] : null,
             'cobrado' => (bool)$r['cobrado'],
             'fecha_cobro' => $r['fecha_cobro'],
+            'socio_liquidado' => (bool)$r['socio_liquidado'],
         ];
     }
 

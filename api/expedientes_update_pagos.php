@@ -38,8 +38,8 @@ $antesTexto = $resumenPagos($antesFilas);
 $pdo->prepare('DELETE FROM expediente_pagos WHERE expediente_id = :eid')->execute([':eid' => $id]);
 
 $ins = $pdo->prepare(
-    'INSERT INTO expediente_pagos (expediente_id, fecha, monto, cobrado, fecha_cobro, orden)
-     VALUES (:eid, :fecha, :monto, :cobrado, :fecha_cobro, :orden)'
+    'INSERT INTO expediente_pagos (expediente_id, fecha, monto, cobrado, fecha_cobro, socio_liquidado, orden)
+     VALUES (:eid, :fecha, :monto, :cobrado, :fecha_cobro, :socio_liquidado, :orden)'
 );
 $orden = 0;
 $despuesFilas = [];
@@ -49,10 +49,12 @@ foreach ($pagos as $p) {
     $monto = ($p['monto'] ?? '') !== '' ? (float)$p['monto'] : null;
     $cobrado = !empty($p['cobrado']);
     $fechaCobro = ($p['fecha_cobro'] ?? '') !== '' ? $p['fecha_cobro'] : null;
+    $socioLiquidado = !empty($p['socio_liquidado']);
     if ($fecha === null && $monto === null) continue;
     $ins->execute([
         ':eid' => $id, ':fecha' => $fecha, ':monto' => $monto,
-        ':cobrado' => $cobrado ? 1 : 0, ':fecha_cobro' => $fechaCobro, ':orden' => $orden++,
+        ':cobrado' => $cobrado ? 1 : 0, ':fecha_cobro' => $fechaCobro,
+        ':socio_liquidado' => $socioLiquidado ? 1 : 0, ':orden' => $orden++,
     ]);
     $despuesFilas[] = ['cobrado' => $cobrado, 'monto' => $monto ?? 0];
 }
