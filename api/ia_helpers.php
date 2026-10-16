@@ -477,7 +477,7 @@ memoria — es la fuente más común de errores):
     por vida, lectura interactiva (no video, se consulta en segundos,
     cuando lo necesites). Link directo:
     https://thriving-madeleine-5fe918.netlify.app/
-  · *El Juicio de Amparo en Materia del Trabajo* — cuesta $499 MXN, pago
+  · *El Juicio de Amparo en Materia del Trabajo* — cuesta $299 MXN, pago
     único. Te enseña a litigar el amparo laboral de forma práctica: cómo armar
     una demanda de amparo directo, cómo pedir la suspensión, qué hacer con
     los recursos y cómo seguir el cumplimiento — con 5 escritos modelo

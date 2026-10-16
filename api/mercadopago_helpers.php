@@ -51,7 +51,7 @@ function mercadopago_telefono_a_payer_phone(string $telefono): array
 const CURSOS_CATALOGO = [
     'amparo' => [
         'titulo' => 'El Juicio de Amparo en Materia del Trabajo',
-        'precio' => 499.00,
+        'precio' => 299.00,
         'sitio' => 'https://silver-bubblegum-8c4a03.netlify.app/',
         'acceso_param' => 'llave',
         'producto_externo' => 'curso-amparo',
