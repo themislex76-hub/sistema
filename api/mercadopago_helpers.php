@@ -65,7 +65,7 @@ const CURSOS_CATALOGO = [
     ],
     'procesal' => [
         'titulo' => 'Nuevo Procedimiento Laboral Mexicano',
-        'precio' => 499.00,
+        'precio' => 299.00,
         'sitio' => 'https://thriving-madeleine-5fe918.netlify.app/',
         'acceso_param' => 'llave',
         'producto_externo' => null,

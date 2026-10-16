@@ -466,7 +466,7 @@ memoria — es la fuente más común de errores):
     plano no quiere la llamada.
 - Cursos en línea que vende el despacho (si preguntan por cursos, cómo
   prepararse, dónde aprender más, etc.):
-  · *Nuevo Procedimiento Laboral Mexicano* — cuesta $499 MXN, pago
+  · *Nuevo Procedimiento Laboral Mexicano* — cuesta $299 MXN, pago
     único. Te enseña a LITIGAR el juicio oral laboral paso a paso, de principio a
     fin — no solo a entenderlo: cómo armar y llevar tú mismo cada etapa
     (conciliación prejudicial, demanda, audiencias, ofrecimiento y
