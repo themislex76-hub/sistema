@@ -806,7 +806,16 @@ mejor que mencionarla en cada respuesta.
   cuanto Mercado Pago lo registre, [la acción que corresponda]." Explícale
   que si de verdad ya pagó, en cuanto se confirme el abogado lo va a
   contactar directo (sin que tú tengas que hacer nada más que avisar, ver
-  el punto de escalar_a_humano abajo).
+  el punto de escalar_a_humano abajo). OJO: consultar_cita_pago SOLO
+  revisa el pago de la asesoría telefónica ($499) -- si la pregunta es
+  sobre el documento membretado ($49, "¿ya pagué el documento?", "me lo
+  puedes reenviar"), usa consultar_compra_documento_calculo en vez de
+  esta, son registros distintos. Nunca le apliques al documento lo que
+  consultar_cita_pago te haya regresado sobre la asesoría, ni al revés --
+  bug real detectado en producción: el bot le dijo a un cliente "no veo
+  ningún pago, ni del documento ni de la asesoría" habiendo consultado
+  solo la asesoría, cuando el documento sí estaba pagado y entregado desde
+  el día anterior.
 - REGLA DURA sobre el PRECIO de una asesoría ya apartada: si alguien ya
   tiene un horario apartado (pendiente de pago) y pregunta CUALQUIER COSA
   relacionada al precio -- cuánto cuesta, si subió/cambió/bajó el precio,
@@ -1034,6 +1043,13 @@ const IA_TOOLS = [
     [
         'name' => 'consultar_cita_pago',
         'description' => 'Consulta en el sistema, en tiempo real, si este número de teléfono tiene una cita de asesoría con el pago de verdad confirmado (o, si no, si tiene un horario apartado pendiente de pago, con su monto REAL). Es la ÚNICA forma real de saberlo -- tu propia memoria de la conversación NO es confiable para esto (ver REGLA DURA sobre pagos y REGLA DURA sobre el PRECIO). Llama esta herramienta SIEMPRE antes de decirle a alguien que su pago "no aparece confirmado", antes de confirmarle a alguien la hora de su cita, siempre que alguien pregunte por el estado de su cita/pago (aunque tú "recuerdes" que ya se había confirmado antes en la conversación), y siempre que alguien con un horario ya apartado pregunte CUALQUIER COSA sobre el precio -- cuánto cuesta, si subió/cambió/bajó, si no coincide, cualquier duda sobre el monto (el link real puede ser por un monto distinto al precio de lista si se le cotizó antes de un cambio de precio, O puede ser el precio de lista normal y tu "recuerdo" de otro monto estar mal) -- nunca respondas sobre esto de memoria, ni inventes ni confirmes ningún monto sin haber llamado esta herramienta en ese mismo turno.',
+        'input_schema' => [
+            'type' => 'object',
+        ],
+    ],
+    [
+        'name' => 'consultar_compra_documento_calculo',
+        'description' => 'Consulta en el sistema, en tiempo real, si este número de teléfono tiene el documento membretado del cálculo de liquidación ($49) de verdad pagado -- y si ya está pagado, te lo reenvía automáticamente por WhatsApp en este mismo turno. Es la ÚNICA forma real de saberlo -- tu propia memoria de la conversación NO es confiable para esto, igual que con consultar_cita_pago. Llama esta herramienta SIEMPRE que alguien pregunte si ya pagó el documento, pida que se lo reenvíes, diga que no le llegó, o tenga cualquier duda sobre si ese pago en particular (el de $49, NO el de la asesoría de $499) se procesó -- nunca le digas "no veo ningún pago" de memoria ni asumas que algo que consultaste para la asesoría (consultar_cita_pago) también aplica al documento, son cosas distintas con registros distintos.',
         'input_schema' => [
             'type' => 'object',
         ],
@@ -1389,7 +1405,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // y, una vez elegido el horario, confirmar_horario_asesoria) sin
     // escribir texto todavía — por eso esto es un ciclo y no una sola
     // "segunda llamada", con un tope de rondas por seguridad.
-    $herramientasConSeguimiento = ['calcular_sdi_con_variable', 'calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_plazo_prestaciones', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'confirmar_compra_curso', 'consultar_cita_pago', 'confirmar_compra_documento_calculo'];
+    $herramientasConSeguimiento = ['calcular_sdi_con_variable', 'calcular_estimado_liquidacion', 'calcular_plazo_demanda', 'calcular_plazo_prestaciones', 'calcular_salarios_caidos', 'ofrecer_horarios_asesoria', 'confirmar_horario_asesoria', 'confirmar_compra_curso', 'consultar_cita_pago', 'confirmar_compra_documento_calculo', 'consultar_compra_documento_calculo'];
     $mensajesActuales = $mensajes;
     $lead = null;
     $texto = '';
@@ -1549,6 +1565,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                 $contenido = ia_resultado_confirmar_compra_curso($pdo, $telefono, (string)($in['curso'] ?? ''), $nombreCompra);
             } elseif ($bloque['name'] === 'consultar_cita_pago') {
                 $contenido = ia_resultado_consultar_cita_pago($pdo, $telefono);
+            } elseif ($bloque['name'] === 'consultar_compra_documento_calculo') {
+                $contenido = ia_resultado_consultar_compra_documento_calculo($pdo, $telefono);
             } elseif ($bloque['name'] === 'consultar_salario_minimo_vigente') {
                 $contenido = json_encode([
                     'salario_minimo_diario_vigente' => salario_minimo_diario_actual($pdo),
@@ -2079,7 +2097,72 @@ function ia_resultado_consultar_cita_pago(PDO $pdo, string $telefono): string
 
     return json_encode([
         'pago_confirmado' => false,
-        'instruccion' => 'No hay ninguna cita (ni pendiente, ni confirmada, ni pasada) registrada para este número en el sistema. Sigue la REGLA DURA sobre pagos: no confirmes nada por lo que diga el cliente, y nunca inventes a qué corresponde algún comprobante que te haya mandado -- eso no lo puedes verificar tú.',
+        'instruccion' => 'No hay ninguna cita (ni pendiente, ni confirmada, ni pasada) registrada para este número en el sistema. Sigue la REGLA DURA sobre pagos: no confirmes nada por lo que diga el cliente, y nunca inventes a qué corresponde algún comprobante que le haya mandado -- eso no lo puedes verificar tú.',
+    ], JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Resultado (como JSON) de la herramienta consultar_compra_documento_calculo:
+ * única fuente de verdad real sobre si este número tiene el documento
+ * membretado ($49) pagado -- antes no existía ninguna herramienta para
+ * esto, así que cuando alguien preguntaba "¿ya pagué el documento?" la IA
+ * solo tenía consultar_cita_pago a la mano (que únicamente revisa
+ * citas_asesoria) y terminaba aplicando ese resultado también al
+ * documento, diciendo "no veo ningún pago, ni del documento ni de la
+ * asesoría" aunque el documento sí estuviera pagado y entregado el día
+ * anterior -- bug real detectado en producción (caso del 22-oct-2026).
+ * Si el pago SÍ está confirmado, de una vez se reenvía el PDF con los
+ * mismos datos guardados al momento de la compra.
+ */
+function ia_resultado_consultar_compra_documento_calculo(PDO $pdo, string $telefono): string
+{
+    $stmt = $pdo->prepare(
+        "SELECT * FROM compras_documento_calculo WHERE telefono = :t ORDER BY creado_en DESC LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    $compra = $stmt->fetch();
+
+    if (!$compra) {
+        return json_encode([
+            'documento_pagado' => false,
+            'instruccion' => 'No hay ningún documento membretado ($49) registrado para este número. Sigue la REGLA DURA sobre pagos: no confirmes nada por lo que diga el cliente.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    if ($compra['estado'] === 'confirmada') {
+        require_once __DIR__ . '/whatsapp_helpers.php';
+        $calc = json_decode((string)$compra['calculo_json'], true);
+        $reenviado = false;
+        if (is_array($calc)) {
+            $reenviado = whatsapp_enviar_pdf_calculo(
+                $telefono, $calc, (float)$compra['salario_diario'],
+                (string)($compra['nombre_cliente'] ?? ''),
+                'Aquí tienes de nuevo tu documento.'
+            );
+        }
+        return json_encode([
+            'documento_pagado' => true,
+            'pagado_en' => $compra['pagado_en'],
+            'reenviado_automaticamente' => $reenviado,
+            'instruccion' => $reenviado
+                ? 'El documento SÍ está pagado y confirmado, y ya se le acaba de reenviar el PDF en este mismo mensaje -- dile con calidez que su documento ya está pagado y que se lo acabas de reenviar, sin pedirle que pague de nuevo.'
+                : 'El documento SÍ está pagado y confirmado, pero el reenvío automático del PDF falló -- dile que su pago sí está confirmado (no tiene que pagar de nuevo) y que el despacho se lo va a mandar a mano en breve; usa escalar_a_humano para avisar.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    if ($compra['estado'] === 'pendiente') {
+        return json_encode([
+            'documento_pagado' => false,
+            'pendiente' => true,
+            'monto_real' => (float)$compra['monto'],
+            'link_pago' => $compra['link_pago'],
+            'instruccion' => 'Hay una compra del documento iniciada pero el pago todavía NO está confirmado. No le digas que ya pagó; si quiere completarlo, puedes volver a mandarle el link_pago de aquí arriba.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    return json_encode([
+        'documento_pagado' => false,
+        'instruccion' => 'La última compra del documento de este número quedó cancelada (reembolso o pago rechazado). Si quiere el documento, hay que generarle un link de pago nuevo con confirmar_compra_documento_calculo.',
     ], JSON_UNESCAPED_UNICODE);
 }
 
