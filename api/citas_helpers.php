@@ -12,6 +12,14 @@ declare(strict_types=1);
 // para siempre si alguien pide el link y nunca paga.
 const CITAS_HOLD_MINUTOS = 30;
 
+// Mínimo de horas de anticipación para poder apartar una cita, sin
+// importar si viene del flujo normal del bot o de un agendado manual --
+// se checa aquí mismo, en citas_crear_pendiente(), no solo al armar la
+// lista de horarios a ofrecer (ver citas_calcular_horarios_disponibles),
+// porque una conversación larga o un agendado manual podían colar una
+// cita pegada a la hora actual.
+const CITAS_ANTICIPACION_MINIMA_HORAS = 1;
+
 const CITAS_DIA_SEMANA_ES = [1 => 'lunes', 2 => 'martes', 3 => 'miércoles', 4 => 'jueves', 5 => 'viernes', 6 => 'sábado', 7 => 'domingo'];
 const CITAS_MES_ES = [1 => 'enero', 2 => 'febrero', 3 => 'marzo', 4 => 'abril', 5 => 'mayo', 6 => 'junio', 7 => 'julio', 8 => 'agosto', 9 => 'septiembre', 10 => 'octubre', 11 => 'noviembre', 12 => 'diciembre'];
 
@@ -156,6 +164,11 @@ function citas_crear_pendiente(PDO $pdo, string $telefono, string $fecha, string
 
     $fechaObj = DateTimeImmutable::createFromFormat('Y-m-d', $fecha);
     if (!$fechaObj) return null;
+
+    $slotDateTime = DateTimeImmutable::createFromFormat('Y-m-d H:i', "$fecha $horaInicio");
+    $limiteMinimo = (new DateTimeImmutable())->modify('+' . CITAS_ANTICIPACION_MINIMA_HORAS . ' hours');
+    if (!$slotDateTime || $slotDateTime < $limiteMinimo) return null;
+
     $diaSemana = (int)$fechaObj->format('N');
 
     // Si dos clientes (o dos procesamientos casi simultáneos del MISMO

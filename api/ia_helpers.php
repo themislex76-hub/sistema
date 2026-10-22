@@ -1217,8 +1217,10 @@ const IA_TOOLS = [
 // "adivinar" qué día es hoy — sin esto, en conversaciones que llevan ya un
 // rato (o varios días), la IA puede calcular mal una fecha al confirmar un
 // horario de asesoría (se detectó una cita guardada con el año equivocado
-// por esto). citas_crear_pendiente() por sí sola no rechaza fechas
-// pasadas, así que además se revalida en ia_resultado_confirmar_horario().
+// por esto). citas_crear_pendiente() sí rechaza fechas pasadas o con menos
+// de CITAS_ANTICIPACION_MINIMA_HORAS de anticipación, pero igual conviene
+// que la IA tenga la fecha real a la mano, así que además se revalida en
+// ia_resultado_confirmar_horario().
 function ia_fecha_actual_es(): string
 {
     $dias = [1 => 'lunes', 2 => 'martes', 3 => 'miércoles', 4 => 'jueves', 5 => 'viernes', 6 => 'sábado', 7 => 'domingo'];
@@ -1828,9 +1830,10 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
     // puede llegar a copiar mal el año/fecha, sobre todo si la
     // conversación con el cliente lleva ya un rato. Se revalida contra la
     // lista de horarios de verdad disponibles AHORA MISMO antes de apartar
-    // nada; citas_crear_pendiente() por sí sola no rechaza una fecha
-    // pasada, solo checa que algún abogado tenga ese día/hora en su
-    // disponibilidad semanal.
+    // nada (esa lista ya exige 3h de anticipación); citas_crear_pendiente()
+    // además pone su propio mínimo de CITAS_ANTICIPACION_MINIMA_HORAS como
+    // candado final, por si algún otro llamador (agendado manual, etc.) no
+    // pasó por esta revalidación.
     $horariosVigentes = citas_calcular_horarios_disponibles($pdo);
     $esValido = false;
     foreach ($horariosVigentes as $h) {
