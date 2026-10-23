@@ -32,6 +32,15 @@ const WHATSAPP_COSTO_POR_MENSAJE_MXN = 0.1565;
 // una fuente en vivo en el sistema.
 const TIPO_CAMBIO_USD_MXN = 18.7;
 
+// Impuestos -- régimen RESICO (persona física), confirmado con el
+// usuario: los precios que cobra ($499/$399/$299, etc.) ya incluyen IVA,
+// así que primero hay que sacar el ingreso sin IVA para calcular el ISR.
+// El ISR de RESICO normalmente es por tabla progresiva (1%-2.5%), pero el
+// usuario pidió manejarlo fijo al 7% por la nueva reforma -- se deja como
+// constante aquí para poder ajustarlo fácil si la tasa cambia otra vez.
+const IVA_TASA = 0.16;
+const ISR_RESICO_TASA_FIJA = 0.07;
+
 $pdo = db();
 
 // 1) Ingresos de asesorías.
@@ -162,6 +171,15 @@ foreach ($todosLosMeses as $mes) {
     $costosCompletos = $mpDisponible && $costoIa !== null;
     $margen = $ingresosTotales - $costosConocidos;
 
+    // IVA causado (ya incluido en los precios que se cobran) e ISR fijo
+    // de RESICO sobre el ingreso SIN IVA -- ambos se calculan sobre el
+    // ingreso, no sobre el margen, porque así funciona RESICO (no admite
+    // deducciones como el régimen general).
+    $ingresosSinIva = $ingresosTotales / (1 + IVA_TASA);
+    $ivaCausado = round($ingresosTotales - $ingresosSinIva, 2);
+    $isr = round($ingresosSinIva * ISR_RESICO_TASA_FIJA, 2);
+    $margenNeto = round($margen - $ivaCausado - $isr, 2);
+
     $meses[] = [
         'mes' => $mes,
         'ingreso_asesorias' => $ingresoAsesorias,
@@ -180,6 +198,10 @@ foreach ($todosLosMeses as $mes) {
         'costos_completos' => $costosCompletos,
         'margen' => $margen,
         'margen_pct' => $ingresosTotales > 0 ? round($margen / $ingresosTotales * 100, 1) : null,
+        'iva_causado' => $ivaCausado,
+        'isr' => $isr,
+        'margen_neto' => $margenNeto,
+        'margen_neto_pct' => $ingresosTotales > 0 ? round($margenNeto / $ingresosTotales * 100, 1) : null,
     ];
 }
 
