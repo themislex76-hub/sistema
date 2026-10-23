@@ -16,6 +16,10 @@ require_once __DIR__ . '/config.php';
 require_admin();
 header('Content-Type: text/plain; charset=utf-8');
 
+$iaHelpersFile = __DIR__ . '/ia_helpers.php';
+echo "Última modificación de ia_helpers.php: " . (file_exists($iaHelpersFile) ? date('Y-m-d H:i:s', filemtime($iaHelpersFile)) : 'NO EXISTE') . "\n"
+    . "(la hora del servidor ahora mismo es " . date('Y-m-d H:i:s') . " -- si la fecha de arriba es de hace varios días, el archivo subido más reciente no se guardó)\n\n";
+
 $logPath = __DIR__ . '/ia_debug.log';
 if (!file_exists($logPath)) {
     echo "No existe ia_debug.log en el servidor (o no se ha escrito nada todavía).\n";
