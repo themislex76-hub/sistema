@@ -35,11 +35,33 @@ const TIPO_CAMBIO_USD_MXN = 18.7;
 // Impuestos -- régimen RESICO (persona física), confirmado con el
 // usuario: los precios que cobra ($499/$399/$299, etc.) ya incluyen IVA,
 // así que primero hay que sacar el ingreso sin IVA para calcular el ISR.
-// El ISR de RESICO normalmente es por tabla progresiva (1%-2.5%), pero el
-// usuario pidió manejarlo fijo al 7% por la nueva reforma -- se deja como
-// constante aquí para poder ajustarlo fácil si la tasa cambia otra vez.
+//
+// Nota real detectada: el usuario había pedido manejar el ISR fijo al 7%
+// "por la nueva reforma", pero ese 7% en realidad es de una propuesta
+// DISTINTA (pago simplificado de IVA para RESICO, Paquete Económico
+// 2027 -- todavía no aprobada, y aunque se apruebe es opcional y sobre
+// el IVA que se entera al SAT, no sobre el ISR ni sobre lo que se le
+// cobra al cliente). El ISR real de RESICO para personas físicas es por
+// tabla progresiva mensual (Art. 113-F LISR / Anexo 8 RMF 2026), sobre
+// el ingreso efectivamente cobrado SIN IVA, sin deducciones -- no es
+// marginal/acumulable como el ISR general: se aplica una sola tasa a
+// todo el ingreso del mes según en qué rango caiga.
 const IVA_TASA = 0.16;
-const ISR_RESICO_TASA_FIJA = 0.07;
+const ISR_RESICO_TABLA = [
+    ['limite' => 25000.00, 'tasa' => 0.0100],
+    ['limite' => 50000.00, 'tasa' => 0.0110],
+    ['limite' => 83333.33, 'tasa' => 0.0150],
+    ['limite' => 208333.33, 'tasa' => 0.0200],
+    ['limite' => INF, 'tasa' => 0.0250],
+];
+
+function isr_resico_tasa(float $ingresoMensualSinIva): float
+{
+    foreach (ISR_RESICO_TABLA as $tramo) {
+        if ($ingresoMensualSinIva <= $tramo['limite']) return $tramo['tasa'];
+    }
+    return 0.0250;
+}
 
 $pdo = db();
 
@@ -177,7 +199,8 @@ foreach ($todosLosMeses as $mes) {
     // deducciones como el régimen general).
     $ingresosSinIva = $ingresosTotales / (1 + IVA_TASA);
     $ivaCausado = round($ingresosTotales - $ingresosSinIva, 2);
-    $isr = round($ingresosSinIva * ISR_RESICO_TASA_FIJA, 2);
+    $isrTasa = isr_resico_tasa($ingresosSinIva);
+    $isr = round($ingresosSinIva * $isrTasa, 2);
     $margenNeto = round($margen - $ivaCausado - $isr, 2);
 
     $meses[] = [
@@ -200,6 +223,7 @@ foreach ($todosLosMeses as $mes) {
         'margen_pct' => $ingresosTotales > 0 ? round($margen / $ingresosTotales * 100, 1) : null,
         'iva_causado' => $ivaCausado,
         'isr' => $isr,
+        'isr_tasa' => $isrTasa,
         'margen_neto' => $margenNeto,
         'margen_neto_pct' => $ingresosTotales > 0 ? round($margenNeto / $ingresosTotales * 100, 1) : null,
     ];

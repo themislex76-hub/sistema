@@ -4110,7 +4110,7 @@ function costosVsIngresosHTML(){
       <button class="btn secondary" data-consultar-costos style="font-size:11px; padding:5px 10px;" ${s.cargando?'disabled':''}>${s.cargando?'Consultando...':(meses.length?'Actualizar':'Consultar')}</button>
     </div>
     <div class="panel-body" style="padding:16px 20px;">
-      <div class="notice">Ingresos (asesorías + documentos + cursos), hosting, WhatsApp y comisión de Mercado Pago se calculan solos con datos reales. El costo de IA ${iaAdminDisponible ? 'también se trae solo de Anthropic' : 'todavía lo capturas tú una vez al mes (copiando el gasto real de Anthropic Console) porque la Admin API de Anthropic no acepta la llave de este plan'}. IVA e ISR se calculan con el régimen RESICO: los precios ya incluyen IVA (16%), y el ISR se aplica fijo al 7% sobre el ingreso sin IVA — ajusta esas tasas en costos_mensuales_resumen.php si cambia la reforma.</div>
+      <div class="notice">Ingresos (asesorías + documentos + cursos), hosting, WhatsApp y comisión de Mercado Pago se calculan solos con datos reales. El costo de IA ${iaAdminDisponible ? 'también se trae solo de Anthropic' : 'todavía lo capturas tú una vez al mes (copiando el gasto real de Anthropic Console) porque la Admin API de Anthropic no acepta la llave de este plan'}. IVA e ISR se calculan con el régimen RESICO: los precios ya incluyen IVA (16%), y el ISR usa la tabla progresiva real de RESICO (1.00%-2.50% según el ingreso del mes, Art. 113-F LISR) — ajusta la tabla en costos_mensuales_resumen.php si cambia la reforma.</div>
       ${s.error ? `<div class="notice" style="color:var(--danger, #b3261e); margin-top:10px;">${escapeHTML(s.error)}</div>` : ''}
       ${!iaAdminDisponible ? `
       <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-top:14px;">
@@ -4123,7 +4123,7 @@ function costosVsIngresosHTML(){
     ${meses.length ? `
     <div class="panel-body" style="padding:0;">
       <table><thead><tr>
-        <th>Mes</th><th>Ingresos</th><th>Hosting</th><th>WhatsApp</th><th>Comisión MP</th><th>Costo IA</th><th>Margen</th><th>%</th><th>IVA</th><th>ISR (7%)</th><th>Margen neto</th><th>%</th><th></th>
+        <th>Mes</th><th>Ingresos</th><th>Hosting</th><th>WhatsApp</th><th>Comisión MP</th><th>Costo IA</th><th>Margen</th><th>%</th><th>IVA</th><th>ISR</th><th>Margen neto</th><th>%</th><th></th>
       </tr></thead>
       <tbody>${meses.map(m=>{
         const [y,mm] = m.mes.split('-');
@@ -4140,7 +4140,7 @@ function costosVsIngresosHTML(){
           <td style="color:${margenColor}; font-weight:700;">${fmtMoney(m.margen)}</td>
           <td style="color:${margenColor};">${m.margen_pct!=null ? m.margen_pct+'%' : '—'}</td>
           <td style="color:var(--gray);">${fmtMoney(m.iva_causado)}</td>
-          <td style="color:var(--gray);">${fmtMoney(m.isr)}</td>
+          <td style="color:var(--gray);">${fmtMoney(m.isr)} <span style="font-size:11px;">(${(m.isr_tasa*100).toFixed(2)}%)</span></td>
           <td style="color:${margenNetoColor}; font-weight:700;">${fmtMoney(m.margen_neto)}</td>
           <td style="color:${margenNetoColor};">${m.margen_neto_pct!=null ? m.margen_neto_pct+'%' : '—'}</td>
           <td>${!iaAdminDisponible ? `<button class="btn secondary" data-editar-costos-mes="${m.mes}" data-costo-ia="${m.costo_ia ?? ''}" style="font-size:11px; padding:4px 10px;">Editar IA</button>` : ''}</td>
