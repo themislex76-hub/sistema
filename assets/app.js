@@ -3762,6 +3762,73 @@ function demandadosHTML(){
   `;
 }
 
+// Seguimiento de qué tan al día está cada socio reportando los pagos de
+// sus convenios -- el sistema depende de que el socio mismo capture el
+// pago en "Cobros" del expediente, así que esto no verifica si el pago
+// ES correcto, solo si falta reportarlo: (a) asuntos con convenio donde
+// nunca se registró ni un solo pago, y (b) pagos ya programados cuya
+// fecha ya pasó sin que nadie los haya marcado cobrados. Agrupado por
+// socio para que se note si es uno en particular el que se atrasa.
+function asuntosPagoSinReportarHTML(){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const sinPagos = [];
+  const vencidos = [];
+  visibleCases().filter(tieneConvenio).filter(k=>caseStage(k)!=='pagado').forEach(k=>{
+    const meta = getMeta(k.id);
+    const pagos = (meta.pagos||[]).filter(p=>p.monto && !isNaN(parseFloat(p.monto)));
+    if(!pagos.length){
+      sinPagos.push(k);
+      return;
+    }
+    pagos.forEach((p,idx)=>{
+      if(p.cobrado || !p.fecha) return;
+      const f = new Date(p.fecha+'T00:00:00');
+      if(isNaN(f.getTime()) || f >= hoy) return;
+      const dias = Math.round((hoy - f) / (1000*60*60*24));
+      vencidos.push({k, monto: parseFloat(p.monto), fecha: p.fecha, dias});
+    });
+  });
+  vencidos.sort((a,b)=> b.dias - a.dias);
+  sinPagos.sort((a,b)=> assignedLawyer(a).localeCompare(assignedLawyer(b)));
+
+  return `
+  <div class="panel">
+    <div class="panel-head"><h3>Asuntos con pago sin reportar</h3><span class="count">${sinPagos.length + vencidos.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">
+      <div class="notice" style="margin:0;">No verifica si lo que reporta el socio es correcto -- solo detecta cuando falta reportar algo: convenios sin ningún pago capturado, y pagos programados cuya fecha ya pasó sin marcarse cobrados.</div>
+    </div>
+    <div class="panel-body" style="padding:0 20px 8px;">
+      <h4 style="margin:12px 0 6px; font-size:13px; color:var(--gray);">Convenios sin ningún pago registrado (${sinPagos.length})</h4>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Actor</th><th>Demandado</th><th>Monto convenio</th><th>Socio</th></tr></thead>
+      <tbody>${sinPagos.map(k=>`
+        <tr data-id="${k.id}">
+          <td>${escapeHTML(k.actor)}</td>
+          <td>${escapeHTML(truncate(k.demandado,34))}</td>
+          <td><strong>${fmtMoney(montoConvenio(k))}</strong></td>
+          <td class="abogado-tag">${escapeHTML(assignedLawyer(k))}</td>
+        </tr>`).join("") || `<tr><td colspan="4" class="empty">Sin pendientes de este tipo.</td></tr>`}</tbody></table>
+    </div>
+    <div class="panel-body" style="padding:0 20px 8px;">
+      <h4 style="margin:16px 0 6px; font-size:13px; color:var(--gray);">Pagos vencidos sin marcar cobrado (${vencidos.length})</h4>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Actor</th><th>Demandado</th><th>Monto</th><th>Fecha programada</th><th>Días de atraso</th><th>Socio</th></tr></thead>
+      <tbody>${vencidos.map(v=>`
+        <tr data-id="${v.k.id}">
+          <td>${escapeHTML(v.k.actor)}</td>
+          <td>${escapeHTML(truncate(v.k.demandado,34))}</td>
+          <td><strong>${fmtMoney(v.monto)}</strong></td>
+          <td>${fmtDate(v.fecha)}</td>
+          <td style="color:${v.dias>14?'var(--danger, #b3261e)':'var(--warn, #b8860b)'}; font-weight:600;">${v.dias} día${v.dias===1?'':'s'}</td>
+          <td class="abogado-tag">${escapeHTML(assignedLawyer(v.k))}</td>
+        </tr>`).join("") || `<tr><td colspan="6" class="empty">Sin pendientes de este tipo.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+}
+
 function ingresosHTML(){
   const rango = rangoPeriodo(INGRESOS_PERIODO);
   const isAdmin = CURRENT_USER.role === 'Administrador';
@@ -3881,6 +3948,8 @@ function ingresosHTML(){
         </tr>`;}).join("") || `<tr><td colspan="9" class="empty">Sin pagos cobrados en este periodo.</td></tr>`}</tbody></table>
     </div>
   </div>
+
+  ${isAdmin ? asuntosPagoSinReportarHTML() : ''}
 
   <div class="panel">
     <div class="panel-head"><h3>Resumen mensual (histórico completo)</h3><span class="count">${mesesOrdenados.length} mes(es)</span></div>
