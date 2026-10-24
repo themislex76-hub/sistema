@@ -3777,7 +3777,12 @@ function asuntosPagoSinReportarHTML(){
     const meta = getMeta(k.id);
     const pagos = (meta.pagos||[]).filter(p=>p.monto && !isNaN(parseFloat(p.monto)));
     if(!pagos.length){
-      sinPagos.push(k);
+      // tieneConvenio() detecta la palabra "convenio" en el texto de la
+      // nota, que a veces aparece sin que de verdad haya un convenio
+      // real (ej. "no llegaron a convenio", "sigue buscando convenio") --
+      // exigir también un monto detectado filtra esos falsos positivos,
+      // porque un convenio real siempre trae una cifra pactada.
+      if(montoConvenio(k)) sinPagos.push(k);
       return;
     }
     pagos.forEach((p,idx)=>{
