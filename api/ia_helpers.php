@@ -1795,11 +1795,19 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
 }
 
 /**
- * true si $texto afirma que un pago/cita de asesoría ya está confirmado,
- * pero este teléfono no tiene NINGUNA cita con estado='confirmada' en la
- * base de datos -- es decir, la IA está a punto de confirmar algo que el
- * sistema no respalda. Ver el caso real que motivó esto en
- * ia_responder_whatsapp() arriba.
+ * true si $texto afirma que un pago ya está confirmado, pero este teléfono
+ * no tiene NINGUNA cita de asesoría ($499) ni compra de documento ($49)
+ * confirmada en la base de datos -- es decir, la IA está a punto de
+ * confirmar algo que el sistema no respalda. Ver el caso real que motivó
+ * esto en ia_responder_whatsapp() arriba.
+ *
+ * Bug real (cliente del documento de $49, oct-2026): este guardrail SOLO
+ * revisaba citas_asesoria -- un cliente que pagó el documento de $49 (que
+ * vive en compras_documento_calculo, no en citas_asesoria) nunca iba a
+ * tener una cita confirmada, así que CUALQUIER mensaje que mencionara su
+ * pago ya confirmado se bloqueaba siempre, aunque el pago del documento sí
+ * estuviera realmente confirmado -- el PDF ya se le había mandado dos
+ * veces cuando el bot le dijo "déjame verificar tu pago".
  */
 function ia_texto_confirma_pago_sin_evidencia(PDO $pdo, string $telefono, string $texto): bool
 {
@@ -1823,7 +1831,13 @@ function ia_texto_confirma_pago_sin_evidencia(PDO $pdo, string $telefono, string
 
     $stmt = $pdo->prepare("SELECT 1 FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' LIMIT 1");
     $stmt->execute([':t' => $telefono]);
-    return !$stmt->fetchColumn();
+    if ($stmt->fetchColumn()) return false;
+
+    $stmt = $pdo->prepare("SELECT 1 FROM compras_documento_calculo WHERE telefono = :t AND estado = 'confirmada' LIMIT 1");
+    $stmt->execute([':t' => $telefono]);
+    if ($stmt->fetchColumn()) return false;
+
+    return true;
 }
 
 /**
@@ -2209,6 +2223,26 @@ function ia_resultado_consultar_compra_documento_calculo(PDO $pdo, string $telef
     }
 
     if ($compra['estado'] === 'confirmada') {
+        // Bug real detectado en producción (oct-2026): esta herramienta
+        // reenviaba el PDF CADA VEZ que se llamaba, sin importar qué tan
+        // reciente fuera el envío original del webhook de Mercado Pago --
+        // un cliente que apenas había recibido su PDF (vía el webhook, al
+        // confirmarse el pago) recibió una SEGUNDA copia dos minutos
+        // después solo porque el bot volvió a llamar esta herramienta.
+        // Si el pago se confirmó hace muy poco, el webhook casi seguro ya
+        // mandó el PDF -- no hace falta reenviarlo de nuevo.
+        $minutosDesdePago = $compra['pagado_en']
+            ? (time() - strtotime((string)$compra['pagado_en'])) / 60
+            : 999;
+        if ($minutosDesdePago < 5) {
+            return json_encode([
+                'documento_pagado' => true,
+                'pagado_en' => $compra['pagado_en'],
+                'reenviado_automaticamente' => false,
+                'instruccion' => 'El documento SÍ está pagado y confirmado -- se pagó hace menos de 5 minutos, así que el PDF ya se le mandó automáticamente en cuanto se confirmó el pago (revisa arriba en esta misma conversación). NO lo reenvíes de nuevo ni digas que hubo un problema -- solo confírmale con calidez que su pago quedó registrado y que el documento ya se le mandó.',
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
         require_once __DIR__ . '/whatsapp_helpers.php';
         $calc = json_decode((string)$compra['calculo_json'], true);
         $reenviado = false;
