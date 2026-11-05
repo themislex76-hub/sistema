@@ -139,10 +139,23 @@ function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): floa
     // mensaje habla de la asesoría (no de un cálculo con una cifra
     // parecida).
     $anclaAsesoria = "(texto LIKE '%asesor%' OR texto LIKE '%llamada telefónica%' OR texto LIKE '%Rubén Buerhend%')";
+
+    // Bug real detectado en producción (ya documentado en OJO 1 arriba,
+    // que exigía el "$" pegado al número): ampliar el ancla a "llamada
+    // telefónica"/"Rubén Buerhend" reabrió el MISMO hueco por otra vía --
+    // el mensaje donde se ofrece la asesoría casi siempre trae también el
+    // desglose completo del cálculo, y un renglón de ese desglose puede
+    // coincidir por casualidad con "$299.XX" o "$399.XX" (con centavos),
+    // sin que el precio real cotizado sea ese. El precio REAL de la
+    // asesoría nunca se escribe con centavos (siempre "$299 MXN", nunca
+    // "$299.45 MXN"), así que se exige que el número NO esté seguido de
+    // un punto decimal -- eso separa una cotización real de una cifra de
+    // cálculo que solo coincide en los primeros dígitos.
+    $noDecimal = "(?:[^0-9.]|$)";
     $stmt = $pdo->prepare(
         "SELECT 1 FROM whatsapp_conversaciones
          WHERE telefono = :t AND direccion = 'saliente'
-           AND texto LIKE '%\$399%' AND {$anclaAsesoria}
+           AND texto REGEXP '\\\\$399{$noDecimal}' AND {$anclaAsesoria}
          LIMIT 1"
     );
     $stmt->execute([':t' => $telefono]);
@@ -153,7 +166,7 @@ function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): floa
     $stmt = $pdo->prepare(
         "SELECT 1 FROM whatsapp_conversaciones
          WHERE telefono = :t AND direccion = 'saliente'
-           AND texto LIKE '%\$299%' AND {$anclaAsesoria}
+           AND texto REGEXP '\\\\$299{$noDecimal}' AND {$anclaAsesoria}
          LIMIT 1"
     );
     $stmt->execute([':t' => $telefono]);
