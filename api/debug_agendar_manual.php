@@ -49,7 +49,8 @@ if ($citaId === null) {
     exit;
 }
 
-$monto = mercadopago_monto_asesoria_a_respetar($pdo, $telefono);
+$precio = mercadopago_monto_asesoria_a_respetar($pdo, $telefono);
+$monto = $precio['monto'];
 $pref = mercadopago_crear_preferencia_asesoria($citaId, $telefono, MERCADOPAGO_WEBHOOK_URL, $monto);
 if ($pref === null) {
     $upd = $pdo->prepare("UPDATE citas_asesoria SET estado = 'cancelada' WHERE id = :id");
@@ -62,5 +63,8 @@ $upd = $pdo->prepare("UPDATE citas_asesoria SET mp_preference_id = :pref, link_p
 $upd->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':monto' => $monto, ':id' => $citaId]);
 
 echo "Cita #{$citaId} apartada para " . citas_formatear_fecha_hora($fecha, $hora) . " (\${$monto} MXN).\n";
+if ($precio['aviso_cambio_precio']) {
+    echo "AVISO: " . $precio['aviso_cambio_precio'] . "\n";
+}
 echo "Tiene " . CITAS_HOLD_MINUTOS . " minutos para pagar antes de que el horario se libere de nuevo.\n\n";
 echo "Mándale este link al cliente:\n{$pref['init_point']}\n";

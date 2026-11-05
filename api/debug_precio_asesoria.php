@@ -25,7 +25,7 @@ if (function_exists('mercadopago_monto_asesoria_a_respetar')) {
         "SELECT DISTINCT telefono FROM citas_asesoria WHERE estado = 'confirmada' ORDER BY id DESC LIMIT 10"
     );
     foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $tel) {
-        $monto = mercadopago_monto_asesoria_a_respetar($pdo, $tel);
-        echo "{$tel} -> \${$monto}\n";
+        $precio = mercadopago_monto_asesoria_a_respetar($pdo, $tel);
+        echo "{$tel} -> \${$precio['monto']}" . ($precio['aviso_cambio_precio'] ? " (hubo cotización vieja vencida)" : '') . "\n";
     }
 }

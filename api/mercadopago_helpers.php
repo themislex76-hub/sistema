@@ -86,15 +86,23 @@ function mercadopago_token(): ?string
     return MERCADOPAGO_ACCESS_TOKEN;
 }
 
+// Cuántos días se respeta un precio ya cotizado en el chat antes de
+// considerarse vencido (decisión del despacho, nov-2026): suficiente para
+// alguien que tardó unos días en decidirse, pero no para una cotización
+// de meses atrás que ya no corresponde al precio vigente.
+const MERCADOPAGO_DIAS_VIGENCIA_COTIZACION = 14;
+
 /**
  * Cuánto se le debe cobrar a este teléfono: normalmente el precio vigente
  * (MERCADOPAGO_MONTO_ASESORIA), salvo que el bot ya le haya cotizado el
- * precio anterior ($299) en algún mensaje saliente de esta misma
- * conversación -- ahí se respeta lo ya dicho, para no subirle el precio a
- * media plática a alguien a quien ya se le prometió otro monto. Como el
- * bot deja de mencionar "$299" para la asesoría en cuanto se sube el
- * nuevo prompt, esto se autolimita solo a las conversaciones que ya
- * traían esa cotización de antes del cambio de precio.
+ * precio anterior ($299 o $399) en algún mensaje saliente de esta misma
+ * conversación DENTRO de los últimos MERCADOPAGO_DIAS_VIGENCIA_COTIZACION
+ * días -- ahí se respeta lo ya dicho, para no subirle el precio a media
+ * plática a alguien a quien ya se le prometió otro monto. Devuelve
+ * ['monto' => float, 'aviso_cambio_precio' => string|null] -- el aviso
+ * viene lleno cuando SÍ hubo una cotización vieja pero ya venció la
+ * ventana de días, para que el bot pueda explicarle al cliente que el
+ * precio subió en vez de solo cobrarle más sin decir nada.
  *
  * OJO 1: el primer intento de este filtro buscaba "299" a secas y causó un
  * cobro real de $299 en una asesoría nueva -- cualquier cálculo de
@@ -114,63 +122,65 @@ function mercadopago_token(): ?string
  * momento -- esa promesa ya se cumplió con la que pagó. En ese caso
  * cobra el precio vigente, sin importar que su historial de WhatsApp
  * siga trayendo el mensaje viejo de "$299".
+ *
+ * OJO 3: ampliar el ancla a "llamada telefónica"/"Rubén Buerhend" (ver
+ * abajo) reabrió el MISMO hueco de OJO 1 por otra vía -- el mensaje donde
+ * se ofrece la asesoría casi siempre trae también el desglose completo
+ * del cálculo, y un renglón de ese desglose puede coincidir por
+ * casualidad con "$299.XX" o "$399.XX" (con centavos), sin que el precio
+ * real cotizado sea ese. El precio REAL de la asesoría nunca se escribe
+ * con centavos (siempre "$299 MXN", nunca "$299.45 MXN"), así que se
+ * exige que el número NO esté seguido de un punto decimal.
+ *
+ * Bug real detectado en producción (nov-2026): un cliente cotizado en
+ * $299 el 21 de agosto regresó a pagar hasta el 5 de noviembre (casi 3
+ * meses después) y se le siguió respetando ese precio de hace meses --
+ * la función nunca revisaba qué tan vieja era la cotización, solo si
+ * existía en algún punto del historial completo. De ahí la ventana de
+ * MERCADOPAGO_DIAS_VIGENCIA_COTIZACION días.
  */
-function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): float
+function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): array
 {
     $stmt = $pdo->prepare(
         "SELECT 1 FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' LIMIT 1"
     );
     $stmt->execute([':t' => $telefono]);
     if ($stmt->fetchColumn()) {
-        return MERCADOPAGO_MONTO_ASESORIA;
+        return ['monto' => MERCADOPAGO_MONTO_ASESORIA, 'aviso_cambio_precio' => null];
     }
+
+    $anclaAsesoria = "(texto LIKE '%asesor%' OR texto LIKE '%llamada telefónica%' OR texto LIKE '%Rubén Buerhend%')";
+    $noDecimal = "(?:[^0-9.]|$)";
+    $limiteVigencia = date('Y-m-d H:i:s', strtotime('-' . MERCADOPAGO_DIAS_VIGENCIA_COTIZACION . ' days'));
 
     // Se checa el precio viejo más reciente primero ($399, vigente hasta
-    // la subida a $499 de octubre 2026) y luego el más antiguo ($299) --
-    // mismo criterio de "OJO 2" de arriba, ahora con dos precios viejos
-    // posibles en vez de uno.
-    //
-    // Bug real detectado en producción: el ancla exigía la palabra
-    // "asesor" en el mismo mensaje, pero el bot a veces describe la
-    // misma asesoría como "llamada telefónica de 1 hora" sin usar esa
-    // palabra -- un cliente cotizado así en $399 terminó con un link
-    // nuevo de $499 porque el mensaje real nunca hizo match. Se agregan
-    // anclas alternativas que también identifican sin ambigüedad que el
-    // mensaje habla de la asesoría (no de un cálculo con una cifra
-    // parecida).
-    $anclaAsesoria = "(texto LIKE '%asesor%' OR texto LIKE '%llamada telefónica%' OR texto LIKE '%Rubén Buerhend%')";
-
-    // Bug real detectado en producción (ya documentado en OJO 1 arriba,
-    // que exigía el "$" pegado al número): ampliar el ancla a "llamada
-    // telefónica"/"Rubén Buerhend" reabrió el MISMO hueco por otra vía --
-    // el mensaje donde se ofrece la asesoría casi siempre trae también el
-    // desglose completo del cálculo, y un renglón de ese desglose puede
-    // coincidir por casualidad con "$299.XX" o "$399.XX" (con centavos),
-    // sin que el precio real cotizado sea ese. El precio REAL de la
-    // asesoría nunca se escribe con centavos (siempre "$299 MXN", nunca
-    // "$299.45 MXN"), así que se exige que el número NO esté seguido de
-    // un punto decimal -- eso separa una cotización real de una cifra de
-    // cálculo que solo coincide en los primeros dígitos.
-    $noDecimal = "(?:[^0-9.]|$)";
-    $stmt = $pdo->prepare(
-        "SELECT 1 FROM whatsapp_conversaciones
-         WHERE telefono = :t AND direccion = 'saliente'
-           AND texto REGEXP '\\\\$399{$noDecimal}' AND {$anclaAsesoria}
-         LIMIT 1"
-    );
-    $stmt->execute([':t' => $telefono]);
-    if ($stmt->fetchColumn()) {
-        return 399.00;
+    // la subida a $499 de octubre 2026) y luego el más antiguo ($299).
+    foreach ([399.00, 299.00] as $precioViejo) {
+        // El patrón REGEXP se arma con el entero (ej. "399"), no con el
+        // ".00" de $precioViejo -- el precio en el texto del chat nunca
+        // lleva decimales (ver OJO 3).
+        $stmt = $pdo->prepare(
+            "SELECT creado_en FROM whatsapp_conversaciones
+             WHERE telefono = :t AND direccion = 'saliente'
+               AND texto REGEXP '\\\\$" . (int)$precioViejo . "{$noDecimal}' AND {$anclaAsesoria}
+             ORDER BY creado_en DESC LIMIT 1"
+        );
+        $stmt->execute([':t' => $telefono]);
+        $cotizadoEn = $stmt->fetchColumn();
+        if ($cotizadoEn === false) {
+            continue;
+        }
+        if ($cotizadoEn >= $limiteVigencia) {
+            return ['monto' => $precioViejo, 'aviso_cambio_precio' => null];
+        }
+        $dias = (int)floor((time() - strtotime((string)$cotizadoEn)) / 86400);
+        return [
+            'monto' => MERCADOPAGO_MONTO_ASESORIA,
+            'aviso_cambio_precio' => "Se le había cotizado \$" . number_format($precioViejo, 0) . " MXN hace {$dias} días, pero esa cotización ya venció (solo se respeta por " . MERCADOPAGO_DIAS_VIGENCIA_COTIZACION . " días) -- el precio vigente ahora es \$" . number_format(MERCADOPAGO_MONTO_ASESORIA, 0) . " MXN. Explícale esto a la persona con calidez antes o junto con el link de pago, nunca lo cobres en silencio.",
+        ];
     }
 
-    $stmt = $pdo->prepare(
-        "SELECT 1 FROM whatsapp_conversaciones
-         WHERE telefono = :t AND direccion = 'saliente'
-           AND texto REGEXP '\\\\$299{$noDecimal}' AND {$anclaAsesoria}
-         LIMIT 1"
-    );
-    $stmt->execute([':t' => $telefono]);
-    return $stmt->fetchColumn() ? 299.00 : MERCADOPAGO_MONTO_ASESORIA;
+    return ['monto' => MERCADOPAGO_MONTO_ASESORIA, 'aviso_cambio_precio' => null];
 }
 
 /**

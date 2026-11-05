@@ -43,7 +43,8 @@ if (!$cita) {
     exit;
 }
 
-$monto = mercadopago_monto_asesoria_a_respetar($pdo, $cita['telefono']);
+$precio = mercadopago_monto_asesoria_a_respetar($pdo, $cita['telefono']);
+$monto = $precio['monto'];
 $pref = mercadopago_crear_preferencia_asesoria((int)$cita['id'], $cita['telefono'], MERCADOPAGO_WEBHOOK_URL, $monto);
 if ($pref === null) {
     echo "No se pudo generar el nuevo link -- revisa mercadopago_debug.log en el servidor.\n";
@@ -56,3 +57,6 @@ $upd->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':monto' 
 $horaTxt = substr((string)$cita['hora_inicio'], 0, 5);
 echo "Cita #{$cita['id']} -- " . citas_formatear_fecha_hora((string)$cita['fecha'], $horaTxt) . " (\${$monto} MXN).\n\n";
 echo "Nuevo link de pago -- mándaselo al cliente:\n{$pref['init_point']}\n";
+if ($precio['aviso_cambio_precio']) {
+    echo "\nAVISO: " . $precio['aviso_cambio_precio'] . "\n";
+}
