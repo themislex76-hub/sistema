@@ -279,6 +279,31 @@ if (!$cita) {
 // su descanso): se le mandan los horarios reales disponibles para que
 // ELLA elija, igual que en el flujo normal de agendar antes de pagar.
 $citaYaPaso = strtotime($cita['fecha'] . ' ' . $cita['hora_inicio']) < time();
+
+// Bug real detectado en producción (nov-2026): el link de pago de
+// Mercado Pago dura hasta 2 días, pero el apartado del horario solo dura
+// CITAS_HOLD_MINUTOS (30 minutos) -- si alguien paga tarde, para una
+// fecha que TODAVÍA no pasa, el horario que apartó ya pudo habérselo
+// quedado otra persona mientras tanto (confirmada o también apartada de
+// nuevo). Confirmar esta cita igual habría dejado dos citas distintas
+// para el mismo abogado/horario. Se trata exactamente igual que "ya
+// pasó": se le pide a la clienta elegir de nuevo, en vez de confirmarle
+// un horario que ya no es solo suyo.
+$stmtOcupado = $pdo->prepare(
+    "SELECT 1 FROM citas_asesoria
+     WHERE usuario_id = :uid AND fecha = :fecha AND hora_inicio = :hora
+       AND id != :id AND estado IN ('confirmada', 'pendiente_pago')
+     LIMIT 1"
+);
+$stmtOcupado->execute([
+    ':uid' => $cita['usuario_id'],
+    ':fecha' => $cita['fecha'],
+    ':hora' => $cita['hora_inicio'],
+    ':id' => $citaId,
+]);
+$horarioYaOcupadoPorOtra = (bool)$stmtOcupado->fetchColumn();
+$citaYaPaso = $citaYaPaso || $horarioYaOcupadoPorOtra;
+
 $horariosParaElegir = $citaYaPaso ? citas_calcular_horarios_disponibles($pdo, 12, 5) : [];
 
 // El UPDATE solo afecta una fila si todavía NO estaba confirmada — esto es
