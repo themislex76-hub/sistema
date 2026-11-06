@@ -16,7 +16,7 @@ $pdo = db();
 // que ninguna se pierda de vista si el abogado no llegó a atenderla a
 // tiempo. El frontend resalta las que ya vencieron.
 $sql = "SELECT c.id, c.telefono, c.usuario_id, u.nombre AS usuario_nombre, c.fecha, c.hora_inicio, c.hora_fin,
-               c.estado, c.atendida, c.monto, c.nombre_cliente, c.creado_en, c.pagado_en
+               c.estado, c.atendida, c.monto, c.nombre_cliente, c.creado_en, c.pagado_en, c.mp_preference_id
         FROM citas_asesoria c
         JOIN usuarios u ON u.id = c.usuario_id
         WHERE c.atendida = 0 AND c.estado IN ('confirmada', 'pendiente_pago')";
@@ -46,6 +46,7 @@ foreach ($stmt->fetchAll() as $r) {
         'texto' => citas_formatear_fecha_hora($r['fecha'], substr($r['hora_inicio'], 0, 5)),
         'creado_en' => $r['creado_en'],
         'pagado_en' => $r['pagado_en'],
+        'tiene_link_pago' => !empty($r['mp_preference_id']),
     ];
 }
 

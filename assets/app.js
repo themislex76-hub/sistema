@@ -5702,8 +5702,8 @@ function citasPanelHTML(forzar){
           <div class="name">${escapeHTML(c.texto)}</div>
           <div class="meta">${escapeHTML(c.nombre_cliente || c.telefono)} &middot; ${escapeHTML(c.telefono)} &middot; con ${escapeHTML(c.usuario_nombre)}</div>
         </div>
-        <div style="flex-shrink:0; font-size:12px; color:var(--gray); text-align:right;">$${c.monto.toFixed(0)} MXN</div>
-        <button class="btn secondary cita-atendida-btn" data-cita-id="${c.id}" style="flex-shrink:0; font-size:11px; padding:6px 10px;">Marcar atendida</button>
+        <div style="flex-shrink:0; font-size:12px; color:var(--gray); text-align:right;">${c.tiene_link_pago ? `$${c.monto.toFixed(0)} MXN` : 'sin link de pago'}</div>
+        ${c.estado === 'confirmada' ? `<button class="btn secondary cita-atendida-btn" data-cita-id="${c.id}" style="flex-shrink:0; font-size:11px; padding:6px 10px;">Marcar atendida</button>` : ''}
         <button class="btn secondary cita-cancelar-btn" data-cita-id="${c.id}" style="flex-shrink:0; font-size:11px; padding:6px 10px; color:var(--red); border-color:var(--red);">Cancelar</button>
       </div>`;}).join("") : '<div class="empty">Sin asesorías agendadas por ahora.</div>'}
     </div>
