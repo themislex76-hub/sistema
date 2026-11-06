@@ -94,6 +94,13 @@ CREATE TABLE expedientes (
   quien_despidio VARCHAR(255) NULL,
   puesto_despidio VARCHAR(255) NULL,
   hora_despido VARCHAR(30) NULL,
+  hora_entrada TIME NULL,
+  hora_salida TIME NULL,
+  comida_inicio TIME NULL,
+  comida_fin TIME NULL,
+  dias_laborados VARCHAR(100) NULL,
+  dias_laborados_num TINYINT UNSIGNED NULL,
+  tipo_jornada VARCHAR(20) NULL,
   testigos TEXT NULL,
   dom_testigos TEXT NULL,
 

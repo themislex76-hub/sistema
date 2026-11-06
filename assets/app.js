@@ -279,6 +279,13 @@ const EDITABLE_FIELDS = [
   {key:'quien_despidio', label:'Nombre de quien despidió'},
   {key:'puesto_despidio', label:'Puesto de quien despidió'},
   {key:'hora_despido', label:'Hora del despido'},
+  {key:'hora_entrada', label:'Horario — hora de entrada', type:'time'},
+  {key:'hora_salida', label:'Horario — hora de salida real (incluyendo tiempo extra)', type:'time'},
+  {key:'comida_inicio', label:'Horario — comida, hora de inicio (opcional, déjalo vacío para no especificar)', type:'time'},
+  {key:'comida_fin', label:'Horario — comida, hora de fin (opcional, déjalo vacío para no especificar)', type:'time'},
+  {key:'dias_laborados', label:'Horario — días que laboraba, en texto (ej. "lunes a sábado")'},
+  {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number'},
+  {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta']},
   {key:'testigos', label:'Nombre de los testigos'},
   {key:'dom_testigos', label:'Domicilios de los testigos'},
   {key:'ultima_nota', label:'Última actuación / nota'},
@@ -1320,11 +1327,64 @@ function xmlEscape(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
 }
 
+// Siempre se resta 1 hora de comida al calcular la jornada, se hayan
+// capturado horarios específicos de comida o no (así lo pidió el
+// despacho) -- comida_inicio/comida_fin solo deciden si el TEXTO generado
+// menciona un horario específico o queda genérico.
+const COMIDA_HORAS_FIJA = 1;
+
+function horaAMinutos(hhmm){
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm||''));
+  if(!m) return null;
+  return parseInt(m[1],10)*60 + parseInt(m[2],10);
+}
+function minutosAHora(mins){
+  mins = ((mins % (24*60)) + 24*60) % (24*60);
+  return String(Math.floor(mins/60)).padStart(2,'0') + ':' + String(mins%60).padStart(2,'0');
+}
+function fmtHoras(n){
+  return (Math.round(n*100)/100).toString();
+}
+
+// Calcula, a partir de hora_entrada/hora_salida (la de salida REAL, con
+// tiempo extra incluido) y el tipo de jornada, las horas extra diarias y
+// semanales y la hora de salida "normal" (sin extras) -- esta última es la
+// que, junto con hora_entrada, describe la jornada pactada en el hecho 3
+// de la demanda (ver mergeTags()). Devuelve null si falta algún dato.
+function calcularJornada(k){
+  const minsEntrada = horaAMinutos(k.hora_entrada);
+  let minsSalida = horaAMinutos(k.hora_salida);
+  if(minsEntrada===null || minsSalida===null) return null;
+  if(minsSalida <= minsEntrada) minsSalida += 24*60; // jornada que cruza la medianoche
+  const tipo = (k.tipo_jornada || 'Diurna').toLowerCase();
+  const jornadaMax = JORNADA_MAXIMA[tipo]!=null ? JORNADA_MAXIMA[tipo] : JORNADA_MAXIMA.diurna;
+  const horasPresencia = (minsSalida - minsEntrada) / 60;
+  const horasTrabajadas = horasPresencia - COMIDA_HORAS_FIJA;
+  const horasExtraDiarias = Math.max(0, Math.round((horasTrabajadas - jornadaMax) * 100) / 100);
+  const minsSalidaNormal = minsEntrada + Math.round((jornadaMax + COMIDA_HORAS_FIJA) * 60);
+  const dias = parseInt(k.dias_laborados_num, 10) || 6;
+  return {
+    tipo, jornadaMax,
+    horaSalidaNormal: minutosAHora(minsSalidaNormal),
+    horaInicioExtra: minutosAHora(minsSalidaNormal + 1),
+    horasExtraDiarias,
+    horasExtraSemanales: Math.round(horasExtraDiarias * dias * 100) / 100,
+  };
+}
+
 function mergeTags(k){
   const junta = k.junta || k.instancia || '';
   const ciudad = /tlalnepantla/i.test(junta) ? 'Tlalnepantla de Baz, Estado de México' :
                  /ciudad de méxico|cdmx/i.test(junta) ? 'Ciudad de México' :
                  /naucalpan/i.test(junta) ? 'Naucalpan de Juárez, Estado de México' : 'Estado de México';
+  const jornada = calcularJornada(k);
+  // Texto de la comida: específico si se capturaron horarios, genérico si no
+  // (así lo pidió el despacho) -- de cualquier forma siempre se resta 1
+  // hora al calcular (ver COMIDA_HORAS_FIJA).
+  const textoComida = (k.comida_inicio && k.comida_fin)
+    ? `de ${k.comida_inicio.slice(0,5)} a ${k.comida_fin.slice(0,5)} horas fuera del centro de trabajo`
+    : `fuera del centro de trabajo`;
+  const diasTexto = k.dias_laborados || '________________';
   return {
     actor: k.actor || '________________',
     demandado: k.demandado || '________________',
@@ -1345,6 +1405,18 @@ function mergeTags(k){
     testigos: k.testigos || '________________',
     fecha_hoy_letra: fechaLetras(dateToISO(new Date())),
     ciudad_firma: ciudad,
+    // Jornada y horas extra -- ver calcularJornada() arriba. Si falta
+    // hora_entrada/hora_salida, se dejan los placeholders de siempre para
+    // que la demanda siga siendo editable a mano como antes.
+    hora_entrada: k.hora_entrada ? k.hora_entrada.slice(0,5) : '____',
+    hora_salida: k.hora_salida ? k.hora_salida.slice(0,5) : '____',
+    hora_salida_normal: jornada ? jornada.horaSalidaNormal : (k.hora_salida ? k.hora_salida.slice(0,5) : '____'),
+    hora_inicio_extra: jornada ? jornada.horaInicioExtra : '____',
+    tipo_jornada_texto: (k.tipo_jornada || 'diurna').toLowerCase(),
+    dias_laborados: diasTexto,
+    texto_comida: textoComida,
+    horas_extra_diarias: jornada ? fmtHoras(jornada.horasExtraDiarias) : '____',
+    horas_extra_semanales: jornada ? fmtHoras(jornada.horasExtraSemanales) : '____',
   };
 }
 
@@ -2588,12 +2660,23 @@ async function loadTribunalesCustom(){
 // "configuracion" y lo edita el Administrador en "Equipo" — así no hay que
 // tocar el código cada vez que la CONASAMI publica un nuevo salario mínimo.
 let SALARIO_MINIMO_DIARIO = 315.04; // valor de respaldo (zona general, 2026) si aún no se ha guardado ninguno
+// Jornada máxima legal (Art. 61 LFT) por tipo, en horas. Igual que el
+// salario mínimo: se guarda en "configuracion" y lo edita el Administrador
+// en "Equipo" — así cuando cambie la ley (reducción de jornada prevista a
+// partir de 2027) solo hay que actualizar el número aquí, sin tocar código.
+let JORNADA_MAXIMA = {diurna: 8, nocturna: 7, mixta: 7.5}; // valores de respaldo (vigentes 2026) si aún no se ha guardado ninguno
 async function loadConfiguracion(){
   try{
     const d = await api('GET', 'configuracion_get.php');
     const v = parseFloat(d.configuracion && d.configuracion.salario_minimo_diario);
     if(!isNaN(v) && v > 0) SALARIO_MINIMO_DIARIO = v;
-  }catch(e){ /* se conserva el valor de respaldo */ }
+    const vd = parseFloat(d.configuracion && d.configuracion.jornada_maxima_diurna);
+    if(!isNaN(vd) && vd > 0) JORNADA_MAXIMA.diurna = vd;
+    const vn = parseFloat(d.configuracion && d.configuracion.jornada_maxima_nocturna);
+    if(!isNaN(vn) && vn > 0) JORNADA_MAXIMA.nocturna = vn;
+    const vm = parseFloat(d.configuracion && d.configuracion.jornada_maxima_mixta);
+    if(!isNaN(vm) && vm > 0) JORNADA_MAXIMA.mixta = vm;
+  }catch(e){ /* se conservan los valores de respaldo */ }
 }
 async function saveConfiguracion(clave, valor){
   await api('POST', 'configuracion_set.php', {clave, valor: String(valor)});
@@ -6083,6 +6166,16 @@ function equipoHTML(){
     </form>
   </div></div>
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Jornada máxima legal (Art. 61 LFT)</div>
+    <div class="notice" style="margin-bottom:14px;">Usada para calcular las horas extra en la demanda a partir del horario de entrada/salida capturado en cada asunto. Si la ley cambia (se prevé una reducción de jornada a partir de 2027), actualízala aquí — no hace falta tocar código ni la plantilla de Word.</div>
+    <form id="jornadaMaximaForm" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field" style="margin:0;"><label>Diurna (horas)</label><input type="text" id="jornadaDiurnaInput" value="${JORNADA_MAXIMA.diurna}" style="max-width:100px;"></div>
+      <div class="field" style="margin:0;"><label>Nocturna (horas)</label><input type="text" id="jornadaNocturnaInput" value="${JORNADA_MAXIMA.nocturna}" style="max-width:100px;"></div>
+      <div class="field" style="margin:0;"><label>Mixta (horas)</label><input type="text" id="jornadaMixtaInput" value="${JORNADA_MAXIMA.mixta}" style="max-width:100px;"></div>
+      <button type="submit" class="btn">Guardar</button>
+    </form>
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Respaldo de toda la información</div>
     <div class="notice" style="margin-bottom:14px;">Toda la información (etapas, notas, convenios, pagos, historial) vive ahora en la base de datos MySQL de tu hosting — el respaldo más confiable es el de cPanel (phpMyAdmin &rarr; Exportar, o la herramienta de "Copias de seguridad" de cPanel). Este botón descarga además un respaldo en JSON como referencia rápida.</div>
     <button class="btn secondary" id="descargarRespaldoBtn">Descargar respaldo (.json)</button>
@@ -6789,6 +6882,24 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo guardar: ' + err.message); }
     });
   }
+  const jornadaMaximaForm = document.getElementById('jornadaMaximaForm');
+  if(jornadaMaximaForm){
+    jornadaMaximaForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const vd = parseFloat(document.getElementById('jornadaDiurnaInput').value);
+      const vn = parseFloat(document.getElementById('jornadaNocturnaInput').value);
+      const vm = parseFloat(document.getElementById('jornadaMixtaInput').value);
+      if([vd,vn,vm].some(v=>isNaN(v) || v<=0)){ alert('Captura las 3 jornadas máximas con un número válido.'); return; }
+      try{
+        await saveConfiguracion('jornada_maxima_diurna', vd);
+        await saveConfiguracion('jornada_maxima_nocturna', vn);
+        await saveConfiguracion('jornada_maxima_mixta', vm);
+        JORNADA_MAXIMA = {diurna: vd, nocturna: vn, mixta: vm};
+        alert('Jornada máxima actualizada. Los documentos de demanda que generes de aquí en adelante usarán este valor.');
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+    });
+  }
   const addDiaInhabilForm = document.getElementById('addDiaInhabilForm');
   if(addDiaInhabilForm){
     addDiaInhabilForm.addEventListener('submit', async (e)=>{
@@ -7394,6 +7505,8 @@ function modalTabContent(k,p,meta){
           <label>${escapeHTML(f.label)}</label>
           ${f.type==='date' ?
             `<input type="date" class="edit-field" data-field="${f.key}" value="${k[f.key]||''}">` :
+            f.type==='time' ?
+            `<input type="time" class="edit-field" data-field="${f.key}" value="${(k[f.key]||'').slice(0,5)}">` :
             f.type==='tipo_asunto' ?
             tipoAsuntoFieldHTML(k.tipo_asunto!=null ? String(k.tipo_asunto) : '') :
             f.type==='select' ?

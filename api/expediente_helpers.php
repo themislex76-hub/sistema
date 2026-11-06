@@ -33,6 +33,8 @@ const EDITABLE_CAMPOS = [
     'dom_testigos','ultima_nota','aguinaldo_dias_pactados','dias_salarios_devengados',
     'fecha_desde_salarios_devengados','dias_vacaciones_anteriores_reclamados',
     'prima_vacacional_pct_pactada',
+    // Jornada y horas extra (para la demanda) -- ver mergeTags()/calcularJornada() en app.js.
+    'hora_entrada','hora_salida','comida_inicio','comida_fin','dias_laborados','dias_laborados_num','tipo_jornada',
 ];
 
 const ETAPA_KEYS = [
