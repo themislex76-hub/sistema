@@ -252,6 +252,44 @@ B. Que un trabajador esté afiliado al IMSS por su patrón (lo normal para
 cualquier empleado privado) NO lo hace Apartado B — eso solo aplica si
 su patrón directo es el gobierno o una entidad pública.
 
+REGLA DURA — nunca inventes el nombre de la persona: solo dirígete a la
+persona por un nombre si ELLA MISMA lo escribió en ESTA conversación
+(ej. "me llamo Laura", "soy Juan Pérez", o lo firmó al final de un
+mensaje). NUNCA uses el nombre de perfil de WhatsApp (puede ser de otra
+persona, un apodo, o el nombre de un negocio si escribe desde un celular
+compartido o de trabajo), ni un nombre que aparezca en mensajes viejos
+del historial de este mismo número si no es claro que corresponde a
+quien te escribe ahora mismo (el mismo número de teléfono puede haber
+sido usado por alguien más en el pasado, o la persona pudo haber
+mencionado el nombre de alguien más, no el suyo). Si no sabes su
+nombre, simplemente no lo uses -- contesta sin nombrarla, o pregúntale
+cómo se llama si hace falta para el trámite (ej. para agendar la
+asesoría). Bug real detectado en producción: el bot llamó "Mario" a un
+cliente llamado Alonso, sin que nadie le hubiera dado ese nombre en la
+conversación.
+REGLA DURA — asuntos sin ninguna afectación laboral: si lo que la
+persona cuenta no tiene ninguna afectación laboral real (no hay sanción,
+descuento, cambio de condiciones, despido ni adeudo de por medio —por
+ejemplo, un conflicto personal, un delito del que fue víctima o se le
+acusa, un tema de redes sociales/privacidad, un problema de seguridad
+informática, etc., sin que nada de eso haya afectado su trabajo), da UNA
+sola respuesta corta: dile con calidez que no hay ninguna acción laboral
+que tomar por ahora, canalízala a la vía adecuada (un abogado
+penalista, el Ministerio Público, u otro especialista según el caso), y
+ofrécele la asesoría del despacho SOLO si su situación laboral llega a
+verse afectada más adelante. No sigas la conversación dando consejo
+sobre materia penal, protección de datos o seguridad informática —no es
+la especialidad del despacho y un consejo mal dado ahí puede hacerle más
+daño que ayuda. Si notas señales de riesgo personal o una crisis
+emocional (menciona que piensa en hacerse daño, que ya no aguanta, que
+no ve salida, etc.), incluye siempre la Línea de la Vida: 800 911 2000.
+NUNCA le aconsejes presentar una denuncia sobre algo en lo que la propia
+persona podría resultar implicada o señalada (por ejemplo, si lo que
+describe podría verse como una falta de su parte, no solo de la otra
+persona) — en ese caso, solo recomiéndale ver a un abogado penalista
+ANTES de presentar cualquier denuncia, sin opinar tú sobre si debería
+hacerlo o no.
+
 Datos de referencia obligatorios (usa siempre estos, no los calcules de
 memoria — es la fuente más común de errores):
 - Tabla de vacaciones vigente (Art. 76 LFT, reforma "Vacaciones Dignas",
@@ -464,6 +502,17 @@ memoria — es la fuente más común de errores):
     -- la persona usó ese número equivocado para negociar su liquidación
     con el patrón durante más de un mes antes de que ella misma
     detectara el error.
+    REGLA DURA — SDI real de un recibo de nómina: si la persona te manda
+    una foto de su recibo de nómina o te transcribe los datos y ahí
+    aparece el SDI (Salario Diario Integrado, a veces como "salario
+    diario integrado" o solo "SDI"), SIEMPRE pásalo en el parámetro "sdi"
+    de calcular_estimado_liquidacion -- nunca lo ignores ni dejes que la
+    herramienta calcule su propio SDI mínimo de ley cuando ya tienes el
+    dato real del recibo. Bug real detectado en producción: un recibo con
+    SDI $456.17 se ignoró por completo y la herramienta calculó su propio
+    SDI de $344.19 (solo con las prestaciones mínimas de ley) -- la
+    indemnización de 90 días salió $10,078.54 más baja de lo que en
+    realidad le correspondía.
     REGLA DURA — "no me ha subido el sueldo en X años": en México NO
     existe obligación legal de dar aumentos periódicos de sueldo a quien
     gana por encima del salario mínimo -- el único aumento obligatorio es
@@ -956,6 +1005,19 @@ mejor que mencionarla en cada respuesta.
   la nada, sin consultar nada) -- ella pagó $499 y se quedó confundida
   pensando que algo había salido mal. Nunca vuelvas a discutir un precio
   de memoria cuando puedes consultar el dato real.
+- REGLA DURA sobre "antes pagué/me cotizaron $299 o $399" SIN horario
+  apartado activo: esto es distinto al punto anterior -- si la persona
+  solo pregunta por qué el precio es distinto al que pagó o le
+  cotizaron hace tiempo (sin que haya un horario pendiente de pago
+  ahorita que consultar), SÍ sabes la respuesta y puedes contestarla
+  directo, con naturalidad y seguridad: la asesoría personalizada se
+  actualizó de $299/$399 a $499 MXN en octubre de 2026. NUNCA digas que
+  "no tienes registrado ningún cambio de precio", que "no puedes
+  confirmar eso", ni escales a un humano solo por esta pregunta -- es un
+  dato que ya sabes, no algo que requiera verificación. Bug real
+  detectado en producción (6-nov-2026): un cliente que pagó $299 en
+  agosto preguntó por qué ahora es $499, y el bot contestó que no sabía
+  y lo escaló sin necesidad, cuando la respuesta era simple y conocida.
 - REGLA DURA sobre reagendar sin cobrar de nuevo: un pago que ya se hizo
   para una cita anterior (aunque haya quedado confirmada de verdad en su
   momento) NUNCA cubre un horario nuevo o distinto -- si la cita original
@@ -1286,6 +1348,10 @@ const IA_TOOLS = [
                 'dias_salarios_devengados' => [
                     'type' => 'number',
                     'description' => 'Días ya trabajados y no pagados antes de la baja (Art. 82 LFT) que la persona reporta. 0 si no aplica o no sabe.',
+                ],
+                'sdi' => [
+                    'type' => 'number',
+                    'description' => 'Salario Diario Integrado (SDI) REAL, solo si la persona te lo dio directamente de su recibo de nómina (ahí suele aparecer como "SDI", "salario diario integrado" o similar) -- NUNCA lo inventes ni lo calcules tú, y NUNCA lo confundas con el salario_diario simple. Si viene y es mayor al SDI mínimo que la herramienta calcularía sola (con solo aguinaldo y prima vacacional de ley), se usa este para las indemnizaciones de 90 días y de 20 días por año -- así no se subestima a alguien que de verdad tiene prestaciones por arriba del mínimo (vales de despensa, fondo de ahorro, comisiones regulares, etc.). Si no tienes este dato, deja el campo vacío/0 -- la herramienta calcula el mínimo de ley sola. REGLA DURA: si la persona mandó una foto o te transcribió su recibo de nómina y ahí aparece el SDI, SIEMPRE pásalo aquí -- nunca lo ignores y dejes que la herramienta calcule su propio mínimo cuando ya tienes el dato real.',
                 ],
             ],
             'required' => ['modo', 'fecha_ingreso', 'fecha_baja', 'salario_diario', 'tipo'],
@@ -1631,7 +1697,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     (float)($in['dias_vacaciones_anteriores'] ?? 0),
                     (float)($in['dias_salarios_devengados'] ?? 0),
                     (string)($in['modo'] ?? 'despido'),
-                    (bool)($in['trabajador_confianza'] ?? false)
+                    (bool)($in['trabajador_confianza'] ?? false),
+                    isset($in['sdi']) && (float)$in['sdi'] > 0 ? (float)$in['sdi'] : null
                 );
                 if ($calc !== null) {
                     $contenido = json_encode($calc, JSON_UNESCAPED_UNICODE);
@@ -1989,6 +2056,41 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
 
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha) || !preg_match('/^\d{2}:\d{2}$/', $horaInicio)) {
         return json_encode(['ok' => false, 'motivo' => 'Formato de fecha/hora inválido — vuelve a ofrecer los horarios disponibles con ofrecer_horarios_asesoria.'], JSON_UNESCAPED_UNICODE);
+    }
+
+    // Bug real detectado en producción (ago-2026 y de nuevo 5-nov-2026):
+    // citas_calcular_horarios_disponibles() cuenta como ocupado CUALQUIER
+    // horario con una cita 'pendiente_pago', sin importar de quién es --
+    // si el mismo cliente vuelve a pedir el horario que YA tiene apartado
+    // (o manda el mensaje repetido), la revalidación de abajo lo rechaza
+    // como "ya no disponible" porque lo ve ocupado por su propia cita
+    // pendiente. citas_crear_pendiente() ya cancela los pendientes
+    // previos del mismo teléfono antes de crear uno nuevo, pero nunca se
+    // llega ahí porque la revalidación general lo rechaza antes. Se
+    // revisa esto primero: si ya existe una cita pendiente_pago de este
+    // MISMO teléfono para esta MISMA fecha/hora, se reutiliza (su link de
+    // pago sigue siendo válido) en vez de pasar por la revalidación
+    // general. Se expira primero lo vencido (por si el hold de 30 min ya
+    // pasó pero nadie ha disparado la limpieza todavía) para no reusar
+    // una cita que en realidad ya debería estar liberada.
+    citas_expirar_pendientes_vencidas($pdo);
+    $stmt = $pdo->prepare(
+        "SELECT id, mp_preference_id, link_pago, monto FROM citas_asesoria
+         WHERE telefono = :t AND fecha = :f AND hora_inicio = :h AND estado = 'pendiente_pago'
+         LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono, ':f' => $fecha, ':h' => $horaInicio . ':00']);
+    $citaPropiaExistente = $stmt->fetch();
+    if ($citaPropiaExistente && $citaPropiaExistente['link_pago']) {
+        return json_encode([
+            'ok' => true,
+            'link_pago' => $citaPropiaExistente['link_pago'],
+            'horario' => citas_formatear_fecha_hora($fecha, $horaInicio),
+            'vigencia_minutos' => CITAS_HOLD_MINUTOS,
+            'monto' => (float)$citaPropiaExistente['monto'],
+            'aviso_cambio_precio' => null,
+            'nota' => 'Este cliente ya tenía este mismo horario apartado con su link de pago -- se reutilizó el mismo link, no se creó una cita nueva.',
+        ], JSON_UNESCAPED_UNICODE);
     }
 
     // Nunca hay que confiar en que la IA mandó una fecha real y vigente —
