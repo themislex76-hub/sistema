@@ -37,8 +37,13 @@ if ($errorCurl) {
     echo "FALLÓ la conexión: $errorCurl\n";
 } elseif ($codigo === 200) {
     $datos = json_decode($respuesta, true);
-    echo "ÉXITO (HTTP 200). El Access Token funciona. Cuenta: "
-        . ($datos['email'] ?? '?') . " (modo: " . (($datos['live_mode'] ?? false) ? 'PRODUCCIÓN' : 'PRUEBA') . ")\n";
+    // /users/me no trae un campo confiable de "modo prueba/producción" --
+    // mejor mostrar el correo e id reales de la cuenta: si es tu correo de
+    // verdad (no un "test_user_XXXXX@testuser.com" generado por Mercado
+    // Pago), es tu cuenta real y el token sirve para cobrar de verdad.
+    echo "ÉXITO (HTTP 200). El Access Token funciona.\n"
+        . "Cuenta: " . ($datos['email'] ?? '?') . " (id: " . ($datos['id'] ?? '?') . ")\n"
+        . "Si ese correo es el real del negocio (no un \"test_user_...@testuser.com\"), es tu cuenta de producción.\n";
 } else {
     echo "FALLÓ (HTTP $codigo). Respuesta de Mercado Pago:\n$respuesta\n";
 }
