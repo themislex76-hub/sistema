@@ -827,6 +827,21 @@ mejor que mencionarla en cada respuesta.
   numerada. Si te regresa ok=false sin horarios alternativos, dile que el
   Lic. Rubén Buerhend le va a contactar directo — no le des ningún link
   ni horario tú mismo.
+- REGLA DURA sobre fallos repetidos de confirmar_horario_asesoria: si en
+  esta misma conversación ya llamaste confirmar_horario_asesoria DOS
+  veces seguidas y ambas regresaron ok=false (revisa tus propias
+  llamadas anteriores a esta herramienta, no tu memoria de lo que le
+  dijiste al cliente), deja de ofrecer horarios nuevos y de intentar un
+  tercer horario por tu cuenta -- usa escalar_a_humano de inmediato,
+  explicando en el resumen que confirmar_horario_asesoria falló dos
+  veces seguidas. NUNCA inventes una explicación propia de por qué falló
+  (como "se acaba de ocupar", "justo me gana otra persona" o "ya
+  confirmé, fue mi error") -- esas frases sin haber llamado la
+  herramienta de verdad confunden al cliente y ocultan un problema real
+  del sistema. Bug real detectado en producción (nov-2026): un error
+  técnico real (un REGEXP mal escrito) hacía fallar la confirmación una y
+  otra vez, y el bot le repitió al cliente 6 veces seguidas que el
+  horario "se acababa de ocupar" en vez de avisar que algo andaba mal.
 - REGLA DURA sobre formas de pago: el despacho SOLO acepta pago con el
   link de Mercado Pago (tarjeta de crédito/débito o saldo de Mercado
   Pago) — no existe transferencia bancaria, CLABE, depósito, OXXO ni
@@ -1979,12 +1994,23 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
     // Nunca hay que confiar en que la IA mandó una fecha real y vigente —
     // puede llegar a copiar mal el año/fecha, sobre todo si la
     // conversación con el cliente lleva ya un rato. Se revalida contra la
-    // lista de horarios de verdad disponibles AHORA MISMO antes de apartar
-    // nada (esa lista ya exige 3h de anticipación); citas_crear_pendiente()
-    // además pone su propio mínimo de CITAS_ANTICIPACION_MINIMA_HORAS como
-    // candado final, por si algún otro llamador (agendado manual, etc.) no
-    // pasó por esta revalidación.
-    $horariosVigentes = citas_calcular_horarios_disponibles($pdo);
+    // lista COMPLETA de horarios de verdad disponibles AHORA MISMO antes
+    // de apartar nada (esa lista ya exige 3h de anticipación);
+    // citas_crear_pendiente() además pone su propio mínimo de
+    // CITAS_ANTICIPACION_MINIMA_HORAS como candado final, por si algún
+    // otro llamador (agendado manual, etc.) no pasó por esta
+    // revalidación.
+    //
+    // Bug real detectado en producción (nov-2026): se revalidaba contra
+    // los primeros 5 horarios nomás (el límite que usa
+    // ofrecer_horarios_asesoria para no saturar el mensaje al cliente) --
+    // un horario que SÍ estaba libre se rechazaba como "ya no disponible"
+    // si no quedaba entre esos primeros 5, aunque de verdad existiera más
+    // adelante en la lista completa. Aquí se pide la lista sin ese
+    // límite (99999 en vez de 5); el límite de 5 solo aplica al mostrar
+    // horarios_alternativos al cliente, para no mandarle una lista
+    // gigante.
+    $horariosVigentes = citas_calcular_horarios_disponibles($pdo, 12, 999999);
     $esValido = false;
     foreach ($horariosVigentes as $h) {
         if ($h['fecha'] === $fecha && $h['hora_inicio'] === $horaInicio) {
@@ -1996,7 +2022,7 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         return json_encode([
             'ok' => false,
             'motivo' => 'Ese horario ya no está disponible.',
-            'horarios_alternativos' => $horariosVigentes,
+            'horarios_alternativos' => array_slice($horariosVigentes, 0, 5),
         ], JSON_UNESCAPED_UNICODE);
     }
 
@@ -2005,13 +2031,30 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         return json_encode([
             'ok' => false,
             'motivo' => 'Ese horario ya no está disponible.',
-            'horarios_alternativos' => citas_calcular_horarios_disponibles($pdo),
+            'horarios_alternativos' => array_slice(citas_calcular_horarios_disponibles($pdo, 12, 999999), 0, 5),
         ], JSON_UNESCAPED_UNICODE);
     }
 
-    $precio = mercadopago_monto_asesoria_a_respetar($pdo, $telefono);
-    $monto = $precio['monto'];
-    $pref = mercadopago_crear_preferencia_asesoria($citaId, $telefono, MERCADOPAGO_WEBHOOK_URL, $monto);
+    // Bug real detectado en producción (nov-2026): un error aquí abajo (ej.
+    // el REGEXP que tronó mercadopago_monto_asesoria_a_respetar()) dejaba
+    // la cita ya creada arriba en 'pendiente_pago', ocupando el horario 30
+    // minutos SIN link de pago -- cada intento fallido del cliente creaba
+    // una cita nueva que ocupaba el siguiente horario, y el bot le decía
+    // "se acaba de ocupar" una y otra vez cuando en realidad eran sus
+    // propias citas fallidas las que lo ocupaban. Todo lo que puede
+    // fallar después de apartar el horario va envuelto aquí -- cualquier
+    // excepción cancela la cita de inmediato para liberar el horario, en
+    // vez de dejarla atorada hasta que expire sola.
+    try {
+        $precio = mercadopago_monto_asesoria_a_respetar($pdo, $telefono);
+        $monto = $precio['monto'];
+        $pref = mercadopago_crear_preferencia_asesoria($citaId, $telefono, MERCADOPAGO_WEBHOOK_URL, $monto);
+    } catch (Throwable $e) {
+        $pref = null;
+        $precio = null;
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [confirmar_horario_excepcion] tel=$telefono cita=$citaId | " . $e->getMessage() . "\n", FILE_APPEND);
+    }
     if ($pref === null) {
         // No dejamos la cita "atorada" ocupando el horario si no se pudo
         // generar el link de pago.

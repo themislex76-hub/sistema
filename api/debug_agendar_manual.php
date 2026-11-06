@@ -49,12 +49,23 @@ if ($citaId === null) {
     exit;
 }
 
-$precio = mercadopago_monto_asesoria_a_respetar($pdo, $telefono);
-$monto = $precio['monto'];
-$pref = mercadopago_crear_preferencia_asesoria($citaId, $telefono, MERCADOPAGO_WEBHOOK_URL, $monto);
+// Cualquier falla aquí abajo (incluyendo una excepción real, ej. un
+// REGEXP mal escrito en mercadopago_monto_asesoria_a_respetar()) nunca
+// debe dejar la cita atorada en 'pendiente_pago' ocupando el horario --
+// se cancela de inmediato si algo truena.
+try {
+    $precio = mercadopago_monto_asesoria_a_respetar($pdo, $telefono);
+    $monto = $precio['monto'];
+    $pref = mercadopago_crear_preferencia_asesoria($citaId, $telefono, MERCADOPAGO_WEBHOOK_URL, $monto);
+} catch (Throwable $e) {
+    $pref = null;
+    echo "Excepción real al generar el link: " . $e->getMessage() . "\n";
+}
 if ($pref === null) {
     $upd = $pdo->prepare("UPDATE citas_asesoria SET estado = 'cancelada' WHERE id = :id");
     $upd->execute([':id' => $citaId]);
+    require_once __DIR__ . '/push_helpers.php';
+    push_notificar_prospecto($pdo, null, 'Falló agendado manual de asesoría', ($nombre ?: $telefono) . " -- se canceló la cita para no dejar el horario atorado.", '/sistema/?abrir=' . urlencode($telefono));
     echo "Se apartó el horario pero falló la generación del link de pago -- la cita se canceló para no dejar el horario atorado. Intenta de nuevo.\n";
     exit;
 }
