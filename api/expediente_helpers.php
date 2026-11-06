@@ -10,7 +10,9 @@ function guard_expediente_access(PDO $pdo, array $user, int $id): array
     $stmt->execute([':id' => $id]);
     $row = $stmt->fetch();
     if (!$row) fail('Expediente no encontrado.', 404);
-    if ($user['rol'] !== 'administrador' && (int)$row['abogado_id'] !== (int)$user['id']) {
+    if ($user['rol'] !== 'administrador'
+        && (int)$row['abogado_id'] !== (int)$user['id']
+        && (int)($row['abogado_id_2'] ?? 0) !== (int)$user['id']) {
         fail('No tienes acceso a este expediente.', 403);
     }
     return $row;

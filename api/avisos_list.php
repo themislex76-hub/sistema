@@ -7,7 +7,7 @@ $user = require_login();
 $pdo = db();
 $isAdmin = $user['rol'] === 'administrador';
 
-$where = $isAdmin ? '1=1' : 'e.abogado_id = :uid';
+$where = $isAdmin ? '1=1' : '(e.abogado_id = :uid1 OR e.abogado_id_2 = :uid2)';
 $soloNuevos = isset($_GET['nuevos']) && $_GET['nuevos'] === '1';
 $estadoFiltro = $soloNuevos ? " AND a.estado = 'nuevo'" : '';
 
@@ -21,7 +21,7 @@ $sql = "SELECT a.*, e.exp AS expediente_exp, e.actor AS expediente_actor, e.dema
         ORDER BY (a.estado = 'nuevo') DESC, a.creado_en DESC
         LIMIT 300";
 $stmt = $pdo->prepare($sql);
-if (!$isAdmin) $stmt->execute([':uid' => $user['id']]);
+if (!$isAdmin) $stmt->execute([':uid1' => $user['id'], ':uid2' => $user['id']]);
 else $stmt->execute();
 
 $avisos = [];

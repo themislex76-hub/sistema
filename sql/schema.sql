@@ -53,6 +53,7 @@ CREATE TABLE expedientes (
   actor VARCHAR(255) NULL,
   demandado VARCHAR(255) NULL,
   abogado_id INT UNSIGNED NULL,
+  abogado_id_2 INT UNSIGNED NULL,
   puesto VARCHAR(255) NULL,
   junta VARCHAR(255) NULL,
   dom_demandado TEXT NULL,
@@ -122,8 +123,10 @@ CREATE TABLE expedientes (
   actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
   KEY idx_expedientes_abogado (abogado_id),
+  KEY idx_expedientes_abogado_2 (abogado_id_2),
   KEY idx_expedientes_status (status(50)),
-  CONSTRAINT fk_expedientes_abogado FOREIGN KEY (abogado_id) REFERENCES usuarios(id) ON DELETE SET NULL
+  CONSTRAINT fk_expedientes_abogado FOREIGN KEY (abogado_id) REFERENCES usuarios(id) ON DELETE SET NULL,
+  CONSTRAINT fk_expedientes_abogado_2 FOREIGN KEY (abogado_id_2) REFERENCES usuarios(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------------------------

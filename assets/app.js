@@ -2029,8 +2029,15 @@ function getMeta(id){
   return m;
 }
 
+// Un asunto puede estar asignado a dos socios a la vez (se apoyan entre
+// ellos en el mismo caso) -- esta devuelve los nombres realmente asignados,
+// sin "Sin asignar", para poder filtrar/agrupar por cada uno.
+function assignedLawyers(kase){
+  return [kase.abogado, kase.abogado_2].filter(Boolean);
+}
 function assignedLawyer(kase){
-  return kase.abogado || "Sin asignar";
+  const names = assignedLawyers(kase);
+  return names.length ? names.join(' y ') : "Sin asignar";
 }
 
 // ---------------------------------------------------------------
@@ -2888,7 +2895,7 @@ function ingresosHTML(){
   const isAdmin = CURRENT_USER.role === 'Administrador';
   let todos = todosLosPagosCobrados();
   if(isAdmin && INGRESOS_ABOGADO !== 'todos'){
-    todos = todos.filter(p => assignedLawyer(p.k) === INGRESOS_ABOGADO);
+    todos = todos.filter(p => assignedLawyers(p.k).includes(INGRESOS_ABOGADO));
   }
   const enPeriodo = todos.filter(p => p.fecha >= rango.desde && p.fecha <= rango.hasta).sort((a,b)=> b.fecha.localeCompare(a.fecha));
 
@@ -3123,17 +3130,24 @@ function agendaHTML(){
 
   // Resumen por socio (solo Administrador) — cuenta pendientes/vencidos de
   // cada socio sin filtrar todavía, para poder elegir a quién ver de un vistazo.
+  // Un asunto con dos socios asignados cuenta en el renglón de cada uno (los
+  // dos deben verlo en su propia agenda), pero el total de "Todos" se calcula
+  // aparte sobre la lista completa para no contarlo dos veces ahí.
   const resumenPorSocio = {};
+  const totalesSinDuplicar = {vencidas:0, proximas:0};
   if(isAdmin){
     all.forEach(e=>{
-      const n = assignedLawyer(e.k);
-      if(!resumenPorSocio[n]) resumenPorSocio[n] = {vencidas:0, proximas:0};
-      if(e.fecha < todayISO) resumenPorSocio[n].vencidas++; else resumenPorSocio[n].proximas++;
+      if(e.fecha < todayISO) totalesSinDuplicar.vencidas++; else totalesSinDuplicar.proximas++;
+      const nombres = assignedLawyers(e.k);
+      (nombres.length ? nombres : ['Sin asignar']).forEach(n=>{
+        if(!resumenPorSocio[n]) resumenPorSocio[n] = {vencidas:0, proximas:0};
+        if(e.fecha < todayISO) resumenPorSocio[n].vencidas++; else resumenPorSocio[n].proximas++;
+      });
     });
   }
 
   if(isAdmin && AGENDA_SOCIO !== 'todos'){
-    all = all.filter(e=> assignedLawyer(e.k) === AGENDA_SOCIO);
+    all = all.filter(e=> (assignedLawyers(e.k).length ? assignedLawyers(e.k) : ['Sin asignar']).includes(AGENDA_SOCIO));
   }
   const vencidas = all.filter(e=>e.fecha < todayISO);
   const proximas = all.filter(e=>e.fecha >= todayISO);
@@ -3177,8 +3191,8 @@ function agendaHTML(){
       <table><thead><tr><th>Socio</th><th>Vencidas</th><th>Próximas</th><th></th></tr></thead><tbody>
         <tr data-agenda-socio="todos" style="cursor:pointer; ${AGENDA_SOCIO==='todos'?'background:var(--parchment);':''}">
           <td><strong>Todos</strong></td>
-          <td>${Object.values(resumenPorSocio).reduce((a,b)=>a+b.vencidas,0)}</td>
-          <td>${Object.values(resumenPorSocio).reduce((a,b)=>a+b.proximas,0)}</td>
+          <td>${totalesSinDuplicar.vencidas}</td>
+          <td>${totalesSinDuplicar.proximas}</td>
           <td></td>
         </tr>
         ${Object.keys(resumenPorSocio).sort((a,b)=>resumenPorSocio[b].vencidas-resumenPorSocio[a].vencidas).map(n=>`
@@ -4357,13 +4371,23 @@ function modalTabContent(k,p,meta){
       </div>
       <div style="margin-top:10px;"><button class="btn" id="saveConvenioManualBtn">Guardar convenio/pago</button> <span id="avisoClienteConvenio"></span></div>
     </div>
-    <div class="field" style="margin-bottom:14px;">
-      <label>Socio asignado</label>
-      <select id="lawyerSelect" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
-        <option value="" ${!k.abogado_id?'selected':''}>Sin asignar</option>
-        ${EQUIPO.map(u=>`<option value="${u.id}" ${k.abogado_id===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
-      </select>
+    <div class="grid2" style="margin-bottom:14px;">
+      <div class="field">
+        <label>Socio asignado</label>
+        <select id="lawyerSelect" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+          <option value="" ${!k.abogado_id?'selected':''}>Sin asignar</option>
+          ${EQUIPO.map(u=>`<option value="${u.id}" ${k.abogado_id===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field">
+        <label>Segundo socio (opcional)</label>
+        <select id="lawyerSelect2" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+          <option value="" ${!k.abogado_id_2?'selected':''}>Sin asignar</option>
+          ${EQUIPO.map(u=>`<option value="${u.id}" ${k.abogado_id_2===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+        </select>
+      </div>
     </div>
+    <div class="notice" style="margin-bottom:14px;">Un asunto puede asignarse a dos socios a la vez si se apoyan entre ellos en el mismo caso — ambos ven el asunto en su agenda y pueden editarlo igual.</div>
     <div class="field" style="margin-top:14px;">
       <label>Notas internas del despacho</label>
       <textarea id="notasInternas" placeholder="Notas de seguimiento, acuerdos, pendientes...">${escapeHTML(meta.notas||'')}</textarea>
@@ -4380,6 +4404,12 @@ function modalTabContent(k,p,meta){
     <div class="notice" style="margin-bottom:10px;">Comparte con tu cliente su apellido y este código, para que consulte su asunto en "Acceder como cliente" — sin este código no puede ver nada.</div>
     <div id="codigoAccesoBox" style="font-family:var(--mono); font-size:13px; color:var(--gray);">Cargando código de acceso…</div>
     <button class="btn secondary" id="regenCodigoBtn" style="margin-top:8px;">Generar código nuevo (invalida el anterior)</button>
+    ${CURRENT_USER.role==='Administrador' ? `
+    <div class="divider"></div>
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--red); margin-bottom:6px;">Zona de riesgo</div>
+    <div class="notice" style="margin-bottom:10px;">Borra este expediente por completo: datos, etapas, pagos, pendientes, notas, historial y documentos. No se puede deshacer — úsalo solo para corregir un asunto duplicado o dado de alta por error.</div>
+    <button class="btn secondary" id="deleteExpedienteBtn" style="border-color:var(--red); color:var(--red);">Borrar este expediente</button>
+    ` : ""}
   `;
   if(MODAL_TAB==='etapas'){
     const estancado = estancadoInfo(k);
@@ -4889,7 +4919,8 @@ function bindModalTabEvents(){
           notas: document.getElementById('notasInternas').value,
           cobro_pendiente: document.getElementById('cobroPendiente').checked,
           concluido_manual: document.getElementById('concluidoManual').checked,
-          abogado_id: document.getElementById('lawyerSelect').value
+          abogado_id: document.getElementById('lawyerSelect').value,
+          abogado_id_2: document.getElementById('lawyerSelect2').value
         });
         saveBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(saveBtn) saveBtn.textContent = "Guardar cambios"; }, 1600);
@@ -4897,6 +4928,25 @@ function bindModalTabEvents(){
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         renderViewBody();
       }catch(err){ alert('No se pudo guardar: ' + err.message); }
+    });
+  }
+  const deleteBtn = document.getElementById('deleteExpedienteBtn');
+  if(deleteBtn){
+    deleteBtn.addEventListener('click', async ()=>{
+      const k = ACTIVE_CASE;
+      if(!confirm('¿Borrar por completo el expediente de "'+(k.actor||'sin nombre')+'" vs "'+(k.demandado||'')+'"? Se perderán sus datos, etapas, pagos, pendientes, notas, historial y documentos. Esto NO se puede deshacer.')) return;
+      if(!confirm('Confírmalo una vez más: se va a borrar permanentemente. ¿Continuar?')) return;
+      deleteBtn.disabled = true; deleteBtn.textContent = 'Borrando…';
+      try{
+        await api('POST', 'expedientes_delete.php', {id: k.id});
+        closeModal();
+        await refreshBootstrap();
+        VIEW = 'tablero';
+        render();
+      }catch(err){
+        alert('No se pudo borrar: ' + err.message);
+        deleteBtn.disabled = false; deleteBtn.textContent = 'Borrar este expediente';
+      }
     });
   }
 }
