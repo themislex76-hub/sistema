@@ -150,7 +150,12 @@ function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): arra
     }
 
     $anclaAsesoria = "(texto LIKE '%asesor%' OR texto LIKE '%llamada telefónica%' OR texto LIKE '%Rubén Buerhend%')";
-    $noDecimal = "(?:[^0-9.]|$)";
+    // OJO: nunca uses (?:...) -- el motor REGEXP de la base del servidor
+    // no soporta grupos no-capturadores y truena la consulta entera (bug
+    // real, nov-2026: tronó mercadopago_monto_asesoria_a_respetar()
+    // completo durante toda una tarde, dejando a varios clientes sin
+    // poder pagar). Usa un grupo capturador normal.
+    $noDecimal = "([^0-9.]|$)";
     $limiteVigencia = date('Y-m-d H:i:s', strtotime('-' . MERCADOPAGO_DIAS_VIGENCIA_COTIZACION . ' days'));
 
     // Se checa el precio viejo más reciente primero ($399, vigente hasta
