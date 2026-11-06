@@ -1,0 +1,686 @@
+<?php
+declare(strict_types=1);
+
+// Funciones para generar y verificar pagos de la asesoría telefónica de
+// pago vía la API de Mercado Pago (Checkout Pro / Preferencias). Ver
+// mercadopago_credentials.example.php para configurar el Access Token.
+
+const MERCADOPAGO_MONTO_ASESORIA = 499.00;
+
+// Las preferencias de pago no llevaban NINGÚN dato del comprador (ni
+// teléfono, ni nombre, ni correo) -- Mercado Pago usa esos datos en su
+// motor antifraude, así que una transacción "sin identificar" es más
+// propensa a que la rechace con el error genérico "Tuvimos un problema".
+// Se detectó con datos reales: 28 números insistieron varias veces sin
+// lograr pagar nunca en 14 días. Esto no garantiza arreglarlo del todo
+// (Mercado Pago no explica su ponderación exacta), pero es información
+// que siempre tenemos disponible (el teléfono de WhatsApp) y que
+// Mercado Pago recomienda incluir para reducir rechazos falsos.
+function mercadopago_telefono_a_payer_phone(string $telefono): array
+{
+    $digitos = preg_replace('/\D/', '', $telefono) ?? '';
+    // Quita el 52 (México) y el 1 extra de celular que trae el wa_id.
+    if (str_starts_with($digitos, '521')) {
+        $digitos = substr($digitos, 3);
+    } elseif (str_starts_with($digitos, '52')) {
+        $digitos = substr($digitos, 2);
+    }
+    if (strlen($digitos) < 10) return ['area_code' => '', 'number' => $digitos];
+    return ['area_code' => substr($digitos, 0, 2), 'number' => substr($digitos, 2)];
+}
+
+// Catálogo de los 3 cursos en línea -- antes el bot solo mandaba a la
+// persona a la página aparte de Netlify a pagar (fricción real: salir de
+// WhatsApp, pagar en otro sitio, esperar un correo). 'sitio' es la página
+// del curso en sí (para el link de acceso una vez pagado), 'acceso_param'
+// es el nombre del parámetro de URL que espera esa página para verificar
+// el pago (?llave=... o ?payment_id=..., según cómo se armó cada sitio --
+// ambos aceptan el payment_id real de Mercado Pago como valor).
+//
+// 'producto_externo' (oct-2026): bug real detectado en producción -- cada
+// sitio de curso (hecho aparte, fuera de este repo) verifica el pago
+// comparando external_reference/metadata.producto contra una constante
+// PRODUCTO fija en SU código (ej. 'curso-amparo'). Como la compra hecha
+// desde el bot manda external_reference='curso_compra_<ID>' (genérico,
+// no ese valor) y nunca mandaba metadata.producto, esa verificación
+// SIEMPRE fallaba para cualquier curso comprado desde WhatsApp -- el
+// cliente pagaba, pero el sitio le decía "no se pudo verificar el pago".
+// Si está en null es porque todavía no se confirmó el valor exacto
+// revisando el código de ESE sitio (no hay que inventarlo) -- esos
+// cursos van a seguir fallando hasta que se confirme y se llene aquí.
+const CURSOS_CATALOGO = [
+    'amparo' => [
+        'titulo' => 'El Juicio de Amparo en Materia del Trabajo',
+        'precio' => 299.00,
+        'sitio' => 'https://silver-bubblegum-8c4a03.netlify.app/',
+        'acceso_param' => 'llave',
+        'producto_externo' => 'curso-amparo',
+    ],
+    'actas' => [
+        'titulo' => 'Actas Administrativas Laborales',
+        'precio' => 299.00,
+        'sitio' => 'https://regal-lollipop-90d889.netlify.app/',
+        'acceso_param' => 'payment_id',
+        'producto_externo' => 'curso-actas',
+    ],
+    'procesal' => [
+        'titulo' => 'Nuevo Procedimiento Laboral Mexicano',
+        'precio' => 299.00,
+        'sitio' => 'https://thriving-madeleine-5fe918.netlify.app/',
+        'acceso_param' => 'llave',
+        'producto_externo' => null,
+    ],
+];
+
+/**
+ * Carga el Access Token desde mercadopago_credentials.php si ya existe en
+ * el servidor, o null si todavía no se ha configurado — para que, antes
+ * de que el despacho suba ese archivo, el resto del bot (leads de
+ * despido, preguntas generales, etc.) siga funcionando sin tronar.
+ */
+function mercadopago_token(): ?string
+{
+    $credentialsFile = __DIR__ . '/mercadopago_credentials.php';
+    if (!file_exists($credentialsFile)) return null;
+    require_once $credentialsFile;
+    return MERCADOPAGO_ACCESS_TOKEN;
+}
+
+// Cuántos días se respeta un precio ya cotizado en el chat antes de
+// considerarse vencido (decisión del despacho, nov-2026): suficiente para
+// alguien que tardó unos días en decidirse, pero no para una cotización
+// de meses atrás que ya no corresponde al precio vigente.
+const MERCADOPAGO_DIAS_VIGENCIA_COTIZACION = 14;
+
+/**
+ * Cuánto se le debe cobrar a este teléfono: normalmente el precio vigente
+ * (MERCADOPAGO_MONTO_ASESORIA), salvo que el bot ya le haya cotizado el
+ * precio anterior ($299 o $399) en algún mensaje saliente de esta misma
+ * conversación DENTRO de los últimos MERCADOPAGO_DIAS_VIGENCIA_COTIZACION
+ * días -- ahí se respeta lo ya dicho, para no subirle el precio a media
+ * plática a alguien a quien ya se le prometió otro monto. Devuelve
+ * ['monto' => float, 'aviso_cambio_precio' => string|null] -- el aviso
+ * viene lleno cuando SÍ hubo una cotización vieja pero ya venció la
+ * ventana de días, para que el bot pueda explicarle al cliente que el
+ * precio subió en vez de solo cobrarle más sin decir nada.
+ *
+ * OJO 1: el primer intento de este filtro buscaba "299" a secas y causó un
+ * cobro real de $299 en una asesoría nueva -- cualquier cálculo de
+ * liquidación cuyo total/desglose contuviera "299" en cualquier parte
+ * (ej. "$61,299.40") hacía falso positivo, sin relación alguna con el
+ * precio de la asesoría. Ahora exige "$299" (con el signo de pesos, así
+ * que un número grande formateado con miles como "$1,299.00" no cuenta,
+ * porque el "$" no queda pegado al "299") Y la palabra "asesor" en el
+ * mismo mensaje, para anclarlo a una cotización real de la asesoría y no
+ * a una cifra de cálculo que por coincidencia contenga esos dígitos.
+ *
+ * OJO 2: la promesa de respetar $299 es solo para la PRIMERA asesoría
+ * (a quien ya se le cotizó antes de subir el precio y todavía no pagaba
+ * nada) -- si el teléfono YA tiene una asesoría pagada y confirmada
+ * antes (citas_asesoria.estado = 'confirmada'), lo que está pidiendo
+ * ahora es una asesoría NUEVA y separada, no la que se le cotizó en su
+ * momento -- esa promesa ya se cumplió con la que pagó. En ese caso
+ * cobra el precio vigente, sin importar que su historial de WhatsApp
+ * siga trayendo el mensaje viejo de "$299".
+ *
+ * OJO 3: ampliar el ancla a "llamada telefónica"/"Rubén Buerhend" (ver
+ * abajo) reabrió el MISMO hueco de OJO 1 por otra vía -- el mensaje donde
+ * se ofrece la asesoría casi siempre trae también el desglose completo
+ * del cálculo, y un renglón de ese desglose puede coincidir por
+ * casualidad con "$299.XX" o "$399.XX" (con centavos), sin que el precio
+ * real cotizado sea ese. El precio REAL de la asesoría nunca se escribe
+ * con centavos (siempre "$299 MXN", nunca "$299.45 MXN"), así que se
+ * exige que el número NO esté seguido de un punto decimal.
+ *
+ * Bug real detectado en producción (nov-2026): un cliente cotizado en
+ * $299 el 21 de agosto regresó a pagar hasta el 5 de noviembre (casi 3
+ * meses después) y se le siguió respetando ese precio de hace meses --
+ * la función nunca revisaba qué tan vieja era la cotización, solo si
+ * existía en algún punto del historial completo. De ahí la ventana de
+ * MERCADOPAGO_DIAS_VIGENCIA_COTIZACION días.
+ */
+function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): array
+{
+    $stmt = $pdo->prepare(
+        "SELECT 1 FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    if ($stmt->fetchColumn()) {
+        return ['monto' => MERCADOPAGO_MONTO_ASESORIA, 'aviso_cambio_precio' => null];
+    }
+
+    $anclaAsesoria = "(texto LIKE '%asesor%' OR texto LIKE '%llamada telefónica%' OR texto LIKE '%Rubén Buerhend%')";
+    // OJO: nunca uses (?:...) -- el motor REGEXP de la base del servidor
+    // no soporta grupos no-capturadores y truena la consulta entera (bug
+    // real, nov-2026: tronó mercadopago_monto_asesoria_a_respetar()
+    // completo durante toda una tarde, dejando a varios clientes sin
+    // poder pagar). Usa un grupo capturador normal.
+    $noDecimal = "([^0-9.]|$)";
+    $limiteVigencia = date('Y-m-d H:i:s', strtotime('-' . MERCADOPAGO_DIAS_VIGENCIA_COTIZACION . ' days'));
+
+    // Se checa el precio viejo más reciente primero ($399, vigente hasta
+    // la subida a $499 de octubre 2026) y luego el más antiguo ($299).
+    foreach ([399.00, 299.00] as $precioViejo) {
+        // El patrón REGEXP se arma con el entero (ej. "399"), no con el
+        // ".00" de $precioViejo -- el precio en el texto del chat nunca
+        // lleva decimales (ver OJO 3).
+        $stmt = $pdo->prepare(
+            "SELECT creado_en FROM whatsapp_conversaciones
+             WHERE telefono = :t AND direccion = 'saliente'
+               AND texto REGEXP '\\\\$" . (int)$precioViejo . "{$noDecimal}' AND {$anclaAsesoria}
+             ORDER BY creado_en DESC LIMIT 1"
+        );
+        $stmt->execute([':t' => $telefono]);
+        $cotizadoEn = $stmt->fetchColumn();
+        if ($cotizadoEn === false) {
+            continue;
+        }
+        if ($cotizadoEn >= $limiteVigencia) {
+            return ['monto' => $precioViejo, 'aviso_cambio_precio' => null];
+        }
+        $dias = (int)floor((time() - strtotime((string)$cotizadoEn)) / 86400);
+        return [
+            'monto' => MERCADOPAGO_MONTO_ASESORIA,
+            'aviso_cambio_precio' => "Se le había cotizado \$" . number_format($precioViejo, 0) . " MXN hace {$dias} días, pero esa cotización ya venció (solo se respeta por " . MERCADOPAGO_DIAS_VIGENCIA_COTIZACION . " días) -- el precio vigente ahora es \$" . number_format(MERCADOPAGO_MONTO_ASESORIA, 0) . " MXN. Explícale esto a la persona con calidez antes o junto con el link de pago, nunca lo cobres en silencio.",
+        ];
+    }
+
+    return ['monto' => MERCADOPAGO_MONTO_ASESORIA, 'aviso_cambio_precio' => null];
+}
+
+/**
+ * Crea una "preferencia" de pago en Mercado Pago para la asesoría
+ * telefónica y devuelve el link de pago (init_point) listo para mandarle
+ * al cliente por WhatsApp. Solo acepta tarjeta de crédito/débito y el
+ * saldo de la cuenta de Mercado Pago (ambos confirman al instante) — se
+ * excluyen OXXO, transferencia, depósito en ventanilla y "Meses sin
+ * Tarjeta", porque esos no confirman el pago de inmediato o no son un
+ * pago real en el momento, lo que dejaría un horario apartado sin certeza
+ * real de si se va a pagar o no.
+ *
+ * $citaId se manda como external_reference para poder relacionar la
+ * notificación del webhook con la cita correcta. $monto es el precio real
+ * a cobrar (ver mercadopago_monto_asesoria_a_respetar) -- normalmente el
+ * vigente, salvo que ya se le haya cotizado el anterior a esta persona.
+ * Devuelve ['id' => preference_id, 'init_point' => url_de_pago] o null si falló.
+ */
+function mercadopago_crear_preferencia_asesoria(int $citaId, string $telefono, string $notificationUrl, float $monto = MERCADOPAGO_MONTO_ASESORIA): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+
+    $payload = [
+        'items' => [[
+            'title' => 'Asesoría laboral personalizada (llamada telefónica, 1 hora)',
+            'quantity' => 1,
+            'currency_id' => 'MXN',
+            'unit_price' => $monto,
+        ]],
+        'payment_methods' => [
+            'excluded_payment_types' => [
+                ['id' => 'ticket'],          // pago en efectivo (OXXO, etc.)
+                ['id' => 'bank_transfer'],   // transferencia SPEI
+                ['id' => 'atm'],             // depósito en ventanilla/cajero
+                ['id' => 'mercado_credito'], // "Meses sin Tarjeta" (línea de crédito de Mercado Pago)
+                // El saldo de la cuenta de Mercado Pago (account_money) SÍ
+                // se deja disponible — confirma al instante igual que la
+                // tarjeta, a diferencia de OXXO/transferencia/depósito.
+            ],
+            'installments' => 1,
+        ],
+        'external_reference' => (string)$citaId,
+        'notification_url' => $notificationUrl,
+        'back_urls' => [
+            'success' => 'https://www.expertoslaborales.com/gracias-asesoria',
+            'pending' => 'https://www.expertoslaborales.com/gracias-asesoria',
+            'failure' => 'https://www.expertoslaborales.com/gracias-asesoria',
+        ],
+        'statement_descriptor' => 'EXPERTOSLABORALES',
+        'payer' => [
+            'phone' => mercadopago_telefono_a_payer_phone($telefono),
+        ],
+        // El "30 minutos" para apartar el horario es solo una regla
+        // interna (ver CITAS_HOLD_MINUTOS) -- sin esto, el link de pago en
+        // sí seguía siendo válido en Mercado Pago indefinidamente. Bug
+        // real detectado: una clienta pagó un link casi 5 semanas después
+        // de haberlo abierto, cuando el horario original ya llevaba mucho
+        // tiempo vencido -- el sistema reaccionó bien (no la agendó en la
+        // fecha vieja, le pidió elegir una nueva), pero nadie se dio
+        // cuenta de inmediato y se quedó pagada sin cita real por horas.
+        // Ahora el link mismo deja de ser pagable a los 2 días.
+        'expires' => true,
+        'expiration_date_from' => (new DateTimeImmutable('now'))->format('Y-m-d\TH:i:s.000P'),
+        'expiration_date_to' => (new DateTimeImmutable('+2 days'))->format('Y-m-d\TH:i:s.000P'),
+    ];
+
+    $ch = curl_init('https://api.mercadopago.com/checkout/preferences');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+            . " | crear_preferencia | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    if (!isset($data['id'], $data['init_point'])) return null;
+
+    return ['id' => (string)$data['id'], 'init_point' => (string)$data['init_point']];
+}
+
+/**
+ * Crea una preferencia de pago para uno de los 3 cursos en línea (ver
+ * CURSOS_CATALOGO) y devuelve el link de pago (init_point), igual que
+ * mercadopago_crear_preferencia_asesoria pero para cursos. $compraId se
+ * manda como external_reference con el prefijo "curso_compra_" para que
+ * mercadopago_webhook.php pueda distinguir un pago de curso de un pago de
+ * asesoría (que manda solo el id numérico de la cita, sin prefijo). El
+ * título del curso se manda tal cual está en CURSOS_CATALOGO a propósito:
+ * cursos_ingresos_mensual.php ya clasifica los pagos reales de Mercado
+ * Pago por palabra clave en el título ("amparo", "actas", "procesal"),
+ * así que estos pagos aparecen solos en ese reporte sin tocar nada ahí.
+ */
+function mercadopago_crear_preferencia_curso(int $compraId, string $cursoSlug, string $notificationUrl, string $telefono): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+    $info = CURSOS_CATALOGO[$cursoSlug] ?? null;
+    if ($info === null) return null;
+
+    $payload = [
+        'items' => [[
+            'title' => $info['titulo'],
+            'quantity' => 1,
+            'currency_id' => 'MXN',
+            'unit_price' => $info['precio'],
+        ]],
+        'payment_methods' => [
+            'excluded_payment_types' => [
+                ['id' => 'ticket'],
+                ['id' => 'bank_transfer'],
+                ['id' => 'atm'],
+                ['id' => 'mercado_credito'],
+            ],
+            'installments' => 1,
+        ],
+        'external_reference' => 'curso_compra_' . $compraId,
+        'notification_url' => $notificationUrl,
+        'back_urls' => [
+            'success' => 'https://www.expertoslaborales.com/',
+            'pending' => 'https://www.expertoslaborales.com/',
+            'failure' => 'https://www.expertoslaborales.com/',
+        ],
+        'statement_descriptor' => 'EXPERTOSLABORALES',
+        'payer' => [
+            'phone' => mercadopago_telefono_a_payer_phone($telefono),
+        ],
+    ];
+
+    // Ver nota de 'producto_externo' en CURSOS_CATALOGO -- esto es lo que
+    // arregla que el sitio del curso pueda verificar el pago. Se omite
+    // del todo (no se manda metadata=null) cuando ese valor todavía no
+    // está confirmado para este curso.
+    if ($info['producto_externo'] !== null) {
+        $payload['metadata'] = ['producto' => $info['producto_externo']];
+    }
+
+    $ch = curl_init('https://api.mercadopago.com/checkout/preferences');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+            . " | crear_preferencia_curso | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    if (!isset($data['id'], $data['init_point'])) return null;
+
+    return ['id' => (string)$data['id'], 'init_point' => (string)$data['init_point']];
+}
+
+const DOCUMENTO_CALCULO_PRECIO = 49.00;
+
+/**
+ * Crea la preferencia de pago para el documento membretado del
+ * despacho con el cálculo de liquidación ($49 MXN) -- distinto del
+ * cálculo en texto, que sigue siendo gratis siempre. $compraId se manda
+ * como external_reference con el prefijo "doc_calculo_" para que
+ * mercadopago_webhook.php lo distinga de una asesoría o un curso.
+ */
+function mercadopago_crear_preferencia_documento_calculo(int $compraId, string $telefono, string $notificationUrl): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+
+    $payload = [
+        'items' => [[
+            'title' => 'Documento membretado de cálculo de liquidación - Expertos Laborales Abogados',
+            'quantity' => 1,
+            'currency_id' => 'MXN',
+            'unit_price' => DOCUMENTO_CALCULO_PRECIO,
+        ]],
+        'payment_methods' => [
+            'excluded_payment_types' => [
+                ['id' => 'ticket'],
+                ['id' => 'bank_transfer'],
+                ['id' => 'atm'],
+                ['id' => 'mercado_credito'],
+            ],
+            'installments' => 1,
+        ],
+        'external_reference' => 'doc_calculo_' . $compraId,
+        'notification_url' => $notificationUrl,
+        'back_urls' => [
+            'success' => 'https://www.expertoslaborales.com/',
+            'pending' => 'https://www.expertoslaborales.com/',
+            'failure' => 'https://www.expertoslaborales.com/',
+        ],
+        'statement_descriptor' => 'EXPERTOSLABORALES',
+        'payer' => [
+            'phone' => mercadopago_telefono_a_payer_phone($telefono),
+        ],
+    ];
+
+    $ch = curl_init('https://api.mercadopago.com/checkout/preferences');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+            . " | crear_preferencia_documento_calculo | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    if (!isset($data['id'], $data['init_point'])) return null;
+
+    return ['id' => (string)$data['id'], 'init_point' => (string)$data['init_point']];
+}
+
+/**
+ * Reembolsa PARCIALMENTE un pago ya aprobado, por el monto exacto que se
+ * le pase (nunca el total) -- usa el endpoint real de reembolsos de
+ * Mercado Pago (POST /v1/payments/{id}/refunds con {"amount": N}), para
+ * no depender de adivinar qué hace un botón del dashboard web cuando se
+ * trata de dinero real. Devuelve el arreglo decodificado de la respuesta
+ * (incluye el id del reembolso y el monto real aplicado) o null si falló.
+ */
+function mercadopago_reembolsar_parcial(string $paymentId, float $monto): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+
+    $ch = curl_init('https://api.mercadopago.com/v1/payments/' . urlencode($paymentId) . '/refunds');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+            'Content-Type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode(['amount' => $monto], JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+            . " | reembolsar_parcial($paymentId, $monto) | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    return json_decode($raw, true);
+}
+
+/**
+ * Consulta el estado real de un pago directo en la API de Mercado Pago —
+ * nunca hay que confiar en lo que trae el aviso del webhook por sí solo,
+ * siempre se vuelve a preguntar con el Access Token propio para
+ * confirmar que el pago existe y su estado real.
+ * Devuelve el arreglo decodificado del pago, o null si falló la consulta.
+ */
+function mercadopago_obtener_pago(string $paymentId): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+
+    $ch = curl_init('https://api.mercadopago.com/v1/payments/' . urlencode($paymentId));
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_HTTPHEADER => [
+            'Authorization: Bearer ' . $token,
+        ],
+        CURLOPT_TIMEOUT => 20,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status < 200 || $status >= 300) {
+        file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+            . " | obtener_pago($paymentId) | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    return json_decode($raw, true);
+}
+
+/**
+ * Trae TODOS los pagos aprobados de la cuenta de Mercado Pago del
+ * despacho entre dos fechas (se usa para el reporte de cursos vendidos —
+ * ver api/cursos_ingresos_mensual.php). A diferencia de las asesorías
+ * (que sí quedan registradas en citas_asesoria), los cursos se venden
+ * desde la página aparte expertoslaborales.com/cursos y ahí no hay ningún
+ * registro en este sistema -- por eso este reporte no consulta la base de
+ * datos local, consulta directamente el historial real de pagos de
+ * Mercado Pago (misma cuenta que ya usa el sistema para las asesorías).
+ * Pagina de 50 en 50 hasta agotar el total o llegar a un tope de
+ * seguridad, para no dejar la petición corriendo indefinidamente si la
+ * cuenta tuviera un volumen enorme de pagos.
+ * Devuelve un array de ['description', 'transaction_amount', 'date_approved']
+ * o null si falló la consulta (credenciales faltantes o error de red).
+ */
+function mercadopago_buscar_pagos_aprobados(DateTimeInterface $desde, DateTimeInterface $hasta): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+
+    $pagos = [];
+    $offset = 0;
+    $limit = 50;
+    $topeSeguridad = 2000;
+
+    do {
+        $query = http_build_query([
+            'status' => 'approved',
+            'range' => 'date_approved',
+            'begin_date' => $desde->format('Y-m-d\TH:i:s.000P'),
+            'end_date' => $hasta->format('Y-m-d\TH:i:s.000P'),
+            'sort' => 'date_approved',
+            'criteria' => 'desc',
+            'limit' => $limit,
+            'offset' => $offset,
+        ]);
+        $ch = curl_init('https://api.mercadopago.com/v1/payments/search?' . $query);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $token,
+            ],
+            CURLOPT_TIMEOUT => 20,
+        ]);
+        $raw = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($raw === false || $status < 200 || $status >= 300) {
+            file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+                . " | buscar_pagos_aprobados | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+            return null;
+        }
+
+        $data = json_decode($raw, true);
+        $resultados = $data['results'] ?? [];
+        foreach ($resultados as $p) {
+            // fee_details trae lo que Mercado Pago se quedó de comisión por
+            // ESE pago en particular -- se suma aquí (en valor absoluto,
+            // MP a veces lo manda en negativo) para poder calcular la
+            // comisión real sin tener que adivinar un porcentaje fijo.
+            $comision = 0.0;
+            foreach (($p['fee_details'] ?? []) as $fee) {
+                $comision += abs((float)($fee['amount'] ?? 0));
+            }
+            $pagos[] = [
+                'id' => (string)($p['id'] ?? ''),
+                'description' => (string)($p['description'] ?? ''),
+                'transaction_amount' => (float)($p['transaction_amount'] ?? 0),
+                'date_approved' => (string)($p['date_approved'] ?? ''),
+                'comision' => $comision,
+            ];
+        }
+
+        $total = (int)($data['paging']['total'] ?? count($resultados));
+        $offset += $limit;
+    } while ($offset < $total && $offset < $topeSeguridad && count($resultados) > 0);
+
+    return $pagos;
+}
+
+/**
+ * Trae TODOS los intentos de pago NO aprobados de la cuenta de Mercado
+ * Pago del despacho entre dos fechas (rechazados, pendientes, en
+ * proceso, etc.), con el motivo real que manda Mercado Pago
+ * (status_detail) -- se usa para diagnosticar por qué la gente no logra
+ * pagar, consultando el historial completo de la cuenta en vez de
+ * depender de lo que el webhook haya ido guardando localmente desde que
+ * se activó ese registro (ver migración 050_citas_motivo_rechazo.sql).
+ * Se filtra por date_created (no date_approved, que un pago rechazado
+ * nunca tiene). Mismo patrón de paginación que
+ * mercadopago_buscar_pagos_aprobados. Devuelve null si falló la
+ * consulta.
+ */
+function mercadopago_buscar_pagos_rechazados(DateTimeInterface $desde, DateTimeInterface $hasta): ?array
+{
+    $token = mercadopago_token();
+    if ($token === null) {
+        error_log('Falta api/mercadopago_credentials.php');
+        return null;
+    }
+
+    $pagos = [];
+    $offset = 0;
+    $limit = 50;
+    $topeSeguridad = 2000;
+
+    do {
+        $query = http_build_query([
+            'range' => 'date_created',
+            'begin_date' => $desde->format('Y-m-d\TH:i:s.000P'),
+            'end_date' => $hasta->format('Y-m-d\TH:i:s.000P'),
+            'sort' => 'date_created',
+            'criteria' => 'desc',
+            'limit' => $limit,
+            'offset' => $offset,
+        ]);
+        $ch = curl_init('https://api.mercadopago.com/v1/payments/search?' . $query);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $token,
+            ],
+            CURLOPT_TIMEOUT => 20,
+        ]);
+        $raw = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($raw === false || $status < 200 || $status >= 300) {
+            file_put_contents(__DIR__ . '/mercadopago_debug.log', date('c')
+                . " | buscar_pagos_rechazados | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+            return null;
+        }
+
+        $data = json_decode($raw, true);
+        $resultados = $data['results'] ?? [];
+        foreach ($resultados as $p) {
+            if (($p['status'] ?? '') === 'approved') continue;
+            $pagos[] = [
+                'id' => (string)($p['id'] ?? ''),
+                'description' => (string)($p['description'] ?? ''),
+                'transaction_amount' => (float)($p['transaction_amount'] ?? 0),
+                'status' => (string)($p['status'] ?? ''),
+                'status_detail' => (string)($p['status_detail'] ?? ''),
+                'date_created' => (string)($p['date_created'] ?? ''),
+                'payer_phone' => (string)($p['payer']['phone']['number'] ?? ''),
+            ];
+        }
+
+        $total = (int)($data['paging']['total'] ?? count($resultados));
+        $offset += $limit;
+    } while ($offset < $total && $offset < $topeSeguridad && count($resultados) > 0);
+
+    return $pagos;
+}

@@ -37,6 +37,7 @@ if ($ids) {
     foreach ($q->fetchAll() as $r) {
         $etapasByCase[$r['expediente_id']][$r['etapa_key']] = [
             'fecha' => $r['fecha'],
+            'hora' => $r['hora'],
             'fecha_programada' => $r['fecha_programada'],
             'resultado' => $r['resultado'],
         ];
@@ -51,6 +52,7 @@ if ($ids) {
             'monto' => $r['monto'] !== null ? (float)$r['monto'] : null,
             'cobrado' => (bool)$r['cobrado'],
             'fecha_cobro' => $r['fecha_cobro'],
+            'socio_liquidado' => (bool)$r['socio_liquidado'],
         ];
     }
 
@@ -120,6 +122,8 @@ foreach ($expedientesRows as $r) {
         'amparo_activo' => (bool)$r['amparo_activo'],
         'amparo_presentado' => (bool)$r['amparo_presentado'],
         'amparo_fecha_notif' => $r['amparo_fecha_notif'] ?? '',
+        'amparo_tribunal' => $r['amparo_tribunal'] ?? '',
+        'amparo_expediente' => $r['amparo_expediente'] ?? '',
         'amparo_notas' => $r['amparo_notas'] ?? '',
         'convenio_manual' => [
             'activo' => (bool)$r['convenio_activo'],
@@ -136,7 +140,7 @@ foreach ($expedientesRows as $r) {
 
     // Estas columnas ya viven aparte en meta.*; no duplicarlas en el nivel superior.
     foreach (['notas_internas','cobro_pendiente','concluido_manual','amparo_activo','amparo_presentado',
-              'amparo_fecha_notif','amparo_notas','convenio_activo','convenio_monto','convenio_fecha_pago',
+              'amparo_fecha_notif','amparo_tribunal','amparo_expediente','amparo_notas','convenio_activo','convenio_monto','convenio_fecha_pago',
               'codigo_acceso','portal_intentos_fallidos','portal_bloqueado_hasta','creado_en','actualizado_en'] as $k) {
         unset($case[$k]);
     }

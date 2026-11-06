@@ -31,6 +31,9 @@ CREATE TABLE usuarios (
   pjf_usuario VARCHAR(190) NULL,
   pjf_password_enc TEXT NULL,
   pjf_actualizado_en DATETIME NULL,
+  resumen_hoy_texto TEXT NULL,
+  resumen_hoy_hash VARCHAR(64) NULL,
+  resumen_hoy_generado_en DATETIME NULL,
   creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_usuarios_email (email)
@@ -47,6 +50,11 @@ CREATE TABLE usuarios (
 CREATE TABLE expedientes (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   exp VARCHAR(60) NULL,
+  -- Catálogo fijo (ver TIPO_ASUNTO_OPCIONES en assets/app.js) que define
+  -- qué plazo de prescripción de la LFT le corresponde a cada expediente.
+  -- NULL en registros viejos se trata como "Despido" (Art. 518), que es
+  -- lo único que manejaba el sistema antes de este campo.
+  tipo_asunto VARCHAR(150) NULL,
   status VARCHAR(150) NULL,
   instancia VARCHAR(255) NULL,
   ultima_nota TEXT NULL,
@@ -109,6 +117,8 @@ CREATE TABLE expedientes (
   amparo_activo TINYINT(1) NOT NULL DEFAULT 0,
   amparo_presentado TINYINT(1) NOT NULL DEFAULT 0,
   amparo_fecha_notif DATE NULL,
+  amparo_tribunal VARCHAR(190) NULL,
+  amparo_expediente VARCHAR(60) NULL,
   amparo_notas TEXT NULL,
   convenio_activo TINYINT(1) NOT NULL DEFAULT 0,
   convenio_monto DECIMAL(12,2) NULL,
@@ -139,6 +149,7 @@ CREATE TABLE expediente_etapas (
   expediente_id INT UNSIGNED NOT NULL,
   etapa_key VARCHAR(60) NOT NULL,
   fecha DATE NULL,
+  hora TIME NULL,
   fecha_programada DATE NULL,
   resultado VARCHAR(30) NULL,
   UNIQUE KEY uq_expediente_etapa (expediente_id, etapa_key),

@@ -93,6 +93,21 @@ body{
 }
 .search-box input{border:none; outline:none; font-size:13px; flex:1; min-width:0; background:none; font-family:var(--sans); color:var(--ink); text-overflow:ellipsis;}
 
+/* ---------- Puntos animados (indicador de "procesando", ej. buscador de
+   jurisprudencia mientras la IA revisa candidatas) ---------- */
+.loading-dots{display:inline-flex; align-items:center; gap:4px; vertical-align:middle;}
+.loading-dots span{
+  width:6px; height:6px; border-radius:50%; background:currentColor;
+  animation:loadingDotsBounce 1.1s infinite ease-in-out both;
+}
+.loading-dots span:nth-child(1){animation-delay:-0.28s;}
+.loading-dots span:nth-child(2){animation-delay:-0.14s;}
+.loading-dots span:nth-child(3){animation-delay:0s;}
+@keyframes loadingDotsBounce{
+  0%, 80%, 100%{ transform:scale(0.4); opacity:.4; }
+  40%{ transform:scale(1); opacity:1; }
+}
+
 /* ---------- Cards / stats ---------- */
 .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:28px;}
 .stat-card{
@@ -156,6 +171,7 @@ thead th{
 tbody td{padding:12px 16px; border-bottom:1px solid #f0ece1; font-size:13px; vertical-align:middle;}
 tbody tr{cursor:pointer;}
 tbody tr:hover{background:var(--parchment);}
+tfoot td{padding:12px 16px; border-top:1.5px solid var(--border); font-size:13px; background:#faf8f2;}
 .exp-code{font-family:var(--mono); font-size:12px; color:var(--gray);}
 .abogado-tag{font-size:10.5px; color:var(--brass); font-weight:700;}
 
@@ -181,7 +197,8 @@ tbody tr:hover{background:var(--parchment);}
   border-bottom:2px solid transparent; white-space:nowrap; flex-shrink:0;
 }
 .modal-tabs button.active{color:var(--ink); border-bottom-color:var(--brass);}
-.modal-body{padding:22px 28px; max-height:60vh; overflow-y:auto;}
+.modal-body{padding:22px 28px; max-height:85vh; overflow-y:auto;}
+.chat-scroll{max-height:60vh; overflow-y:auto; scroll-behavior:smooth;}
 .grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px 24px;}
 .field{margin-bottom:2px;}
 .field label{display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; color:var(--gray); margin-bottom:4px;}
@@ -327,6 +344,7 @@ tbody tr:hover{background:var(--parchment);}
   .modal{max-width:100%; margin:0; border-radius:0; min-height:100vh;}
   .overlay{padding:0;}
   .modal-body{max-height:none;}
+  .chat-scroll{max-height:none;}
   table{min-width:560px;}
 }
 @media (max-width:520px){

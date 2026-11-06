@@ -27,7 +27,7 @@ function guard_expediente_access(PDO $pdo, array $user, int $id): array
 // pueden derivar solo de esos datos (aguinaldo pactado por contrato,
 // salarios devengados pendientes, vacaciones de años anteriores).
 const EDITABLE_CAMPOS = [
-    'actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
+    'tipo_asunto','actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
     'fecha_ingreso','fecha_baja','salario_mensual','salario_diario','sdi','instancia','junta',
     'tribunal','exp','status','quien_despidio','puesto_despidio','hora_despido','testigos',
     'dom_testigos','ultima_nota','aguinaldo_dias_pactados','dias_salarios_devengados',
@@ -36,10 +36,26 @@ const EDITABLE_CAMPOS = [
 ];
 
 const ETAPA_KEYS = [
-    'conciliacion_prejudicial','conciliacion_solicitada','constancia_no_conciliacion','demanda_presentada','prevencion','demanda_admitida',
+    'conciliacion_prejudicial','conciliacion_solicitada','conciliacion_primer_citatorio','conciliacion_segundo_citatorio',
+    'conciliacion_convenio','constancia_no_conciliacion','demanda_presentada','prevencion','demanda_admitida',
     'emplazamiento','contestacion_recibida','objeciones_replica','contrarreplica',
     'manifestaciones_3dias','audiencia_preliminar','audiencia_juicio','sentencia','amparo_directo',
 ];
+
+// Texto corto para el historial de cambios (log_historial) cuando se
+// guarda una etapa -- null si la etapa quedó vacía (para que
+// log_historial no registre nada en ese caso, ya trae su propio guard de
+// "antes === despues").
+function etapa_texto_resumen(?array $r): ?string
+{
+    if (!$r) return null;
+    $partes = [];
+    if (!empty($r['fecha'])) $partes[] = 'fecha: ' . $r['fecha'];
+    if (!empty($r['hora'])) $partes[] = 'hora: ' . $r['hora'];
+    if (!empty($r['fecha_programada'])) $partes[] = 'programada: ' . $r['fecha_programada'];
+    if (!empty($r['resultado'])) $partes[] = 'resultado: ' . $r['resultado'];
+    return $partes ? implode(', ', $partes) : null;
+}
 
 // Columnas DECIMAL de MySQL: PDO siempre las entrega como string (para no
 // perder precisión), pero el frontend hace aritmética/.toFixed() esperando
@@ -65,7 +81,7 @@ function cast_numeric_fields(array $row): array
 // alcance HTTP directo (data/.htaccess tiene "Require all denied"); solo se
 // sirven a través de documentos_descargar.php, que valida sesión y permisos.
 // ----------------------------------------------------------------------------
-const CATEGORIA_DOCUMENTO_KEYS = ['demanda', 'contestacion', 'pruebas', 'actas', 'convenio', 'otro'];
+const CATEGORIA_DOCUMENTO_KEYS = ['constancia_no_conciliacion', 'demanda', 'contestacion', 'pruebas', 'actas', 'convenio', 'otro'];
 
 const EXTENSION_DOCUMENTO_PERMITIDA = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
 

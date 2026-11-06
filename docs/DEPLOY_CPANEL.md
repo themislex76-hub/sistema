@@ -150,7 +150,147 @@ Cada expediente tiene ahora un **código de acceso** propio (además del número
 
 ---
 
-## 10. Respaldo periódico
+## 10. WhatsApp con IA (asesoría automática + captación de prospectos)
+
+Esto conecta un número de WhatsApp dedicado a un asistente con IA (Claude) que
+contesta dudas laborales automáticamente y capta dos tipos de prospecto:
+
+- **Despido en CDMX/Edomex**: cuando alguien relata que lo despidieron y
+  radica en Ciudad de México o Estado de México, el bot deja de contestar
+  solo y lo registra como posible cliente de litigio.
+- **Asesoría personalizada de pago**: a cualquier persona, de cualquier
+  estado, el bot le ofrece la asesoría de 1 hora por $399 MXN. Si la
+  persona muestra interés, también se registra como prospecto — el bot no
+  cobra por sí solo, tú le mandas los datos de pago/agenda a mano desde la
+  conversación.
+
+Ambos aparecen en la vista "Prospectos (WhatsApp)" del sistema para que tú
+les des seguimiento personalmente.
+
+**Importante**: el número que uses aquí queda dedicado a la API — ya no se
+puede abrir en la app normal de WhatsApp del celular. Usa un número nuevo
+que no sea tu WhatsApp personal.
+
+**Visibilidad**: la vista "Prospectos (WhatsApp)" solo la ve el
+Administrador — un socio no ve estos leads hasta que el Administrador
+convierte uno en expediente y se lo asigna; a partir de ahí lo ve como
+cualquier otro asunto suyo.
+
+### 10.1 Importar las tablas nuevas
+
+1. En phpMyAdmin, con tu base de datos seleccionada, ve a la pestaña
+   **"Importar"** otra vez y sube el archivo `sql/migraciones/012_whatsapp_prospectos.sql`.
+   Esto crea las tablas `prospectos` y `whatsapp_conversaciones`.
+2. Repite el mismo paso con `sql/migraciones/013_prospectos_asesoria_paga.sql`
+   (agrega la columna que distingue un lead de despido de uno de asesoría
+   de pago).
+
+### 10.2 Dar de alta la app de WhatsApp en Meta
+
+1. Entra a [developers.facebook.com](https://developers.facebook.com) con
+   una cuenta de Facebook (idealmente una cuenta de negocio), crea una app
+   tipo **"Negocios"** y agrégale el producto **WhatsApp**.
+2. En **WhatsApp → Configuración de la API**, Meta te da un número de
+   prueba gratis para probar de inmediato. Cuando quieras usar tu número
+   dedicado real, agrégalo ahí mismo (requiere verificarlo por SMS/llamada).
+3. Copia el **"Phone number ID"** (no es el número telefónico, es un ID
+   largo) — lo vas a necesitar en el paso 10.3.
+4. Para producción (que el token no expire cada 24 horas), ve a **Meta
+   Business Suite → Usuarios del sistema**, crea un "System User", dale
+   permiso sobre tu app de WhatsApp, y genera ahí un **token de acceso
+   permanente**.
+5. En **Configuración básica** de la app, copia el **"App secret"**.
+
+### 10.3 Configurar las credenciales en el servidor
+
+Hazlo antes de dar de alta el webhook en Meta (paso 10.4): Meta llama al
+webhook para verificarlo en cuanto lo guardas, así que las credenciales
+—en especial el verify token— ya deben estar puestas.
+
+1. En el Administrador de archivos de cPanel, dentro de `public_html/sistema/api/`,
+   copia `whatsapp_credentials.example.php` como `whatsapp_credentials.php` y
+   llena `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_ID` y `WHATSAPP_APP_SECRET` con
+   los datos del paso 10.2. En `WHATSAPP_VERIFY_TOKEN` inventa tú una
+   cadena larga y aleatoria — la vas a volver a pegar, idéntica, en Meta en
+   el paso 10.4.
+2. Saca una API key en [console.anthropic.com](https://console.anthropic.com)
+   (es de pago por uso, sin plan mensual fijo — actívale un método de pago
+   ahí mismo). Copia `anthropic_credentials.example.php` como
+   `anthropic_credentials.php` y pega tu API key en `ANTHROPIC_API_KEY`.
+3. Ninguno de los dos archivos `.php` con credenciales reales debe subirse
+   a git (ya están en `.gitignore`) — solo viven en el servidor.
+
+### 10.4 Configurar el webhook en Meta
+
+1. En **WhatsApp → Configuración de la API** (o **Configuración → Webhooks**
+   de tu app), da de alta un webhook con:
+   - **URL de retorno de llamada**: `https://expertoslaborales.com/sistema/api/whatsapp_webhook.php`
+   - **Verify token**: pega exactamente el mismo valor que pusiste en
+     `WHATSAPP_VERIFY_TOKEN` en el paso 10.3.
+2. Suscríbete al campo **`messages`**.
+
+### 10.5 Probar
+
+1. Manda un WhatsApp de prueba al número dedicado (desde tu celular
+   personal, con otro chat). El bot debería contestar en unos segundos.
+2. Escribe un mensaje simulando un despido en CDMX o Edomex (p. ej. "me
+   despidieron ayer de mi trabajo en la Ciudad de México sin razón"). Debería
+   aparecer un prospecto nuevo en la vista **"Prospectos (WhatsApp)"** del
+   sistema, con el bot ya pausado para ese número — desde ahí le contestas
+   tú directamente, o lo conviertes en expediente con un clic.
+
+### Nota sobre costos y límites de Meta
+
+Cuando el bot solo responde a mensajes que la gente te escribe primero
+(que es este caso), Meta no cobra nada — son "conversaciones de servicio",
+gratuitas. Meta sí limita cuántas conversaciones nuevas puedes atender por
+día hasta que tu número y tu negocio queden verificados en Meta Business
+Manager (proceso que puede tardar unos días); una vez verificado, el límite
+sube automáticamente.
+
+### 10.6 Puente con Cloudflare Workers (si Meta no puede llegar directo)
+
+Algunos hostings compartidos tienen un firewall/WAF automático que
+bloquea las peticiones POST que manda Meta, sin dejar ningún error visible
+(la verificación GET funciona bien, pero los mensajes reales nunca llegan).
+Si te pasa esto, en vez de mudar todo tu hosting, agregas un "puente"
+gratuito con Cloudflare Workers que recibe el mensaje de Meta y se lo
+reenvía a tu sistema — a esa conexión sí le va bien, porque ya no viene
+directo de Meta.
+
+1. Crea una cuenta gratis en [dash.cloudflare.com/sign-up](https://dash.cloudflare.com/sign-up).
+2. En el panel, ve a **Workers y Pages → Crear → Crear Worker**. Ponle un
+   nombre (p. ej. `ela-whatsapp-relay`) y despliégalo (te da una plantilla
+   de ejemplo, no importa).
+3. Dale clic a **"Editar código"**. Borra todo el código de ejemplo y pega
+   el contenido completo de `scripts/cloudflare_worker_whatsapp.js` de
+   este proyecto. Guarda y despliega.
+4. En la configuración del Worker, ve a **Configuración → Variables y
+   secretos** y agrega estas 4 (marca "Cifrado/Secret" en las que tienen
+   datos sensibles):
+   - `VERIFY_TOKEN`: el mismo valor que `WHATSAPP_VERIFY_TOKEN` en tu
+     servidor.
+   - `APP_SECRET`: el mismo valor que `WHATSAPP_APP_SECRET`.
+   - `SISTEMA_RELAY_URL`: `https://sistema.expertoslaborales.com/sistema/api/whatsapp_relay.php`
+   - `RELAY_KEY`: una llave nueva que inventes (genera una con
+     `php -r "echo bin2hex(random_bytes(24)), PHP_EOL;"` o cualquier
+     cadena larga y aleatoria) — la vas a pegar también como
+     `WHATSAPP_RELAY_KEY` en tu servidor.
+5. Copia la URL pública que te dio Cloudflare para tu Worker (algo como
+   `https://ela-whatsapp-relay.tu-usuario.workers.dev`).
+6. En `whatsapp_credentials.php` (en tu servidor), agrega la línea:
+   ```php
+   define('WHATSAPP_RELAY_KEY', 'LA_MISMA_LLAVE_QUE_PUSISTE_EN_RELAY_KEY');
+   ```
+7. En Meta (developers.facebook.com → tu app → Paso 2: Configuración de
+   producción → Configurar webhooks), cambia la **URL de devolución de
+   llamada** por la URL de tu Worker de Cloudflare (la del paso 5), dejando
+   el mismo Verify token. Dale "Verificar y guardar".
+8. Prueba mandando un WhatsApp real — ahora sí debería contestar.
+
+---
+
+## 11. Respaldo periódico
 
 Toda la información ya vive en MySQL, así que el respaldo más confiable es el de la propia base de datos:
 
@@ -166,3 +306,5 @@ Toda la información ya vive en MySQL, así que el respaldo más confiable es el
 - **Pantalla en blanco o error 500**: revisa la versión de PHP (paso 1, debe ser 8.1+) y que los 4 datos de `db_credentials.php` sean correctos (usuario/base con el prefijo completo que asigna cPanel).
 - **"Correo o contraseña incorrectos" al hacer el primer login**: verifica que copiaste bien la contraseña temporal del reporte del paso 7 (son sensibles a mayúsculas/minúsculas). Si la perdiste, un Administrador puede restablecerla desde phpMyAdmin poniendo `debe_cambiar_password = 1` y una nueva `password_hash` — o, más simple, contáctanos para generar una nueva.
 - **El sistema pide iniciar sesión otra vez a cada rato**: confirma que el sitio esté cargando por `https://` (candado verde) — las cookies de sesión están configuradas para requerir conexión segura.
+- **El bot de WhatsApp no contesta**: revisa que `api/whatsapp_credentials.php` y `api/anthropic_credentials.php` existan y tengan los datos correctos, que el webhook en Meta muestre estado "Activo" (verde), y que esté suscrito al campo `messages`. Los errores concretos quedan en el registro de errores de PHP de cPanel ("Errores" dentro de "Metrics" o "Registros").
+- **Meta rechaza la verificación del webhook**: confirma que `WHATSAPP_VERIFY_TOKEN` en `whatsapp_credentials.php` sea idéntico, carácter por carácter, al que pegaste en el campo "Verify token" de Meta.
