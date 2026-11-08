@@ -162,7 +162,18 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   const hayModal = await modal.isVisible({ timeout: 8000 }).catch(() => false);
   if (!hayModal) {
     await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+    // La captura ya mostró que SÍ aparece un fondo oscuro (el backdrop) pero
+    // nunca el cuadro del modal -- en vez de seguir adivinando por CSS, se
+    // vuelca el estado real del DOM del modal (clases, estilo, si existe)
+    // directo en la consola, para ver qué le falta de verdad.
+    const estadoModal = await page.evaluate(() => {
+      const el = document.getElementById('DocumentosModal') || document.querySelector('.modal');
+      if (!el) return 'NO existe ningún elemento con id="DocumentosModal" ni .modal en el DOM.';
+      return `id=${el.id} class="${el.className}" style="${el.getAttribute('style') || ''}" `
+        + `display-computado=${getComputedStyle(el).display} opacity-computada=${getComputedStyle(el).opacity}`;
+    }).catch((e) => `(no se pudo leer el DOM: ${e.message})`);
     console.log(`    AVISO: no apareció el modal del documento al darle clic -- revisa debug_pdf_${etiquetaDebug}.png.`);
+    console.log(`    Estado real del modal en el DOM: ${estadoModal}`);
     return null;
   }
 
@@ -510,6 +521,15 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
   const context = await browser.newContext();
   await context.addCookies(await cookiesParaPlaywright(jar));
   const page = await context.newPage();
+  // Las capturas de hoy mostraron el fondo oscuro del modal del documento
+  // pero nunca el cuadro -- probablemente la llamada AJAX que carga su
+  // contenido falla en silencio. Se escuchan los errores reales de la
+  // página (consola, JS, peticiones fallidas) para verlo directo en la
+  // terminal en vez de seguir adivinando.
+  page.on('console', (msg) => { if (msg.type() === 'error') console.log(`    [consola del navegador] ${msg.text()}`); });
+  page.on('pageerror', (err) => console.log(`    [error de JS en la página] ${err.message}`));
+  page.on('requestfailed', (req) => console.log(`    [petición fallida] ${req.url()} -- ${(req.failure() || {}).errorText || '?'}`));
+  page.on('response', (resp) => { if (resp.status() >= 400) console.log(`    [respuesta con error ${resp.status()}] ${resp.url()}`); });
   let reportados = 0;
   try {
     await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' });
