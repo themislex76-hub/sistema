@@ -218,6 +218,44 @@ async function clickTextoVisible(page, texto, exact = true) {
   return false;
 }
 
+// Cierra cualquier modal de Bootstrap que haya quedado abierto (sin
+// importar cuál) -- pensado para usarse después de intentar ver el
+// documento de un acuerdo (ver descargarPdfAcuerdo): si el clic abrió un
+// modal (ej. "DocumentosModal", confirmado con una corrida real vía
+// "subtree intercepts pointer events") y no se pudo leer su contenido, hay
+// que cerrarlo de todos modos antes de seguir con el siguiente acuerdo o
+// expediente -- si no, el modal se queda tapando la pantalla y el
+// SIGUIENTE clic (que no tiene nada que ver) truena interceptado por él.
+// Nunca debe tronar esta función: es una limpieza de respaldo, no la
+// lógica principal.
+async function cerrarCualquierModalAbierto(page) {
+  const modal = page.locator('.modal.in, .modal.show').first();
+  const hayModal = await modal.isVisible({ timeout: 1500 }).catch(() => false);
+  if (!hayModal) return;
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(400);
+  if (!(await modal.isVisible().catch(() => false))) return;
+  const cerrar = modal.locator('button[data-dismiss="modal"], button.close, [aria-label="Close"], .close').first();
+  if (await cerrar.count().catch(() => 0)) {
+    await cerrar.click({ force: true, timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(400);
+  }
+  if (!(await modal.isVisible().catch(() => false))) return;
+  // Último recurso: se quita a la fuerza por JS para no dejar bloqueado el
+  // resto de la corrida (otros expedientes de la misma cuenta siguen
+  // después de este).
+  await page.evaluate(() => {
+    document.querySelectorAll('.modal.in, .modal.show').forEach(el => {
+      el.classList.remove('in', 'show');
+      el.style.display = 'none';
+    });
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('padding-right');
+    document.body.style.removeProperty('overflow');
+  }).catch(() => {});
+}
+
 // El portal muestra, al menos la primera vez después de iniciar sesión,
 // una ventana emergente ("modalModalidad") pidiendo elegir un perfil para
 // entrar: "Persona Física", "Representante de persona jurídica pública" o
@@ -402,6 +440,7 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
     } catch (e) {
       console.log(`    (no se pudo obtener el PDF del acuerdo No. ${no}: ${e.message})`);
     }
+    await cerrarCualquierModalAbierto(page);
 
     // El clic para ver el documento pudo haber navegado la MISMA pestaña
     // directo al PDF (en vez de abrir una pestaña nueva) -- si la tabla de
