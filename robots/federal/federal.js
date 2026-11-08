@@ -109,13 +109,13 @@ async function reportarAviso(expedienteId, resumen, fecha, documentoId) {
 // Sube el PDF del acuerdo (ya descargado del portal) al mismo almacén de
 // documentos que usa cada expediente -- regresa el id del documento, o null
 // si algo falla (nunca debe tronar el reporte del aviso por esto).
-async function subirPdfAlSistema(buffer, expedienteIdSistema, nombreArchivo) {
+async function subirPdfAlSistema(buffer, expedienteIdSistema, nombreArchivo, categoria) {
   try {
     const res = await axios.post(`${config.sistema.apiBase}/documentos_subir_robot.php`, {
       expediente_id: expedienteIdSistema,
       nombre_archivo: nombreArchivo,
       contenido_base64: buffer.toString('base64'),
-      categoria: 'acuerdo',
+      categoria: categoria || 'acuerdo',
     }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
     return res.data.data.id;
   } catch (e) {
@@ -373,8 +373,8 @@ async function loginPJF(usuario, password, entidadExterna, tipo) {
 // sin mandarlo; si el login de Colegiados llegara a fallar por eso, hay
 // que agregarlo.
 const SESIONES = [
-  { etiqueta: 'laboral', entidadExterna: 'Laboral', tipo: '3' },
-  { etiqueta: 'colegiados (amparo)', entidadExterna: 'SinEntidad', tipo: '1' },
+  { etiqueta: 'laboral', entidadExterna: 'Laboral', tipo: '3', esAmparo: false },
+  { etiqueta: 'colegiados (amparo)', entidadExterna: 'SinEntidad', tipo: '1', esAmparo: true },
 ];
 
 async function cookiesParaPlaywright(jar) {
@@ -651,7 +651,7 @@ function celdaBotonDocumento(fila) {
 // Procesa UN expediente ya abierto (después de darle clic al "ojito"):
 // lee su tabla de acuerdos, reporta los que tengan un "No." mayor al que
 // ya se tenía guardado para ese expediente, y regresa cuántos reportó.
-async function procesarExpediente(context, page, numeroExpediente, match, estado) {
+async function procesarExpediente(context, page, numeroExpediente, match, estado, esAmparo) {
   const ok = await page.getByText('Fecha de Acuerdo', { exact: false }).first()
     .waitFor({ timeout: 15000 }).then(() => true).catch(() => false);
   if (!ok) {
@@ -671,7 +671,7 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
     if (!no || no <= ultimoVisto) continue;
     const fechaAcuerdo = (fila['Fecha de Acuerdo'] || {}).texto || '';
     const fechaPublicacion = (fila['Fecha de Publicación'] || {}).texto || '';
-    const resumen = `Acuerdo No. ${no} del expediente ${numeroExpediente}, de fecha ${fechaAcuerdo || '(sin fecha)'}`
+    const resumen = `Acuerdo${esAmparo ? ' de amparo' : ''} No. ${no} del expediente ${numeroExpediente}, de fecha ${fechaAcuerdo || '(sin fecha)'}`
       + (fechaPublicacion ? `, publicado el ${fechaPublicacion}.` : '.');
 
     let documentoId = null;
@@ -679,7 +679,10 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
       const celda = celdaBotonDocumento(fila);
       const pdf = celda ? await descargarPdfAcuerdo(context, page, celda, `${sanitizarParaArchivo(key)}_${no}`) : null;
       if (pdf) {
-        documentoId = await subirPdfAlSistema(pdf, match.id, `Acuerdo_No_${no}_Exp_${numeroExpediente.replace(/\//g, '-')}.pdf`);
+        documentoId = await subirPdfAlSistema(
+          pdf, match.id, `Acuerdo_No_${no}_Exp_${numeroExpediente.replace(/\//g, '-')}.pdf`,
+          esAmparo ? 'acuerdo_amparo' : 'acuerdo'
+        );
       }
     } catch (e) {
       console.log(`    (no se pudo obtener el PDF del acuerdo No. ${no}: ${e.message})`);
@@ -851,7 +854,7 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
       const boton = botonVer.locator('button, a, [role="button"]').first();
       try {
         await boton.click();
-        reportados += await procesarExpediente(context, page, numExp, match, estado);
+        reportados += await procesarExpediente(context, page, numExp, match, estado, sesion.esAmparo);
       } catch (e) {
         console.log(`    Error revisando el expediente ${numExp}: ${e.message}`);
         await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}_${sanitizarParaArchivo(normalizeExp(numExp))}.png`), fullPage: true, timeout: 90000 }).catch(() => {});

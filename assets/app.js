@@ -2366,6 +2366,10 @@ function syncGoogleIfConnected(){
   sincronizarGoogleCalendar().catch(()=>{});
 }
 
+// El ORDEN de las llaves aquí también define el orden de agrupación de la
+// tabla "Documentos subidos" (ver MODAL_TAB==='documentos') -- separar
+// 'acuerdo' (juicio laboral) de 'acuerdo_amparo' evita que ambos tipos de
+// acuerdo queden revueltos y los abogados se confundan de cuál es cuál.
 const CATEGORIA_DOCUMENTO_LABEL = {
   constancia_no_conciliacion: 'Constancia de no conciliación',
   demanda: 'Demanda',
@@ -2374,8 +2378,23 @@ const CATEGORIA_DOCUMENTO_LABEL = {
   actas: 'Actas de audiencia',
   convenio: 'Convenio',
   acuerdo: 'Acuerdo (boletín)',
+  acuerdo_amparo: 'Acuerdo (amparo)',
   otro: 'Otro',
 };
+const CATEGORIA_DOCUMENTO_ORDEN = Object.keys(CATEGORIA_DOCUMENTO_LABEL);
+
+// Agrupa por categoría (orden de CATEGORIA_DOCUMENTO_ORDEN) y, dentro de
+// cada grupo, lo más reciente primero -- sin esto la tabla de Documentos
+// solo venía en orden de subida y los acuerdos del juicio quedaban
+// revueltos con los del amparo (o con cualquier otra categoría).
+function documentosAgrupadosPorCategoria(documentos){
+  return [...documentos].sort((a,b)=>{
+    const oa = CATEGORIA_DOCUMENTO_ORDEN.indexOf(a.categoria);
+    const ob = CATEGORIA_DOCUMENTO_ORDEN.indexOf(b.categoria);
+    if(oa !== ob) return oa - ob;
+    return new Date(b.creado_en) - new Date(a.creado_en);
+  });
+}
 
 async function loadDocumentos(expedienteId){
   try{
@@ -7891,7 +7910,7 @@ function modalTabContent(k,p,meta){
     <div class="divider"></div>
     <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Documentos subidos (${DOCUMENTOS_ACTIVOS.length})</div>
     ${DOCUMENTOS_ACTIVOS.length ? `<table><thead><tr><th>Archivo</th><th>Categoría</th><th>Tamaño</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead><tbody>
-      ${DOCUMENTOS_ACTIVOS.map(d=>`
+      ${documentosAgrupadosPorCategoria(DOCUMENTOS_ACTIVOS).map(d=>`
         <tr>
           <td>${escapeHTML(d.nombre_archivo)}</td>
           <td>${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[d.categoria] || d.categoria)}</td>

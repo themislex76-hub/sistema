@@ -183,6 +183,35 @@ completo"):
     programarlo para correr solo todos los días (Task Scheduler en la
     máquina del usuario, ver README.md de esta carpeta) -- por ahora solo
     se ha corrido a mano.
+- **Amparos directos (8 nov 2026)**: el robot ahora también vigila los
+  amparos directos/indirectos contra la sentencia laboral -- el Portal de
+  Servicios en Línea tiene DOS entidades separadas detrás de la misma
+  pantalla de login ("Tribunales Laborales" de siempre, y "Juzgados de
+  Distrito y Tribunales de Circuito", donde se resuelven los amparos),
+  cada una una sesión/cookie distinta que solo ve su propia "Vista
+  Global" -- confirmado capturando la petición real de login del
+  navegador con las herramientas de desarrollador: cambia
+  `EntidadExterna` ("Laboral" vs "SinEntidad") y `tipo` ("3" vs "1"). Cada
+  cuenta ahora se revisa dos veces (array `SESIONES`), reutilizando toda
+  la lógica de Vista Global / tabla de acuerdos que ya existía (mismas
+  columnas). **Confirmado funcionando de punta a punta (8 nov 2026)**:
+  corrida real con el amparo 269/2025 de Claudia Ruiz (expediente
+  242/2024, capturado en la pestaña "Amparo" del expediente) -- reportó 8
+  acuerdos reales con sus PDF. El intermitente ya conocido del clic a
+  "Consulta de Expediente Electrónico" (ver abajo) también se portó aquí
+  (antes solo estaba en la versión de `control-de-expedientes`).
+  - Los documentos de amparo se suben con categoría nueva
+    `acuerdo_amparo` (antes cualquier acuerdo, de juicio o de amparo,
+    caía en la misma categoría genérica `acuerdo` y los abogados se
+    confundían viéndolos revueltos en la pestaña "Documentos"). Migración
+    `sql/migraciones/058_categoria_documento_acuerdo_amparo.sql` agrega
+    esa categoría al ENUM -- **pendiente que el usuario la corra**. La
+    tabla de "Documentos subidos" (`app.js?v=114`) ahora además se
+    agrupa por categoría (antes solo por orden de subida).
+  - Pendiente: portar lo mismo (dos sesiones por cuenta, amparos) a
+    `control-de-expedientes/robots/federal-multidespacho/federal.js` --
+    el usuario ya pidió que se haga en cuanto esto quedara confirmado
+    aquí.
 
 ## Avisos de boletín con documento adjunto (8 nov 2026)
 - Pedido del usuario: que al reportarse un acuerdo/aviso nuevo, se pueda
