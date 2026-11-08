@@ -24,6 +24,7 @@ const { chromium } = require('playwright');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const AdmZip = require('adm-zip');
 const config = require('./config');
 
 const MAIL_BASE = 'https://mail.pjedomex.gob.mx';
@@ -62,6 +63,37 @@ function sanitizarParaArchivo(s) {
 // PDF antes de aceptarlo (mismo criterio que ya usa robots/federal/federal.js).
 function pdfEsValido(buf) {
   return !!buf && buf.length > 4 && buf.slice(0, 4).toString('latin1') === '%PDF';
+}
+
+// Confirmado real (8 nov 2026): la liga de "Descargar Documentos" del
+// correo de Edomex no entrega el PDF directo -- entrega un .zip (cabecera
+// mágica "PK") con el/los documento(s) del acuerdo adentro.
+function zipEsValido(buf) {
+  return !!buf && buf.length > 4 && buf[0] === 0x50 && buf[1] === 0x4b;
+}
+
+// Busca el primer PDF real (valida la cabecera "%PDF" de cada entrada, no
+// solo la extensión) dentro del zip. Regresa {buf, nombre} o null si no
+// traía ningún PDF válido.
+function extraerPdfDeZip(buf) {
+  try {
+    const zip = new AdmZip(buf);
+    const entradas = zip.getEntries().filter(e => !e.isDirectory);
+    // Primero las que ya se llaman .pdf, luego cualquier otra por si el
+    // nombre no trae la extensión.
+    const ordenadas = [
+      ...entradas.filter(e => /\.pdf$/i.test(e.entryName)),
+      ...entradas.filter(e => !/\.pdf$/i.test(e.entryName)),
+    ];
+    for (const entrada of ordenadas) {
+      const datos = entrada.getData();
+      if (pdfEsValido(datos)) return { buf: datos, nombre: entrada.entryName };
+    }
+    return null;
+  } catch (e) {
+    console.log(`    (no se pudo abrir el zip del documento: ${e.message})`);
+    return null;
+  }
 }
 
 async function obtenerExpedientesMonitoreados() {
@@ -284,17 +316,25 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
           try {
             const r = await context.request.get(ligaDocumento);
             const buf = r.ok() ? await r.body() : null;
+            const nombreDestino = `Acuerdo_Exp_${sanitizarParaArchivo(expedienteTexto)}_${idConversacion}.pdf`;
             if (pdfEsValido(buf)) {
-              documentoId = await subirPdfAlSistema(
-                buf, match.id,
-                `Acuerdo_Exp_${sanitizarParaArchivo(expedienteTexto)}_${idConversacion}.pdf`
-              );
+              documentoId = await subirPdfAlSistema(buf, match.id, nombreDestino);
+            } else if (zipEsValido(buf)) {
+              // Confirmado real: la liga entrega un .zip con el/los
+              // documento(s) del acuerdo adentro, no el PDF directo.
+              const extraido = extraerPdfDeZip(buf);
+              if (extraido) {
+                documentoId = await subirPdfAlSistema(extraido.buf, match.id, nombreDestino);
+                console.log(`    (PDF extraído del zip: ${extraido.nombre})`);
+              } else {
+                console.log(`    AVISO: el zip del documento no traía ningún PDF válido adentro (correo ${idConversacion}).`);
+              }
             } else {
               // Diagnóstico: sin esto no se puede saber si la liga vino
               // incompleta (cortada por un salto de línea en el correo),
               // si el servidor regresó una página de error/login, o si de
               // plano el token ya expiró.
-              console.log(`    AVISO: la liga del documento no regresó un PDF real (correo ${idConversacion}).`);
+              console.log(`    AVISO: la liga del documento no regresó un PDF ni un zip reconocible (correo ${idConversacion}).`);
               console.log(`      Liga extraída (${ligaDocumento.length} caracteres): ${ligaDocumento.slice(0, 120)}...`);
               console.log(`      Respuesta HTTP: status ${r.status()}, content-type "${r.headers()['content-type'] || '(sin dato)'}", ${buf ? buf.length : 0} bytes, primeros bytes: ${buf ? buf.slice(0, 40).toString('latin1').replace(/[^\x20-\x7e]/g, '.') : '(sin cuerpo)'}`);
             }
