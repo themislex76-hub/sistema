@@ -30,7 +30,7 @@ commit/push + agrega aquí un resumen breve de qué cambiaste y qué
 migración SQL es la más reciente que el usuario ya corrió (para que la
 siguiente sesión sepa desde dónde continuar sin repetir ni pisar nada).
 
-**Última migración aplicada por el usuario: `055_pericial_caligrafica_prima_antiguedad.sql`.**
+**Última migración aplicada por el usuario: `056_avisos_documento_robot.sql`.**
 
 Resumen de lo agregado en la sesión del 6-8 nov 2026 ("sistema y bot
 completo"):
@@ -133,13 +133,12 @@ completo"):
 - Pedido del usuario: que al reportarse un acuerdo/aviso nuevo, se pueda
   ver (o de plano se descargue) el documento sin tener que entrar a mano al
   portal de origen.
-- **Migración pendiente de correr: `sql/migraciones/056_avisos_documento_robot.sql`**
-  (agrega `documento_id` a `avisos_boletin` + categoría `'acuerdo'` en
-  `expediente_documentos.categoria`, y de paso agrega `'constancia_no_conciliacion'`
-  a ese mismo ENUM -- el código ya la esperaba como categoría válida pero
-  nunca se había agregado en la base de datos). **Esta es la migración más
-  reciente escrita -- NO se ha confirmado que el usuario ya la haya
-  corrido; preguntar/revisar antes de asumir que ya está aplicada.**
+- **Migración `sql/migraciones/056_avisos_documento_robot.sql` ya aplicada
+  por el usuario (8 nov 2026)** (agrega `documento_id` a `avisos_boletin` +
+  categoría `'acuerdo'` en `expediente_documentos.categoria`, y de paso
+  agrega `'constancia_no_conciliacion'` a ese mismo ENUM -- el código ya la
+  esperaba como categoría válida pero nunca se había agregado en la base
+  de datos).
 - Diseño: se reutiliza el almacén de documentos que ya tiene cada
   expediente (pestaña "Documentos", `api/documentos_descargar.php`, mismo
   control de acceso de siempre) en vez de inventar uno nuevo. Nuevo
