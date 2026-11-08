@@ -196,7 +196,11 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
     const src = await iframe.getAttribute('src').catch(() => null);
     if (src) {
       const url = src.startsWith('http') ? src : new URL(src, page.url()).toString();
-      const r = await context.request.get(url).catch(() => null);
+      // Algunos de estos endpoints de descarga rechazan (o regresan una
+      // página de error distinta) una petición sin "Referer" -- se manda
+      // la URL de la página actual, como haría el navegador real al
+      // cargar el <iframe>.
+      const r = await context.request.get(url, { headers: { Referer: page.url() } }).catch(() => null);
       if (r && r.ok()) pdf = await r.body().catch(() => null);
     }
   } else {
@@ -217,6 +221,19 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
         if (pdf) break;
       }
     }
+  }
+
+  // Confirmado real (8 nov 2026): los primeros PDF "descargados" por este
+  // camino pesaban exactamente 1000 bytes y salían en blanco al abrirlos
+  // -- casi seguro una página de error/redirección (probablemente porque
+  // context.request.get() no repite TODOS los headers que el navegador sí
+  // manda, ej. Referer) guardada como si fuera el archivo real. Se valida
+  // que de verdad empiece con la cabecera mágica de PDF ("%PDF") antes de
+  // aceptarlo -- si no, se trata como si no se hubiera conseguido nada,
+  // para no seguir subiendo basura al sistema.
+  if (pdf && pdf.slice(0, 4).toString('latin1') !== '%PDF') {
+    console.log(`    AVISO: lo descargado no es un PDF real (no empieza con "%PDF", pesa ${pdf.length} bytes) -- se descarta.`);
+    pdf = null;
   }
 
   if (!pdf) {
