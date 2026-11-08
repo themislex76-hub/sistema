@@ -62,7 +62,9 @@ completo"):
   (confirmado: sin acceso a sjf2.scjn.gob.mx ni similares) ni la llave real
   del robot.
 - Carpeta local donde el usuario los guarda: `C:\Users\Ruben\Desktop\ROBOTS\`,
-  una subcarpeta por robot (ej. `JURISPRUDENCIA`, `EDOMEX`).
+  una subcarpeta por robot (`JURISPRUDENCIA`, `FEDERAL`, `CDMX`,
+  `edomex_correo` -- la carpeta vieja `EDOMEX`, del robot ya retirado, se
+  borró el 8 nov 2026).
 - Entrega de archivos nuevos/actualizados de un robot: `SendUserFile` de los
   `.js`/`.json`/`README.md` sueltos (no zip — falló por confusión de carpeta
   de descargas) para que los guarde directo en la subcarpeta del robot.
@@ -70,6 +72,33 @@ completo"):
   del servidor (gitignored, no está en este repo) — la ve el usuario por
   cPanel. Es compartida entre todos los robots (Edomex, boletín CDMX,
   boletín Federal, jurisprudencia).
+- **Los 4 robots ya están automatizados con el Programador de tareas de
+  Windows (confirmado 8-9 nov 2026)**, cada uno con su propio
+  `run_diario.bat`/`run_semanal.bat` (hace `cd` a su propia carpeta y
+  corre el robot, guardando la salida en `robot.log`):
+  - `Jurisprudencia Expertos Laborales` -- lunes 7:00 am
+  - `Robot CDMX Expertos Laborales` -- diario 6:00 am
+  - `Robot Federal Expertos Laborales` -- diario 6:40 am
+  - `Robot Edomex Expertos Laborales` -- diario 9:30 am (el nombre de la
+    tarea dice "Edomex" a secas por el nombre con el que se creó
+    originalmente, pero corre `edomex_correo\run_diario.bat`, el robot
+    nuevo -- quedó mal apuntada una temporada al robot viejo ya borrado,
+    corregido borrando y recreando la tarea)
+  - Para ver/tocar estas tareas: `schtasks /query /fo table | findstr
+    "Expertos"` lista las 4; `schtasks /query /tn "<nombre>" /v /fo list`
+    da el detalle de una. **Ojo con `schtasks /change`** -- si la tarea se
+    creó con credenciales guardadas (para correr "tanto si el usuario
+    inició sesión como si no"), pide la contraseña de Windows del usuario
+    cada vez que se modifica con `/change`, y ni el usuario la tenía a la
+    mano -- más simple borrar (`/delete /f`) y recrear con `/create`
+    (sin `/ru`, corre solo cuando la sesión de Windows está iniciada, no
+    pide contraseña, mismo patrón que ya usaba Jurisprudencia). **`schtasks`
+    necesita PowerShell como administrador** (clic derecho → "Ejecutar
+    como administrador") -- sin eso da "Acceso denegado" en vez de pedir
+    permisos; y pega los comandos de uno en uno, nunca varios juntos,
+    porque si alguno dispara una pregunta interactiva (contraseña, "¿ya
+    existe, reemplazar S/N?"), las líneas siguientes del pegado se las
+    come como respuesta y se hace bola.
 - Primera corrida de cada robot: recordar `npm install` +
   `npx playwright install chromium` en su carpeta antes de correrlo.
 
