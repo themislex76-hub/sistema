@@ -199,11 +199,15 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   }
 
   // El ícono de descarga (flechita) va primero que el de ver (ojito) en la
-  // captura real -- se intenta por título/aria-label primero (más
-  // confiable si cambia el orden) y, de respaldo, por posición.
+  // captura real, confirmado por el usuario -- se intenta por título/
+  // aria-label primero (más confiable si cambia el orden) y, de respaldo,
+  // por posición. Las capturas muestran que son íconos sueltos (sin
+  // envoltura de <a>/<button> visible), así que también se intenta con
+  // <i>/<svg>/<img> a secas, no solo elementos "clickeables" típicos.
   const candidatosDescarga = [
     filaArchivo.locator('[title*="escargar" i], [aria-label*="escargar" i]').first(),
     filaArchivo.locator('a, button, [role="button"]').first(),
+    filaArchivo.locator('i, svg, img').first(),
   ];
 
   let pdf = null;
