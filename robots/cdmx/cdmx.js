@@ -169,6 +169,14 @@ function extraerSeccionLaboral(texto) {
 
 const ENCABEZADO_TRIBUNAL_RE = /((?:PRIMER|SEGUNDO|TERCER|CUARTO|QUINTO|SEXTO|S[EÉ]PTIMO|OCTAVO|NOVENO|D[EÉ]CIMO)\s+TRIBUNAL\s+LABORAL\s+DE\s+ASUNTOS\s+(?:COLECTIVOS|INDIVIDUALES)\s+DE\s+LA\s+CIUDAD\s+DE\s+M[EÉ]XICO)/gi;
 
+// Después del/los número(s) de expediente, antes del punto final, el
+// boletín real a veces agrega un sufijo corto (confirmado con boletines
+// reales): "Incompetencia.", "Amparo Directo Demandado.", "-IV.", "-VI.".
+// Sin esto, el separador de abajo no reconocía el final de esos casos y
+// los dejaba pegados con el siguiente, mezclando el resumen de 2 o 3
+// asuntos distintos bajo un solo número de expediente.
+const SUFIJO_EXP_RE = '(?:[-–]?\\s*[A-Za-zÀ-ÿ]+(?:\\s+[A-Za-zÀ-ÿ]+){0,3})?';
+
 function extraerCasosDeTramo(tramo, tribunal) {
   // Un caso puede citar más de un número de expediente seguido (ej.
   // expediente + cuaderno de amparo: "Núm. Exp. 2079/2024 3334/2026.") --
@@ -176,10 +184,11 @@ function extraerCasosDeTramo(tramo, tribunal) {
   // pegado al siguiente en vez de separarse, mezclando el resumen de dos
   // asuntos distintos. Ahora acepta uno o más números antes del punto
   // final, y registra el caso bajo cada número que mencione.
-  const partes = tramo.split(/(?<=N[uú]m\.\s*Exp\.\s*(?:\d+\/\d{4}\s*)+\.)/);
+  const finCaso = new RegExp('N[uú]m\\.\\s*Exp\\.\\s*(?:\\d+\\/\\d{4}\\s*)+' + SUFIJO_EXP_RE + '\\.');
+  const partes = tramo.split(new RegExp('(?<=' + finCaso.source + ')'));
   const casos = [];
   for (const parte of partes) {
-    const m = /N[uú]m\.\s*Exp\.\s*((?:\d+\/\d{4}\s*)+)\./.exec(parte);
+    const m = new RegExp('N[uú]m\\.\\s*Exp\\.\\s*((?:\\d+\\/\\d{4}\\s*)+)' + SUFIJO_EXP_RE + '\\.').exec(parte);
     if (!m) continue;
     const resumen = parte.replace(/\s+/g, ' ').trim().slice(-500);
     const numeros = m[1].match(/\d+\/\d{4}/g) || [];
