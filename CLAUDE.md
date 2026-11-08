@@ -56,7 +56,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**Última migración aplicada por el usuario: `057_edomex_correo_credenciales.sql`.**
+**Última migración aplicada por el usuario: `058_categoria_documento_acuerdo_amparo.sql`.**
 
 Resumen de lo agregado en la sesión del 6-8 nov 2026 ("sistema y bot
 completo"):
