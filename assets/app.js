@@ -2137,6 +2137,17 @@ async function loadPjfCredenciales(){
   }catch(e){ PJF_CREDENCIALES = null; }
 }
 
+// Igual que PJF_CREDENCIALES pero para el correo de notificaciones
+// electrónicas de Edomex (mail.pjedomex.gob.mx) -- el robot nuevo
+// (robots/edomex_correo) usa las cuentas guardadas por cada abogado.
+let EDOMEX_CORREO_CREDENCIALES = null;
+async function loadEdomexCorreoCredenciales(){
+  try{
+    const d = await api('GET', 'edomex_correo_credenciales_get.php');
+    EDOMEX_CORREO_CREDENCIALES = d;
+  }catch(e){ EDOMEX_CORREO_CREDENCIALES = null; }
+}
+
 // Avisos de boletín/lista de acuerdos por expediente — registrados a mano
 // o encontrados por los robots de monitoreo automático (Federal, CDMX,
 // Edomex). Ver api/avisos_*.php.
@@ -2603,6 +2614,7 @@ async function refreshBootstrap(){
   await loadAvisosBoletin();
   await loadEdomexCaptchaPendiente();
   await loadPjfCredenciales();
+  await loadEdomexCorreoCredenciales();
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
     await loadProspectos();
     await loadDisponibilidad();
@@ -6481,6 +6493,26 @@ function miCuentaHTML(){
       <button class="btn" id="savePjfCredencialesBtn">Guardar</button>
       ${configurado ? `<button class="btn secondary" id="borrarPjfCredencialesBtn">Quitar cuenta guardada</button>` : ''}
     </div>
+  </div></div>
+  ${edomexCorreoCredencialesHTML()}`;
+}
+
+function edomexCorreoCredencialesHTML(){
+  const c = EDOMEX_CORREO_CREDENCIALES;
+  const configurado = c && c.configurado;
+  return `
+  <div class="notice" style="margin:18px 0;">El Poder Judicial del Estado de México (Tlalnepantla) notifica los acuerdos de tus juicios laborales por un correo institucional (mail.pjedomex.gob.mx) -- NO es un correo normal (no se puede configurar en Outlook/Gmail), solo se consulta entrando a esa página con usuario y contraseña. Guárdalos aquí para que el robot revise esa bandeja por ti y reporte los acuerdos solo. Tu contraseña se guarda cifrada — nadie del despacho puede verla, ni siquiera un administrador.</div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:10px;">Correo de notificaciones electrónicas (Edomex)</div>
+    ${configurado ? `<div class="notice" style="margin-bottom:14px; background:var(--amber-bg,#fdf6e3);">Ya tienes guardado el usuario <strong>${escapeHTML(c.edomex_correo_usuario)}</strong>${c.actualizado_en ? ' (actualizado el '+new Date(c.actualizado_en).toLocaleDateString('es-MX')+')' : ''}. Para cambiarlo, captura los datos de nuevo abajo.</div>` : ''}
+    <form id="edomexCorreoCredencialesForm" class="grid2">
+      <div class="field"><label>Usuario del correo (ej. tu número de cuenta)</label><input type="text" id="edomexCorreoUsuarioInput" placeholder="Tu usuario de mail.pjedomex.gob.mx" value="${configurado ? escapeHTML(c.edomex_correo_usuario) : ''}"></div>
+      <div class="field"><label>Contraseña del correo</label><input type="password" id="edomexCorreoPasswordInput" placeholder="Tu contraseña (siempre hay que volver a escribirla para guardar)"></div>
+    </form>
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button class="btn" id="saveEdomexCorreoCredencialesBtn">Guardar</button>
+      ${configurado ? `<button class="btn secondary" id="borrarEdomexCorreoCredencialesBtn">Quitar cuenta guardada</button>` : ''}
+    </div>
   </div></div>`;
 }
 
@@ -7214,6 +7246,32 @@ function bindViewBody(){
       try{
         await api('POST', 'pjf_credenciales_set.php', {borrar: true});
         await loadPjfCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); }
+    });
+  }
+  const saveEdomexCorreoCredencialesBtn = document.getElementById('saveEdomexCorreoCredencialesBtn');
+  if(saveEdomexCorreoCredencialesBtn){
+    saveEdomexCorreoCredencialesBtn.addEventListener('click', async ()=>{
+      const edomex_correo_usuario = document.getElementById('edomexCorreoUsuarioInput').value.trim();
+      const edomex_correo_password = document.getElementById('edomexCorreoPasswordInput').value;
+      if(!edomex_correo_usuario || !edomex_correo_password){ alert('Escribe tu usuario y tu contraseña del correo de notificaciones.'); return; }
+      saveEdomexCorreoCredencialesBtn.disabled = true;
+      try{
+        await api('POST', 'edomex_correo_credenciales_set.php', {edomex_correo_usuario, edomex_correo_password});
+        await loadEdomexCorreoCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+      finally{ saveEdomexCorreoCredencialesBtn.disabled = false; }
+    });
+  }
+  const borrarEdomexCorreoCredencialesBtn = document.getElementById('borrarEdomexCorreoCredencialesBtn');
+  if(borrarEdomexCorreoCredencialesBtn){
+    borrarEdomexCorreoCredencialesBtn.addEventListener('click', async ()=>{
+      if(!confirm('¿Quitar tu cuenta guardada del correo de notificaciones de Edomex? El robot dejará de revisar tu bandeja hasta que la vuelvas a capturar.')) return;
+      try{
+        await api('POST', 'edomex_correo_credenciales_set.php', {borrar: true});
+        await loadEdomexCorreoCredenciales();
         renderViewBody();
       }catch(err){ alert('No se pudo quitar: ' + err.message); }
     });
