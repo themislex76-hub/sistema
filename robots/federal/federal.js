@@ -154,6 +154,46 @@ async function clickTextoVisible(page, texto, exact = true) {
   return false;
 }
 
+// El portal muestra, al menos la primera vez después de iniciar sesión,
+// una ventana emergente ("modalModalidad" -- "Asignar Modalidad") que tapa
+// la pantalla y bloquea cualquier clic hasta que se cierra (confirmado con
+// una corrida real: "subtree intercepts pointer events" apuntando
+// exactamente a ese modal). Se imprime su texto en la consola (para saber
+// qué decía, por si el botón correcto resulta ser otro) y se intenta
+// cerrarla probando varios botones comunes, del más específico al más
+// genérico.
+async function cerrarModalSiAparece(page, etiquetaDebug) {
+  const modal = page.locator('.modal.in, .modal.show').first();
+  const hayModal = await modal.isVisible({ timeout: 3000 }).catch(() => false);
+  if (!hayModal) return;
+
+  const texto = await modal.innerText().catch(() => '(no se pudo leer el texto)');
+  console.log(`  Apareció una ventana emergente al entrar -- texto: "${texto.replace(/\s+/g, ' ').trim().slice(0, 300)}"`);
+  await page.screenshot({ path: path.join(__dirname, `debug_modal_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+
+  const botones = [
+    modal.getByRole('button', { name: /aceptar|continuar|entendido|confirmar|cerrar/i }),
+    modal.locator('button[data-dismiss="modal"], button.close, [aria-label="Close"]'),
+    modal.getByRole('button').first(),
+  ];
+  for (const candidato of botones) {
+    const n = await candidato.count();
+    for (let i = 0; i < n; i++) {
+      const el = candidato.nth(i);
+      if (await el.isVisible().catch(() => false)) {
+        await el.click().catch(() => {});
+        await page.waitForTimeout(800);
+        const sigueAhi = await modal.isVisible().catch(() => false);
+        if (!sigueAhi) {
+          console.log('  Ventana emergente cerrada.');
+          return;
+        }
+      }
+    }
+  }
+  console.log('  AVISO: no se pudo cerrar la ventana emergente automáticamente -- revisa debug_modal_' + etiquetaDebug + '.png para ver qué botón hace falta agregar.');
+}
+
 // Si la tabla (DataTables) permite elegir cuantas entradas mostrar por
 // pagina ("Mostrar X entradas"), se pone el maximo disponible, para no
 // tener que navegar pagina por pagina. No es grave si no lo encuentra.
@@ -255,6 +295,7 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
   let reportados = 0;
   try {
     await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' });
+    await cerrarModalSiAparece(page, cuenta.pjf_usuario);
     const entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false);
     if (!entroMenu) {
       console.log('  AVISO: no se encontró el menú "Consulta de Expediente Electrónico" -- el portal pudo cambiar otra vez.');
