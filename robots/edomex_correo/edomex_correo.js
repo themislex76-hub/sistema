@@ -151,7 +151,13 @@ function extraerCampo(texto, etiqueta) {
 
 function extraerLigaDocumento(texto) {
   const m = /https?:\/\/\S*frmGetDocument\.php\?token=\S+/i.exec(texto);
-  return m ? m[0].replace(/[),.]+$/, '') : null;
+  if (!m) return null;
+  // Confirmado real (captura del correo): el token viene envuelto entre
+  // comillas simples en el texto -- "token='eyJ...A'" -- y esas comillas
+  // NO son parte del token real. Al incluirlas, el servidor nunca
+  // regresaba el PDF (token inválido). Se quitan junto con cualquier otra
+  // puntuación que se haya colado al final de la liga.
+  return m[0].replace(/token=['"]/i, 'token=').replace(/['")(,.]+$/, '');
 }
 
 async function procesarCuenta(cuenta, porNumero, estado, browser) {
