@@ -677,6 +677,23 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
       console.log(`  Diagnóstico de la página en ese momento: ${JSON.stringify(diagnostico)}`);
       const textoBody = await page.locator('body').innerText().catch((e) => `(no se pudo leer: ${e.message})`);
       console.log(`  Texto visible de la página (primeros 800 caracteres): ${textoBody.replace(/\s+/g, ' ').trim().slice(0, 800)}`);
+      // El texto SÍ aparece (textoMenuEnBody>0 arriba) pero igual nunca se
+      // consideró "visible" para el clic -- puede que el que coincide con
+      // el texto no sea el link real del menú (un duplicado oculto en otro
+      // lado). Se usa el MISMO locator que usa el clic (getByText con el
+      // regex flexible) para ver cuántos hay y el estado real de cada uno.
+      const candidatosMenu = page.getByText(textoFlexible('Consulta de Expediente Electrónico'));
+      const nCandidatos = await candidatosMenu.count().catch(() => -1);
+      console.log(`  Candidatos que matchea el locator del clic: ${nCandidatos}`);
+      for (let i = 0; i < nCandidatos && i < 5; i++) {
+        const info = await candidatosMenu.nth(i).evaluate((el) => {
+          const r = el.getBoundingClientRect();
+          const cs = getComputedStyle(el);
+          return `tag=${el.tagName} class="${el.className}" rect=${Math.round(r.width)}x${Math.round(r.height)} `
+            + `display=${cs.display} visibility=${cs.visibility} opacity=${cs.opacity}`;
+        }).catch((e) => `(no se pudo leer: ${e.message})`);
+        console.log(`    candidato[${i}]: ${info}`);
+      }
       return 0;
     }
     await page.waitForTimeout(500);
