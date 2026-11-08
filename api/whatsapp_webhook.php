@@ -1,0 +1,127 @@
+<?php
+declare(strict_types=1);
+
+// Endpoint público (sin sesión) que Meta llama para:
+//  - GET:  verificar el webhook una sola vez, al configurarlo.
+//  - POST: entregar cada mensaje entrante de WhatsApp.
+// No usa config.php a propósito: ese archivo fuerza sesión + Content-Type
+// JSON, y la verificación GET debe responder texto plano.
+//
+// En hostings compartidos con WAF automático, Meta puede no lograr llegar
+// hasta aquí con el POST real (aunque la verificación GET sí funcione) —
+// en ese caso, usa api/whatsapp_relay.php como intermediario. Ver
+// docs/DEPLOY_CPANEL.md, sección "Puente con Cloudflare Workers".
+
+error_reporting(E_ALL);
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+
+// Todo el flujo (varias rondas de IA + el retraso natural de hasta 75s +
+// el del PDF) puede tardar más de lo que Meta espera por la respuesta del
+// webhook. Sin esto, en cuanto Meta se desconecta por tardanza PHP mata el
+// script a la mitad -- normalmente justo antes de llegar al envío del PDF
+// del cálculo, que es el último paso y el que más tarda en llegar. Con
+// esto el proceso sigue corriendo hasta terminar aunque Meta ya se haya
+// desconectado, y set_time_limit evita que el límite por defecto del
+// hosting (típicamente 30s) lo corte tampoco. Subido de 120 a 200s al
+// subir el tope del retraso natural (antes 28s, ahora 75s) para que
+// siempre quede margen de sobra: espera para agrupar (18s) + varias
+// rondas de IA + retraso natural (hasta 75s) + envío del PDF.
+ignore_user_abort(true);
+set_time_limit(200);
+
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/ia_helpers.php';
+require_once __DIR__ . '/whatsapp_helpers.php';
+require_once __DIR__ . '/whatsapp_procesar.php';
+
+$credentialsFile = __DIR__ . '/whatsapp_credentials.php';
+if (!file_exists($credentialsFile)) {
+    http_response_code(500);
+    exit;
+}
+require_once $credentialsFile;
+
+$method = $_SERVER['REQUEST_METHOD'];
+
+if ($method === 'GET') {
+    $modo = $_GET['hub_mode'] ?? '';
+    $tokenRecibido = $_GET['hub_verify_token'] ?? '';
+    if ($modo === 'subscribe' && hash_equals(WHATSAPP_VERIFY_TOKEN, $tokenRecibido)) {
+        header('Content-Type: text/plain');
+        echo $_GET['hub_challenge'] ?? '';
+        exit;
+    }
+    http_response_code(403);
+    exit;
+}
+
+if ($method !== 'POST') {
+    http_response_code(405);
+    exit;
+}
+
+$raw = (string)file_get_contents('php://input');
+
+$firmaEsperada = 'sha256=' . hash_hmac('sha256', $raw, WHATSAPP_APP_SECRET);
+$firmaRecibida = $_SERVER['HTTP_X_HUB_SIGNATURE_256'] ?? '';
+
+if ($firmaRecibida === '' || !hash_equals($firmaEsperada, $firmaRecibida)) {
+    http_response_code(403);
+    exit;
+}
+
+// Meta espera una confirmación rápida de este webhook (unos segundos) — si
+// no le llega a tiempo, REINTENTA mandar el mismo mensaje, y cada
+// reintento volvía a entrar aquí y a gastar una llamada completa de IA
+// para el mismo mensaje (se detectó en producción: la misma pregunta del
+// cliente contestada 2-3 veces, con respuestas distintas y hasta cálculos
+// con montos distintos entre sí). El procesamiento real (llamada a la IA,
+// posibles varias rondas, más el retraso natural de 20-28s) tarda mucho
+// más que ese margen. La solución: confirmarle a Meta AHORA MISMO, antes
+// de procesar nada, y dejar que el procesamiento real siga corriendo
+// después en segundo plano (fastcgi_finish_request corta la conexión con
+// el cliente pero el script PHP sigue vivo — ignore_user_abort de arriba
+// evita que lo maten a la mitad).
+http_response_code(200);
+echo 'EVENT_RECEIVED';
+if (function_exists('fastcgi_finish_request')) {
+    fastcgi_finish_request();
+} else {
+    // Sin PHP-FPM no hay una forma tan limpia de cortar la conexión y
+    // seguir corriendo — se manda como mejor esfuerzo. No es tan
+    // confiable como fastcgi_finish_request, pero es mejor que nada.
+    if (ob_get_level() > 0) { ob_end_flush(); }
+    flush();
+}
+
+$data = json_decode($raw, true) ?: [];
+$pdo = db();
+
+foreach (($data['entry'] ?? []) as $entry) {
+    foreach (($entry['changes'] ?? []) as $change) {
+        $value = $change['value'] ?? [];
+
+        // Confirmaciones de entrega/lectura ("statuses") — normalmente se
+        // ignoran, pero si una falló se registra el motivo exacto para
+        // poder diagnosticar (ej. mensaje fuera de la ventana de 24h que
+        // permite Meta para mensajes que inicia la empresa).
+        foreach (($value['statuses'] ?? []) as $st) {
+            if (($st['status'] ?? '') === 'failed') {
+                file_put_contents(__DIR__ . '/whatsapp_send_debug.log', date('c')
+                    . ' | ENTREGA FALLIDA | para=' . ($st['recipient_id'] ?? '?')
+                    . ' | ' . json_encode($st['errors'] ?? [], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+            }
+        }
+
+        $mensajes = $value['messages'] ?? [];
+        if (!$mensajes) continue;
+
+        $nombrePerfil = $value['contacts'][0]['profile']['name'] ?? null;
+        foreach ($mensajes as $msg) {
+            procesar_mensaje_entrante($pdo, $msg, $nombrePerfil);
+        }
+    }
+}
+// La respuesta a Meta ya se mandó arriba, antes de procesar — no hay nada
+// más que responder aquí, el script solo termina de correr en silencio.

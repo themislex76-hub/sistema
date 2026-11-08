@@ -10,7 +10,9 @@ function guard_expediente_access(PDO $pdo, array $user, int $id): array
     $stmt->execute([':id' => $id]);
     $row = $stmt->fetch();
     if (!$row) fail('Expediente no encontrado.', 404);
-    if ($user['rol'] !== 'administrador' && (int)$row['abogado_id'] !== (int)$user['id']) {
+    if ($user['rol'] !== 'administrador'
+        && (int)$row['abogado_id'] !== (int)$user['id']
+        && (int)($row['abogado_id_2'] ?? 0) !== (int)$user['id']) {
         fail('No tienes acceso a este expediente.', 403);
     }
     return $row;
@@ -25,19 +27,48 @@ function guard_expediente_access(PDO $pdo, array $user, int $id): array
 // pueden derivar solo de esos datos (aguinaldo pactado por contrato,
 // salarios devengados pendientes, vacaciones de años anteriores).
 const EDITABLE_CAMPOS = [
-    'actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
+    'tipo_asunto','actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
     'fecha_ingreso','fecha_baja','salario_mensual','salario_diario','sdi','instancia','junta',
     'tribunal','exp','status','quien_despidio','puesto_despidio','hora_despido','testigos',
     'dom_testigos','ultima_nota','aguinaldo_dias_pactados','dias_salarios_devengados',
     'fecha_desde_salarios_devengados','dias_vacaciones_anteriores_reclamados',
     'prima_vacacional_pct_pactada',
+    // Jornada y horas extra (para la demanda) -- ver mergeTags()/calcularJornada() en app.js.
+    'hora_entrada','hora_salida','comida_inicio','comida_fin','dias_laborados','dias_laborados_num','tipo_jornada',
+    // Rescisión Art. 51 y Prima de antigüedad (ver "Otras plantillas de escritos").
+    'rescision_fraccion','rescision_motivo_breve','fecha_rescision','hecho_causa_narrativa',
+    'periodo_vacaciones_anterior','periodo_vacaciones_actual',
+    'banco1_nombre','banco1_cuenta','banco2_nombre','banco2_cuenta','banco3_nombre','banco3_cuenta',
+    'inspeccion_extremos_texto',
+    'monto_prima_antiguedad','fecha_solicitud_interna','hora_solicitud_interna','folio_solicitud_interna',
+    'funcionario_rh_nombre','funcionario_rh_puesto','numero_oficio_respuesta','fecha_oficio_respuesta',
+    'director_firma_nombre','coordinador_archivo_nombre','gerente_gestion_nombre','folio_fiscal_cfdi',
+    'periodo_recibo_desde','periodo_recibo_hasta','salario_quincenal_num','rfc_emisor_demandado',
+    'fecha_hoja_servicios','numero_documento_fump','fecha_documento_fump',
+    'fecha_desde_incumplimiento','persona_responsable_incumplimiento',
 ];
 
 const ETAPA_KEYS = [
-    'conciliacion_prejudicial','conciliacion_solicitada','constancia_no_conciliacion','demanda_presentada','prevencion','demanda_admitida',
+    'conciliacion_prejudicial','conciliacion_solicitada','conciliacion_primer_citatorio','conciliacion_segundo_citatorio',
+    'conciliacion_convenio','constancia_no_conciliacion','demanda_presentada','prevencion','demanda_admitida',
     'emplazamiento','contestacion_recibida','objeciones_replica','contrarreplica',
     'manifestaciones_3dias','audiencia_preliminar','audiencia_juicio','sentencia','amparo_directo',
 ];
+
+// Texto corto para el historial de cambios (log_historial) cuando se
+// guarda una etapa -- null si la etapa quedó vacía (para que
+// log_historial no registre nada en ese caso, ya trae su propio guard de
+// "antes === despues").
+function etapa_texto_resumen(?array $r): ?string
+{
+    if (!$r) return null;
+    $partes = [];
+    if (!empty($r['fecha'])) $partes[] = 'fecha: ' . $r['fecha'];
+    if (!empty($r['hora'])) $partes[] = 'hora: ' . $r['hora'];
+    if (!empty($r['fecha_programada'])) $partes[] = 'programada: ' . $r['fecha_programada'];
+    if (!empty($r['resultado'])) $partes[] = 'resultado: ' . $r['resultado'];
+    return $partes ? implode(', ', $partes) : null;
+}
 
 // Columnas DECIMAL de MySQL: PDO siempre las entrega como string (para no
 // perder precisión), pero el frontend hace aritmética/.toFixed() esperando
@@ -47,7 +78,7 @@ const CAMPOS_NUMERICOS_EXPEDIENTE = [
     'indemnizacion_90','indemnizacion_60','prima_antiguedad','vacaciones_dias','vacaciones_monto',
     'prima_vacacional','aguinaldo_dias','aguinaldo_monto','total_90','total_60','honorario_90','honorario_60',
     'convenio_monto','aguinaldo_dias_pactados','dias_salarios_devengados','dias_vacaciones_anteriores_reclamados',
-    'prima_vacacional_pct_pactada',
+    'prima_vacacional_pct_pactada','monto_prima_antiguedad','salario_quincenal_num',
 ];
 
 function cast_numeric_fields(array $row): array
@@ -63,13 +94,15 @@ function cast_numeric_fields(array $row): array
 // alcance HTTP directo (data/.htaccess tiene "Require all denied"); solo se
 // sirven a través de documentos_descargar.php, que valida sesión y permisos.
 // ----------------------------------------------------------------------------
-const CATEGORIA_DOCUMENTO_KEYS = ['demanda', 'contestacion', 'pruebas', 'actas', 'convenio', 'otro'];
+const CATEGORIA_DOCUMENTO_KEYS = ['constancia_no_conciliacion', 'demanda', 'contestacion', 'pruebas', 'actas', 'convenio', 'acuerdo', 'otro'];
 
-const EXTENSION_DOCUMENTO_PERMITIDA = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
+const EXTENSION_DOCUMENTO_PERMITIDA = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx', 'txt'];
 
-// Tipos que el navegador puede mostrar solo, sin descargar (PDF e imágenes).
+// Tipos que el navegador puede mostrar solo, sin descargar (PDF, imágenes y
+// texto plano -- este último es lo que sube el robot de CDMX, que no tiene
+// un PDF que descargar, solo el texto ya recortado del boletín).
 // Word/Excel no se pueden visualizar así — siempre se descargan.
-const EXTENSION_VISUALIZABLE_INLINE = ['pdf', 'jpg', 'jpeg', 'png'];
+const EXTENSION_VISUALIZABLE_INLINE = ['pdf', 'jpg', 'jpeg', 'png', 'txt'];
 
 function documentos_dir(int $expedienteId): string
 {

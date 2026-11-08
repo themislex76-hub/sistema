@@ -1,12 +1,16 @@
 // =====================================================================
 // Expertos Laborales Abogados — Sistema de Gestión de Litigios Laborales
 // Marco legal: Ley Federal del Trabajo (México), vigente. Cómputo del
-// plazo de prescripción del Art. 518 LFT conforme a la jurisprudencia
-// de la Segunda Sala de la SCJN (tesis 2028593): dos meses de calendario
-// completos y continuos, contados a partir del día siguiente a la
-// separación, suspendidos durante el procedimiento de conciliación
-// (Art. 684-B / 521 fracc. III LFT) y reanudados al día siguiente de
-// la constancia de no conciliación.
+// plazo de prescripción según el Título Décimo LFT, en días naturales
+// exactos contados a partir del día siguiente al hecho generador (ver
+// TIPO_ASUNTO_PLAZOS): despido, Art. 518 LFT, 60 días, conforme a la
+// jurisprudencia de la Segunda Sala de la SCJN (tesis 2028593); rescisión
+// —el trabajador se separa por causa imputable al patrón—, Art. 517 LFT,
+// 30 días; riesgo de trabajo y beneficiarios, Art. 519 LFT, 730 días; el
+// resto de las prestaciones, Art. 516 LFT, 365 días. Todos los plazos se
+// suspenden durante el procedimiento de conciliación (Art. 684-B / 521
+// fracc. III LFT) y se reanudan al día siguiente de la constancia de no
+// conciliación.
 // =====================================================================
 
 // =====================================================================
@@ -41,6 +45,29 @@ async function api(method, path, body){
   return json.data;
 }
 
+// Sube y manda una imagen o PDF por WhatsApp (ej. comprobante de una
+// devolución, un cálculo) -- aparte de api() porque es un archivo real
+// (multipart/form-data), no JSON.
+async function apiSubirImagen(telefono, file){
+  const form = new FormData();
+  form.append('telefono', telefono);
+  form.append('archivo', file);
+  const headers = {};
+  if(CSRF_TOKEN) headers['X-CSRF-Token'] = CSRF_TOKEN;
+  let res, json;
+  try{
+    res = await fetch(API_BASE + 'prospectos_enviar_imagen.php', {method:'POST', credentials:'same-origin', headers, body:form});
+    json = await res.json();
+  }catch(e){
+    throw new Error('No se pudo conectar con el servidor. Revisa tu conexión e intenta de nuevo.');
+  }
+  if(!json || json.ok !== true){
+    const msg = (json && json.error) ? json.error : ('Error del servidor ('+res.status+').');
+    throw new Error(msg);
+  }
+  return json.data;
+}
+
 function mapRol(rolDb){ return rolDb === 'administrador' ? 'Administrador' : 'Socio/a'; }
 
 let CURRENT_USER = null;
@@ -48,9 +75,89 @@ let VIEW = "tablero";
 let FILTER_STATUS = "todos";
 let SEARCH_TERM = "";
 let CASES_DATA = []; // expedientes que devuelve la API (ya con meta anidada)
+let PROSPECTOS = []; // leads de despido CDMX/Edomex captados por el bot de WhatsApp
+let PROSPECTO_ABIERTO = null; // id del prospecto cuyo chat está abierto en el modal
+let PROSPECTO_MENSAJES = []; // historial de WhatsApp del prospecto abierto
+let PROSPECTOS_MOSTRAR_ATENDIDOS = false; // solo se ve lo pendiente por atender por default (ver prospectosHTML)
+let PROSPECTOS_TAB = 'asesoria_paga'; // pestaña activa en Prospectos: 'asesoria_paga', 'control_expedientes', 'reclamo' o 'atencion_directa' -- ya no hay contacto gratis, no existe pestaña de despido
+
+// Vista "Jurisprudencia" — buscador sobre la biblioteca de tesis de la SCJN
+// (compartida entre todos los despachos, ver jurisprudencia_tesis). Primero
+// filtra candidatas con búsqueda de texto normal de MySQL (gratis) y luego
+// la IA solo revisa ese puñado — ver api/jurisprudencia_buscar.php.
+let JURISPRUDENCIA_PREGUNTA = '';
+let JURISPRUDENCIA_CARGANDO = false;
+let JURISPRUDENCIA_ERROR = '';
+let JURISPRUDENCIA_RESULTADO = null; // {respuesta, tesis:[...]}
+let JURISPRUDENCIA_TESIS_ABIERTA = null; // registro_digital mostrado en el modal de texto completo
+let JURISPRUDENCIA_MATCHES = []; // tesis nuevas que el cruce automático ya vinculó a expedientes activos
+
+async function loadJurisprudenciaMatches(){
+  try{ JURISPRUDENCIA_MATCHES = (await api('GET', 'jurisprudencia_matches_list.php')).matches; }
+  catch(e){ JURISPRUDENCIA_MATCHES = []; }
+}
+
+// Vista "Conversaciones (WhatsApp)" (solo Administrador) — control de
+// calidad del bot: TODAS las conversaciones, hayan calificado como
+// prospecto o no, para poder revisar qué está contestando el bot.
+let CONVERSACIONES = [];
+let CONVERSACIONES_STATS = {};
+let RESUMENES_EJECUTIVOS = [];
+let RESUMEN_EJECUTIVO_GENERANDO = false;
+let RESUMEN_EJECUTIVO_PERIODO = 'semana';
+let RESUMEN_EJECUTIVO_DESDE = '';
+let RESUMEN_EJECUTIVO_HASTA = '';
+let CONVERSACION_ABIERTA = null; // teléfono de la conversación expandida
+let CONVERSACION_MENSAJES = [];
+let CONVERSACION_RESUMEN = null; // {resumen, mensajes_contados, generado_en} o null
+
+// Actualización automática (como WhatsApp Web): cada POLL_MS se revisa si
+// hay mensajes/prospectos nuevos, sin que alguien tenga que recargar la
+// página. Solo corre mientras hay sesión y la pestaña está visible (evita
+// gastar llamadas de más si la dejan abierta en segundo plano toda la
+// noche). Ver iniciarPolling()/pollActualizaciones() más abajo.
+const POLL_MS = 8000;
+let POLL_TIMER = null;
+let REINTENTO_EN_PROGRESO = false; // true mientras corre el reintento en lote de respuestas fallidas
+let REINTENTO_PROGRESO_TXT = "";
 let ACTIVE_CASE = null;
 let MODAL_TAB = "resumen";
+let INFORME_EJECUTIVO_STATE = {}; // {[expedienteId]: {cargando, error}} -- estado del informe ejecutivo con IA
+let SEGUIMIENTO_IA_BULK = null; // {actual, total} mientras corre "Actualizar todos los informes", null si no está corriendo
 let CLIENT_CASE = null; // expediente cargado por el portal de cliente (fuera de CASES_DATA)
+let BUSQUEDA_IA_ACTIVA = false; // true cuando se muestra el cuadro de búsqueda con lenguaje natural en Expedientes
+let BUSQUEDA_IA_PREGUNTA = '';
+let BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:null}; // resultados: [{id, razon}] en orden de relevancia, o null si no se ha buscado
+let RESUMEN_SEMANAL_STATE = {cargando:false, texto:null, error:null, generadoEn:null}; // Resumen semanal del despacho (solo Administrador, ver resumenSemanalHTML())
+// Cursos vendidos por mes -- igual que ASESORIAS_POR_MES, se carga solo
+// desde la base de datos local (compras_curso, las hechas desde el bot).
+// Ya no cubre las ventas de la página vieja de Netlify (esas no dejan
+// registro en esta base de datos) -- decisión consciente a cambio de
+// tener un panel simple y confiable en vez de depender de consultar
+// Mercado Pago en vivo cada vez.
+let CURSOS_POR_MES = []; // {mes:'YYYY-MM', vendidos, total, cursos:[{titulo,vendidos,total}]}
+let CURSO_MES_ABIERTO = null; // 'YYYY-MM' del mes desplegado en ese panel, o null si ninguno
+async function loadCursosPorMes(){
+  try{ CURSOS_POR_MES = (await api('GET', 'cursos_ingresos_mensual.php')).meses; }
+  catch(e){ CURSOS_POR_MES = []; }
+}
+// Documentos membretados de cálculo vendidos por mes ($49) -- mismo
+// criterio que CURSOS_POR_MES.
+let DOCUMENTOS_POR_MES = []; // {mes:'YYYY-MM', vendidos, total}
+async function loadDocumentosPorMes(){
+  try{ DOCUMENTOS_POR_MES = (await api('GET', 'documentos_calculo_ingresos_mensual.php')).meses; }
+  catch(e){ DOCUMENTOS_POR_MES = []; }
+}
+// Mensajes de WhatsApp enviados por día (últimos 30 días) -- lo que le
+// importa a Meta para el cobro por mensaje arriba de 1,000/mes por número.
+let MENSAJES_POR_DIA = { dias: [], mes_actual_total: 0, umbral_gratis: 1000 };
+async function loadMensajesPorDia(){
+  try{ MENSAJES_POR_DIA = await api('GET', 'mensajes_enviados_diarios.php'); }
+  catch(e){ MENSAJES_POR_DIA = { dias: [], mes_actual_total: 0, umbral_gratis: 1000 }; }
+}
+// Los costos mensuales sí siguen consultando algo en vivo (no tienen tabla
+// propia), así que se piden a mano con un botón.
+let COSTOS_MENSUALES_STATE = {cargando:false, meses:null, error:null, guardando:false};
 
 // Campos que puede llenar/editar el abogado asignado. Cubre lo necesario
 // para el seguimiento del asunto y para generar la demanda por combinación
@@ -77,7 +184,135 @@ const STATUS_OPCIONES = [
   'Tribunal Federal Edomex',
 ];
 
+// Catálogo fijo de tipos de asunto y sus plazos de prescripción, en días
+// naturales exactos: Art. 518 LFT (despido, 60 días), Art. 517 LFT
+// (rescisión — el trabajador se separa por causa imputable al patrón, 30
+// días), Art. 519 LFT (riesgo de trabajo y beneficiarios, 730 días) y
+// Art. 516 LFT (regla general para el resto de las prestaciones, 365
+// días) — ver computePrescripcion().
+const TIPO_ASUNTO_DESPIDO = 'Despido';
+const TIPO_ASUNTO_PRESTACIONES = 'Prestaciones';
+const TIPO_ASUNTO_OTRO = 'Otro';
+const TIPO_ASUNTO_OPCIONES = [
+  TIPO_ASUNTO_DESPIDO,
+  'Rescisión (Art. 51 LFT)',
+  'Riesgo de trabajo',
+  'Designación de beneficiarios',
+  'Prima de antigüedad',
+  TIPO_ASUNTO_PRESTACIONES,
+];
+const TIPO_ASUNTO_PLAZOS = {
+  'Despido': {dias: 60, articulo: 'Art. 518 LFT'},
+  'Rescisión (Art. 51 LFT)': {dias: 30, articulo: 'Art. 517 LFT'},
+  'Riesgo de trabajo': {dias: 730, articulo: 'Art. 519 LFT'},
+  'Designación de beneficiarios': {dias: 730, articulo: 'Art. 519 LFT'},
+  'Prima de antigüedad': {dias: 365, articulo: 'Art. 516 LFT'},
+  'Prestaciones': {dias: 365, articulo: 'Art. 516 LFT'},
+};
+// Los expedientes ya existentes, capturados antes de que se agregara este
+// campo, no tienen tipo_asunto — como el sistema solo manejaba despido
+// hasta ahora, se asume ese tipo por defecto para no alterar el plazo que
+// ya se les venía calculando. Un tipo escrito a mano (opción "Otro") que
+// no está en el catálogo usa la regla general de un año (Art. 516 LFT),
+// por ser el plazo por default de cualquier acción de trabajo sin un
+// artículo especial que le aplique.
+function tipoAsuntoPlazo(kase){
+  if(!kase.tipo_asunto) return TIPO_ASUNTO_PLAZOS[TIPO_ASUNTO_DESPIDO];
+  return TIPO_ASUNTO_PLAZOS[kase.tipo_asunto] || TIPO_ASUNTO_PLAZOS[TIPO_ASUNTO_PRESTACIONES];
+}
+
+// Select del catálogo fijo + "Otro" con texto libre. El <select> y el
+// <input> de texto NO llevan la clase edit-field (para que saveCamposBtn
+// no los lea directo) — el que de verdad se guarda es el <input type=
+// hidden> que ambos actualizan vía bindTipoAsuntoField().
+function tipoAsuntoFieldHTML(actual){
+  const esCatalogo = actual !== '' && TIPO_ASUNTO_OPCIONES.includes(actual);
+  const esOtro = actual !== '' && !esCatalogo;
+  return `
+    <input type="hidden" class="edit-field" data-field="tipo_asunto" id="tipoAsuntoHidden" value="${escapeHTML(actual)}">
+    <select id="tipoAsuntoSelect" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+      <option value="">— Sin definir —</option>
+      ${TIPO_ASUNTO_OPCIONES.map(o=>`<option value="${escapeHTML(o)}" ${actual===o?'selected':''}>${escapeHTML(o)}</option>`).join("")}
+      <option value="${TIPO_ASUNTO_OTRO}" ${esOtro?'selected':''}>Otro (especifica)</option>
+    </select>
+    <input type="text" id="tipoAsuntoOtroInput" placeholder="Especifica el tipo de asunto" value="${esOtro?escapeHTML(actual):''}" style="width:100%; margin-top:8px; ${esOtro?'':'display:none;'}">
+  `;
+}
+function bindTipoAsuntoField(){
+  const sel = document.getElementById('tipoAsuntoSelect');
+  const otro = document.getElementById('tipoAsuntoOtroInput');
+  const hidden = document.getElementById('tipoAsuntoHidden');
+  if(!sel || !otro || !hidden) return;
+  sel.addEventListener('change', ()=>{
+    if(sel.value === TIPO_ASUNTO_OTRO){
+      otro.style.display = '';
+      otro.focus();
+      hidden.value = otro.value;
+    } else {
+      otro.style.display = 'none';
+      hidden.value = sel.value;
+    }
+  });
+  otro.addEventListener('input', ()=>{ hidden.value = otro.value; });
+}
+
+// Las 9 fracciones del artículo 51 LFT (causas de rescisión imputables al
+// patrón). Elegir una arma sola el hecho 4 de la demanda de Rescisión Art.
+// 51 (ver construirHechoCausaAuto más abajo) y el "motivo breve" de la
+// prestación A) -- así el abogado no redacta ningún párrafo en blanco, solo
+// elige la causa y captura la fecha desde la que ocurre (y, si aplica, el
+// nombre de quien incurrió en ella).
+const FRACCION_51 = {
+  I: {
+    label: 'I — Engaño sobre las condiciones de trabajo ofrecidas al contratar',
+    textoBreve: 'proporcionar a la trabajadora las condiciones de trabajo que le ofreció al contratarla',
+    inicio: (tags,k)=> `Es el caso que, desde el inicio de la relación laboral, la demandada me engañó respecto de las condiciones de trabajo que me ofreció al momento de la contratación, hecho del cual tuve conocimiento el ${tags.fecha_desde_incumplimiento_letra}`,
+  },
+  II: {
+    label: 'II — Violencia, injurias o malos tratos (dentro del servicio)',
+    textoBreve: 'abstenerse de incurrir, por sí o por conducto de su personal, en actos de violencia, injurias o malos tratamientos en contra de la suscrita',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} incurrió, dentro del servicio, en actos de violencia, injurias y malos tratamientos en contra de la suscrita, siendo de tal manera graves que hicieron imposible la continuación de la relación de trabajo`,
+  },
+  III: {
+    label: 'III — Violencia, injurias o malos tratos (fuera del servicio)',
+    textoBreve: 'abstenerse de incurrir, por sí o por conducto de su personal, en actos de violencia, injurias o malos tratamientos en contra de la suscrita',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} incurrió, fuera del servicio, en actos de violencia, injurias y malos tratamientos en contra de la suscrita, siendo de tal manera graves que hicieron imposible la continuación de la relación de trabajo`,
+  },
+  IV: {
+    label: 'IV — Reducción del salario',
+    textoBreve: 'no reducir el salario que le correspondía a la trabajadora',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada redujo unilateralmente el salario que venía percibiendo la suscrita, sin mi consentimiento y sin causa legal que lo justificara`,
+  },
+  V: {
+    label: 'V — Falta de pago del salario en la fecha o lugar convenidos',
+    textoBreve: 'pagar el salario correspondiente en la fecha o lugar convenidos',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada dejó de cubrirme el pago del salario correspondiente en la fecha y lugar convenidos y acostumbrados, pese a los requerimientos que realicé para su pago`,
+  },
+  VI: {
+    label: 'VI — Perjuicios maliciosos en herramientas o útiles de trabajo',
+    textoBreve: 'evitar que se causaran perjuicios maliciosos en las herramientas o útiles de trabajo de la suscrita',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} causó maliciosamente perjuicios en las herramientas y útiles de trabajo de la suscrita`,
+  },
+  VII: {
+    label: 'VII — Falta de condiciones higiénicas o de seguridad',
+    textoBreve: 'proporcionar condiciones higiénicas y de seguridad en el centro de trabajo',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada puso en peligro mi seguridad al carecer el establecimiento de condiciones higiénicas y de seguridad, y al no cumplir con las medidas preventivas que las leyes establecen`,
+  },
+  VIII: {
+    label: 'VIII — Imprudencia o descuido inexcusable que compromete la seguridad',
+    textoBreve: 'evitar poner en riesgo, por imprudencia o descuido inexcusable, la seguridad del establecimiento o de las personas que ahí se encuentran',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} comprometió, con su imprudencia o descuido inexcusable, la seguridad del establecimiento y de las personas que ahí se encontraban, incluida la suscrita`,
+  },
+  IX: {
+    label: 'IX — Causas análogas, igualmente graves',
+    textoBreve: 'cumplir con sus obligaciones laborales',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada incurrió en conductas análogas a las demás causales de rescisión previstas en el artículo 51 de la Ley Federal del Trabajo, igualmente graves y de consecuencias semejantes`,
+  },
+};
+const FRACCION_51_SELECT_OPTIONS = Object.keys(FRACCION_51).map(code => ({value: code, label: FRACCION_51[code].label}));
+
 const EDITABLE_FIELDS = [
+  {key:'tipo_asunto', label:'Tipo de asunto', type:'tipo_asunto'},
   {key:'actor', label:'Nombre del actor (trabajador)'},
   {key:'curp', label:'CURP del actor'},
   {key:'telefono', label:'Teléfono'},
@@ -99,6 +334,48 @@ const EDITABLE_FIELDS = [
   {key:'quien_despidio', label:'Nombre de quien despidió'},
   {key:'puesto_despidio', label:'Puesto de quien despidió'},
   {key:'hora_despido', label:'Hora del despido'},
+  {key:'hora_entrada', label:'Horario — hora de entrada', type:'time'},
+  {key:'hora_salida', label:'Horario — hora de salida real (incluyendo tiempo extra)', type:'time'},
+  {key:'comida_inicio', label:'Horario — comida, hora de inicio (opcional, déjalo vacío para no especificar)', type:'time'},
+  {key:'comida_fin', label:'Horario — comida, hora de fin (opcional, déjalo vacío para no especificar)', type:'time'},
+  {key:'dias_laborados', label:'Horario — días que laboraba, en texto (ej. "lunes a sábado")'},
+  {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number'},
+  {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta']},
+  // Rescisión Art. 51 (ver "Otras plantillas de escritos" → Rescisión Art. 51).
+  // El hecho 4 y el "motivo breve" de la prestación A) se arman solos a
+  // partir de estos 3 datos + la fracción elegida -- ver FRACCION_51 más
+  // abajo. No hay párrafo en blanco que redactar.
+  {key:'rescision_fraccion', label:'Rescisión — causa (fracción del art. 51 LFT)', type:'select', options:FRACCION_51_SELECT_OPTIONS},
+  {key:'fecha_rescision', label:'Rescisión — fecha en que el actor decidió rescindir', type:'date'},
+  {key:'fecha_desde_incumplimiento', label:'Rescisión — fecha desde la que ocurre el incumplimiento/causa', type:'date'},
+  {key:'persona_responsable_incumplimiento', label:'Rescisión — nombre de quien incurrió en la causa (si no es la empresa en general)'},
+  {key:'hecho_causa_narrativa', label:'Rescisión — detalle adicional del hecho (opcional; se agrega después del párrafo que ya arma el sistema)', type:'textarea'},
+  {key:'banco1_nombre', label:'Rescisión — banco 1, institución'},
+  {key:'banco1_cuenta', label:'Rescisión — banco 1, número de cuenta'},
+  {key:'banco2_nombre', label:'Rescisión — banco 2, institución'},
+  {key:'banco2_cuenta', label:'Rescisión — banco 2, número de cuenta'},
+  {key:'banco3_nombre', label:'Rescisión — banco 3, institución'},
+  {key:'banco3_cuenta', label:'Rescisión — banco 3, número de cuenta'},
+  // Prima de antigüedad (estilo jubilación / apartado B) -- ver "Otras plantillas de escritos".
+  {key:'monto_prima_antiguedad', label:'Prima antigüedad — monto reclamado', type:'number'},
+  {key:'fecha_solicitud_interna', label:'Prima antigüedad — fecha de la solicitud interna de pago', type:'date'},
+  {key:'hora_solicitud_interna', label:'Prima antigüedad — hora de la solicitud interna', type:'time'},
+  {key:'folio_solicitud_interna', label:'Prima antigüedad — folio asignado a la solicitud'},
+  {key:'funcionario_rh_nombre', label:'Prima antigüedad — nombre del funcionario de RH que recibió la solicitud'},
+  {key:'funcionario_rh_puesto', label:'Prima antigüedad — puesto de ese funcionario'},
+  {key:'numero_oficio_respuesta', label:'Prima antigüedad — número de oficio de respuesta (negativa)'},
+  {key:'fecha_oficio_respuesta', label:'Prima antigüedad — fecha del oficio de respuesta', type:'date'},
+  {key:'director_firma_nombre', label:'Prima antigüedad — nombre de quien firma el oficio de negativa'},
+  {key:'coordinador_archivo_nombre', label:'Prima antigüedad — nombre del Coordinador de Archivo (verificó)'},
+  {key:'gerente_gestion_nombre', label:'Prima antigüedad — nombre del Gerente de Gestión y Servicios al Personal (autorizó)'},
+  {key:'folio_fiscal_cfdi', label:'Prima antigüedad — folio fiscal del CFDI/recibo de nómina ofrecido'},
+  {key:'periodo_recibo_desde', label:'Prima antigüedad — periodo del recibo CFDI, desde', type:'date'},
+  {key:'periodo_recibo_hasta', label:'Prima antigüedad — periodo del recibo CFDI, hasta', type:'date'},
+  {key:'salario_quincenal_num', label:'Prima antigüedad — salario quincenal', type:'number'},
+  {key:'rfc_emisor_demandado', label:'Prima antigüedad — RFC de la demandada (emisor del CFDI)'},
+  {key:'fecha_hoja_servicios', label:'Prima antigüedad — fecha de la Hoja Única de Servicios', type:'date'},
+  {key:'numero_documento_fump', label:'Prima antigüedad — número de documento del Formato Único de Movimientos de Personal'},
+  {key:'fecha_documento_fump', label:'Prima antigüedad — fecha de elaboración de ese documento', type:'date'},
   {key:'testigos', label:'Nombre de los testigos'},
   {key:'dom_testigos', label:'Domicilios de los testigos'},
   {key:'ultima_nota', label:'Última actuación / nota'},
@@ -833,31 +1110,46 @@ function computeLiquidacion(kase){
   };
 }
 
+// Plazo de prescripción: 60 días naturales corridos, contados uno por uno
+// desde el día siguiente a la separación (no "2 meses de fecha a fecha" —
+// esa variante puede dar 59 a 62 días según los meses que abarque, un día
+// de diferencia real que ya causó una prescripción mal calculada). Mientras
+// dura la conciliación prejudicial el plazo se suspende: los días desde que
+// se presenta la solicitud hasta que se levanta la constancia de no
+// conciliación (ambos inclusive) no cuentan, y el conteo se reanuda al día
+// siguiente de la constancia.
 function computePrescripcion(kase){
   const fb = parseDate(kase.fecha_baja);
   if(!fb) return null;
-  const start = addDaysDate(fb, 1); // "corre a partir del día siguiente a la separación"
-  let deadline = addMonthsDate(start, 2);
+  const plazo = tipoAsuntoPlazo(kase);
+  const start = addDaysDate(fb, 1); // corre a partir del día siguiente al hecho generador
 
-  let suspensionDays = 0;
+  // Vencimiento sin contar la suspensión por conciliación: días naturales
+  // exactos según el tipo de asunto (ver TIPO_ASUNTO_PLAZOS).
+  const naiveDeadline = addDaysDate(start, plazo.dias - 1);
+
   const {inicio, constancia} = fechasConciliacionEfectivas(kase);
   const ci = parseDate(inicio);
+  const today = new Date(); today.setHours(0,0,0,0);
+
+  // Los días que el asunto pasó en conciliación no cuentan para el plazo —
+  // basta con recorrer el vencimiento "sin suspensión" hacia adelante
+  // exactamente esos días.
+  let deadline = naiveDeadline, suspensionDays = 0;
   if(ci){
     const cf = parseDate(constancia);
-    const today = new Date(); today.setHours(0,0,0,0);
-    const suspEnd = cf ? cf : today; // si aún no hay constancia, la suspensión sigue corriendo (provisional)
-    suspensionDays = Math.max(0, daysBetween(ci, suspEnd));
-    deadline = addDaysDate(deadline, suspensionDays);
+    const suspEnd = cf ? cf : today; // si aún no hay constancia, estimado provisional a hoy
+    suspensionDays = Math.max(0, daysBetween(ci, suspEnd) + 1); // ci..suspEnd, ambos inclusive, no cuentan
+    deadline = addDaysDate(naiveDeadline, suspensionDays);
   }
   // Si concluye en día inhábil (sáb/dom), se traslada al día hábil siguiente (simplificación:
   // no incorpora el calendario oficial de días inhábiles de cada Tribunal/Centro, solo fines de semana).
   let adjustedForWeekend = false;
   while(isWeekend(deadline)){ deadline = addDaysDate(deadline,1); adjustedForWeekend = true; }
 
-  const today = new Date(); today.setHours(0,0,0,0);
   const daysLeft = daysBetween(today, deadline);
   return {
-    start, deadline, suspensionDays, daysLeft, adjustedForWeekend,
+    start, deadline, suspensionDays, daysLeft, adjustedForWeekend, plazo,
     enConciliacion: !!(ci && !kase.fecha_constancia)
   };
 }
@@ -894,10 +1186,13 @@ function computeAmparoDeadline(meta){
 // (venció el plazo legal de la siguiente etapa sin que se haya marcado).
 // ---------------------------------------------------------------
 const ETAPAS_DEF = [
-  {key:'conciliacion_prejudicial', label:'Conciliación prejudicial (pláticas directas con la empresa antes de acudir al Centro de Conciliación)', fundamento:'Gestión previa del despacho — sin plazo legal fijo, no suspende la prescripción'},
+  {key:'conciliacion_prejudicial', label:'Conciliación prejudicial', fundamento:''},
   {key:'conciliacion_solicitada', label:'Solicitud de conciliación presentada', fundamento:'Art. 684-B LFT'},
+  {key:'conciliacion_primer_citatorio', label:'Conciliación prejudicial (Primer citatorio)', fundamento:'Art. 684-B LFT', conHora:true},
+  {key:'conciliacion_segundo_citatorio', label:'Conciliación prejudicial (Segundo citatorio)', fundamento:'Art. 684-B LFT', conHora:true},
+  {key:'conciliacion_convenio', label:'Convenio', fundamento:'Acuerdo entre las partes ante el Centro de Conciliación'},
   {key:'constancia_no_conciliacion', label:'Constancia de no conciliación recibida', fundamento:'Arts. 684-C y 521-III LFT', plazoDesdeEtapa:'conciliacion_solicitada', plazoDias:45, plazoTipo:'naturales', plazoLabel:'La conciliación dura hasta 45 días naturales (Art. 684-C LFT)'},
-  {key:'demanda_presentada', label:'Demanda presentada ante el Tribunal', fundamento:'Art. 871 LFT', plazoLabel:'Debe presentarse antes de que venza la prescripción (Art. 518 LFT — ver pestaña Prescripción)'},
+  {key:'demanda_presentada', label:'Demanda presentada ante el Tribunal', fundamento:'Art. 871 LFT', plazoLabel:'Debe presentarse antes de que venza la prescripción (ver pestaña Prescripción)'},
   {key:'prevencion', label:'Prevención (el Tribunal previno por defectos u omisiones en la demanda)', fundamento:'Art. 873 LFT', plazoDesdeEtapa:'demanda_presentada', plazoDias:3, plazoTipo:'habiles', plazoLabel:'Solo aplica si el Tribunal previno la demanda; el actor debe desahogarla dentro de los 3 días siguientes a la notificación (Art. 873 LFT). Si no hubo prevención, deja esta etapa en blanco y continúa con "Demanda admitida".'},
   {key:'demanda_admitida', label:'Demanda admitida', fundamento:'Art. 873 LFT', plazoDesdeEtapa:'demanda_presentada', plazoDias:3, plazoTipo:'habiles', plazoLabel:'El Tribunal admite dentro de los 3 días siguientes a que se le turne, o a que se desahogue la prevención si la hubo (Art. 873 LFT)'},
   {key:'emplazamiento', label:'Emplazamiento a la demandada realizado', fundamento:'Art. 873-A LFT', plazoDesdeEtapa:'demanda_admitida', plazoDias:5, plazoTipo:'habiles', plazoLabel:'El Tribunal emplaza dentro de los 5 días siguientes a la admisión (Art. 873-A LFT)'},
@@ -905,8 +1200,8 @@ const ETAPAS_DEF = [
   {key:'objeciones_replica', label:'Objeciones y réplica del actor presentadas', fundamento:'Art. 873-B LFT', plazoDesdeEtapa:'contestacion_recibida', plazoDias:8, plazoTipo:'habiles', plazoLabel:'El actor objeta pruebas y formula réplica dentro de los 8 días siguientes al traslado de la contestación (Art. 873-B LFT)'},
   {key:'contrarreplica', label:'Contrarréplica de la demandada presentada', fundamento:'Art. 873-C LFT', plazoDesdeEtapa:'objeciones_replica', plazoDias:5, plazoTipo:'habiles', plazoLabel:'La demandada contrarreplica dentro de los 5 días siguientes al traslado de la réplica (Art. 873-C LFT)'},
   {key:'manifestaciones_3dias', label:'Manifestaciones sobre pruebas nuevas (si las hubo en la contrarréplica)', fundamento:'Art. 873-C LFT', plazoDesdeEtapa:'contrarreplica', plazoDias:3, plazoTipo:'habiles', plazoLabel:'Solo aplica si la demandada ofreció pruebas nuevas en su contrarréplica; el actor tiene 3 días para manifestarse (Art. 873-C LFT)'},
-  {key:'audiencia_preliminar', label:'Audiencia preliminar celebrada', fundamento:'Arts. 873-E a 873-G LFT', plazoDesdeEtapa:'contrarreplica', plazoDias:10, plazoTipo:'habiles', plazoLabel:'El Tribunal la fija dentro de los 10 días siguientes a que concluya la fase escrita (Art. 873-C LFT)'},
-  {key:'audiencia_juicio', label:'Audiencia de juicio celebrada', fundamento:'Arts. 873-H a 891 LFT'},
+  {key:'audiencia_preliminar', label:'Audiencia preliminar celebrada', fundamento:'Arts. 873-E a 873-G LFT', plazoDesdeEtapa:'contrarreplica', plazoDias:10, plazoTipo:'habiles', plazoLabel:'El Tribunal la fija dentro de los 10 días siguientes a que concluya la fase escrita (Art. 873-C LFT)', conHora:true},
+  {key:'audiencia_juicio', label:'Audiencia de juicio celebrada', fundamento:'Arts. 873-H a 891 LFT', conHora:true},
   {key:'sentencia', label:'Sentencia / laudo emitido', fundamento:'Art. 873-J LFT'},
   {key:'amparo_directo', label:'Amparo directo presentado (si procede)', fundamento:'Art. 17 Ley de Amparo — 15 días hábiles desde la notificación de la sentencia', plazoDesdeEtapa:'sentencia', plazoDias:15, plazoTipo:'habiles', plazoLabel:'Captura la fecha de notificación de la sentencia en la pestaña "Amparo" para un cómputo exacto del plazo'},
 ];
@@ -937,7 +1232,7 @@ function proximaAudiencia(kase){
     .map(key=>{
       const e = meta.etapas[key];
       if(!e || e.fecha || !e.fecha_programada) return null; // ya celebrada, o sin fecha agendada
-      return {key, fecha: e.fecha_programada, label: AUDIENCIA_LABEL_CLIENTE[key]};
+      return {key, fecha: e.fecha_programada, hora: e.hora || null, label: AUDIENCIA_LABEL_CLIENTE[key]};
     })
     .filter(Boolean)
     .sort((a,b)=> a.fecha.localeCompare(b.fecha));
@@ -1030,6 +1325,14 @@ function estancadoInfo(kase){
     if(meta.etapas[ETAPAS_DEF[i].key] && meta.etapas[ETAPAS_DEF[i].key].fecha) lastIdx = i;
   }
   if(lastIdx === -1 || lastIdx === ETAPAS_DEF.length-1) return null;
+  // "Convenio" y "Constancia de no conciliación" son dos resultados
+  // ALTERNATIVOS y excluyentes de la conciliación (o se llega a un
+  // acuerdo, o se agota sin él) -- nunca un paso seguido del otro. Sin
+  // este corte, el arreglo siguiente en ETAPAS_DEF (que solo refleja
+  // orden de captura, no una secuencia obligatoria) hacía que el sistema
+  // esperara una Constancia de no conciliación después de un Convenio ya
+  // alcanzado, lo cual no aplica.
+  if(ETAPAS_DEF[lastIdx].key === 'conciliacion_convenio') return null;
   const next = ETAPAS_DEF[lastIdx+1];
   if(!next.plazoDias) return null;
   const lastFecha = meta.etapas[ETAPAS_DEF[lastIdx].key].fecha;
@@ -1059,6 +1362,12 @@ function fechasConciliacionEfectivas(kase){
 // capturados de cada asunto.
 // ---------------------------------------------------------------
 const MESES_ES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+const DIAS_ES_CORTO = ['dom','lun','mar','mié','jue','vie','sáb'];
+// 'T00:00:00' evita que el navegador interprete la fecha en UTC y se
+// recorra un día en zonas con offset negativo (México).
+function diaSemanaCorto(fechaYMD){
+  return DIAS_ES_CORTO[new Date(fechaYMD + 'T00:00:00').getDay()];
+}
 function fechaLetras(iso){
   const d = parseDate(iso);
   if(!d) return '____________';
@@ -1108,12 +1417,74 @@ function xmlEscape(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
 }
 
+// Igual que xmlEscape, pero además convierte los saltos de línea del valor
+// en <w:br/> reales de Word -- así un tag puede traer varios párrafos (p.ej.
+// una lista de prestaciones armada dinámicamente) y se ven como líneas
+// separadas en vez de perderse dentro de un solo <w:t>. Mantiene el mismo
+// <w:r> (misma fuente/negritas del lugar donde se puso el tag).
+function xmlEscapeMultiline(s){
+  return xmlEscape(s).split('\n').join('</w:t></w:r><w:r><w:br/><w:t xml:space="preserve"></w:t></w:r><w:r><w:t xml:space="preserve">');
+}
+
+// Siempre se resta 1 hora de comida al calcular la jornada, se hayan
+// capturado horarios específicos de comida o no (así lo pidió el
+// despacho) -- comida_inicio/comida_fin solo deciden si el TEXTO generado
+// menciona un horario específico o queda genérico.
+const COMIDA_HORAS_FIJA = 1;
+
+function horaAMinutos(hhmm){
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm||''));
+  if(!m) return null;
+  return parseInt(m[1],10)*60 + parseInt(m[2],10);
+}
+function minutosAHora(mins){
+  mins = ((mins % (24*60)) + 24*60) % (24*60);
+  return String(Math.floor(mins/60)).padStart(2,'0') + ':' + String(mins%60).padStart(2,'0');
+}
+function fmtHoras(n){
+  return (Math.round(n*100)/100).toString();
+}
+
+// Calcula, a partir de hora_entrada/hora_salida (la de salida REAL, con
+// tiempo extra incluido) y el tipo de jornada, las horas extra diarias y
+// semanales y la hora de salida "normal" (sin extras) -- esta última es la
+// que, junto con hora_entrada, describe la jornada pactada en el hecho 3
+// de la demanda (ver mergeTags()). Devuelve null si falta algún dato.
+function calcularJornada(k){
+  const minsEntrada = horaAMinutos(k.hora_entrada);
+  let minsSalida = horaAMinutos(k.hora_salida);
+  if(minsEntrada===null || minsSalida===null) return null;
+  if(minsSalida <= minsEntrada) minsSalida += 24*60; // jornada que cruza la medianoche
+  const tipo = (k.tipo_jornada || 'Diurna').toLowerCase();
+  const jornadaMax = JORNADA_MAXIMA[tipo]!=null ? JORNADA_MAXIMA[tipo] : JORNADA_MAXIMA.diurna;
+  const horasPresencia = (minsSalida - minsEntrada) / 60;
+  const horasTrabajadas = horasPresencia - COMIDA_HORAS_FIJA;
+  const horasExtraDiarias = Math.max(0, Math.round((horasTrabajadas - jornadaMax) * 100) / 100);
+  const minsSalidaNormal = minsEntrada + Math.round((jornadaMax + COMIDA_HORAS_FIJA) * 60);
+  const dias = parseInt(k.dias_laborados_num, 10) || 6;
+  return {
+    tipo, jornadaMax,
+    horaSalidaNormal: minutosAHora(minsSalidaNormal),
+    horaInicioExtra: minutosAHora(minsSalidaNormal + 1),
+    horasExtraDiarias,
+    horasExtraSemanales: Math.round(horasExtraDiarias * dias * 100) / 100,
+  };
+}
+
 function mergeTags(k){
   const junta = k.junta || k.instancia || '';
   const ciudad = /tlalnepantla/i.test(junta) ? 'Tlalnepantla de Baz, Estado de México' :
                  /ciudad de méxico|cdmx/i.test(junta) ? 'Ciudad de México' :
                  /naucalpan/i.test(junta) ? 'Naucalpan de Juárez, Estado de México' : 'Estado de México';
-  return {
+  const jornada = calcularJornada(k);
+  // Texto de la comida: específico si se capturaron horarios, genérico si no
+  // (así lo pidió el despacho) -- de cualquier forma siempre se resta 1
+  // hora al calcular (ver COMIDA_HORAS_FIJA).
+  const textoComida = (k.comida_inicio && k.comida_fin)
+    ? `de ${k.comida_inicio.slice(0,5)} a ${k.comida_fin.slice(0,5)} horas fuera del centro de trabajo`
+    : `fuera del centro de trabajo`;
+  const diasTexto = k.dias_laborados || '________________';
+  const tags = {
     actor: k.actor || '________________',
     demandado: k.demandado || '________________',
     giro_empresa: k.giro_empresa || '________________',
@@ -1133,7 +1504,113 @@ function mergeTags(k){
     testigos: k.testigos || '________________',
     fecha_hoy_letra: fechaLetras(dateToISO(new Date())),
     ciudad_firma: ciudad,
+    // Jornada y horas extra -- ver calcularJornada() arriba. Si falta
+    // hora_entrada/hora_salida, se dejan los placeholders de siempre para
+    // que la demanda siga siendo editable a mano como antes.
+    hora_entrada: k.hora_entrada ? k.hora_entrada.slice(0,5) : '____',
+    hora_salida: k.hora_salida ? k.hora_salida.slice(0,5) : '____',
+    hora_salida_normal: jornada ? jornada.horaSalidaNormal : (k.hora_salida ? k.hora_salida.slice(0,5) : '____'),
+    hora_inicio_extra: jornada ? jornada.horaInicioExtra : '____',
+    tipo_jornada_texto: (k.tipo_jornada || 'diurna').toLowerCase(),
+    dias_laborados: diasTexto,
+    texto_comida: textoComida,
+    horas_extra_diarias: jornada ? fmtHoras(jornada.horasExtraDiarias) : '____',
+    horas_extra_semanales: jornada ? fmtHoras(jornada.horasExtraSemanales) : '____',
+    // Rescisión Art. 51 -- ver "Otras plantillas de escritos". Las
+    // prestaciones opcionales (letras b en adelante) NO se arman aquí: se
+    // construyen en el momento de generar el escrito, a partir de la
+    // selección de casillas del abogado (ver generarEscritoConOpciones()),
+    // para poder incluir/excluir cada una y renumerar las letras.
+    rescision_fraccion: k.rescision_fraccion || '____',
+    rescision_motivo_breve: (FRACCION_51[k.rescision_fraccion] && FRACCION_51[k.rescision_fraccion].textoBreve) || '________________',
+    fecha_rescision_letra: fechaLetras(k.fecha_rescision),
+    fecha_desde_incumplimiento_letra: fechaLetras(k.fecha_desde_incumplimiento),
+    persona_responsable_incumplimiento: k.persona_responsable_incumplimiento || 'una persona que actuaba a nombre de la demandada',
+    // Párrafo adicional OPCIONAL -- si se deja vacío, el hecho 4 queda
+    // completo solo con hecho_causa_auto (ver abajo) y aquí no se agrega nada.
+    hecho_causa_narrativa: k.hecho_causa_narrativa || '',
+    // Prima de antigüedad (estilo jubilación / apartado B).
+    monto_prima_antiguedad_num: k.monto_prima_antiguedad!=null ? Number(k.monto_prima_antiguedad).toFixed(2) : '____________',
+    monto_prima_antiguedad_letra: k.monto_prima_antiguedad!=null ? pesosEnLetras(k.monto_prima_antiguedad) : '____________',
+    fecha_solicitud_interna_letra: fechaLetras(k.fecha_solicitud_interna),
+    hora_solicitud_interna: k.hora_solicitud_interna ? k.hora_solicitud_interna.slice(0,5) : '____',
+    folio_solicitud_interna: k.folio_solicitud_interna || '____',
+    funcionario_rh_nombre: k.funcionario_rh_nombre || '________________',
+    funcionario_rh_puesto: k.funcionario_rh_puesto || '________________',
+    numero_oficio_respuesta: k.numero_oficio_respuesta || '____',
+    fecha_oficio_respuesta_letra: fechaLetras(k.fecha_oficio_respuesta),
+    director_firma_nombre: k.director_firma_nombre || '________________',
+    coordinador_archivo_nombre: k.coordinador_archivo_nombre || '________________',
+    gerente_gestion_nombre: k.gerente_gestion_nombre || '________________',
+    folio_fiscal_cfdi: k.folio_fiscal_cfdi || '____',
+    periodo_recibo_desde_letra: fechaLetras(k.periodo_recibo_desde),
+    periodo_recibo_hasta_letra: fechaLetras(k.periodo_recibo_hasta),
+    periodo_recibo_desde_iso: k.periodo_recibo_desde || '____',
+    periodo_recibo_hasta_iso: k.periodo_recibo_hasta || '____',
+    salario_quincenal_num: k.salario_quincenal_num!=null ? Number(k.salario_quincenal_num).toFixed(2) : '________',
+    rfc_emisor_demandado: (k.rfc_emisor_demandado || '____').toUpperCase(),
+    fecha_hoja_servicios_letra: fechaLetras(k.fecha_hoja_servicios),
+    numero_documento_fump: k.numero_documento_fump || '____',
+    fecha_documento_fump_letra: fechaLetras(k.fecha_documento_fump),
   };
+  tags.hecho_causa_auto = construirHechoCausaAuto(tags, k);
+  const periodos = calcularPeriodosVacacionesRescision(k);
+  tags.periodo_vacaciones_anterior = periodos.anterior;
+  tags.periodo_vacaciones_actual = periodos.actual;
+  tags.pruebas_adicionales = construirPruebasAdicionalesTexto(k, tags);
+  return tags;
+}
+
+// Arma solo el hecho 4 completo (sin que el abogado redacte nada) a partir
+// de la fracción del art. 51 elegida + la fecha desde la que ocurre + (si
+// aplica) quién incurrió en ella. Si todavía no se eligió fracción, deja un
+// párrafo genérico editable, igual que el resto de los campos sin capturar.
+function construirHechoCausaAuto(tags, k){
+  const f = FRACCION_51[k.rescision_fraccion];
+  if(!f){
+    return `Es el caso que, ante el incumplimiento de la demandada respecto de sus obligaciones laborales, la suscrita decidió rescindir la relación laboral por causa imputable al patrón, separándome de mis labores el día ${tags.fecha_rescision_letra}, al considerar que la conducta patronal actualizaba la causa prevista en el artículo 51, fracción ____, de la Ley Federal del Trabajo.`;
+  }
+  return `${f.inicio(tags,k)}, por lo que ante dicho incumplimiento, la suscrita decidió rescindir la relación laboral por causa imputable al patrón, separándome de mis labores el día ${tags.fecha_rescision_letra}, al considerar que la conducta patronal actualizaba la causa prevista en el artículo 51, fracción ${k.rescision_fraccion}, de la Ley Federal del Trabajo.`;
+}
+
+// Periodo de vacaciones (anterior y actual, "YYYY-YYYY") a partir del
+// aniversario de ingreso más cercano a la fecha de rescisión -- mismo
+// criterio que usa computeLiquidacion() para el resto del sistema, sin que
+// el abogado tenga que escribirlo a mano.
+function calcularPeriodosVacacionesRescision(k){
+  const ing = parseDate(k.fecha_ingreso);
+  const fin = parseDate(k.fecha_rescision) || parseDate(k.fecha_baja);
+  if(!ing || !fin || fin < ing) return {anterior: '________', actual: '________'};
+  const anniv = lastAnniversaryLFT(ing, fin);
+  const y = anniv.getFullYear();
+  return {anterior: `${y-1}-${y}`, actual: `${y}-${y+1}`};
+}
+
+// Bloque único (con saltos de línea) que junta TODAS las pruebas desde el
+// punto 5 en adelante -- así no importa cuántos bancos se capturaron (0 a
+// 3), la Inspección Judicial y la Testimonial que siguen quedan siempre
+// numeradas correctamente. Los puntos 1 a 4 (instrumental, presuncional,
+// confesional de la empresa e informe del IMSS) van fijos en la plantilla
+// de Rescisión Art. 51.
+// Recibe `tags` ya calculado por mergeTags() (nunca llama a mergeTags() él
+// mismo, para no crear un ciclo infinito: mergeTags() es quien invoca esta
+// función al armar el tag {{pruebas_adicionales}}).
+function construirPruebasAdicionalesTexto(k, tags){
+  const bloques = [];
+  const bancos = [
+    {nombre: k.banco1_nombre, cuenta: k.banco1_cuenta},
+    {nombre: k.banco2_nombre, cuenta: k.banco2_cuenta},
+    {nombre: k.banco3_nombre, cuenta: k.banco3_cuenta},
+  ].filter(b => b.nombre && b.cuenta);
+  let n = 5;
+  bancos.forEach(b=>{
+    bloques.push(`${n}.- EL INFORME que se sirva rendir la institución bancaria ${b.nombre}, con relación a la moral demandada, por el periodo comprendido entre la fecha de ingreso y la fecha de baja de la parte actora, para lo cual solicito a esta H. Autoridad se sirva girar oficio correspondiente a efecto de que informe si la cuenta número ${b.cuenta} pertenece a la parte actora, los estados de cuenta mensuales de dicho periodo, y si dicha cuenta recibió depósitos y/o transferencias por parte de la moral demandada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada, así como el incumplimiento por parte de la demandada respecto a sus obligaciones.`);
+    n++;
+  });
+  bloques.push(`${n}.- LA INSPECCIÓN JUDICIAL, que se realice por conducto del C. Actuario en el local de este H. Tribunal en los siguientes documentos que se encuentran en la empresa demandada ${tags.demandado} en el domicilio ubicado en calle ${tags.dom_demandado}: 1) Contrato individual y/o colectivo de trabajo; 2) Listas de raya; 3) Recibos de pago de salarios, de vacaciones, de prima vacacional y de aguinaldo; 4) Tarjetas o controles de asistencia. Documentos que el demandado tiene obligación de conservar y exhibir en juicio de conformidad con lo establecido en los artículos 784 y 804 de la Ley Federal del Trabajo y que se ofrecen para acreditar los siguientes extremos:\n\na) Que la parte actora ingresó a prestar sus servicios para la demandada, a partir del ${tags.fecha_ingreso_letra}.\nb) Que la demandada pagó a la parte actora por la prestación de sus servicios la cantidad de $${tags.salario_mensual_num} pesos mensuales.\nc) Que la parte actora laboró al servicio de la empresa demandada en un horario comprendido de las ${tags.hora_entrada} horas a las ${tags.hora_salida} horas ${tags.dias_laborados}.\nd) Que la demandada dejó de cumplir con sus obligaciones laborales a partir del ${tags.fecha_desde_incumplimiento_letra}, tal como se precisa en el capítulo de hechos.\n\nPara el desahogo de esta prueba de INSPECCIÓN deberá apercibirse a la demandada que para el caso de no exhibir la totalidad de la documentación base para tal efecto se tendrán por presuntivamente ciertos los extremos a acreditar con fundamento en lo dispuesto por los artículos 805, 827 y 828 de la Ley Federal del Trabajo en relación con el artículo 804 y demás relativos y aplicables de la ley citada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.`);
+  n++;
+  bloques.push(`${n}.- LA TESTIMONIAL a cargo de los CC. ${tags.testigos}, quienes tienen sus domicilios en ${tags.dom_testigos} respectivamente y a quienes me comprometo a presentar el día y hora que esta H. Autoridad determine la audiencia para su celebración, testigos que declararan sobre los hechos del escrito inicial de demanda como de sus aclaraciones y modificaciones a la misma.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.\n\nTestigos que declararan sobre los hechos ocurridos el día ${tags.fecha_rescision_letra}.`);
+  return bloques.join('\n\n');
 }
 
 // ---------------------------------------------------------------
@@ -1188,15 +1665,15 @@ async function resetPlantillaDocx(){
 // Genera y descarga un .docx a partir de cualquier plantilla (en base64) con
 // los mismos {{tags}} que usa la demanda — motor compartido por
 // generarDemandaDocx() y por la biblioteca de plantillas de escritos.
-function generarDocxDesdePlantilla(k, plantillaB64, nombreBase, onDone, onError){
+function generarDocxDesdePlantilla(k, plantillaB64, nombreBase, onDone, onError, extraTags){
   ensureJSZip(async ()=>{
     try{
-      const tags = mergeTags(k);
+      const tags = Object.assign({}, mergeTags(k), extraTags||{});
       const bytes = base64ToUint8Array(plantillaB64);
       const zip = await JSZip.loadAsync(bytes);
       let xml = await zip.file('word/document.xml').async('string');
       Object.keys(tags).forEach(key=>{
-        xml = xml.split('{{'+key+'}}').join(xmlEscape(tags[key]));
+        xml = xml.split('{{'+key+'}}').join(xmlEscapeMultiline(tags[key]));
       });
       zip.file('word/document.xml', xml);
       const out = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
@@ -1255,17 +1732,36 @@ function montoConvenio(kase){
   return extractMonto(kase.ultima_nota);
 }
 
-// Etapa procesal real del asunto — determina si la prescripción del Art. 518 LFT
-// sigue corriendo o ya quedó superada por otro evento (demanda presentada,
+// Etapa procesal real del asunto — determina si la prescripción sigue
+// corriendo o ya quedó superada por otro evento (demanda presentada,
 // convenio alcanzado, cierre del asunto).
 function caseStage(kase){
   const s = (kase.status||"").toLowerCase();
   const meta = getMeta(kase.id);
   if(s.includes("pagado")) return "pagado";
   if(s.includes("ya no quiso")) return "desistio";
+  // Si el abogado marcó el asunto Concluido a mano (checkbox aparte, por
+  // cualquier motivo -- se resolvió fuera del sistema, se decidió no
+  // seguir, etc.) eso manda sobre cualquier etapa procesal de la bitácora:
+  // antes caseStage() no sabía nada de esta marca manual, así que un
+  // asunto Concluido podía seguir mostrando "Convenio · cobro pendiente" o
+  // "Constancia recibida · falta demandar" como si siguiera activo -- una
+  // contradicción real (detectada en producción: casos Concluidos que
+  // salían en la búsqueda de "pendientes de presentar demanda").
+  if(meta.concluido_manual) return "concluido_manual";
   // La bitácora manual de etapas (registrada por el abogado) tiene prioridad
   // sobre el estatus importado de la hoja de cálculo, por ser más reciente.
   if(meta.etapas.demanda_presentada && meta.etapas.demanda_presentada.fecha) return "juicio";
+  // Mismo criterio que arriba: la bitácora es fuente de verdad para "ya
+  // llegó la constancia de no conciliación, falta presentar demanda" --
+  // antes esto SOLO se detectaba por texto crudo importado (el
+  // s.includes(...) de más abajo), así que un asunto cuya constancia se
+  // registró en la bitácora (no en el status importado de la hoja de
+  // cálculo) se perdía como "activo" genérico, sin avisar que ya toca
+  // demandar. Se detectó en producción: un asunto con "Constancia de no
+  // conciliación recibida" en la bitácora no aparecía al buscar "asuntos
+  // pendientes de presentar demanda".
+  if(meta.etapas.constancia_no_conciliacion && meta.etapas.constancia_no_conciliacion.fecha) return "constancia_demanda";
   if(tieneConvenio(kase) || s === "convenio") return "convenio"; // convenio pactado, a la espera de cobro
   // "Tribunal CDMX/Edomex/Federal CDMX/Federal Edomex" (lista estandarizada) y el
   // texto legado "Juicio en Tribunal" indican lo mismo: demanda ya presentada,
@@ -1276,7 +1772,7 @@ function caseStage(kase){
 }
 
 // Solo estas etapas mantienen vivo el riesgo de que corra (o siga corriendo) el
-// plazo de prescripción del Art. 518 LFT.
+// plazo de prescripción.
 function isPrescripcionRelevant(kase){
   const st = caseStage(kase);
   return st === "activo" || st === "constancia_demanda";
@@ -1359,7 +1855,7 @@ function manualHTML(){
     <p>Al abrir cualquier expediente, arriba ves su nombre, contra quién demanda, el número de expediente, y una fila de pestañas. Aquí está cada una a detalle:</p>
     <p><strong><span class="tag">Informe del juicio</span></strong> — lo primero que ves. Arriba, en un recuadro, dice en qué etapa está el asunto ahora mismo y desde cuándo. Si hay una audiencia o un pago agendados, salen destacados justo debajo. Si el asunto lleva 30+ días sin movimiento, o parece atorado, también te avisa aquí. Más abajo están los datos generales (puesto, salario, instancia, teléfono, correo) y la bitácora de notas con fecha, con un cuadro de texto para agregar una nueva.</p>
     <p><strong><span class="tag">Editar datos</span></strong> — todos los campos del expediente en modo edición: nombre del actor, CURP, teléfono, correo, demandado, giro, domicilio, puesto, fechas, salarios, instancia, quién despidió, testigos, y los montos de la liquidación (indemnización, prima de antigüedad, vacaciones, prima vacacional, aguinaldo). Escribe el dato y dale <span class="tag">Guardar datos del expediente</span> al final. Cada cambio que hagas aquí queda registrado con tu nombre y la fecha en el Historial (lo ve solo el Administrador).</p>
-    <p><strong><span class="tag">Documentos</span></strong> — sube y organiza los archivos de este asunto (demanda, contestación, pruebas, actas de audiencia...) por categoría. Acepta PDF, Word, Excel e imágenes, hasta 20 MB por archivo. Los PDF e imágenes tienen botón <span class="tag">Ver</span> para abrirlos directo en una pestaña nueva sin descargarlos; Word y Excel solo se pueden descargar. Cualquiera con acceso a este expediente puede descargarlos o eliminarlos.</p>
+    <p><strong><span class="tag">Documentos</span></strong> — sube y organiza los archivos de este asunto (constancia de no conciliación, demanda, contestación, pruebas, actas de audiencia...) por categoría. Acepta PDF, Word, Excel e imágenes, hasta 20 MB por archivo. Si subes una o varias imágenes (JPG/PNG) a la vez, cada una se abre primero en un visor donde puedes arrastrar el recuadro para ajustarlo a las orillas del documento y girarla con los botones <span class="tag">Girar izquierda</span>/<span class="tag">Girar derecha</span> si salió de lado o al revés — igual que las fotos tomadas con la cámara. Si eliges varias imágenes juntas, después de recortarlas todas se arman en un solo PDF, ya acomodadas en orden, y se sube ese único archivo. Los PDF e imágenes tienen botón <span class="tag">Ver</span> para abrirlos directo en una pestaña nueva sin descargarlos; Word y Excel solo se pueden descargar. Cualquiera con acceso a este expediente puede descargarlos o eliminarlos.</p>
     <p><strong><span class="tag">Etapas del juicio</span></strong> — el checklist completo del procedimiento (lo explico a detalle en la sección 6).</p>
     <p><strong><span class="tag">Prescripción</span></strong> — te dice si ya tienen la constancia de no conciliación, desde cuándo corre el plazo, cuántos días de suspensión hubo por la conciliación, y la fecha límite calculada para presentar la demanda, con los días que faltan.</p>
     <p><strong><span class="tag">Cálculo de liquidación</span></strong> — el desglose completo: indemnización de 90 días, prima de antigüedad, vacaciones, prima vacacional, aguinaldo, y si el asunto ya está en juicio, también salarios caídos e intereses. Al final hay un recuadro oscuro con el total general, y un botón <span class="tag">Extraer cálculo (PDF con desglose)</span> para imprimirlo o guardarlo como PDF — listo para presentarlo como propuesta, sin honorarios del despacho incluidos.</p>
@@ -1613,6 +2109,22 @@ function extractMonto(text){
 let EQUIPO = [];
 let USUARIOS_ADMIN = []; // detalle completo (correo, activo, etc.) — solo lo usa la vista "Equipo" del Administrador
 let DIAS_INHABILES = []; // {id, fecha, descripcion, ambito} — ver pantalla "Días inhábiles"
+let ASESORIAS_POR_MES = []; // {mes:'YYYY-MM', vendidas, total, por_monto:[{monto,vendidas,total}]} — asesorías $299/$399 vendidas, ver panel en "Ingresos por periodo"
+let ASESORIA_MES_ABIERTO = null; // 'YYYY-MM' del mes desplegado en ese panel, o null si ninguno
+async function loadAsesoriasPorMes(){
+  try{ ASESORIAS_POR_MES = (await api('GET', 'asesorias_ingresos_mensual.php')).meses; }
+  catch(e){ ASESORIAS_POR_MES = []; }
+}
+
+// Horarios semanales propios para atender asesorías telefónicas de pago —
+// ver panel "Mi disponibilidad para asesorías" dentro de Agenda general.
+let DISPONIBILIDAD = []; // {id, dia_semana (1=lunes..7=domingo), hora_inicio, hora_fin}
+let DISPONIBILIDAD_ABIERTA = false; // si el panel está desplegado
+const DIA_SEMANA_LABEL = {1:'Lunes', 2:'Martes', 3:'Miércoles', 4:'Jueves', 5:'Viernes', 6:'Sábado', 7:'Domingo'};
+
+// Próximas asesorías agendadas (pagadas o con pago pendiente) — ver panel
+// dentro de Agenda general.
+let CITAS = [];
 
 // Estado de la cuenta propia del Portal Federal (PJF) — ver pantalla "Mi
 // cuenta". El robot Federal usa las cuentas guardadas por cada abogado
@@ -1625,6 +2137,17 @@ async function loadPjfCredenciales(){
   }catch(e){ PJF_CREDENCIALES = null; }
 }
 
+// Igual que PJF_CREDENCIALES pero para el correo de notificaciones
+// electrónicas de Edomex (mail.pjedomex.gob.mx) -- el robot nuevo
+// (robots/edomex_correo) usa las cuentas guardadas por cada abogado.
+let EDOMEX_CORREO_CREDENCIALES = null;
+async function loadEdomexCorreoCredenciales(){
+  try{
+    const d = await api('GET', 'edomex_correo_credenciales_get.php');
+    EDOMEX_CORREO_CREDENCIALES = d;
+  }catch(e){ EDOMEX_CORREO_CREDENCIALES = null; }
+}
+
 // Avisos de boletín/lista de acuerdos por expediente — registrados a mano
 // o encontrados por los robots de monitoreo automático (Federal, CDMX,
 // Edomex). Ver api/avisos_*.php.
@@ -1635,6 +2158,55 @@ const FUENTE_BOLETIN_LABEL = {
   federal_laboral: 'Tribunales Laborales Federales',
   otro: 'Otra fuente',
 };
+// Catálogo de Tribunales Colegiados en Materia de Trabajo -- solo Primer
+// Circuito (CDMX) y Segundo Circuito (Estado de México), que es donde
+// opera el despacho. Nombres oficiales verificados (Consejo de la
+// Judicatura Federal / vLex) -- si algún día se crea un tribunal nuevo
+// que no aparezca aquí, "Otro / no está en la lista" cubre ese caso sin
+// bloquear la captura. El nombre exacto que quede guardado es lo que el
+// robot Federal muestra en el resumen del aviso -- no afecta si encuentra
+// o no el acuerdo (eso depende solo del número de expediente del amparo).
+const AMPARO_TRIBUNAL_OTRO = 'otro';
+const AMPARO_TRIBUNALES = {
+  primero: [
+    'Primer Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Segundo Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Tercer Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Cuarto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Quinto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Sexto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Séptimo Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Octavo Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Noveno Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Primer Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Segundo Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Tercer Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Cuarto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Quinto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+    'Décimo Sexto Tribunal Colegiado en Materia de Trabajo del Primer Circuito',
+  ],
+  segundo: [
+    'Primer Tribunal Colegiado en Materia de Trabajo del Segundo Circuito',
+    'Segundo Tribunal Colegiado en Materia de Trabajo del Segundo Circuito',
+    'Tercer Tribunal Colegiado en Materia de Trabajo del Segundo Circuito',
+  ],
+};
+function amparoCircuitoDeTribunal(tribunal){
+  if(!tribunal) return '';
+  if(AMPARO_TRIBUNALES.primero.includes(tribunal)) return 'primero';
+  if(AMPARO_TRIBUNALES.segundo.includes(tribunal)) return 'segundo';
+  return '';
+}
+function amparoTribunalOptionsHTML(circuito, tribunalActual){
+  const lista = AMPARO_TRIBUNALES[circuito] || [];
+  const esConocido = lista.includes(tribunalActual);
+  let opts = '<option value="">Selecciona...</option>';
+  opts += lista.map(t=>`<option value="${escapeHTML(t)}" ${t===tribunalActual?'selected':''}>${escapeHTML(t)}</option>`).join('');
+  opts += `<option value="${AMPARO_TRIBUNAL_OTRO}" ${(tribunalActual && !esConocido)?'selected':''}>Otro / no está en la lista</option>`;
+  return opts;
+}
+
 function avisosNuevosCount(){ return AVISOS_BOLETIN.filter(a=>a.estado==='nuevo').length; }
 function avisosDeExpediente(id){ return AVISOS_BOLETIN.filter(a=>a.expediente_id===id); }
 async function loadAvisosBoletin(){
@@ -1667,8 +2239,14 @@ let DOCUMENTOS_ACTIVOS = []; // documentos del expediente actualmente abierto en
 let CAMARA_STREAM = null; // MediaStream activo del visor de cámara (pestaña Documentos), o null si está cerrado
 let FOTOS_CAPTURADAS = []; // {blob, url, width, height} tomadas con la cámara, pendientes de armar el PDF
 // Foto recién tomada, en pantalla de recorte antes de agregarse a FOTOS_CAPTURADAS:
-// {canvas, dataURL, scale, dispW, dispH, rect:{x,y,w,h}} — rect en px de pantalla (coordenadas del recuadro mostrado).
+// {canvas, dataURL, scale, dispW, dispH, rect:{x,y,w,h}, origen, nombreOriginal} — rect en px de
+// pantalla (coordenadas del recuadro mostrado); origen es 'camara', 'archivo' (una sola imagen
+// elegida del disco, se sube directo al confirmar) o 'archivo_multi' (varias imágenes elegidas
+// juntas, se van juntando en FOTOS_CAPTURADAS para armar un solo PDF al terminar la cola).
 let CROP_PENDING = null;
+// Archivos de imagen todavía pendientes de pasar por el visor de recorte,
+// cuando se eligieron varios de una vez desde "Archivo" (no cámara).
+let ARCHIVO_CROP_QUEUE = [];
 let PLANTILLAS_LIB = []; // biblioteca de plantillas .docx adicionales a la demanda
 
 async function loadPlantillasLib(){
@@ -1700,38 +2278,75 @@ async function googleEventId(usuarioId, e){
   return 'ela' + hex.slice(0, 40);
 }
 
+async function googleCitaEventId(usuarioId, citaId){
+  const key = usuarioId + '|cita_asesoria|' + citaId;
+  const bytes = new TextEncoder().encode(key);
+  const hashBuf = await crypto.subtle.digest('SHA-256', bytes);
+  const hex = Array.from(new Uint8Array(hashBuf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  return 'ela' + hex.slice(0, 40);
+}
+
+// Crea o actualiza (si ya existe, 409) un evento con id fijo — así
+// resincronizar no crea duplicados, solo actualiza el mismo evento.
+async function googlePushEvent(base, headers, id, body){
+  let res = await fetch(base, {method:'POST', headers, body: JSON.stringify(Object.assign({id}, body))});
+  if(res.status === 409){
+    res = await fetch(base + '/' + id, {method:'PATCH', headers, body: JSON.stringify(body)});
+  }
+  return res.ok;
+}
+
 async function sincronizarGoogleCalendar(onProgress){
   const tok = await api('GET', 'google_access_token.php');
   const accessToken = tok.access_token;
   const entries = buildAgendaEntries().filter(e => GOOGLE_TIPOS_SINCRONIZABLES.includes(e.tipo));
+  // Las asesorías de pago ya confirmadas (pagadas) también se agendan solas
+  // en el calendario — con hora exacta, a diferencia de audiencias/pagos/
+  // etc. que son de todo el día, porque aquí sí importa la hora exacta de
+  // la llamada.
+  const citas = CITAS.filter(c => c.estado === 'confirmada');
+  const total = entries.length + citas.length;
   const headers = {'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json'};
   const base = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
   const idsActuales = [];
   let fallos = 0;
+  let hechos = 0;
 
   for(const e of entries){
     const id = await googleEventId(CURRENT_USER.id, e);
     idsActuales.push(id);
+    // Si la audiencia trae hora capturada, se manda como evento con horario
+    // exacto (igual que las citas de asesoría) en vez de todo el día — así
+    // Google Calendar también puede avisar de un choque de horario.
+    const conHora = e.tipo==='audiencia' && e.hora;
     const body = {
       summary: `[${AGENDA_TIPO[e.tipo].label}] ${e.k.actor} vs ${truncate(e.k.demandado,40)}`,
       description: e.label + '\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.',
-      start: {date: e.fecha},
-      end: {date: e.fecha},
+      start: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
+      end: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
     };
-    try{
-      let res = await fetch(base, {
-        method:'POST', headers, body: JSON.stringify(Object.assign({id}, body))
-      });
-      if(res.status === 409){
-        res = await fetch(base + '/' + id, {method:'PATCH', headers, body: JSON.stringify(body)});
-      }
-      if(!res.ok) fallos++;
-    }catch(err){ fallos++; }
-    if(onProgress) onProgress(idsActuales.length, entries.length);
+    try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
+    hechos++;
+    if(onProgress) onProgress(hechos, total);
+  }
+
+  for(const c of citas){
+    const id = await googleCitaEventId(CURRENT_USER.id, c.id);
+    idsActuales.push(id);
+    const body = {
+      summary: `[Asesoría] ${c.nombre_cliente || c.telefono}`,
+      description: `Llamada telefónica de la asesoría pagada ($${c.monto.toFixed(0)} MXN). Teléfono: ${c.telefono}.\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.`,
+      start: {dateTime: `${c.fecha}T${c.hora_inicio}:00`, timeZone: 'America/Mexico_City'},
+      end: {dateTime: `${c.fecha}T${c.hora_fin}:00`, timeZone: 'America/Mexico_City'},
+    };
+    try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
+    hechos++;
+    if(onProgress) onProgress(hechos, total);
   }
 
   // Borra del calendario lo que ya no aplica (pago cobrado, prescripción
-  // resuelta, etc.) comparando contra lo que se sincronizó la vez anterior.
+  // resuelta, cita cancelada/expirada, etc.) comparando contra lo que se
+  // sincronizó la vez anterior.
   let previos = [];
   try{ const st = await api('GET', 'google_sync_state.php'); previos = st.evento_ids; }catch(e){}
   const obsoletos = previos.filter(id => !idsActuales.includes(id));
@@ -1740,7 +2355,7 @@ async function sincronizarGoogleCalendar(onProgress){
   }
 
   await api('POST', 'google_sync_state.php', {evento_ids: idsActuales});
-  return {sincronizados: entries.length, borrados: obsoletos.length, fallos};
+  return {sincronizados: total, borrados: obsoletos.length, fallos};
 }
 
 // Sincroniza en segundo plano, sin interrumpir ni avisar, justo después de
@@ -1752,11 +2367,13 @@ function syncGoogleIfConnected(){
 }
 
 const CATEGORIA_DOCUMENTO_LABEL = {
+  constancia_no_conciliacion: 'Constancia de no conciliación',
   demanda: 'Demanda',
   contestacion: 'Contestación',
   pruebas: 'Pruebas',
   actas: 'Actas de audiencia',
   convenio: 'Convenio',
+  acuerdo: 'Acuerdo (boletín)',
   otro: 'Otro',
 };
 
@@ -1896,6 +2513,35 @@ function detectarBordeHoja(canvas){
   };
 }
 
+// Gira 90° (deg: -90 o 90) la imagen que está en el visor de recorte —
+// las fotos de la galería del teléfono a veces llegan de lado o al revés
+// (dos giros de 90°). Vuelve a intentar detectar el borde de la hoja sobre
+// la imagen ya girada, para no dejar un recuadro con las proporciones del
+// encuadre anterior.
+function rotarCropPendiente(deg){
+  if(!CROP_PENDING) return;
+  const src = CROP_PENDING.canvas;
+  const rotated = document.createElement('canvas');
+  rotated.width = src.height;
+  rotated.height = src.width;
+  const ctx = rotated.getContext('2d');
+  ctx.translate(rotated.width/2, rotated.height/2);
+  ctx.rotate(deg * Math.PI/180);
+  ctx.drawImage(src, -src.width/2, -src.height/2);
+
+  const rectReal = detectarBordeHoja(rotated);
+  const dispW = Math.min(320, rotated.width);
+  const scale = dispW / rotated.width;
+  const dispH = Math.round(rotated.height * scale);
+  CROP_PENDING.canvas = rotated;
+  CROP_PENDING.scale = scale;
+  CROP_PENDING.dispW = dispW;
+  CROP_PENDING.dispH = dispH;
+  CROP_PENDING.dataURL = rotated.toDataURL('image/jpeg', 0.9);
+  CROP_PENDING.rect = {x: rectReal.x*scale, y: rectReal.y*scale, w: rectReal.w*scale, h: rectReal.h*scale};
+  renderModal();
+}
+
 function buildPdfFromJpegs(images){
   const DPI = 150;
   const enc = new TextEncoder();
@@ -1960,6 +2606,7 @@ async function refreshBootstrap(){
     await loadUsuariosAdmin();
   }
   await loadDiasInhabiles();
+  syncAvisosAbogado(); // en segundo plano, no bloquea la carga
   await loadConfiguracion();
   await loadPlantillasLib();
   await loadGoogleStatus();
@@ -1967,6 +2614,232 @@ async function refreshBootstrap(){
   await loadAvisosBoletin();
   await loadEdomexCaptchaPendiente();
   await loadPjfCredenciales();
+  await loadEdomexCorreoCredenciales();
+  if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
+    await loadProspectos();
+    await loadDisponibilidad();
+    await loadCitas();
+    await loadAsesoriasPorMes();
+    await loadCursosPorMes();
+    await loadDocumentosPorMes();
+    await loadMensajesPorDia();
+  }
+  if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
+    await loadConversaciones();
+    await loadResumenesEjecutivos();
+  }
+}
+
+async function loadProspectos(){
+  try{
+    const d = await api('GET', 'prospectos_list.php');
+    PROSPECTOS = d.prospectos;
+  }catch(e){ PROSPECTOS = []; }
+}
+
+async function loadDisponibilidad(){
+  try{
+    const d = await api('GET', 'disponibilidad_list.php');
+    DISPONIBILIDAD = d.bloques;
+  }catch(e){ DISPONIBILIDAD = []; }
+}
+
+async function loadCitas(){
+  try{
+    const d = await api('GET', 'citas_list.php');
+    CITAS = d.citas;
+  }catch(e){ CITAS = []; }
+}
+
+// Al darle clic a una notificación push (nuevo mensaje/prospecto), en vez
+// de dejar al usuario a buscar manualmente quién escribió, se abre
+// directo esa conversación — funciona tanto si la pestaña ya estaba
+// abierta (mensaje del service worker, ver sw.js) como si se abrió una
+// nueva (parámetro ?abrir= en la URL, ver init()).
+async function abrirConversacionDesdeNotificacion(telefono){
+  if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
+  await loadProspectos();
+  const p = PROSPECTOS.find(x=>x.telefono===telefono);
+  if(p){
+    VIEW = 'prospectos';
+    PROSPECTOS_TAB = p.tipo;
+    render();
+    await loadProspectoMensajes(p.telefono);
+    abrirProspectoModal(p.id);
+    if(p.mensaje_nuevo){
+      p.mensaje_nuevo = false;
+      api('POST', 'prospectos_update.php', {id: p.id, marcar_visto: true}).catch(()=>{});
+    }
+    return;
+  }
+  if(CURRENT_USER.role === 'Administrador'){
+    await loadConversaciones();
+    const c = CONVERSACIONES.find(x=>x.telefono===telefono);
+    if(c){
+      VIEW = 'conversaciones';
+      render();
+      if(!WA_EMBUDO) loadWhatsappEmbudo().then(renderViewBody);
+      await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
+      abrirConversacionModal(telefono);
+      return;
+    }
+  }
+  // No se encontró todavía (la notificación llegó antes de que el dato
+  // esté listo) — al menos deja al usuario en la vista correcta.
+  VIEW = 'prospectos';
+  render();
+}
+
+async function loadProspectoMensajes(telefono){
+  try{
+    const d = await api('GET', 'prospectos_mensajes.php?telefono=' + encodeURIComponent(telefono));
+    PROSPECTO_MENSAJES = d.mensajes;
+  }catch(e){ PROSPECTO_MENSAJES = []; }
+}
+
+function prospectosNuevosCount(){ return PROSPECTOS.filter(p=>p.tipo!=='despido' && p.estatus!=='descartado' && (p.estatus==='nuevo' || p.mensaje_nuevo)).length; }
+
+async function loadConversaciones(){
+  try{
+    const d = await api('GET', 'conversaciones_list.php');
+    CONVERSACIONES = d.conversaciones;
+    CONVERSACIONES_STATS = d.stats;
+  }catch(e){ CONVERSACIONES = []; CONVERSACIONES_STATS = {}; }
+}
+
+async function loadResumenesEjecutivos(){
+  try{
+    const d = await api('GET', 'resumen_ejecutivo.php');
+    RESUMENES_EJECUTIVOS = d.resumenes;
+  }catch(e){ RESUMENES_EJECUTIVOS = []; }
+}
+
+async function loadConversacionMensajes(telefono){
+  try{
+    const d = await api('GET', 'conversaciones_mensajes.php?telefono=' + encodeURIComponent(telefono));
+    CONVERSACION_MENSAJES = d.mensajes;
+  }catch(e){ CONVERSACION_MENSAJES = []; }
+}
+
+async function loadConversacionResumen(telefono){
+  try{
+    const d = await api('GET', 'conversaciones_resumen.php?telefono=' + encodeURIComponent(telefono));
+    CONVERSACION_RESUMEN = d.resumen;
+  }catch(e){ CONVERSACION_RESUMEN = null; }
+}
+
+// Vuelve a dibujar un modal (chat de Prospecto o Conversación) sin borrar
+// lo que el usuario ya llevaba escrito en la respuesta pendiente — sin
+// esto, cada actualización automática (ver pollActualizaciones) le
+// borraría el mensaje a medio escribir justo cuando le llega algo nuevo.
+function renderizarModalPreservandoInput(inputId, renderFn){
+  const inputPrevio = document.getElementById(inputId);
+  const valorPrevio = inputPrevio ? inputPrevio.value : '';
+  const teniaFoco = !!inputPrevio && document.activeElement === inputPrevio;
+  renderFn();
+  if(!valorPrevio) return;
+  const inputNuevo = document.getElementById(inputId);
+  if(!inputNuevo) return;
+  inputNuevo.value = valorPrevio;
+  if(teniaFoco){
+    inputNuevo.focus();
+    inputNuevo.setSelectionRange(valorPrevio.length, valorPrevio.length);
+  }
+}
+
+// Refleja en vivo el número de prospectos pendientes en el menú lateral
+// (el mismo dato que ya calcula prospectosNuevosCount()), sin tener que
+// redibujar todo el shell — eso resetearía cualquier otra cosa abierta.
+function actualizarBadgeProspectosSidebar(){
+  const btn = document.querySelector('[data-v="prospectos"]');
+  if(!btn) return;
+  const n = prospectosNuevosCount();
+  let badge = document.getElementById('navBadgeProspectos');
+  if(n > 0){
+    if(!badge){
+      badge = document.createElement('span');
+      badge.className = 'nav-badge';
+      badge.id = 'navBadgeProspectos';
+      btn.appendChild(badge);
+    }
+    badge.textContent = n;
+  } else if(badge){
+    badge.remove();
+  }
+}
+
+// Actualización automática, como WhatsApp Web: revisa cada POLL_MS si hay
+// prospectos/conversaciones/mensajes nuevos y los pinta solos, sin que
+// alguien tenga que recargar la página. Se detiene solo si no hay sesión
+// o la pestaña está en segundo plano (document.hidden) — no tiene caso
+// gastar llamadas al servidor si nadie está viendo la pantalla. Cualquier
+// error de red se ignora en silencio (no tiene sentido interrumpir con un
+// alert() cada 8 segundos si hay un hipo de conexión).
+async function pollActualizaciones(){
+  if(!CURRENT_USER || CURRENT_USER.role === 'cliente' || document.hidden) return;
+  try{
+    const prospectosAntes = JSON.stringify(PROSPECTOS);
+    await loadProspectos();
+    if(VIEW === 'prospectos' && JSON.stringify(PROSPECTOS) !== prospectosAntes){
+      const y = window.scrollY;
+      renderViewBody();
+      window.scrollTo(0, y);
+    }
+    actualizarBadgeProspectosSidebar();
+
+    if(VIEW === 'conversaciones'){
+      const conversacionesAntes = JSON.stringify(CONVERSACIONES);
+      await loadConversaciones();
+      if(JSON.stringify(CONVERSACIONES) !== conversacionesAntes){
+        const y = window.scrollY;
+        renderViewBody();
+        window.scrollTo(0, y);
+      }
+    }
+
+    if(PROSPECTO_ABIERTO !== null){
+      const p = PROSPECTOS.find(x=>x.id===PROSPECTO_ABIERTO);
+      if(p){
+        const mensajesAntes = JSON.stringify(PROSPECTO_MENSAJES);
+        await loadProspectoMensajes(p.telefono);
+        if(JSON.stringify(PROSPECTO_MENSAJES) !== mensajesAntes){
+          renderizarModalPreservandoInput('prospectoRespuestaInput', renderProspectoModal);
+        }
+      }
+    }
+    if(CONVERSACION_ABIERTA !== null){
+      const mensajesAntes = JSON.stringify(CONVERSACION_MENSAJES);
+      await loadConversacionMensajes(CONVERSACION_ABIERTA);
+      if(JSON.stringify(CONVERSACION_MENSAJES) !== mensajesAntes){
+        renderizarModalPreservandoInput('conversacionRespuestaInput', renderConversacionModal);
+      }
+    }
+
+    // El robot de Edomex va publicando un captcha nuevo cada vez que
+    // termina uno (uno por juzgado) -- sin este poll, quien lo está
+    // resolviendo tenía que recargar la página (F5) a mano para ver el
+    // siguiente.
+    const captchaIdAntes = EDOMEX_CAPTCHA_PENDIENTE ? EDOMEX_CAPTCHA_PENDIENTE.id : null;
+    await loadEdomexCaptchaPendiente();
+    const captchaIdDespues = EDOMEX_CAPTCHA_PENDIENTE ? EDOMEX_CAPTCHA_PENDIENTE.id : null;
+    if(captchaIdDespues !== captchaIdAntes){
+      const y = window.scrollY;
+      render();
+      window.scrollTo(0, y);
+    }
+  }catch(e){ /* silencioso: un hipo de red no debe interrumpir cada 8s */ }
+}
+
+function iniciarPolling(){
+  if(POLL_TIMER) return;
+  POLL_TIMER = setInterval(pollActualizaciones, POLL_MS);
+}
+
+function fmtFechaHora(s){
+  if(!s) return "—";
+  const d = new Date(String(s).replace(' ', 'T'));
+  if(isNaN(d.getTime())) return "—";
+  return d.toLocaleString('es-MX', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'});
 }
 
 async function loadDiasInhabiles(){
@@ -1993,12 +2866,76 @@ async function loadTribunalesCustom(){
 // "configuracion" y lo edita el Administrador en "Equipo" — así no hay que
 // tocar el código cada vez que la CONASAMI publica un nuevo salario mínimo.
 let SALARIO_MINIMO_DIARIO = 315.04; // valor de respaldo (zona general, 2026) si aún no se ha guardado ninguno
+// Jornada máxima legal (Art. 61 LFT) por tipo, en horas. Igual que el
+// salario mínimo: se guarda en "configuracion" y lo edita el Administrador
+// en "Equipo" — así cuando cambie la ley (reducción de jornada prevista a
+// partir de 2027) solo hay que actualizar el número aquí, sin tocar código.
+let JORNADA_MAXIMA = {diurna: 8, nocturna: 7, mixta: 7.5}; // valores de respaldo (vigentes 2026) si aún no se ha guardado ninguno
+
+// Nombre EXACTO con el que debe subirse la plantilla de Rescisión Art. 51 en
+// "Otras plantillas de escritos" -- así el sistema sabe cuándo mostrar la
+// selección de prestaciones opcionales antes de generar el documento.
+const NOMBRE_PLANTILLA_RESCISION_51 = 'Rescisión Art. 51';
+
+// Prestaciones opcionales de la demanda de Rescisión Art. 51 (letras B en
+// adelante -- la "A" es la rescisión misma, siempre presente, fija en la
+// plantilla). El abogado marca cuáles aplican a cada caso; las letras se
+// recalculan solas según cuáles queden seleccionadas.
+const PRESTACIONES_RESCISION_OPCIONES = [
+  {key:'indemnizacion', label:'Indemnización constitucional (arts. 50, 51, 52)', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE LA INDEMNIZACIÓN, que legalmente corresponda con motivo de la rescisión justificada de la relación laboral, en términos de los artículos 50, 51 y 52 de la Ley Federal del Trabajo.`},
+  {key:'veinte_dias', label:'20 días de salario por año laborado (art. 50)', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE 20 DÍAS DE SALARIO POR CADA AÑO LABORADO, que legalmente corresponda con motivo de la rescisión justificada de la relación laboral, en términos del artículo 50 de la Ley Federal del Trabajo, tomando como base para ello, el salario integrado con las totalidades de las prestaciones que el demandado se comprometió a pagar a la actora, tal como se expresa en el capítulo de hechos.`},
+  {key:'prima_antiguedad', label:'Prima de antigüedad (art. 162, 12 días por año)', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE PRIMA DE ANTIGÜEDAD, en términos del artículo 162 de la Ley Federal del Trabajo, consistente en 12 días de salario por cada año de servicios prestados al patrón.`},
+  {key:'salarios_devengados', label:'Salarios devengados no cubiertos', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE LOS SALARIOS DEVENGADOS, y no cubiertos durante la relación laboral, tomando como base el salario mínimo legal aplicable a cada periodo reclamado, o el salario que resulte acreditado si fuera superior, con la cuantificación correspondiente.`},
+  {key:'aguinaldo_completo', label:'Aguinaldo del año anterior (omitido por completo)', checkedPorDefecto:false,
+    texto:(tags,k)=>{
+      const baj = parseDate(k.fecha_baja);
+      const anio = baj ? baj.getFullYear()-1 : '________';
+      const dias = k.aguinaldo_dias_pactados > 0 ? k.aguinaldo_dias_pactados : 15;
+      return `EL PAGO DE AGUINALDO POR EL AÑO ${anio}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos, lo anterior debido a que la demandada omitió hacer el pago, señalando que se pactaron ${dias} días anuales por dicho concepto.`;
+    }},
+  {key:'aguinaldo_proporcional', label:'Aguinaldo proporcional del año de la baja', checkedPorDefecto:true,
+    texto:(tags,k)=>{
+      const baj = parseDate(k.fecha_baja);
+      const anio = baj ? baj.getFullYear() : '________';
+      return `EL PAGO DE AGUINALDO PROPORCIONAL AL AÑO ${anio}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos, lo anterior en términos del artículo 87 de la Ley Federal del Trabajo.`;
+    }},
+  {key:'vacaciones_periodo1', label:'Vacaciones adeudadas, periodo anterior', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE VACACIONES ADEUDADAS correspondiente al periodo ${tags.periodo_vacaciones_anterior}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'prima_vacacional_periodo1', label:'Prima vacacional, periodo anterior', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE PRIMA VACACIONAL correspondiente al periodo ${tags.periodo_vacaciones_anterior}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'vacaciones_periodo2', label:'Vacaciones adeudadas, periodo actual', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE VACACIONES ADEUDADAS correspondiente al periodo ${tags.periodo_vacaciones_actual}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'prima_vacacional_periodo2', label:'Prima vacacional, periodo actual', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE PRIMA VACACIONAL correspondiente al periodo ${tags.periodo_vacaciones_actual}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'horas_extras', label:'Horas extras (reutiliza el horario capturado en Editar datos)', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE HORAS EXTRAS, por todo el tiempo laborado en virtud de que, por necesidades del Servicio, mi jefe inmediato de manera habitual, continua y reiterada, me solicitaba que me quedara a laborar tiempo extraordinario por lo que diariamente laboraba de las ${tags.hora_entrada} a las ${tags.hora_salida}, con una hora para tomar alimentos ${tags.texto_comida}, en tal virtud el suscrito laboraba materialmente ${tags.horas_extra_diarias} horas extras por día, ${tags.dias_laborados} de cada semana, lo que da un total de ${tags.horas_extra_semanales} horas extras semanales.`},
+];
+
+const LETRAS_B_EN_ADELANTE = 'BCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+// Arma el texto final (con letras B, C, D... recalculadas) a partir de las
+// claves de PRESTACIONES_RESCISION_OPCIONES que el abogado dejó marcadas.
+function construirPrestacionesOpcionalesTexto(k, selKeys){
+  const tags = mergeTags(k);
+  const seleccionadas = PRESTACIONES_RESCISION_OPCIONES.filter(o => selKeys.includes(o.key));
+  return seleccionadas.map((o,i)=> `${LETRAS_B_EN_ADELANTE[i]}) ${o.texto(tags,k)}`).join('\n\n');
+}
 async function loadConfiguracion(){
   try{
     const d = await api('GET', 'configuracion_get.php');
     const v = parseFloat(d.configuracion && d.configuracion.salario_minimo_diario);
     if(!isNaN(v) && v > 0) SALARIO_MINIMO_DIARIO = v;
-  }catch(e){ /* se conserva el valor de respaldo */ }
+    const vd = parseFloat(d.configuracion && d.configuracion.jornada_maxima_diurna);
+    if(!isNaN(vd) && vd > 0) JORNADA_MAXIMA.diurna = vd;
+    const vn = parseFloat(d.configuracion && d.configuracion.jornada_maxima_nocturna);
+    if(!isNaN(vn) && vn > 0) JORNADA_MAXIMA.nocturna = vn;
+    const vm = parseFloat(d.configuracion && d.configuracion.jornada_maxima_mixta);
+    if(!isNaN(vm) && vm > 0) JORNADA_MAXIMA.mixta = vm;
+  }catch(e){ /* se conservan los valores de respaldo */ }
 }
 async function saveConfiguracion(clave, valor){
   await api('POST', 'configuracion_set.php', {clave, valor: String(valor)});
@@ -2013,7 +2950,7 @@ async function loadUsuariosAdmin(){
 
 function defaultMeta(){
   return {notas:"", cobro_pendiente:false,
-    pagos:[], prestaciones_extra:[], amparo_activo:false, amparo_fecha_notif:"", amparo_notas:"", amparo_presentado:false,
+    pagos:[], prestaciones_extra:[], amparo_activo:false, amparo_fecha_notif:"", amparo_tribunal:"", amparo_expediente:"", amparo_notas:"", amparo_presentado:false,
     etapas:{}, pendientes:[], historial:[], concluido_manual:false, notas_bitacora:[],
     convenio_manual:{activo:false, monto:'', fecha_pago:''}};
 }
@@ -2029,8 +2966,15 @@ function getMeta(id){
   return m;
 }
 
+// Un asunto puede estar asignado a dos socios a la vez (se apoyan entre
+// ellos en el mismo caso) -- esta devuelve los nombres realmente asignados,
+// sin "Sin asignar", para poder filtrar/agrupar por cada uno.
+function assignedLawyers(kase){
+  return [kase.abogado, kase.abogado_2].filter(Boolean);
+}
 function assignedLawyer(kase){
-  return kase.abogado || "Sin asignar";
+  const names = assignedLawyers(kase);
+  return names.length ? names.join(' y ') : "Sin asignar";
 }
 
 // ---------------------------------------------------------------
@@ -2162,6 +3106,7 @@ function bindGate(){
       CURRENT_USER = {id:data.user.id, name:data.user.nombre, email:data.user.email, role:mapRol(data.user.rol)};
       VIEW = "tablero"; GATE_ERROR = '';
       await refreshBootstrap();
+      iniciarPolling();
       render();
     }catch(err){ GATE_ERROR = err.message; render(); }
   });
@@ -2170,6 +3115,44 @@ function bindGate(){
     VIEW = "cliente";
     render();
   });
+}
+
+// ---------------------------------------------------------------
+// Notificaciones push (como WhatsApp) — avisan aunque el sistema esté
+// cerrado cuando llega un mensaje nuevo de un prospecto. Ver
+// api/push_helpers.php (servidor) y sw.js (qué hace el navegador con el
+// aviso). En iPhone solo funcionan si el sistema está "Agregado a pantalla
+// de inicio" (instalado como app) — es una limitación de Apple, no del
+// sistema.
+// ---------------------------------------------------------------
+function urlBase64ToUint8Array(base64String){
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for(let i=0;i<rawData.length;i++) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+async function activarNotificacionesPush(){
+  if(!('serviceWorker' in navigator) || !('PushManager' in window)){
+    throw new Error('Este navegador no soporta notificaciones push.');
+  }
+  const permiso = await Notification.requestPermission();
+  if(permiso !== 'granted'){
+    throw new Error('No diste permiso de notificaciones. Si cambias de opinión, actívalo desde la configuración del navegador para este sitio.');
+  }
+  const reg = await navigator.serviceWorker.ready;
+  const {public_key} = await api('GET', 'push_vapid_public_key.php');
+  let sub = await reg.pushManager.getSubscription();
+  if(!sub){
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: urlBase64ToUint8Array(public_key),
+    });
+  }
+  const json = sub.toJSON();
+  await api('POST', 'push_subscribe.php', {endpoint: json.endpoint, keys: json.keys});
 }
 
 function shellHTML(){
@@ -2192,10 +3175,14 @@ function shellHTML(){
         <button data-v="expedientes" class="${VIEW==='expedientes'?'active':''}"><span class="ico">${ICONS.expedientes}</span> Expedientes</button>
         <button data-v="alertas" class="${VIEW==='alertas'?'active':''}"><span class="ico">${ICONS.alertas}</span> Alertas de prescripción</button>
         <button data-v="cobros" class="${VIEW==='cobros'?'active':''}"><span class="ico">&#128176;</span> Cobros de convenios</button>
-        <button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>
+        ${isAdmin ? `<button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>` : ""}
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
         <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
+        ${isAdmin ? `<button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge" id="navBadgeProspectos">${prospectosNuevosCount()}</span>`:""}</button>` : ""}
+        ${isAdmin ? `<button data-v="conversaciones" class="${VIEW==='conversaciones'?'active':''}"><span class="ico">&#128269;</span> Conversaciones (WhatsApp)</button>` : ""}
+        ${isAdmin ? `<button data-v="resumen_ejecutivo" class="${VIEW==='resumen_ejecutivo'?'active':''}"><span class="ico">&#128202;</span> Resumen ejecutivo (bot)</button>` : ""}
+        <button data-v="jurisprudencia" class="${VIEW==='jurisprudencia'?'active':''}"><span class="ico">&#9878;</span> Jurisprudencia</button>
         <div class="section-label">Referencia</div>
         <button data-v="manual" class="${VIEW==='manual'?'active':''}"><span class="ico">&#128218;</span> Manual de uso</button>
         <button data-v="cliente_preview" class="${VIEW==='cliente_preview'?'active':''}"><span class="ico">${ICONS.cliente}</span> Vista de portal cliente</button>
@@ -2206,6 +3193,8 @@ function shellHTML(){
       </div>
       <div class="sidebar-foot">
         <div class="user-pill"><div class="dot"></div><span>${escapeHTML(CURRENT_USER.name)}</span></div>
+        <button class="switch-user" id="pushNotifBtn" style="margin-bottom:6px;">&#128276; Activar notificaciones</button>
+        ${(typeof Notification !== 'undefined' && Notification.permission === 'granted') ? `<button class="switch-user" id="pushTestBtn" style="margin-bottom:6px;">Probar notificación</button>` : ''}
         <button class="switch-user" id="switchUserBtn">Cambiar de usuario</button>
       </div>
     </div>
@@ -2226,13 +3215,17 @@ function shellHTML(){
 const VIEW_TITLES = {
   tablero:["Tablero general", "Panorama de todos los asuntos activos y alertas críticas"],
   expedientes:["Expedientes", "Consulta, filtra y administra cada asunto"],
-  alertas:["Alertas de prescripción", "Cómputo conforme al Art. 518 de la Ley Federal del Trabajo"],
+  alertas:["Alertas de prescripción", "Cómputo conforme al Título Décimo de la Ley Federal del Trabajo, según el tipo de cada asunto"],
   cobros:["Cobros de convenios", "Seguimiento de pagos pactados en convenios de conciliación"],
   ingresos:["Ingresos por periodo", "Cuánto se ha cobrado, agrupado por el periodo que elijas"],
   demandados:["Empresas demandadas", "Qué demandados se repiten, cuánto han pagado y qué tanto negocian"],
   exito:["Tasa de éxito", "Qué tan seguido se resuelven los asuntos a favor del trabajador"],
   manual:["Manual de uso", "Guía paso a paso del sistema"],
   agenda:["Agenda general", "Pagos, prescripciones, amparos y actuaciones — todo en una línea de tiempo"],
+  prospectos:["Prospectos (WhatsApp)", "Casos de despido, asesorías de pago y despachos interesados en Control de Expedientes, captados por el asistente de IA en WhatsApp"],
+  conversaciones:["Conversaciones (WhatsApp)", "Todas las conversaciones del bot, calificaran o no como prospecto — para revisar y perfeccionar sus respuestas"],
+  resumen_ejecutivo:["Resumen ejecutivo (bot)", "Temas más comunes, patrones y oportunidades detectadas en las conversaciones de WhatsApp"],
+  jurisprudencia:["Jurisprudencia", "Describe los hechos de tu caso y encuentra las tesis de la SCJN que de verdad aplican — la IA responde solo con tesis reales guardadas aquí, nunca inventadas"],
   formato_demanda:["Formato de demanda", "Plantilla de demanda y biblioteca de otras plantillas de escritos"],
   cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
   equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
@@ -2275,8 +3268,48 @@ function bindShell(){
   });
   if(backdropEl) backdropEl.addEventListener('click', closeMobileMenu);
   document.querySelectorAll('.nav button[data-v]').forEach(b=>{
-    b.addEventListener('click', ()=>{ VIEW = b.dataset.v; renderViewBody(); highlightNav(); closeMobileMenu(); });
+    b.addEventListener('click', ()=>{
+      VIEW = b.dataset.v; renderViewBody(); highlightNav(); closeMobileMenu();
+      if(VIEW==='conversaciones' && !WA_EMBUDO) loadWhatsappEmbudo().then(renderViewBody);
+    });
   });
+  const pushNotifBtn = document.getElementById('pushNotifBtn');
+  if(pushNotifBtn){
+    if(typeof Notification !== 'undefined' && Notification.permission === 'granted'){
+      pushNotifBtn.textContent = '🔔 Notificaciones activadas ✓';
+    }
+    pushNotifBtn.addEventListener('click', async ()=>{
+      pushNotifBtn.disabled = true;
+      const textoOriginal = pushNotifBtn.textContent;
+      pushNotifBtn.textContent = 'Activando...';
+      try{
+        await activarNotificacionesPush();
+        pushNotifBtn.textContent = '🔔 Notificaciones activadas ✓';
+        pushNotifBtn.disabled = true;
+      }catch(err){
+        pushNotifBtn.disabled = false;
+        pushNotifBtn.textContent = textoOriginal;
+        alert('No se pudieron activar las notificaciones: ' + err.message);
+      }
+    });
+  }
+  const pushTestBtn = document.getElementById('pushTestBtn');
+  if(pushTestBtn){
+    pushTestBtn.addEventListener('click', async ()=>{
+      pushTestBtn.disabled = true;
+      const textoOriginal = pushTestBtn.textContent;
+      pushTestBtn.textContent = 'Mandando...';
+      try{
+        await api('POST', 'push_test.php', {});
+        pushTestBtn.textContent = 'Mandada ✓ (revisa tu celular)';
+        setTimeout(()=>{ pushTestBtn.textContent = textoOriginal; pushTestBtn.disabled = false; }, 3000);
+      }catch(err){
+        pushTestBtn.disabled = false;
+        pushTestBtn.textContent = textoOriginal;
+        alert('No se pudo mandar la prueba: ' + err.message);
+      }
+    });
+  }
   const su = document.getElementById('switchUserBtn');
   if(su) su.addEventListener('click', async ()=>{
     if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
@@ -2317,6 +3350,10 @@ function renderViewBody(){
   else if(VIEW==='exito') el.innerHTML = tasaExitoHTML();
   else if(VIEW==='manual') el.innerHTML = manualHTML();
   else if(VIEW==='agenda') el.innerHTML = agendaHTML();
+  else if(VIEW==='prospectos') el.innerHTML = prospectosHTML();
+  else if(VIEW==='conversaciones') el.innerHTML = conversacionesHTML();
+  else if(VIEW==='resumen_ejecutivo') el.innerHTML = resumenEjecutivoHTML();
+  else if(VIEW==='jurisprudencia') el.innerHTML = jurisprudenciaHTML();
   else if(VIEW==='formato_demanda') el.innerHTML = formatoDemandaHTML();
   else if(VIEW==='cliente_preview') el.innerHTML = clientePreviewHTML();
   else if(VIEW==='equipo') el.innerHTML = equipoHTML();
@@ -2393,6 +3430,8 @@ function tableroHTML(){
   const detenidos = visibleCases().map(k=>({k, det:juicioDetenido(k)})).filter(x=>x.det);
 
   return `
+  ${resumenHoyHTML()}
+  ${CURRENT_USER.role==='Administrador' ? resumenSemanalHTML() : ''}
   <div style="display:flex; justify-content:flex-end; margin-bottom:14px;">
     <button class="btn secondary" id="reporteEjecutivoBtn">📄 Generar reporte ejecutivo (PDF)</button>
   </div>
@@ -2426,7 +3465,7 @@ function tableroHTML(){
     </div>
   </div>` : ""}
   <div class="panel">
-    <div class="panel-head"><h3>Prioridad de prescripción</h3><span class="count">Art. 518 LFT &middot; solo asuntos sin demanda ni convenio</span></div>
+    <div class="panel-head"><h3>Prioridad de prescripción</h3><span class="count">Título Décimo LFT &middot; solo asuntos sin demanda ni convenio</span></div>
     <div class="panel-body">
       ${withAlert.length ? withAlert.map(x=>alertRowHTML(x.k, x.p, x.lvl)).join("") : `<div class="empty">Sin asuntos con riesgo de prescripción pendiente. Los que ya tienen demanda presentada o convenio no corren este riesgo.</div>`}
     </div>
@@ -2474,7 +3513,7 @@ function alertRowHTML(k, p, lvl){
     ${ringSVG(p.daysLeft, lvl)}
     <div class="alert-info">
       <div class="name">${escapeHTML(k.actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(k.demandado,36))}</div>
-      <div class="meta">Vence: ${fmtDate(dateToISO(p.deadline))} &middot; ${constanciaTxt} &middot; ${assignedLawyer(k)}</div>
+      <div class="meta">Vence: ${fmtDate(dateToISO(p.deadline))} &middot; ${p.plazo.articulo} &middot; ${constanciaTxt} &middot; ${assignedLawyer(k)}</div>
     </div>
     <span class="badge ${lvl}">${labelMap[lvl] || lvl}</span>
   </div>`;
@@ -2483,31 +3522,205 @@ function alertRowHTML(k, p, lvl){
 function dateToISO(d){ if(!d) return ""; return d.toISOString().slice(0,10); }
 function truncate(s,n){ if(!s) return ""; return s.length>n? s.slice(0,n-1)+"…" : s; }
 function escapeHTML(s){ if(s===null||s===undefined) return ""; return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+// Hallazgo real: el panel "Pausados con algo sin contestar" se llenaba de
+// casos donde el último mensaje del cliente era solo un cierre ("Gracias",
+// "Listo", "Sale. Gracias", "Ok mil gracias"), que no necesita ninguna
+// respuesta real. A diferencia de whatsapp_texto_es_cierre_simple() en
+// whatsapp_helpers.php (que solo deja pasar una palabra exacta, para ser
+// muy conservador en el backend), aquí basta con que TODAS las palabras
+// del mensaje sean de este vocabulario de cierre -- es solo para no
+// ensuciar una lista visual, no para decidir si el bot contesta o no.
+function esCierreSimple(texto){
+  const limpio = (texto||'').trim();
+  if(!limpio || limpio.length>25 || limpio.includes('?')) return false;
+  const palabras = limpio.toLowerCase().match(/\p{L}+/gu);
+  if(!palabras || !palabras.length) return !/\p{L}/u.test(limpio); // puro emoji/puntuación
+  const vocabulario = new Set(['gracias','mil','muchas','ok','oka','okay','okey','va','si','sii','vale','listo','perfecto','entendido','de','acuerdo','nada','sale','claro','que','gusto']);
+  return palabras.every(w => vocabulario.has(w));
+}
+
+// Contenido de una burbuja de mensaje de WhatsApp -- normalmente solo
+// texto, pero si el cliente mandó una imagen o documento (comprobante,
+// etc.) se muestra la miniatura o un enlace en vez del placeholder de
+// texto que se generó al guardarlo. El link real (con sesión/cookie) lo
+// sirve whatsapp_media_ver.php.
+function mensajeContenidoHTML(m){
+  if(!m.media_ruta) return escapeHTML(m.texto);
+  const url = API_BASE + 'whatsapp_media_ver.php?id=' + m.id;
+  const esImagen = (m.media_mime || '').startsWith('image/');
+  // El texto guardado es o una nota/caption real del cliente, o un
+  // placeholder generado por el servidor entre paréntesis -- solo se
+  // muestra si es una nota real.
+  const notaReal = m.texto && !/^\(/.test(m.texto) ? `<div style="margin-top:4px;">${escapeHTML(m.texto)}</div>` : '';
+  if(esImagen){
+    return `<a href="${url}" target="_blank" rel="noopener"><img src="${url}" style="max-width:220px; max-height:220px; border-radius:6px; display:block;" alt="Imagen adjunta"></a>${notaReal}`;
+  }
+  return `<a href="${url}" target="_blank" rel="noopener" style="text-decoration:underline;">📎 Ver documento adjunto</a>${notaReal}`;
+}
+
+// Línea pequeña bajo cada burbuja (quién la mandó y cuándo), con un
+// enlace para borrar el mensaje -- solo visible para Administrador, es
+// una acción destructiva y sin deshacer.
+function mensajeMetaHTML(m, etiquetaSaliente){
+  const quien = m.direccion==='saliente' ? (m.respondido_por==='humano'?etiquetaSaliente:'Bot') : 'Cliente';
+  const borrar = CURRENT_USER.role === 'Administrador'
+    ? ` &middot; <a href="#" data-borrar-mensaje="${m.id}" style="color:inherit; opacity:.7; text-decoration:none;" title="Borrar este mensaje">🗑</a>`
+    : '';
+  return `${quien} &middot; ${fmtFechaHora(m.creado_en)}${borrar}`;
+}
+
+// Borra un mensaje (con confirmación) y vuelve a cargar/renderizar el
+// hilo indicado -- $recargar es una función async que ya sabe cómo
+// recargar los mensajes y volver a pintar la vista donde se llamó.
+async function borrarMensajeWhatsapp(id, recargar){
+  if(!confirm('¿Borrar este mensaje? No se puede deshacer.')) return;
+  try{
+    await api('POST', 'whatsapp_mensaje_borrar.php', {id: parseInt(id)});
+    await recargar();
+  }catch(err){ alert('No se pudo borrar: ' + err.message); }
+}
 
 function statusBadge(k){
   const stage = caseStage(k);
   if(stage === "pagado") return `<span class="badge closed">Pagado</span>`;
   if(stage === "desistio") return `<span class="badge closed">Cliente desistió</span>`;
+  if(stage === "concluido_manual") return `<span class="badge closed">Concluido</span>`;
   if(stage === "convenio") return `<span class="badge convenio">Convenio &middot; cobro pendiente</span>`;
   if(stage === "juicio") return `<span class="badge interrumpida">Demanda presentada</span>`;
+  if(stage === "constancia_demanda") return `<span class="badge warn">Constancia recibida · falta demandar</span>`;
   const lvl = alertLevel(k);
   const labelMap = {crit:'Crítico', warn:'Próximo', ok:'Con margen', unknown:'Sin fecha'};
   return `<span class="badge ${lvl==='unknown'?'closed':lvl}">${labelMap[lvl]||k.status||''}</span>`;
 }
 
+// Versión en texto plano del mismo estatus que statusBadge() le muestra al
+// abogado en la lista -- para mandarle a la IA de búsqueda semántica el
+// mismo dato que ve un humano, en vez de dejarla adivinar del texto crudo
+// importado (k.status), que puede estar desactualizado o no tener nada
+// que ver con "pagado"/"convenio"/"demanda presentada".
+function estatusCalculadoTexto(k){
+  const stage = caseStage(k);
+  if(stage === "pagado") return "Pagado (ya cobrado -- el asunto está Concluido)";
+  if(stage === "desistio") return "Cliente desistió (el asunto está Concluido)";
+  if(stage === "concluido_manual") return "Concluido (marcado manualmente por el abogado, sin importar la última etapa de la bitácora)";
+  if(stage === "convenio") return "Convenio pactado, cobro TODAVÍA pendiente (no se ha pagado)";
+  if(stage === "juicio") return "Demanda presentada, en juicio";
+  if(stage === "constancia_demanda") return "Recibió constancia de no conciliación, falta presentar demanda";
+  return "En conciliación / trámite previo a demanda, sin convenio todavía";
+}
+
+// Resumen compacto de un expediente para la búsqueda con lenguaje natural
+// -- solo campos ya capturados en el sistema (nunca el contenido de los
+// documentos subidos), para que la IA pueda filtrar/priorizar sin tener
+// que leer nada nuevo ni inventar datos que no estén aquí.
+function resumenBusquedaCaso(k){
+  const partes = [];
+  const add = (label, val) => { if(val !== null && val !== undefined && val !== '') partes.push(`${label}: ${val}`); };
+  add('Actor', k.actor);
+  add('Demandado', k.demandado);
+  add('Giro de la empresa', k.giro_empresa);
+  add('Tipo de asunto', k.tipo_asunto || 'Despido');
+  add('Puesto', k.puesto);
+  if(k.antiguedad_anios != null) add('Antigüedad', Math.round(k.antiguedad_anios*10)/10 + ' años');
+  add('Fecha de ingreso', k.fecha_ingreso);
+  add('Fecha de baja', k.fecha_baja);
+  if(k.salario_diario) add('Salario diario', fmtMoney(k.salario_diario));
+  add('Status (texto crudo importado -- no usar para determinar si está pagado/concluido, puede estar desactualizado)', k.status);
+  // El badge "Estatus" que ve el abogado en la lista NO sale de este texto
+  // crudo -- sale de caseStage(), que cruza el status importado con la
+  // bitácora y el convenio manual (más recientes y confiables). Sin este
+  // campo calculado, la IA solo tenía el texto crudo de arriba para
+  // preguntas de "pagado"/"convenio pendiente de cobro"/"demanda
+  // presentada", y adivinaba mal.
+  add('Estatus del asunto (calculado, es el que se ve en la lista)', estatusCalculadoTexto(k));
+  const instanciaTexto = k.junta || k.tribunal || k.instancia || '';
+  add('Instancia/Tribunal', instanciaTexto);
+  // La IA no siempre distingue bien "local" vs "federal" leyendo el
+  // nombre completo de la instancia (ej. "Séptimo Tribunal Laboral
+  // Federal CDMX") -- se calcula aquí de forma determinística en vez de
+  // dejárselo a su criterio, para que preguntas como "tribunales locales"
+  // filtren bien.
+  if(instanciaTexto) add('Jurisdicción', /federal/i.test(instanciaTexto) ? 'Federal' : 'Local');
+  add('Etapa procesal', etapaActualInfo(k).label);
+  add('Abogado asignado', assignedLawyer(k));
+  // OJO: "Fecha de ingreso" (arriba) es cuándo empezó la relación laboral
+  // del cliente, NO cuándo se llegó a un convenio -- son cosas totalmente
+  // distintas y la IA las confundía al no tener un campo de fecha propio
+  // para el convenio (se detectó buscando "convenios celebrados en mayo":
+  // regresaba casos sin convenio, o con convenio pero de otro mes, solo
+  // porque el ingreso caía en mayo). Por eso el convenio trae su propia
+  // fecha aquí, calculada de forma determinística -- nunca se le deja a la
+  // IA inferirla del ingreso.
+  if(tieneConvenio(k)){
+    add('Convenio', 'monto ' + fmtMoney(montoConvenio(k)));
+    const metaConv = getMeta(k.id);
+    const etapaConvenio = metaConv.etapas && metaConv.etapas.conciliacion_convenio;
+    if(etapaConvenio && etapaConvenio.fecha) add('Fecha en que se llegó al convenio (bitácora)', etapaConvenio.fecha);
+    if(metaConv.convenio_manual && metaConv.convenio_manual.activo && metaConv.convenio_manual.fecha_pago) {
+      add('Fecha de pago pactada del convenio', metaConv.convenio_manual.fecha_pago);
+    }
+  }
+  partes.push(estaConcluido(k) ? 'Asunto CONCLUIDO' : 'Asunto ACTIVO');
+  const det = juicioDetenido(k);
+  if(det) add('Días sin movimiento', det.dias);
+  return `#${k.id} — ${partes.join(' | ')}`;
+}
+
+async function cargarBusquedaIA(){
+  const pregunta = BUSQUEDA_IA_PREGUNTA.trim();
+  if(!pregunta || BUSQUEDA_IA_STATE.cargando) return;
+  BUSQUEDA_IA_STATE = {cargando:true, resultados:null, error:null};
+  renderViewBody();
+  try{
+    const casos = visibleCases().map(k=> ({id:k.id, resumen: resumenBusquedaCaso(k)}));
+    const r = await api('POST', 'busqueda_semantica.php', {pregunta, casos});
+    BUSQUEDA_IA_STATE = {cargando:false, resultados:r.resultados || [], error:null};
+  }catch(err){
+    BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:'No se pudo buscar: ' + err.message};
+  }
+  renderViewBody();
+}
+
 function expedientesHTML(){
   const statuses = ["todos","activos","concluidos","alerta", ...new Set(visibleCases().map(k=>(k.status||'').toLowerCase()).filter(Boolean))];
   const chipLabel = {todos:'Todos', activos:'Activos', concluidos:'Concluidos', alerta:'Con alerta'};
-  const list = filteredCases();
+
+  const buscando = BUSQUEDA_IA_ACTIVA && BUSQUEDA_IA_STATE.resultados !== null && !BUSQUEDA_IA_STATE.cargando;
+  const razonPorId = {};
+  let list;
+  if(buscando){
+    BUSQUEDA_IA_STATE.resultados.forEach(r=> razonPorId[r.id] = r.razon);
+    list = BUSQUEDA_IA_STATE.resultados.map(r=> findCase(r.id)).filter(Boolean);
+  } else {
+    list = filteredCases();
+  }
+
   return `
   <div class="filters" style="justify-content:space-between; display:flex; flex-wrap:wrap; gap:10px;">
     <div class="filters" style="margin:0;">
       ${statuses.map(s=>`<div class="chip ${FILTER_STATUS===s?'active':''}" data-s="${escapeHTML(s)}">${chipLabel[s] || capitalize(s)}</div>`).join("")}
     </div>
-    <button class="btn" id="nuevoExpedienteBtn">+ Nuevo expediente</button>
+    <div style="display:flex; gap:8px;">
+      <button class="btn secondary" id="busquedaIAToggleBtn">${BUSQUEDA_IA_ACTIVA ? '✕ Cerrar búsqueda con IA' : '🔎 Buscar con lenguaje natural (IA)'}</button>
+      <button class="btn" id="nuevoExpedienteBtn">+ Nuevo expediente</button>
+    </div>
   </div>
+  ${BUSQUEDA_IA_ACTIVA ? `
+  <div class="panel" style="margin-bottom:14px;">
+    <div class="panel-body" style="padding:16px 20px;">
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <input type="text" id="busquedaIAInput" placeholder='Ej. "casos de despido con más de 10 años de antigüedad"' value="${escapeHTML(BUSQUEDA_IA_PREGUNTA)}" style="flex:1; min-width:260px; padding:9px 12px; border:1px solid var(--border); border-radius:8px;">
+        <button class="btn" id="busquedaIABuscarBtn" ${BUSQUEDA_IA_STATE.cargando?'disabled':''}>${BUSQUEDA_IA_STATE.cargando ? 'Buscando <span class="loading-dots"><span></span><span></span><span></span></span>' : 'Buscar'}</button>
+        ${BUSQUEDA_IA_STATE.resultados !== null ? `<button class="btn secondary" id="busquedaIALimpiarBtn">Quitar búsqueda</button>` : ''}
+      </div>
+      <div style="font-size:11.5px; color:var(--gray); margin-top:10px;">Busca sobre los datos ya capturados de cada expediente (no lee el contenido de los documentos subidos).</div>
+      ${BUSQUEDA_IA_STATE.cargando ? `<div class="notice" style="margin-top:12px; display:flex; align-items:center; gap:10px;"><span class="loading-dots" style="color:var(--brass);"><span></span><span></span><span></span></span> Revisando tus expedientes…</div>` : ''}
+      ${BUSQUEDA_IA_STATE.error ? `<div class="notice" style="margin-top:12px; border-left:3px solid var(--red);">${escapeHTML(BUSQUEDA_IA_STATE.error)}</div>` : ''}
+      ${buscando ? `<div style="margin-top:10px; font-size:12.5px; color:var(--gray);">${list.length} resultado(s) para "${escapeHTML(BUSQUEDA_IA_PREGUNTA)}"</div>` : ''}
+    </div>
+  </div>` : ''}
   <div class="panel">
-    <div class="panel-head"><h3>Listado de asuntos</h3><span class="count">${list.length} de ${visibleCases().length}</span></div>
+    <div class="panel-head"><h3>Listado de asuntos</h3><span class="count">${list.length}${buscando?'':' de '+visibleCases().length}</span></div>
     <div class="panel-body" style="padding:0; overflow-x:auto;">
       <table style="min-width:1000px;">
         <thead><tr><th>Actor</th><th>Demandado</th><th>Expediente</th><th>Instancia</th><th>Socio</th><th>Estatus</th><th>Activo</th><th>Alerta / Amparo</th></tr></thead>
@@ -2516,7 +3729,7 @@ function expedientesHTML(){
             const p = computePrescripcion(k);
             const meta = getMeta(k.id);
             return `<tr data-id="${k.id}">
-              <td><strong>${escapeHTML(k.actor)}</strong><div style="font-size:11px;color:var(--gray)">${escapeHTML(k.puesto||'')}</div></td>
+              <td><strong>${escapeHTML(k.actor)}</strong><div style="font-size:11px; color:${razonPorId[k.id]?'var(--brass)':'var(--gray)'}; font-style:${razonPorId[k.id]?'italic':'normal'};">${escapeHTML(razonPorId[k.id] || k.puesto||'')}</div></td>
               <td>${escapeHTML(truncate(k.demandado,32))}</td>
               <td class="exp-code">${escapeHTML(k.exp||'—')}</td>
               <td>${escapeHTML(truncate(k.junta || k.instancia || '', 26))}</td>
@@ -2525,7 +3738,7 @@ function expedientesHTML(){
               <td>${estaConcluido(k) ? '<span class="badge closed">Concluido</span>' : '<span class="badge ok">Activo</span>'}</td>
               <td style="white-space:nowrap;">${ p && !isCaseClosed(k.status) ? (p.daysLeft+' d.') : '—'} ${meta.amparo_activo? '<span class="badge interrumpida">Amparo</span>' : ''}</td>
             </tr>`;
-          }).join("") || `<tr><td colspan="8" class="empty">Sin resultados para el filtro/búsqueda actual.</td></tr>`}
+          }).join("") || `<tr><td colspan="8" class="empty">${buscando ? 'Sin resultados para esa pregunta.' : 'Sin resultados para el filtro/búsqueda actual.'}</td></tr>`}
         </tbody>
       </table>
     </div>
@@ -2568,6 +3781,10 @@ function alertasHTML(){
 }
 
 const HONORARIO_PCT = 0.30;
+// El honorario del despacho (30% del convenio) se reparte entre el socio
+// que cobró el caso y Rubén (despacho) -- 40/60 respectivamente.
+const HONORARIO_SOCIO_PCT = 0.40;
+const HONORARIO_RUBEN_PCT = 0.60;
 
 function conceptoRow(nombre, fundamento, monto, destacado){
   if(monto===null || monto===undefined) return '';
@@ -2793,10 +4010,21 @@ let INGRESOS_ABOGADO = 'todos';
 let INGRESOS_DESDE = '';
 let INGRESOS_HASTA = '';
 
-function rangoPeriodo(periodo){
+function rangoPeriodo(periodo, desdeCustom, hastaCustom){
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   const y = hoy.getFullYear(), m = hoy.getMonth();
   const pad = n=>String(n).padStart(2,'0');
+  if(periodo==='hoy'){
+    return {desde: dateToISO(hoy), hasta: dateToISO(hoy)};
+  }
+  if(periodo==='semana'){
+    const d = new Date(hoy); d.setDate(d.getDate()-6);
+    return {desde: dateToISO(d), hasta: dateToISO(hoy)};
+  }
+  if(periodo==='mes_movil'){
+    const d = new Date(hoy); d.setDate(d.getDate()-29);
+    return {desde: dateToISO(d), hasta: dateToISO(hoy)};
+  }
   if(periodo==='mes_actual'){
     return {desde: `${y}-${pad(m+1)}-01`, hasta: dateToISO(new Date(y, m+1, 0))};
   }
@@ -2808,7 +4036,7 @@ function rangoPeriodo(periodo){
     return {desde: `${y}-01-01`, hasta: `${y}-12-31`};
   }
   if(periodo==='personalizado'){
-    return {desde: INGRESOS_DESDE || '0000-01-01', hasta: INGRESOS_HASTA || '9999-12-31'};
+    return {desde: (desdeCustom ?? INGRESOS_DESDE) || '0000-01-01', hasta: (hastaCustom ?? INGRESOS_HASTA) || '9999-12-31'};
   }
   return {desde:'0000-01-01', hasta:'9999-12-31'}; // 'todo'
 }
@@ -2819,11 +4047,11 @@ function todosLosPagosCobrados(){
   const out = [];
   visibleCases().filter(tieneConvenio).forEach(k=>{
     const meta = getMeta(k.id);
-    (meta.pagos||[]).forEach(p=>{
+    (meta.pagos||[]).forEach((p,idx)=>{
       if(p.cobrado){
         const fecha = p.fecha_cobro || p.fecha;
         const monto = p.monto && !isNaN(parseFloat(p.monto)) ? parseFloat(p.monto) : null;
-        if(fecha) out.push({fecha, monto, k});
+        if(fecha) out.push({fecha, monto, k, idx, socioLiquidado: !!p.socio_liquidado});
       }
     });
   });
@@ -2883,12 +4111,84 @@ function demandadosHTML(){
   `;
 }
 
+// Seguimiento de qué tan al día está cada socio reportando los pagos de
+// sus convenios -- el sistema depende de que el socio mismo capture el
+// pago en "Cobros" del expediente, así que esto no verifica si el pago
+// ES correcto, solo si falta reportarlo: (a) asuntos con convenio donde
+// nunca se registró ni un solo pago, y (b) pagos ya programados cuya
+// fecha ya pasó sin que nadie los haya marcado cobrados. Agrupado por
+// socio para que se note si es uno en particular el que se atrasa.
+function asuntosPagoSinReportarHTML(){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const sinPagos = [];
+  const vencidos = [];
+  visibleCases().filter(tieneConvenio).filter(k=>caseStage(k)!=='pagado').forEach(k=>{
+    const meta = getMeta(k.id);
+    const pagos = (meta.pagos||[]).filter(p=>p.monto && !isNaN(parseFloat(p.monto)));
+    if(!pagos.length){
+      // tieneConvenio() detecta la palabra "convenio" en el texto de la
+      // nota, que a veces aparece sin que de verdad haya un convenio
+      // real (ej. "no llegaron a convenio", "sigue buscando convenio") --
+      // exigir también un monto detectado filtra esos falsos positivos,
+      // porque un convenio real siempre trae una cifra pactada.
+      if(montoConvenio(k)) sinPagos.push(k);
+      return;
+    }
+    pagos.forEach((p,idx)=>{
+      if(p.cobrado || !p.fecha) return;
+      const f = new Date(p.fecha+'T00:00:00');
+      if(isNaN(f.getTime()) || f >= hoy) return;
+      const dias = Math.round((hoy - f) / (1000*60*60*24));
+      vencidos.push({k, monto: parseFloat(p.monto), fecha: p.fecha, dias});
+    });
+  });
+  vencidos.sort((a,b)=> b.dias - a.dias);
+  sinPagos.sort((a,b)=> assignedLawyer(a).localeCompare(assignedLawyer(b)));
+
+  return `
+  <div class="panel">
+    <div class="panel-head"><h3>Asuntos con pago sin reportar</h3><span class="count">${sinPagos.length + vencidos.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">
+      <div class="notice" style="margin:0;">No verifica si lo que reporta el socio es correcto -- solo detecta cuando falta reportar algo: convenios sin ningún pago capturado, y pagos programados cuya fecha ya pasó sin marcarse cobrados.</div>
+    </div>
+    <div class="panel-body" style="padding:0 20px 8px;">
+      <h4 style="margin:12px 0 6px; font-size:13px; color:var(--gray);">Convenios sin ningún pago registrado (${sinPagos.length})</h4>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Actor</th><th>Demandado</th><th>Monto convenio</th><th>Socio</th></tr></thead>
+      <tbody>${sinPagos.map(k=>`
+        <tr data-id="${k.id}">
+          <td>${escapeHTML(k.actor)}</td>
+          <td>${escapeHTML(truncate(k.demandado,34))}</td>
+          <td><strong>${fmtMoney(montoConvenio(k))}</strong></td>
+          <td class="abogado-tag">${escapeHTML(assignedLawyer(k))}</td>
+        </tr>`).join("") || `<tr><td colspan="4" class="empty">Sin pendientes de este tipo.</td></tr>`}</tbody></table>
+    </div>
+    <div class="panel-body" style="padding:0 20px 8px;">
+      <h4 style="margin:16px 0 6px; font-size:13px; color:var(--gray);">Pagos vencidos sin marcar cobrado (${vencidos.length})</h4>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Actor</th><th>Demandado</th><th>Monto</th><th>Fecha programada</th><th>Días de atraso</th><th>Socio</th></tr></thead>
+      <tbody>${vencidos.map(v=>`
+        <tr data-id="${v.k.id}">
+          <td>${escapeHTML(v.k.actor)}</td>
+          <td>${escapeHTML(truncate(v.k.demandado,34))}</td>
+          <td><strong>${fmtMoney(v.monto)}</strong></td>
+          <td>${fmtDate(v.fecha)}</td>
+          <td style="color:${v.dias>14?'var(--danger, #b3261e)':'var(--warn, #b8860b)'}; font-weight:600;">${v.dias} día${v.dias===1?'':'s'}</td>
+          <td class="abogado-tag">${escapeHTML(assignedLawyer(v.k))}</td>
+        </tr>`).join("") || `<tr><td colspan="6" class="empty">Sin pendientes de este tipo.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+}
+
 function ingresosHTML(){
   const rango = rangoPeriodo(INGRESOS_PERIODO);
   const isAdmin = CURRENT_USER.role === 'Administrador';
   let todos = todosLosPagosCobrados();
   if(isAdmin && INGRESOS_ABOGADO !== 'todos'){
-    todos = todos.filter(p => assignedLawyer(p.k) === INGRESOS_ABOGADO);
+    todos = todos.filter(p => assignedLawyers(p.k).includes(INGRESOS_ABOGADO));
   }
   const enPeriodo = todos.filter(p => p.fecha >= rango.desde && p.fecha <= rango.hasta).sort((a,b)=> b.fecha.localeCompare(a.fecha));
 
@@ -2935,12 +4235,30 @@ function ingresosHTML(){
     <div class="stat-card"><div class="bar"></div><div class="num">${enPeriodo.length}</div><div class="label">Pagos cobrados en el periodo</div></div>
     <div class="stat-card"><div class="bar" style="background:var(--brass);"></div><div class="num">${fmtMoney(totalPeriodo*HONORARIO_PCT)}</div><div class="label">Honorario del despacho (30%)</div></div>
   </div>
-  ${sinMontoCount ? `<div class="notice" style="margin-bottom:16px;">${sinMontoCount} pago(s) cobrado(s) en este periodo no tienen un monto capturado y no se incluyen en el total. Captúralos en la pestaña "Cobros" de cada expediente para que el resumen sea exacto.</div>` : ''}
+  ${(()=>{
+    // Cuánto del honorario le toca a cada quien, y de la parte de Rubén
+    // (60%), cuánto ya liquidó el socio vs. cuánto sigue pendiente de
+    // que te pague -- se marca pago por pago en la tabla de abajo
+    // ("¿Socio ya me pagó?").
+    const honorarioTotal = totalPeriodo * HONORARIO_PCT;
+    const socioTotal = honorarioTotal * HONORARIO_SOCIO_PCT;
+    const despachoTotal = honorarioTotal * HONORARIO_RUBEN_PCT;
+    const despachoLiquidado = enPeriodo.filter(p=>p.socioLiquidado).reduce((s,p)=> s + (p.monto||0)*HONORARIO_PCT*HONORARIO_RUBEN_PCT, 0);
+    const despachoPendiente = despachoTotal - despachoLiquidado;
+    return `
+    <div class="stat-grid" style="grid-template-columns:repeat(4,1fr); margin-top:12px;">
+      <div class="stat-card"><div class="bar"></div><div class="num">${fmtMoney(socioTotal)}</div><div class="label">Total socio (40% del honorario)</div></div>
+      <div class="stat-card"><div class="bar" style="background:var(--brass);"></div><div class="num">${fmtMoney(despachoTotal)}</div><div class="label">Total despacho (60% del honorario)</div></div>
+      <div class="stat-card ok"><div class="bar"></div><div class="num">${fmtMoney(despachoLiquidado)}</div><div class="label">Despacho ya liquidado por el socio</div></div>
+      <div class="stat-card ${despachoPendiente>0?'warn':''}"><div class="bar"></div><div class="num">${fmtMoney(despachoPendiente)}</div><div class="label">Despacho pendiente de cobrar al socio</div></div>
+    </div>`;
+  })()}
+  ${sinMontoCount ? `<div class="notice" style="margin-top:16px;">${sinMontoCount} pago(s) cobrado(s) en este periodo no tienen un monto capturado y no se incluyen en el total. Captúralos en la pestaña "Cobros" de cada expediente para que el resumen sea exacto.</div>` : ''}
 
   <div class="panel">
     <div class="panel-head"><h3>Cobrado por socio en el periodo</h3><span class="count">${fmtDate(rango.desde)} – ${fmtDate(rango.hasta)}</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Socio</th><th>Pagos cobrados</th><th>Total cobrado</th><th>% del total del periodo</th></tr></thead>
+      <table><thead><tr><th>Socio</th><th>Pagos cobrados</th><th>Total cobrado</th><th>Honorario (30%)</th><th>Socio (40%)</th><th>Despacho (60%)</th><th>% del total del periodo</th></tr></thead>
       <tbody>${(()=>{
         const porAbogado = {};
         enPeriodo.forEach(p=>{
@@ -2950,11 +4268,12 @@ function ingresosHTML(){
           porAbogado[nombre].count += 1;
         });
         const nombres = Object.keys(porAbogado).sort((a,b)=> porAbogado[b].total - porAbogado[a].total);
-        if(!nombres.length) return `<tr><td colspan="4" class="empty">Sin cobros en este periodo.</td></tr>`;
+        if(!nombres.length) return `<tr><td colspan="7" class="empty">Sin cobros en este periodo.</td></tr>`;
         return nombres.map(n=>{
           const d = porAbogado[n];
           const pct = totalPeriodo>0 ? (d.total/totalPeriodo*100) : 0;
-          return `<tr><td><strong>${escapeHTML(n)}</strong></td><td>${d.count}</td><td style="font-weight:700;">${fmtMoney(d.total)}</td><td>${pct.toFixed(1)}%</td></tr>`;
+          const honorario = d.total*HONORARIO_PCT;
+          return `<tr><td><strong>${escapeHTML(n)}</strong></td><td>${d.count}</td><td style="font-weight:700;">${fmtMoney(d.total)}</td><td style="color:var(--brass);">${fmtMoney(honorario)}</td><td>${fmtMoney(honorario*HONORARIO_SOCIO_PCT)}</td><td>${fmtMoney(honorario*HONORARIO_RUBEN_PCT)}</td><td>${pct.toFixed(1)}%</td></tr>`;
         }).join("");
       })()}</tbody></table>
     </div>
@@ -2963,29 +4282,295 @@ function ingresosHTML(){
   <div class="panel">
     <div class="panel-head"><h3>Detalle de pagos cobrados en el periodo</h3><span class="count">${enPeriodo.length}</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Fecha de cobro</th><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Socio</th></tr></thead>
-      <tbody>${enPeriodo.map(p=>`
+      <table><thead><tr><th>Fecha de cobro</th><th>Actor</th><th>Demandado</th><th>Monto</th><th>Honorario (30%)</th><th>Socio (40%)</th><th>Despacho (60%)</th><th>Socio</th><th>¿Socio ya me pagó?</th></tr></thead>
+      <tbody>${enPeriodo.map(p=>{
+        const honorario = p.monto!=null ? p.monto*HONORARIO_PCT : null;
+        return `
         <tr data-id="${p.k.id}">
           <td>${fmtDate(p.fecha)}</td>
           <td>${escapeHTML(p.k.actor)}</td>
           <td>${escapeHTML(truncate(p.k.demandado,34))}</td>
           <td><strong>${p.monto!=null? fmtMoney(p.monto) : 'sin monto capturado'}</strong></td>
-          <td style="color:var(--brass); font-weight:600;">${p.monto!=null? fmtMoney(p.monto*HONORARIO_PCT) : '—'}</td>
+          <td style="color:var(--brass); font-weight:600;">${honorario!=null? fmtMoney(honorario) : '—'}</td>
+          <td>${honorario!=null? fmtMoney(honorario*HONORARIO_SOCIO_PCT) : '—'}</td>
+          <td>${honorario!=null? fmtMoney(honorario*HONORARIO_RUBEN_PCT) : '—'}</td>
           <td class="abogado-tag">${escapeHTML(assignedLawyer(p.k))}</td>
-        </tr>`).join("") || `<tr><td colspan="6" class="empty">Sin pagos cobrados en este periodo.</td></tr>`}</tbody></table>
+          <td><label style="display:flex; align-items:center; gap:6px; cursor:pointer;" onclick="event.stopPropagation();">
+            <input type="checkbox" class="socio-liquidado-check" data-kid="${p.k.id}" data-idx="${p.idx}" ${p.socioLiquidado?'checked':''}>
+            ${p.socioLiquidado ? '<span style="color:var(--ok, #2e7d32); font-weight:600;">Sí</span>' : '<span style="color:var(--gray);">No</span>'}
+          </label></td>
+        </tr>`;}).join("") || `<tr><td colspan="9" class="empty">Sin pagos cobrados en este periodo.</td></tr>`}</tbody></table>
     </div>
   </div>
+
+  ${isAdmin ? asuntosPagoSinReportarHTML() : ''}
 
   <div class="panel">
     <div class="panel-head"><h3>Resumen mensual (histórico completo)</h3><span class="count">${mesesOrdenados.length} mes(es)</span></div>
     <div class="panel-body" style="padding:0;">
-      <table><thead><tr><th>Mes</th><th>Total cobrado</th><th>Honorario (30%)</th></tr></thead>
+      <table><thead><tr><th>Mes</th><th>Total cobrado</th><th>Honorario (30%)</th><th>Socio (40%)</th><th>Despacho (60%)</th></tr></thead>
       <tbody>${mesesOrdenados.map(ym=>{
         const [y,m] = ym.split('-');
         const nombreMes = MESES_ES[parseInt(m)-1];
-        return `<tr><td>${capitalize(nombreMes)} ${y}</td><td><strong>${fmtMoney(porMes[ym])}</strong></td><td style="color:var(--brass);">${fmtMoney(porMes[ym]*HONORARIO_PCT)}</td></tr>`;
-      }).join("") || `<tr><td colspan="3" class="empty">Sin cobros registrados todavía.</td></tr>`}</tbody></table>
+        const honorario = porMes[ym]*HONORARIO_PCT;
+        return `<tr><td>${capitalize(nombreMes)} ${y}</td><td><strong>${fmtMoney(porMes[ym])}</strong></td><td style="color:var(--brass);">${fmtMoney(honorario)}</td><td>${fmtMoney(honorario*HONORARIO_SOCIO_PCT)}</td><td>${fmtMoney(honorario*HONORARIO_RUBEN_PCT)}</td></tr>`;
+      }).join("") || `<tr><td colspan="5" class="empty">Sin cobros registrados todavía.</td></tr>`}</tbody></table>
     </div>
+  </div>
+
+  ${(()=>{
+    // Concentrado de TODO lo que vende el robot (asesorías + cursos +
+    // documento de cálculo) en un solo total por mes, en vez de tener que
+    // sumar a mano los 3 paneles de abajo. Se arma aquí mismo con los
+    // datos que ya están cargados (ASESORIAS_POR_MES, CURSOS_POR_MES,
+    // DOCUMENTOS_POR_MES), sin pedir nada nuevo al servidor.
+    const porMesBot = {};
+    (ASESORIAS_POR_MES||[]).forEach(m=>{
+      if(!porMesBot[m.mes]) porMesBot[m.mes] = {asesorias:0, cursos:0, documentos:0, total:0};
+      porMesBot[m.mes].asesorias = m.total; porMesBot[m.mes].total += m.total;
+    });
+    (CURSOS_POR_MES||[]).forEach(m=>{
+      if(!porMesBot[m.mes]) porMesBot[m.mes] = {asesorias:0, cursos:0, documentos:0, total:0};
+      porMesBot[m.mes].cursos = m.total; porMesBot[m.mes].total += m.total;
+    });
+    (DOCUMENTOS_POR_MES||[]).forEach(m=>{
+      if(!porMesBot[m.mes]) porMesBot[m.mes] = {asesorias:0, cursos:0, documentos:0, total:0};
+      porMesBot[m.mes].documentos = m.total; porMesBot[m.mes].total += m.total;
+    });
+    const mesesBot = Object.keys(porMesBot).sort((a,b)=>b.localeCompare(a));
+    const totalGeneralBot = mesesBot.reduce((s,ym)=>s+porMesBot[ym].total,0);
+    return `
+  <div class="panel">
+    <div class="panel-head"><h3>Total vendido por el robot por mes</h3><span class="count">${mesesBot.length} mes(es)</span></div>
+    <div class="panel-body" style="padding:16px 20px 0;">
+      <div class="notice" style="margin-bottom:16px;">Suma asesorías + cursos + documento de cálculo, todo lo que el bot de WhatsApp vendió -- el desglose por concepto sigue abajo si lo necesitas.</div>
+      <div class="stat-grid" style="grid-template-columns:repeat(1,1fr); margin-bottom:16px;">
+        <div class="stat-card ok"><div class="bar"></div><div class="num">${fmtMoney(totalGeneralBot)}</div><div class="label">Total vendido por el robot (histórico)</div></div>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Mes</th><th>Asesorías</th><th>Cursos</th><th>Documentos</th><th>Total</th></tr></thead>
+      <tbody>${mesesBot.map(ym=>{
+        const [y,m] = ym.split('-');
+        const nombreMes = MESES_ES[parseInt(m)-1];
+        const d = porMesBot[ym];
+        return `<tr>
+          <td>${capitalize(nombreMes)} ${y}</td>
+          <td>${fmtMoney(d.asesorias)}</td>
+          <td>${fmtMoney(d.cursos)}</td>
+          <td>${fmtMoney(d.documentos)}</td>
+          <td><strong>${fmtMoney(d.total)}</strong></td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="5" class="empty">Sin ventas todavía.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+  })()}
+
+  ${(()=>{
+    const totalVendidasHist = ASESORIAS_POR_MES.reduce((s,m)=>s+m.vendidas,0);
+    const totalGanadoHist = ASESORIAS_POR_MES.reduce((s,m)=>s+m.total,0);
+    return `
+  <div class="panel">
+    <div class="panel-head"><h3>Asesorías de pago vendidas por mes</h3><span class="count">${ASESORIAS_POR_MES.length} mes(es)</span></div>
+    <div class="panel-body" style="padding:16px 20px 0;">
+      <div class="stat-grid" style="grid-template-columns:repeat(2,1fr); margin-bottom:16px;">
+        <div class="stat-card"><div class="bar"></div><div class="num">${totalVendidasHist}</div><div class="label">Asesorías vendidas en total</div></div>
+        <div class="stat-card ok"><div class="bar"></div><div class="num">${fmtMoney(totalGanadoHist)}</div><div class="label">Total ganado (la asesoría es servicio directo, no hay reparto)</div></div>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Mes</th><th>Vendidas</th><th>Ganado</th><th></th></tr></thead>
+      <tbody>${ASESORIAS_POR_MES.map(m=>{
+        const [y,mm] = m.mes.split('-');
+        const nombreMes = MESES_ES[parseInt(mm)-1];
+        const abierto = ASESORIA_MES_ABIERTO === m.mes;
+        const fila = `<tr data-asesoria-mes-toggle="${m.mes}" style="cursor:pointer;">
+          <td>${capitalize(nombreMes)} ${y}</td><td>${m.vendidas}</td><td><strong>${fmtMoney(m.total)}</strong></td>
+          <td style="color:var(--gray); font-size:11px; white-space:nowrap;">${abierto ? 'Ocultar ▲' : 'Ver desglose ▼'}</td>
+        </tr>`;
+        const detalle = abierto ? `<tr><td colspan="4" style="padding:0;">
+          <table style="width:100%; background:var(--parchment);"><tbody>
+            ${(m.por_monto||[]).map(pm=>`<tr>
+              <td style="padding-left:36px; color:var(--gray);">a ${fmtMoney(pm.monto)} c/u</td>
+              <td>${pm.vendidas}</td>
+              <td><strong>${fmtMoney(pm.total)}</strong></td>
+              <td></td>
+            </tr>`).join("")}
+          </tbody></table>
+        </td></tr>` : "";
+        return fila + detalle;
+      }).join("") || `<tr><td colspan="4" class="empty">Sin asesorías vendidas todavía.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+  })()}
+
+  ${(()=>{
+    const totalVendidosHist = CURSOS_POR_MES.reduce((s,m)=>s+m.vendidos,0);
+    const totalGanadoHist = CURSOS_POR_MES.reduce((s,m)=>s+m.total,0);
+    return `
+  <div class="panel">
+    <div class="panel-head"><h3>Cursos vendidos por mes</h3><span class="count">${CURSOS_POR_MES.length} mes(es)</span></div>
+    <div class="panel-body" style="padding:16px 20px 0;">
+      <div class="notice" style="margin-bottom:16px;">Solo cuenta las compras hechas desde el bot de WhatsApp (Nuevo Procedimiento Laboral Mexicano, El Juicio de Amparo, Actas Administrativas Laborales) — no incluye ventas hechas directo en la página vieja de expertoslaborales.com/cursos, esas no dejan registro aquí.</div>
+      <div class="stat-grid" style="grid-template-columns:repeat(2,1fr); margin-bottom:16px;">
+        <div class="stat-card"><div class="bar"></div><div class="num">${totalVendidosHist}</div><div class="label">Cursos vendidos en total (por el bot)</div></div>
+        <div class="stat-card ok"><div class="bar"></div><div class="num">${fmtMoney(totalGanadoHist)}</div><div class="label">Total ganado</div></div>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Mes</th><th>Vendidos</th><th>Ganado</th><th></th></tr></thead>
+      <tbody>${CURSOS_POR_MES.map(m=>{
+        const [y,mm] = m.mes.split('-');
+        const nombreMes = MESES_ES[parseInt(mm)-1];
+        const abierto = CURSO_MES_ABIERTO === m.mes;
+        const fila = `<tr data-curso-mes-toggle="${m.mes}" style="cursor:pointer;">
+          <td>${capitalize(nombreMes)} ${y}</td><td>${m.vendidos}</td><td><strong>${fmtMoney(m.total)}</strong></td>
+          <td style="color:var(--gray); font-size:11px; white-space:nowrap;">${abierto ? 'Ocultar ▲' : 'Ver desglose ▼'}</td>
+        </tr>`;
+        const detalle = abierto ? `<tr><td colspan="4" style="padding:0;">
+          <table style="width:100%; background:var(--parchment);"><tbody>
+            ${(m.cursos||[]).map(c=>`<tr>
+              <td style="padding-left:36px; color:var(--gray);">${escapeHTML(c.titulo)}</td>
+              <td>${c.vendidos}</td>
+              <td><strong>${fmtMoney(c.total)}</strong></td>
+              <td></td>
+            </tr>`).join("")}
+          </tbody></table>
+        </td></tr>` : "";
+        return fila + detalle;
+      }).join("") || `<tr><td colspan="4" class="empty">Sin cursos vendidos todavía.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+  })()}
+
+  ${(()=>{
+    const totalVendidosHist = DOCUMENTOS_POR_MES.reduce((s,m)=>s+m.vendidos,0);
+    const totalGanadoHist = DOCUMENTOS_POR_MES.reduce((s,m)=>s+m.total,0);
+    return `
+  <div class="panel">
+    <div class="panel-head"><h3>Documentos de cálculo vendidos por mes</h3><span class="count">${DOCUMENTOS_POR_MES.length} mes(es)</span></div>
+    <div class="panel-body" style="padding:16px 20px 0;">
+      <div class="notice" style="margin-bottom:16px;">Documento con membrete del despacho del cálculo de liquidación, \$49 MXN -- se ofrece solo después de dar el cálculo gratis en texto y de que la persona no tomó (o ignoró) la asesoría de pago.</div>
+      <div class="stat-grid" style="grid-template-columns:repeat(2,1fr); margin-bottom:16px;">
+        <div class="stat-card"><div class="bar"></div><div class="num">${totalVendidosHist}</div><div class="label">Documentos vendidos en total</div></div>
+        <div class="stat-card ok"><div class="bar"></div><div class="num">${fmtMoney(totalGanadoHist)}</div><div class="label">Total ganado</div></div>
+      </div>
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Mes</th><th>Vendidos</th><th>Ganado</th></tr></thead>
+      <tbody>${DOCUMENTOS_POR_MES.map(m=>{
+        const [y,mm] = m.mes.split('-');
+        const nombreMes = MESES_ES[parseInt(mm)-1];
+        return `<tr>
+          <td>${capitalize(nombreMes)} ${y}</td><td>${m.vendidos}</td><td><strong>${fmtMoney(m.total)}</strong></td>
+        </tr>`;
+      }).join("") || `<tr><td colspan="3" class="empty">Sin documentos vendidos todavía.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+  })()}
+
+  ${isAdmin ? (()=>{
+    const mp = MENSAJES_POR_DIA;
+    const sobreUmbral = mp.mes_actual_total > mp.umbral_gratis;
+    // La API manda los días más recientes primero (para la tabla); la
+    // gráfica se lee de izquierda a derecha en orden cronológico, así que
+    // aquí se invierte nada más para dibujarla.
+    const diasAsc = [...(mp.dias||[])].reverse();
+    const max = diasAsc.reduce((m,d)=>Math.max(m, d.enviados), 1);
+    const hoy = new Date().toISOString().slice(0,10);
+    const grafica = diasAsc.map(d=>{
+      const fecha = new Date(d.dia + 'T00:00:00');
+      const alto = Math.round((d.enviados / max) * 110) + (d.enviados>0 ? 4 : 0);
+      const esHoy = d.dia === hoy;
+      return `
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;" title="${d.enviados} mensaje(s) -- ${capitalize(diaSemanaCorto(d.dia))} ${d.dia}">
+          <div style="font-size:10px; color:var(--ink); font-weight:700; margin-bottom:2px;">${d.enviados||''}</div>
+          <div style="width:100%; max-width:20px; height:${alto}px; background:${esHoy?'var(--ink)':'#b9c3d6'}; border-radius:4px 4px 0 0;"></div>
+          <div style="font-size:9px; color:var(--gray); margin-top:4px; text-align:center;">${DIAS_SEMANA_CORTO[fecha.getDay()]}<br>${fecha.getDate()}</div>
+        </div>`;
+    }).join("");
+    return `
+  <div class="panel">
+    <div class="panel-head"><h3>Mensajes de WhatsApp enviados por día</h3><span class="count">últimos 30 días</span></div>
+    <div class="panel-body" style="padding:16px 20px 0;">
+      <div class="notice" style="margin-bottom:16px;">Cuenta TODO mensaje saliente (bot + recordatorios automáticos + mensajes manuales), un registro = un mensaje real cobrable por Meta. El umbral gratis de Meta es ${mp.umbral_gratis} mensajes de servicio al mes por número de negocio -- arriba de eso, cada uno se cobra.</div>
+      <div class="stat-grid" style="grid-template-columns:repeat(1,1fr); margin-bottom:16px;">
+        <div class="stat-card ${sobreUmbral ? '' : 'ok'}"><div class="bar"></div><div class="num">${mp.mes_actual_total}</div><div class="label">Enviados este mes ${sobreUmbral ? `(ya pasó el umbral gratis de ${mp.umbral_gratis})` : `(de ${mp.umbral_gratis} gratis)`}</div></div>
+      </div>
+      ${diasAsc.length ? `
+      <div style="display:flex; align-items:flex-end; gap:4px; height:140px;">
+        ${grafica}
+      </div>
+      <div style="font-size:10.5px; color:var(--gray); margin:6px 0 16px;">Pasa el cursor sobre una barra para ver la fecha y el total exacto.</div>
+      ` : ''}
+    </div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Fecha</th><th>Día</th><th>Mensajes enviados</th></tr></thead>
+      <tbody>${(mp.dias||[]).map(d=>`<tr>
+          <td>${d.dia}</td><td>${capitalize(diaSemanaCorto(d.dia))}</td><td>${d.enviados}</td>
+        </tr>`).join("") || `<tr><td colspan="3" class="empty">Sin datos todavía.</td></tr>`}</tbody></table>
+    </div>
+  </div>
+  `;
+  })() : ''}
+  ${isAdmin ? costosVsIngresosHTML() : ''}
+  `;
+}
+
+function costosVsIngresosHTML(){
+  const s = COSTOS_MENSUALES_STATE;
+  const meses = s.meses || [];
+  const mesActual = new Date().toISOString().slice(0,7);
+  const iaAdminDisponible = meses.length && meses.some(m=>m.costo_ia_fuente==='api');
+  return `
+  <div class="panel">
+    <div class="panel-head">
+      <h3>Costos vs. Ingresos (¿vale la pena?)</h3>
+      <button class="btn secondary" data-consultar-costos style="font-size:11px; padding:5px 10px;" ${s.cargando?'disabled':''}>${s.cargando?'Consultando...':(meses.length?'Actualizar':'Consultar')}</button>
+    </div>
+    <div class="panel-body" style="padding:16px 20px;">
+      <div class="notice">Ingresos (asesorías + documentos + cursos), hosting, WhatsApp y comisión de Mercado Pago se calculan solos con datos reales. El costo de IA ${iaAdminDisponible ? 'también se trae solo de Anthropic' : 'todavía lo capturas tú una vez al mes (copiando el gasto real de Anthropic Console) porque la Admin API de Anthropic no acepta la llave de este plan'}. IVA e ISR se calculan con el régimen RESICO: los precios ya incluyen IVA (16%), y el ISR usa la tabla progresiva real de RESICO (1.00%-2.50% según el ingreso del mes, Art. 113-F LISR) — ajusta la tabla en costos_mensuales_resumen.php si cambia la reforma.</div>
+      ${s.error ? `<div class="notice" style="color:var(--danger, #b3261e); margin-top:10px;">${escapeHTML(s.error)}</div>` : ''}
+      ${!iaAdminDisponible ? `
+      <div style="display:flex; gap:10px; align-items:end; flex-wrap:wrap; margin-top:14px;">
+        <div class="field"><label>Mes</label><input type="month" id="costoMesInput" value="${mesActual}"></div>
+        <div class="field"><label>Costo IA ($)</label><input type="number" id="costoIaInput" step="0.01" min="0" placeholder="0" style="width:110px;"></div>
+        <button class="btn" id="guardarCostosBtn" ${s.guardando?'disabled':''}>${s.guardando?'Guardando...':'Guardar costo IA'}</button>
+      </div>
+      ` : ''}
+    </div>
+    ${meses.length ? `
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr>
+        <th>Mes</th><th>Ingresos</th><th>Hosting</th><th>WhatsApp</th><th>Comisión MP</th><th>Costo IA</th><th>Margen</th><th>%</th><th>IVA</th><th>ISR</th><th>Margen neto</th><th>%</th><th></th>
+      </tr></thead>
+      <tbody>${meses.map(m=>{
+        const [y,mm] = m.mes.split('-');
+        const nombreMes = capitalize(MESES_ES[parseInt(mm)-1]) + ' ' + y;
+        const margenColor = m.margen >= 0 ? 'var(--ok, #2e7d32)' : 'var(--danger, #b3261e)';
+        const margenNetoColor = m.margen_neto >= 0 ? 'var(--ok, #2e7d32)' : 'var(--danger, #b3261e)';
+        return `<tr>
+          <td>${nombreMes}${!m.costos_completos ? ' <span style="color:var(--gray); font-size:11px;">(incompleto)</span>' : ''}</td>
+          <td>${fmtMoney(m.ingresos_totales)} <span style="color:var(--gray); font-size:11px;">(${m.asesorias_vendidas} asesoría${m.asesorias_vendidas===1?'':'s'}, ${m.documentos_vendidos} doc., ${fmtMoney(m.ingreso_cursos)} cursos)</span></td>
+          <td>${fmtMoney(m.costo_hosting)}</td>
+          <td>${fmtMoney(m.costo_whatsapp)} <span style="color:var(--gray); font-size:11px;">(${m.whatsapp_enviados})</span></td>
+          <td>${m.comision_mercadopago!=null ? fmtMoney(m.comision_mercadopago) : '—'}</td>
+          <td>${m.costo_ia!=null ? fmtMoney(m.costo_ia) : '<span style="color:var(--gray);">sin captura</span>'}</td>
+          <td style="color:${margenColor}; font-weight:700;">${fmtMoney(m.margen)}</td>
+          <td style="color:${margenColor};">${m.margen_pct!=null ? m.margen_pct+'%' : '—'}</td>
+          <td style="color:var(--gray);">${fmtMoney(m.iva_causado)}</td>
+          <td style="color:var(--gray);">${fmtMoney(m.isr)} <span style="font-size:11px;">(${(m.isr_tasa*100).toFixed(2)}%)</span></td>
+          <td style="color:${margenNetoColor}; font-weight:700;">${fmtMoney(m.margen_neto)}</td>
+          <td style="color:${margenNetoColor};">${m.margen_neto_pct!=null ? m.margen_neto_pct+'%' : '—'}</td>
+          <td>${!iaAdminDisponible ? `<button class="btn secondary" data-editar-costos-mes="${m.mes}" data-costo-ia="${m.costo_ia ?? ''}" style="font-size:11px; padding:4px 10px;">Editar IA</button>` : ''}</td>
+        </tr>`;
+      }).join("")}</tbody></table>
+    </div>
+    ` : (meses.length===0 && !s.cargando ? `<div class="panel-body" style="padding:0 20px 16px;"><div class="notice" style="margin:0;">Dale clic a "Consultar" para ver el historial.</div></div>` : '')}
   </div>
   `;
 }
@@ -3035,12 +4620,18 @@ function cobrosHTML(){
 
 function buildAgendaEntries(){
   const entries = [];
-  const cases = visibleCases();
+  // Un asunto concluido (marcado a mano o con status "pagado"/"ya no
+  // quiso continuar") nunca debe seguir generando pendientes aquí -- antes
+  // solo el bloque de "próxima acción IA" se cuidaba de esto
+  // (!estaConcluido(k)), así que un caso concluido con un pago todavía sin
+  // marcar "cobrado" (dato independiente del cierre manual del asunto)
+  // se seguía mostrando como pendiente en Agenda y en "Qué hacer hoy".
+  const cases = visibleCases().filter(k=>!estaConcluido(k));
 
   // Audiencias agendadas (preliminar / de juicio)
   cases.forEach(k=>{
     const aud = proximaAudiencia(k);
-    if(aud) entries.push({tipo:'audiencia', fecha: aud.fecha, k, label: aud.label, action:'pendiente_generico'});
+    if(aud) entries.push({tipo:'audiencia', fecha: aud.fecha, hora: aud.hora, k, label: aud.label, action:'pendiente_generico'});
   });
 
   // Pagos de convenio pendientes
@@ -3061,10 +4652,10 @@ function buildAgendaEntries(){
     });
   });
 
-  // Vencimientos de prescripción (Art. 518 LFT)
+  // Vencimientos de prescripción (Título Décimo LFT, según tipo de asunto)
   cases.filter(isPrescripcionRelevant).forEach(k=>{
     const p = computePrescripcion(k);
-    if(p) entries.push({tipo:'prescripcion', fecha: dateToISO(p.deadline), k, label:`Vence plazo de prescripción — Art. 518 LFT (${p.daysLeft} día(s))`, action:'demanda'});
+    if(p) entries.push({tipo:'prescripcion', fecha: dateToISO(p.deadline), k, label:`Vence plazo de prescripción — ${p.plazo.articulo} (${p.daysLeft} día(s))`, action:'demanda'});
   });
 
   // Amparos
@@ -3100,8 +4691,285 @@ function buildAgendaEntries(){
     if(est) entries.push({tipo:'atraso', fecha: dateToISO(est.expected), k, label:`Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`, action:'abrir_etapas'});
   });
 
+  // Próxima acción sugerida por el informe ejecutivo con IA (ver
+  // ia_generar_resumen_expediente() en el servidor). La IA solo clasifica
+  // la URGENCIA (alta/media/baja) -- nunca calcula una fecha, para no
+  // repetir el mismo riesgo de "matemática legal inventada" que ya
+  // evitamos en prescripción. La fecha de seguimiento la pone este código,
+  // con días hábiles normales a partir de cuándo se generó el informe.
+  cases.forEach(k=>{
+    if(!k.urgencia_ia || !k.accion_sugerida_ia) return;
+    // resumen_ejecutivo_generado_en viene con hora ("2026-08-26 12:27:00")
+    // -- parseDate() espera solo la fecha, hay que recortarla primero o
+    // devuelve null (Invalid Date) y este bloque se saltaba TODOS los casos.
+    const generado = parseDate((k.resumen_ejecutivo_generado_en || '').slice(0, 10));
+    if(!generado) return;
+    const dias = DIAS_HABILES_POR_URGENCIA[k.urgencia_ia] || DIAS_HABILES_POR_URGENCIA.baja;
+    const fecha = dateToISO(addBusinessDays(generado, dias));
+    entries.push({tipo:'accion_ia', fecha, k, label: k.accion_sugerida_ia, action:'ver_informe'});
+  });
+
   entries.sort((a,b)=> (a.fecha||'9999').localeCompare(b.fecha||'9999'));
   return entries;
+}
+
+// Manda al servidor los pendientes de los próximos 3 días (audiencia, pago,
+// prescripción, amparo, pendiente, atraso) para que el cron diario
+// (cron_recordatorio_abogado.php) le avise al abogado responsable por
+// notificación push un día antes -- sin tener que reimplementar en PHP
+// ninguno de los cálculos de plazo que ya hace buildAgendaEntries() (días
+// hábiles/inhábiles, suspensión por conciliación, etc.). Se dispara solo,
+// en silencio, cada vez que alguien abre el sistema -- si nadie lo abre en
+// varios días el caché se queda desactualizado, pero es la misma
+// limitación que ya tiene la sincronización con Google Calendar.
+const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso'];
+async function syncAvisosAbogado(){
+  if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const hoyISO = dateToISO(hoy);
+  const limiteISO = dateToISO(addDaysDate(hoy, 3));
+  try{
+    const entries = buildAgendaEntries()
+      .filter(e => AVISOS_ABOGADO_TIPOS.includes(e.tipo) && e.fecha >= hoyISO && e.fecha <= limiteISO)
+      .map(e => ({
+        expediente_id: e.k.id,
+        clave: e.tipo + (e.actionIdx!=null ? ':'+e.actionIdx : ''),
+        tipo: e.tipo,
+        fecha: e.fecha,
+        hora: e.hora || null,
+        label: e.label,
+      }));
+    await api('POST', 'agenda_sync_avisos.php', {entries, todos: CURRENT_USER.role === 'Administrador'});
+  }catch(err){}
+}
+
+const DIAS_HABILES_POR_URGENCIA = {alta:2, media:5, baja:10};
+
+// "Qué hacer hoy" (panel arriba del Tablero) -- reutiliza buildAgendaEntries()
+// tal cual (mismos pendientes/vencimientos que ya se ven en la Agenda
+// general y en las alertas de prescripción, con sus fechas y días ya
+// calculados aquí en el frontend). Solo se manda a la IA lo vencido o
+// próximo (5 días), ya resuelto en días -- la IA nunca calcula fechas, solo
+// prioriza y redacta. Tope de 40 para no mandar un prompt gigante si hay
+// muchísimos pendientes.
+function entradasHoy(){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  return buildAgendaEntries()
+    .map(e=>{
+      const f = parseDate(e.fecha);
+      return Object.assign({}, e, {dias: f ? daysBetween(hoy, f) : null});
+    })
+    .filter(e => e.dias === null || e.dias <= 5)
+    .sort((a,b)=> (a.dias==null?9999:a.dias) - (b.dias==null?9999:b.dias))
+    .slice(0, 40);
+}
+
+// Lista clicable y agrupada por urgencia -- ya no depende de la IA (el
+// primer intento le pedía a la IA que redactara un párrafo, pero salía
+// como texto plano no clicable y duplicaba la lista de abajo). Un clic en
+// el nombre del caso abre el expediente (data-id, ver bindViewBody());
+// el botón de la derecha resuelve la acción directo (.agenda-complete)
+// sin salir del Tablero -- mismas filas que ya usa Agenda general.
+function resumenHoyHTML(){
+  const entradas = entradasHoy();
+  if(!entradas.length){
+    return `
+    <div class="panel" id="resumenHoyPanel">
+      <div class="panel-head"><h3>🎯 Qué hacer hoy</h3></div>
+      <div class="panel-body"><div class="empty">Sin pendientes urgentes por ahora. Buen momento para revisar Alertas de prescripción con calma.</div></div>
+    </div>`;
+  }
+  const urgentes = entradas.filter(e=> e.dias===null || e.dias<=1);
+  const semana = entradas.filter(e=> e.dias!=null && e.dias>1);
+  const bloqueHTML = (titulo, lista)=> lista.length ? `
+    <div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--brass); margin:14px 0 4px;">${titulo}</div>
+    ${lista.map(agendaRowHTML).join("")}
+  ` : '';
+  return `
+  <div class="panel" id="resumenHoyPanel">
+    <div class="panel-head"><h3>🎯 Qué hacer hoy</h3><span class="count">${entradas.length}</span></div>
+    <div class="panel-body">
+      ${bloqueHTML('Urgente / vencido', urgentes)}
+      ${bloqueHTML('Esta semana', semana)}
+    </div>
+  </div>`;
+}
+
+// Resumen semanal del despacho -- solo para el Administrador: agrega,
+// sobre los últimos 7 días, qué asuntos avanzaron de etapa, cuáles están
+// en riesgo (prescripción crítica o estancados) y cuánto se cobró. Todo
+// deterministico (mismas funciones que ya usan Tablero/Agenda) -- la IA
+// solo redacta el texto a partir de estos datos, nunca calcula nada. Se
+// genera a mano con un botón (no automático) porque es un reporte
+// semanal, no algo que haga falta ver en cada visita al Tablero.
+function metricsResumenSemanal(){
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const desde = addDaysDate(hoy, -7);
+  // El historial trae hora real (no solo fecha) -- a diferencia de "hoy"
+  // arriba (medianoche), aquí el límite superior tiene que ser mañana a
+  // medianoche, si no cualquier cambio de HOY mismo (después de las
+  // 00:00) quedaría fuera del rango.
+  const hastaHistorial = addDaysDate(hoy, 1);
+  const cases = visibleCases();
+
+  // Avances = de verdad lo que el abogado HIZO en el sistema esta semana
+  // (etapas guardadas, cobros marcados), tomado de expediente_historial
+  // -- no la fecha del evento legal en sí (que puede ser de hace meses,
+  // capturada apenas ahora). Cada entrada trae quién y a qué hora exacta.
+  const avances = [];
+  cases.forEach(k=>{
+    const meta = getMeta(k.id);
+    (meta.historial||[]).forEach(h=>{
+      const esEtapa = /^etapa_/.test(h.campo);
+      if(!esEtapa && h.campo !== 'cobros') return;
+      if(!h.despues) return; // se dejó en blanco/se borró, no es un avance
+      const f = new Date(h.ts);
+      if(isNaN(f.getTime()) || f < desde || f >= hastaHistorial) return;
+      const etiqueta = esEtapa
+        ? ((ETAPAS_DEF.find(d => 'etapa_' + d.key === h.campo) || {}).label || h.campo)
+        : 'Cobros actualizados';
+      avances.push({k, etapa: etiqueta, usuario: h.usuario, ts: h.ts});
+    });
+  });
+
+  const enRiesgo = [];
+  cases.filter(isPrescripcionRelevant).forEach(k=>{
+    const p = computePrescripcion(k);
+    if(p && p.daysLeft <= 10) enRiesgo.push({k, motivo: `Prescripción vence en ${p.daysLeft} día(s)`});
+  });
+  cases.forEach(k=>{
+    const est = estancadoInfo(k);
+    if(est) enRiesgo.push({k, motivo: `Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`});
+  });
+
+  const cobros = [];
+  let totalCobrado = 0;
+  cases.forEach(k=>{
+    const meta = getMeta(k.id);
+    (meta.pagos||[]).forEach(p=>{
+      if(!p.cobrado || !p.fecha_cobro) return;
+      const f = parseDate(p.fecha_cobro);
+      if(f && f >= desde && f <= hoy){
+        const monto = parseFloat(p.monto) || 0;
+        totalCobrado += monto;
+        cobros.push({k, monto});
+      }
+    });
+  });
+
+  return {
+    totalActivos: cases.filter(k=>!estaConcluido(k)).length,
+    avances, enRiesgo, cobros, totalCobrado,
+  };
+}
+
+
+async function cargarCostosMensuales(){
+  if(COSTOS_MENSUALES_STATE.cargando) return;
+  COSTOS_MENSUALES_STATE = {cargando:true, meses:COSTOS_MENSUALES_STATE.meses, error:null, guardando:false};
+  renderViewBody();
+  try{
+    const r = await api('GET', 'costos_mensuales_resumen.php');
+    COSTOS_MENSUALES_STATE = {cargando:false, meses:r.meses, error:null, guardando:false};
+  }catch(err){
+    COSTOS_MENSUALES_STATE = {cargando:false, meses:COSTOS_MENSUALES_STATE.meses, error:'No se pudo consultar: ' + err.message, guardando:false};
+  }
+  renderViewBody();
+}
+
+async function guardarCostosMensuales(datos){
+  if(COSTOS_MENSUALES_STATE.guardando) return;
+  COSTOS_MENSUALES_STATE = {...COSTOS_MENSUALES_STATE, guardando:true};
+  renderViewBody();
+  try{
+    await api('POST', 'costos_mensuales_guardar.php', datos);
+    await cargarCostosMensuales();
+  }catch(err){
+    COSTOS_MENSUALES_STATE = {...COSTOS_MENSUALES_STATE, guardando:false, error:'No se pudo guardar: ' + err.message};
+    renderViewBody();
+  }
+}
+
+async function cargarResumenSemanal(){
+  if(RESUMEN_SEMANAL_STATE.cargando) return;
+  RESUMEN_SEMANAL_STATE = {cargando:true, texto:null, error:null, generadoEn:null};
+  renderViewBody();
+  const m = metricsResumenSemanal();
+  // Un mismo expediente puede tener varias etapas capturadas de un jalón
+  // (ej. al dar de alta un caso que ya venía avanzado) -- todas quedan en
+  // el historial con el mismo minuto. Sin agrupar, el resumen repetía el
+  // nombre del caso una vez por etapa, lo cual se leía como info
+  // duplicada aunque cada línea fuera un avance real distinto.
+  const avancesPorCaso = new Map();
+  [...m.avances].sort((a,b)=> new Date(a.ts) - new Date(b.ts)).forEach(x=>{
+    let entry = avancesPorCaso.get(x.k.id);
+    if(!entry){ entry = {k:x.k, etapas:[], usuario:x.usuario, ts:x.ts}; avancesPorCaso.set(x.k.id, entry); }
+    entry.etapas.push(x.etapa);
+    entry.usuario = x.usuario;
+    entry.ts = x.ts;
+  });
+  const avancesAgrupados = Array.from(avancesPorCaso.values());
+  const metricas = {
+    totalActivos: m.totalActivos,
+    avances: avancesAgrupados.map(e=> `${e.k.actor} vs ${e.k.demandado||'—'}: ${e.etapas.join(' → ')} -- registrado por ${e.usuario} el ${new Date(e.ts).toLocaleString('es-MX', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}`),
+    enRiesgo: m.enRiesgo.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${x.motivo}`),
+    cobros: m.cobros.map(x=> `${x.k.actor} vs ${x.k.demandado||'—'}: ${fmtMoney(x.monto)}`),
+    totalCobrado: m.totalCobrado,
+  };
+  try{
+    const r = await api('POST', 'resumen_semanal.php', {metricas});
+    RESUMEN_SEMANAL_STATE = {cargando:false, texto:r.resumen, error:null, generadoEn:new Date().toISOString()};
+  }catch(err){
+    RESUMEN_SEMANAL_STATE = {cargando:false, texto:null, error:'No se pudo generar: ' + err.message, generadoEn:null};
+  }
+  renderViewBody();
+}
+
+// Convierte texto plano de la IA (líneas sueltas como encabezado de
+// bloque, líneas que empiezan con "-" como viñetas) en HTML con
+// jerarquía visual -- la IA solo redacta texto, el formato lo pone este
+// código. Genérico: lo usa cualquier panel que le pida a la IA un reporte
+// corto por bloques (hoy, el resumen semanal).
+function formatearTextoBloques(texto){
+  let html = '';
+  let primerBloque = true;
+  texto.split('\n').forEach(linea=>{
+    const t = linea.trim();
+    if(!t) return;
+    if(t.startsWith('-')){
+      html += `<div style="padding:3px 0 3px 16px; position:relative;"><span style="position:absolute; left:0; color:var(--brass);">•</span>${escapeHTML(t.replace(/^-\s*/, ''))}</div>`;
+    } else {
+      html += `<div style="font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--brass); margin-top:${primerBloque?'0':'14px'}; margin-bottom:4px;">${escapeHTML(t)}</div>`;
+      primerBloque = false;
+    }
+  });
+  return html;
+}
+
+function resumenSemanalHTML(){
+  const s = RESUMEN_SEMANAL_STATE;
+  return `
+  <div class="panel" id="resumenSemanalPanel">
+    <div class="panel-head">
+      <h3>📊 Resumen semanal del despacho</h3>
+      <span class="count" style="display:flex; align-items:center; gap:8px;">
+        ${s.generadoEn ? 'Generado ' + new Date(s.generadoEn).toLocaleString('es-MX', {day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit'}) : ''}
+        <button class="btn secondary" id="generarResumenSemanalBtn" style="padding:5px 12px; font-size:11.5px;" ${s.cargando?'disabled':''}>${s.cargando ? 'Generando <span class="loading-dots"><span></span><span></span><span></span></span>' : (s.texto ? '🔄 Regenerar' : '📊 Generar resumen semanal')}</button>
+      </span>
+    </div>
+    ${s.texto || s.error || s.cargando ? `
+    <div class="panel-body" style="padding:16px 20px;">
+      ${s.cargando && !s.texto ? `<div class="empty">Analizando la última semana…</div>` : ''}
+      ${s.texto ? `<div style="font-size:13.5px; line-height:1.6;">${formatearTextoBloques(s.texto)}</div>` : ''}
+      ${s.error ? `<div class="notice" style="border-left:3px solid var(--red);">${escapeHTML(s.error)}</div>` : ''}
+    </div>` : ''}
+  </div>`;
+}
+
+function urgenciaBadgeHTML(urgencia){
+  const info = {alta:{label:'Urgente', color:'var(--red)'}, media:{label:'Media', color:'var(--amber)'}, baja:{label:'Sin prisa', color:'var(--green)'}}[urgencia];
+  if(!info) return '';
+  return `<span style="flex-shrink:0; font-size:10.5px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:${info.color}; border:1px solid ${info.color}; border-radius:99px; padding:2px 8px;">${info.label}</span>`;
 }
 
 const AGENDA_TIPO = {
@@ -3110,52 +4978,1272 @@ const AGENDA_TIPO = {
   amparo:{label:'Amparo', color:'#3c5a86'},
   pendiente:{label:'Pendiente', color:'#3f6b4f'},
   atraso:{label:'Posible atraso', color:'#a83a2f'},
-  audiencia:{label:'Audiencia', color:'#3c5a86'}
+  audiencia:{label:'Audiencia', color:'#3c5a86'},
+  accion_ia:{label:'Sugerido por IA', color:'#8c6a2f'}
 };
 
+// Fila clicable de una entrada de buildAgendaEntries() -- compartida entre
+// la Agenda general y el panel "Qué hacer hoy" del Tablero. El nombre/
+// demandado (data-id) abre el expediente en el tab por default; el botón
+// de la derecha resuelve la acción concreta (marcar cobrado, demanda
+// presentada, etc.) sin salir de la lista -- ver el bloque ".agenda-complete"
+// en bindViewBody().
+const AGENDA_ACTION_LABEL = {pago:'Marcar cobrado', demanda:'Marcar demanda presentada', amparo:'Marcar amparo presentado', pendiente:'Marcar cumplido', abrir_etapas:'Revisar etapas', pendiente_generico:'Revisar etapas', ver_informe:'Ver informe'};
+function agendaRowHTML(e){
+  const t = AGENDA_TIPO[e.tipo];
+  return `<div class="alert-row" style="align-items:flex-start;">
+    <div style="width:76px; flex-shrink:0; text-align:center; padding-top:2px;">
+      <div style="font-size:11.5px; font-weight:700; color:${t.color};">${fmtDate(e.fecha)}</div>
+      ${e.hora ? `<div style="font-size:10.5px; color:var(--gray);">${escapeHTML(e.hora)} hrs</div>` : ''}
+    </div>
+    <span class="badge" style="background:${t.color}1a; color:${t.color}; flex-shrink:0; margin-top:1px;">${t.label}</span>
+    <div class="alert-info" data-id="${e.k.id}" style="cursor:pointer;">
+      <div class="name">${escapeHTML(e.k.actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(e.k.demandado,30))}</div>
+      <div class="meta">${escapeHTML(e.label)} &middot; ${escapeHTML(assignedLawyer(e.k))}</div>
+      ${e.chocaCon ? `<div style="font-size:11.5px; color:var(--red); font-weight:600; margin-top:2px;">&#9888; Mismo día y hora que la audiencia de ${escapeHTML(e.chocaCon)} en otro expediente</div>` : ''}
+    </div>
+    <button class="btn secondary agenda-complete" data-action="${e.action}" data-kid="${e.k.id}" data-idx="${e.actionIdx!=null?e.actionIdx:''}" style="flex-shrink:0; font-size:11px; padding:6px 10px;">${AGENDA_ACTION_LABEL[e.action]||'Marcar cumplido'}</button>
+  </div>`;
+}
+
+// Marca las audiencias de socios distintos que caen el mismo día y hora,
+// para que el choque de agenda salte a la vista en vez de descubrirse
+// hasta que ya es tarde para reorganizarse.
+function marcarChoquesDeAgenda(entries){
+  const porFechaHora = {};
+  entries.forEach(e=>{
+    if(e.tipo!=='audiencia' || !e.hora) return;
+    const clave = e.fecha+'|'+e.hora;
+    (porFechaHora[clave] = porFechaHora[clave] || []).push(e);
+  });
+  Object.values(porFechaHora).forEach(grupo=>{
+    if(grupo.length < 2) return;
+    grupo.forEach(e=>{
+      const otro = grupo.find(o=>o!==e && assignedLawyer(o.k)!==assignedLawyer(e.k));
+      if(otro) e.chocaCon = assignedLawyer(otro.k);
+    });
+  });
+  return entries;
+}
+
 let AGENDA_SOCIO = 'todos';
+let AGENDA_TAB = 'general';
+
+const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
+const PROSPECTO_ESTATUS_BADGE = {nuevo:'crit', contactado:'warn', descartado:'closed', convertido:'ok'};
+const PROSPECTO_TIPO_LABEL = {despido:'Despido (litigio)', asesoria_paga:'Asesoría $399', control_expedientes:'Control de Expedientes', reclamo:'Reclamo', atencion_directa:'Quiere hablar con alguien', interes_curso:'Interés en curso'};
+const PROSPECTO_TIPO_BADGE = {despido:'convenio', asesoria_paga:'interrumpida', control_expedientes:'ok', reclamo:'crit', atencion_directa:'warn', interes_curso:'interrumpida'};
+
+function prospectosHTML(){
+  if(!PROSPECTOS.length){
+    return `<div class="panel"><div class="panel-body" style="padding:24px;">
+      <div class="notice">Todavía no hay prospectos. En cuanto el asistente de WhatsApp detecte a alguien interesado en la asesoría de pago, en un curso, o en Control de Expedientes, aparecerá aquí.</div>
+    </div></div>`;
+  }
+  // Por default la lista solo muestra lo pendiente por atender: los
+  // "nuevo" y cualquiera con un mensaje sin leer (aunque ya esté
+  // contactado o convertido, si escribió algo nuevo sigue necesitando que
+  // alguien lo revise). En cuanto lo contactas, lo conviertes o lo
+  // descartas (y no tiene nada sin leer) se quita solo de la lista, para
+  // que no se acumulen los que ya se están atendiendo o ya se cerraron.
+  // "descartado" es que el despacho no toma el litigio, no que se deje de
+  // contestarle a la persona — el bot le sigue contestando solo (ver
+  // prospectos_update.php), por eso también puede reaparecer si escribe.
+  // Un prospecto de asesoría de pago que YA tiene una cita confirmada
+  // (pagó y quedó agendado solo, sin intervención humana) no cuenta como
+  // "pendiente" solo por seguir con estatus='nuevo' -- nada quedó
+  // marcado como convertido automáticamente al pagar, así que sin este
+  // filtro se acumulaban para siempre inflando el conteo de la pestaña
+  // "Asesorías $399" con casos ya resueltos. Un mensaje nuevo de esa
+  // misma persona (ej. una duda antes de su cita) sigue contando como
+  // pendiente igual que siempre.
+  const esPendiente = p => (p.estatus === 'nuevo' && !p.tiene_asesoria_confirmada) || (p.mensaje_nuevo && p.estatus !== 'descartado');
+  // Red de seguridad aparte del badge de "mensaje nuevo": ese badge se
+  // apaga en cuanto se abre el chat (marcar_visto), aunque nadie le haya
+  // contestado de verdad -- si el bot está pausado (un humano lleva el
+  // caso) y el ÚLTIMO mensaje sigue siendo del cliente, es algo real sin
+  // responder sin importar si ya se vio o no. Caso real detectado: un
+  // cliente con asesoría pagada preguntó si podía cambiar su cita y se
+  // quedó sin respuesta varios días porque el bot estaba pausado (correcto,
+  // un humano lleva ese caso) pero nadie se dio cuenta.
+  // Se excluyen los cierres simples ("Gracias", "Listo", "Sale. Gracias")
+  // -- hallazgo real: el panel se llenaba de casos así, que no necesitan
+  // ninguna respuesta real, tapando los que sí importan.
+  const pausadosSinContestar = PROSPECTOS.filter(p => p.pausado_bot && p.estatus !== 'descartado' && p.ultimo_mensaje_direccion === 'entrante' && !esCierreSimple(p.ultimo_mensaje_texto));
+  // La casilla de búsqueda del topbar (nombre o teléfono) también aplica
+  // aquí — antes solo filtraba Expedientes (ver visibleCases()). Mientras
+  // se busca, se ignora el filtro de "solo pendientes": alguien que busca
+  // a una persona por nombre/teléfono la quiere encontrar sin importar su
+  // estatus.
+  const buscando = SEARCH_TERM.trim() !== '';
+  let base = PROSPECTOS.filter(p => p.tipo === PROSPECTOS_TAB);
+  if(buscando){
+    const q = SEARCH_TERM.trim().toLowerCase();
+    base = base.filter(p => (p.nombre||'').toLowerCase().includes(q) || (p.telefono||'').toLowerCase().includes(q));
+  }
+  const visibles = buscando ? base : base.filter(p => PROSPECTOS_MOSTRAR_ATENDIDOS || esPendiente(p));
+  const atendidosOcultos = buscando ? [] : base.filter(p => !esPendiente(p));
+
+  const pendientesAsesoria = PROSPECTOS.filter(p=>p.tipo==='asesoria_paga' && esPendiente(p)).length;
+  const pendientesControlExp = PROSPECTOS.filter(p=>p.tipo==='control_expedientes' && esPendiente(p)).length;
+  const pendientesReclamos = PROSPECTOS.filter(p=>p.tipo==='reclamo' && esPendiente(p)).length;
+  const pendientesAtencionDirecta = PROSPECTOS.filter(p=>p.tipo==='atencion_directa' && esPendiente(p)).length;
+  const pendientesCursos = PROSPECTOS.filter(p=>p.tipo==='interes_curso' && esPendiente(p)).length;
+  const tabsHTML = `
+  <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
+    <button class="btn ${PROSPECTOS_TAB==='asesoria_paga'?'':'secondary'}" data-prospectos-tab="asesoria_paga" style="padding:8px 16px;">Asesorías $399 ${pendientesAsesoria>0?`<span class="nav-badge">${pendientesAsesoria}</span>`:""}</button>
+    <button class="btn ${PROSPECTOS_TAB==='interes_curso'?'':'secondary'}" data-prospectos-tab="interes_curso" style="padding:8px 16px;">Interés en cursos ${pendientesCursos>0?`<span class="nav-badge">${pendientesCursos}</span>`:""}</button>
+    <button class="btn ${PROSPECTOS_TAB==='control_expedientes'?'':'secondary'}" data-prospectos-tab="control_expedientes" style="padding:8px 16px;">Control de Expedientes ${pendientesControlExp>0?`<span class="nav-badge">${pendientesControlExp}</span>`:""}</button>
+    <button class="btn ${PROSPECTOS_TAB==='reclamo'?'':'secondary'}" data-prospectos-tab="reclamo" style="padding:8px 16px;">Reclamos ${pendientesReclamos>0?`<span class="nav-badge">${pendientesReclamos}</span>`:""}</button>
+    <button class="btn ${PROSPECTOS_TAB==='atencion_directa'?'':'secondary'}" data-prospectos-tab="atencion_directa" style="padding:8px 16px;">Quiere hablar con alguien ${pendientesAtencionDirecta>0?`<span class="nav-badge">${pendientesAtencionDirecta}</span>`:""}</button>
+  </div>`;
+
+  const TITULOS_TAB = {despido:'Prospectos de despido', asesoria_paga:'Prospectos de asesoría paga', control_expedientes:'Despachos interesados en Control de Expedientes', reclamo:'Reclamos y conversaciones urgentes', atencion_directa:'Piden que les llamen (sin queja de por medio)', interes_curso:'Interés en cursos en línea'};
+  const pausadosSinContestarHTML = pausadosSinContestar.length ? `
+  <div class="panel" style="margin-bottom:16px; border-left:3px solid var(--red);">
+    <div class="panel-head"><h3>⚠️ Pausados con algo sin contestar</h3><span class="count">${pausadosSinContestar.length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      ${pausadosSinContestar.map(p=>`
+      <div class="alert-row" style="align-items:flex-start; cursor:pointer;" data-prospecto-abrir="${p.id}">
+        <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'warn'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
+        <div class="alert-info">
+          <div class="name">${escapeHTML(p.nombre || p.telefono)}</div>
+          <div class="detail" style="color:var(--gray);">${escapeHTML(truncate(p.ultimo_mensaje_texto||'', 100))}</div>
+        </div>
+        <div style="flex-shrink:0; font-size:11px; color:var(--gray); white-space:nowrap;">${fmtDate(p.ultima_actividad)}</div>
+      </div>`).join("")}
+    </div>
+  </div>
+  ` : '';
+  return pausadosSinContestarHTML + tabsHTML + `
+  <div class="panel">
+    <div class="panel-head"><h3>${TITULOS_TAB[PROSPECTOS_TAB]}</h3><span class="count">${visibles.length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      ${!visibles.length ? `<div class="notice" style="margin:16px;">${buscando ? `Ningún prospecto coincide con "${escapeHTML(SEARCH_TERM.trim())}".` : 'No hay nada pendiente por atender ahora mismo.'}</div>` : visibles.map(p=>`
+      <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${PROSPECTO_ABIERTO===p.id?'background:var(--parchment);':(p.mensaje_nuevo?'background:#fdf3e7;':'')}" data-prospecto-abrir="${p.id}">
+        <span class="badge ${PROSPECTO_ESTATUS_BADGE[p.estatus]||'warn'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_ESTATUS_LABEL[p.estatus]||p.estatus}</span>
+        <div class="alert-info">
+          <div class="name" style="${p.mensaje_nuevo?'font-weight:700;':''}">${escapeHTML(p.nombre || 'Sin nombre')} <span style="color:var(--gray); font-weight:400;">&middot; ${escapeHTML(p.estado_ubicacion||'sin estado')}</span></div>
+          <div class="meta" style="${p.mensaje_nuevo?'color:var(--ink); font-weight:600;':''}">${escapeHTML(p.telefono)}</div>
+          ${p.curso_interes ? `<div style="font-size:12px; color:var(--brass); font-weight:700; margin-top:4px;">Curso: ${escapeHTML(p.curso_interes)}</div>` : ''}
+          ${p.resumen_caso ? `<div style="font-size:12px; color:var(--ink); margin-top:4px; white-space:normal; overflow-wrap:break-word;">${escapeHTML(p.resumen_caso)}</div>` : ''}
+          ${p.ultimo_mensaje_texto ? `<div style="font-size:11.5px; color:var(--gray); margin-top:4px; white-space:normal; overflow-wrap:break-word; font-style:italic;">${p.ultimo_mensaje_direccion==='entrante'?'Cliente':'Bot/Tú'}: "${escapeHTML(truncate(p.ultimo_mensaje_texto,220))}" &middot; ${fmtFechaHora(p.ultima_actividad)}</div>` : ''}
+        </div>
+        <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'closed'}" style="flex-shrink:0; margin-top:1px;">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
+        <span class="badge ${p.asignado_nombre?'ok':'warn'}" style="flex-shrink:0; margin-top:1px;">${p.asignado_nombre ? escapeHTML(p.asignado_nombre) : 'Sin turnar'}</span>
+        <div style="flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end; gap:5px; min-width:34px;">
+          <div style="font-size:11px; color:var(--gray);">${fmtFechaHora(p.ultima_actividad || p.actualizado_en)}</div>
+          ${p.mensajes_sin_leer > 0 ? `<span style="background:#25D366; color:#fff; border-radius:999px; min-width:20px; height:20px; padding:0 6px; display:inline-flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; line-height:1;">${p.mensajes_sin_leer > 99 ? '99+' : p.mensajes_sin_leer}</span>` : ''}
+          ${p.estatus !== 'descartado' ? `<button class="btn secondary" data-prospecto-descartar-rapido="${p.id}" style="padding:3px 8px; font-size:10.5px; white-space:nowrap;">Descartar</button>` : ''}
+        </div>
+      </div>`).join("")}
+    </div>
+  </div>
+  ${atendidosOcultos.length ? `<div class="notice" style="max-width:100%;">${PROSPECTOS_MOSTRAR_ATENDIDOS
+    ? `Mostrando también los ya atendidos, convertidos y descartados. <button class="btn secondary" data-prospectos-toggle-atendidos style="padding:4px 10px; font-size:11px; margin-left:6px;">Ocultarlos de nuevo</button>`
+    : `Hay ${atendidosOcultos.length} prospecto${atendidosOcultos.length===1?'':'s'} ya contactado${atendidosOcultos.length===1?'':'s'}, convertido${atendidosOcultos.length===1?'':'s'} o descartado${atendidosOcultos.length===1?'':'s'} oculto${atendidosOcultos.length===1?'':'s'}. <button class="btn secondary" data-prospectos-toggle-atendidos style="padding:4px 10px; font-size:11px; margin-left:6px;">Mostrarlos</button>`}</div>` : ""}
+  `;
+}
+
+function prospectoDetalleHTML(p){
+  const isAdmin = CURRENT_USER.role === 'Administrador';
+  return `
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+        <span class="badge ${PROSPECTO_TIPO_BADGE[p.tipo]||'closed'}">${PROSPECTO_TIPO_LABEL[p.tipo]||p.tipo}</span>
+        <select data-prospecto-estatus="${p.id}" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          ${Object.keys(PROSPECTO_ESTATUS_LABEL).map(k=>`<option value="${k}" ${p.estatus===k?'selected':''}>${PROSPECTO_ESTATUS_LABEL[k]}</option>`).join("")}
+        </select>
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
+          <input type="checkbox" data-prospecto-pausado="${p.id}" ${p.pausado_bot?'checked':''}> Bot pausado (seguimiento humano)
+        </label>
+        ${isAdmin ? (p.bloqueado
+          ? `<button class="btn secondary" data-desbloquear-numero="${escapeHTML(p.telefono)}" style="font-size:11px; padding:6px 10px; color:var(--danger, #b3261e);">🚫 Bloqueado — quitar bloqueo</button>`
+          : `<button class="btn secondary" data-bloquear-numero="${escapeHTML(p.telefono)}" style="font-size:11px; padding:6px 10px;">Bloquear número</button>`
+        ) : (p.bloqueado ? `<span class="badge crit">🚫 Número bloqueado</span>` : '')}
+        ${isAdmin ? `<label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
+          Turnar a
+          <select data-prospecto-asignado="${p.id}" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+            <option value="">Sin asignar (yo lo atiendo)</option>
+            ${EQUIPO.map(u=>`<option value="${u.id}" ${p.asignado_a===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+          </select>
+        </label>` : `<span class="badge ok">Turnado a ti</span>`}
+        ${p.expediente_id ? `<span class="badge ok">Convertido en expediente ${escapeHTML(p.expediente_exp||'')}</span>` : `<button class="btn secondary" data-prospecto-convertir="${p.id}" style="font-size:11px; padding:6px 10px;">Convertir en expediente</button>`}
+      </div>
+      <div class="notice" style="margin-bottom:14px;">
+        ${p.curso_interes ? `<strong>Curso de interés:</strong> ${escapeHTML(p.curso_interes)}<br>` : ""}
+        ${p.resumen_caso ? `<strong>Resumen del caso (según el bot):</strong> ${escapeHTML(p.resumen_caso)}<br>` : ""}
+        <button class="btn secondary" data-prospecto-generar-resumen="${p.id}" style="font-size:11px; padding:5px 10px; margin-top:${p.resumen_caso?'8px':'0'};">${p.resumen_caso ? 'Regenerar resumen' : 'Generar resumen'}</button>
+      </div>
+      <div class="chat-scroll" style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px; background:var(--parchment);">
+        ${PROSPECTO_MENSAJES.length ? PROSPECTO_MENSAJES.map(m=>`
+          <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
+            <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
+              ${mensajeContenidoHTML(m)}
+              <div style="font-size:10px; opacity:.6; margin-top:3px;">${mensajeMetaHTML(m, 'Tú')}</div>
+            </div>
+          </div>`).join("") : `<div class="notice">Sin mensajes todavía.</div>`}
+      </div>
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="prospectoRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:16px;">
+        <button class="btn" id="prospectoEnviarBtn" data-telefono="${escapeHTML(p.telefono)}">Enviar</button>
+        <label class="btn secondary" style="padding:9px 12px; cursor:pointer;" title="Mandar una imagen o PDF (ej. comprobante de devolución, cálculo)">
+          📎<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" id="prospectoImagenInput" data-telefono="${escapeHTML(p.telefono)}" style="display:none;">
+        </label>
+      </div>
+  `;
+}
+
+// Abre el detalle de un prospecto en un modal (igual que en Conversaciones)
+// para poder revisarlo de un vistazo sin perder el lugar en la lista.
+function abrirProspectoModal(id){
+  PROSPECTO_ABIERTO = id;
+  renderProspectoModal();
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function cerrarProspectoModal(){
+  closeModal();
+  PROSPECTO_ABIERTO = null;
+}
+
+function renderProspectoModal(){
+  const p = PROSPECTOS.find(x=>x.id===PROSPECTO_ABIERTO);
+  if(!p) return;
+  const overlay = document.getElementById('modalOverlay');
+  overlay.innerHTML = `<div class="modal" style="max-width:1040px;">
+    <div class="modal-head">
+      <button class="close" id="modalClose">&times;</button>
+      <h2>${escapeHTML(p.nombre || 'Sin nombre')}</h2>
+      <div class="sub">${escapeHTML(p.telefono)}</div>
+    </div>
+    <div class="modal-body">${prospectoDetalleHTML(p)}</div>
+  </div>`;
+  document.getElementById('modalClose').addEventListener('click', cerrarProspectoModal);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) cerrarProspectoModal(); });
+  bindProspectoModalEvents();
+  const scroll = overlay.querySelector('.chat-scroll');
+  if(scroll) scroll.scrollTop = scroll.scrollHeight;
+}
+
+function bindProspectoModalEvents(){
+  document.querySelectorAll('[data-borrar-mensaje]').forEach(a=>{
+    a.addEventListener('click', async (e)=>{
+      e.preventDefault();
+      const p = PROSPECTOS.find(x=>x.id===PROSPECTO_ABIERTO);
+      if(!p) return;
+      await borrarMensajeWhatsapp(a.dataset.borrarMensaje, async ()=>{
+        await loadProspectoMensajes(p.telefono);
+        renderProspectoModal();
+      });
+    });
+  });
+  document.querySelectorAll('[data-prospecto-estatus]').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(sel.dataset.prospectoEstatus), estatus: sel.value});
+        await loadProspectos();
+        renderViewBody();
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-pausado]').forEach(chk=>{
+    chk.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(chk.dataset.prospectoPausado), pausado_bot: chk.checked});
+        await loadProspectos();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); chk.checked = !chk.checked; }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-asignado]').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(sel.dataset.prospectoAsignado), asignado_a: sel.value ? parseInt(sel.value) : 0});
+        await loadProspectos();
+        renderViewBody();
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo turnar: ' + err.message); }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-convertir]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('¿Convertir este prospecto en expediente nuevo?')) return;
+      btn.disabled = true;
+      try{
+        await api('POST', 'prospectos_convertir.php', {id: parseInt(btn.dataset.prospectoConvertir)});
+        await Promise.all([refreshBootstrap()]);
+        renderViewBody();
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo convertir: ' + err.message); btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-generar-resumen]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = parseInt(btn.dataset.prospectoGenerarResumen);
+      btn.disabled = true;
+      const textoOriginal = btn.textContent;
+      btn.textContent = 'Generando...';
+      try{
+        const d = await api('POST', 'prospectos_generar_resumen.php', {id});
+        const p = PROSPECTOS.find(x=>x.id===id);
+        if(p) p.resumen_caso = d.resumen_caso;
+        renderProspectoModal();
+      }catch(err){
+        alert('No se pudo generar el resumen: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = textoOriginal;
+      }
+    });
+  });
+  document.querySelectorAll('[data-bloquear-numero]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const telefono = btn.dataset.bloquearNumero;
+      if(!confirm('¿Bloquear este número? El bot va a dejar de contestarle solo -- pero si escribe de nuevo, a ti sí te va a avisar (igual que un reclamo).')) return;
+      const motivo = prompt('Motivo del bloqueo (opcional):') || '';
+      btn.disabled = true;
+      try{
+        await api('POST', 'numeros_bloquear.php', {telefono, motivo});
+        await loadProspectos();
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo bloquear: ' + err.message); btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-desbloquear-numero]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const telefono = btn.dataset.desbloquearNumero;
+      if(!confirm('¿Quitar el bloqueo de este número?')) return;
+      btn.disabled = true;
+      try{
+        await api('POST', 'numeros_desbloquear.php', {telefono});
+        await loadProspectos();
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo quitar el bloqueo: ' + err.message); btn.disabled = false; }
+    });
+  });
+  const prospectoImagenInput = document.getElementById('prospectoImagenInput');
+  if(prospectoImagenInput){
+    prospectoImagenInput.addEventListener('change', async ()=>{
+      const file = prospectoImagenInput.files[0];
+      if(!file) return;
+      const telefono = prospectoImagenInput.dataset.telefono;
+      prospectoImagenInput.disabled = true;
+      try{
+        await apiSubirImagen(telefono, file);
+        await loadProspectoMensajes(telefono);
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo mandar el archivo: ' + err.message); prospectoImagenInput.disabled = false; }
+    });
+  }
+  const prospectoEnviarBtn = document.getElementById('prospectoEnviarBtn');
+  if(prospectoEnviarBtn){
+    prospectoEnviarBtn.addEventListener('click', async ()=>{
+      const input = document.getElementById('prospectoRespuestaInput');
+      const texto = input.value.trim();
+      if(!texto) return;
+      const telefono = prospectoEnviarBtn.dataset.telefono;
+      prospectoEnviarBtn.disabled = true;
+      try{
+        await api('POST', 'prospectos_enviar.php', {telefono, texto});
+        await loadProspectoMensajes(telefono);
+        renderProspectoModal();
+      }catch(err){ alert('No se pudo enviar: ' + err.message); prospectoEnviarBtn.disabled = false; }
+    });
+    const prospectoRespuestaInput = document.getElementById('prospectoRespuestaInput');
+    if(prospectoRespuestaInput){
+      prospectoRespuestaInput.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){ e.preventDefault(); prospectoEnviarBtn.click(); }
+      });
+      // Deja el chat ya abajo del todo (mensaje más reciente) en vez de
+      // arriba, como en cualquier app de WhatsApp real.
+      const scroll = document.querySelector('.modal .chat-scroll');
+      if(scroll) scroll.scrollTop = scroll.scrollHeight;
+    }
+  }
+}
+
+// ---------------------------------------------------------------
+// Vista "Conversaciones (WhatsApp)" (solo Administrador) — control de
+// calidad del bot: todas las conversaciones, califiquen o no como
+// prospecto, con estadísticas y un visor de solo lectura de cada hilo.
+// ---------------------------------------------------------------
+// Barra por día (últimos 14 días) de mensajes entrantes de WhatsApp, para
+// comparar a simple vista los días de live contra los días normales.
+const DIAS_SEMANA_CORTO = ['dom','lun','mar','mié','jué','vié','sáb'];
+function actividadPorDiaHTML(porDia){
+  if(!porDia.length) return '';
+  const max = Math.max(1, ...porDia.map(d=>d.mensajes));
+  const hoy = new Date().toISOString().slice(0,10);
+  return `
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>Actividad de WhatsApp por día</h3><span class="count">últimos 30 días</span></div>
+    <div class="panel-body" style="padding:16px 18px;">
+      <div style="display:flex; align-items:flex-end; gap:4px; height:140px;">
+        ${porDia.map(d=>{
+          const fecha = new Date(d.dia + 'T00:00:00');
+          const alto = Math.round((d.mensajes / max) * 110) + (d.mensajes>0 ? 4 : 0);
+          const esHoy = d.dia === hoy;
+          return `
+          <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; height:100%;" title="${d.mensajes} mensaje(s), ${d.numeros} número(s), ${d.prospectos_nuevos} propuesta(s), ${d.prospectos_contactados} contactado(s), ${d.prospectos_convertidos} convertido(s)">
+            <div style="font-size:10px; color:var(--ink); font-weight:700; margin-bottom:2px;">${d.mensajes||''}</div>
+            <div style="width:100%; max-width:20px; height:${alto}px; background:${esHoy?'var(--ink)':'#b9c3d6'}; border-radius:4px 4px 0 0;"></div>
+            <div style="font-size:9px; color:var(--gray); margin-top:4px; text-align:center;">${DIAS_SEMANA_CORTO[fecha.getDay()]}<br>${fecha.getDate()}</div>
+          </div>`;
+        }).join("")}
+      </div>
+      <div style="font-size:11px; color:var(--gray); margin-top:10px;">Pasa el cursor sobre cada barra para ver el detalle del día (mensajes, números distintos, propuestas, contactados y convertidos).</div>
+    </div>
+  </div>`;
+}
+
+// ---------- Embudo de WhatsApp por fecha (periodo elegible) ----------
+let WA_EMBUDO = null;
+let WA_EMBUDO_PERIODO = 'mes_actual';
+let WA_EMBUDO_DESDE = '';
+let WA_EMBUDO_HASTA = '';
+let WA_EMBUDO_CARGANDO = false;
+
+async function loadWhatsappEmbudo(){
+  WA_EMBUDO_CARGANDO = true;
+  try{
+    const rango = rangoPeriodo(WA_EMBUDO_PERIODO, WA_EMBUDO_DESDE, WA_EMBUDO_HASTA);
+    const d = await api('GET', 'whatsapp_embudo.php?desde=' + encodeURIComponent(rango.desde) + '&hasta=' + encodeURIComponent(rango.hasta));
+    WA_EMBUDO = d;
+  }catch(e){ WA_EMBUDO = null; }
+  WA_EMBUDO_CARGANDO = false;
+}
+
+// Tabla con el embudo exacto por fecha: cuántos WhatsApps se atendieron,
+// de esos cuántos se volvieron propuesta (prospecto nuevo), cuántos se
+// contactaron y cuántos se convirtieron a clientes — "contactados" y
+// "convertidos" son acumulativos (un convertido también cuenta como
+// contactado), igual que un embudo normal. El periodo se elige con los
+// mismos chips que "Ingresos por periodo", jalando del servidor solo el
+// rango pedido (no depende de los 30 días fijos de la gráfica de arriba).
+function whatsappEmbudoHTML(){
+  const chips = [
+    ['mes_actual','Este mes'], ['mes_anterior','Mes anterior'], ['anio_actual','Este año'],
+    ['todo','Todo el histórico'], ['personalizado','Personalizado']
+  ];
+  const chipsHTML = `
+    <div class="filters" style="margin:0 0 12px;">
+      ${chips.map(([v,label])=>`<div class="chip ${WA_EMBUDO_PERIODO===v?'active':''}" data-embudo-periodo="${v}">${label}</div>`).join("")}
+    </div>
+    ${WA_EMBUDO_PERIODO==='personalizado' ? `
+    <div style="display:flex; gap:12px; align-items:end; margin-bottom:12px;">
+      <div class="field"><label>Desde</label><input type="date" id="embudoDesde" value="${WA_EMBUDO_DESDE}"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="embudoHasta" value="${WA_EMBUDO_HASTA}"></div>
+      <button class="btn" id="embudoAplicarBtn">Aplicar</button>
+    </div>` : ''}`;
+
+  if(WA_EMBUDO_CARGANDO || !WA_EMBUDO){
+    return `
+    <div class="panel" style="margin-bottom:18px;">
+      <div class="panel-head"><h3>Embudo de WhatsApp por fecha</h3></div>
+      <div class="panel-body" style="padding:16px 18px;">
+        ${chipsHTML}
+        <div class="notice" style="margin:0;">Cargando...</div>
+      </div>
+    </div>`;
+  }
+
+  const porDia = WA_EMBUDO.por_dia || [];
+  const filas = porDia.filter(d => d.numeros > 0 || d.prospectos_nuevos > 0).slice().reverse();
+  const totales = porDia.reduce((acc,d)=>({
+    numeros: acc.numeros + d.numeros,
+    nuevos: acc.nuevos + d.prospectos_nuevos,
+    contactados: acc.contactados + d.prospectos_contactados,
+    convertidos: acc.convertidos + d.prospectos_convertidos,
+  }), {numeros:0, nuevos:0, contactados:0, convertidos:0});
+  const pct = (num, den) => den > 0 ? Math.round(num/den*100) + '%' : '—';
+
+  return `
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>Embudo de WhatsApp por fecha</h3><span class="count">${fmtDate(WA_EMBUDO.desde)} – ${fmtDate(WA_EMBUDO.hasta)}</span></div>
+    <div class="panel-body" style="padding:16px 18px 0;">${chipsHTML}</div>
+    <div class="panel-body" style="padding:0;">
+      <table><thead><tr><th>Fecha</th><th>WhatsApps atendidos</th><th>Propuestas</th><th>Contactados</th><th>Convertidos a clientes</th></tr></thead>
+      <tbody>${!filas.length ? `<tr><td colspan="5" class="empty">Sin actividad en este periodo.</td></tr>` : filas.map(d=>`
+        <tr>
+          <td>${fmtDate(d.dia)}</td>
+          <td>${d.numeros}</td>
+          <td>${d.prospectos_nuevos}</td>
+          <td>${d.prospectos_contactados}</td>
+          <td>${d.prospectos_convertidos}</td>
+        </tr>`).join("")}
+      </tbody>
+      ${filas.length ? `<tfoot><tr style="font-weight:700;">
+        <td>Total del periodo</td>
+        <td>${totales.numeros}</td>
+        <td>${totales.nuevos} <span style="font-weight:400; color:var(--gray); font-size:11px;">(${pct(totales.nuevos, totales.numeros)} de atendidos)</span></td>
+        <td>${totales.contactados} <span style="font-weight:400; color:var(--gray); font-size:11px;">(${pct(totales.contactados, totales.nuevos)} de propuestas)</span></td>
+        <td>${totales.convertidos} <span style="font-weight:400; color:var(--gray); font-size:11px;">(${pct(totales.convertidos, totales.nuevos)} de propuestas)</span></td>
+      </tr></tfoot>` : ''}
+      </table>
+    </div>
+  </div>`;
+}
+
+function conversacionesHTML(){
+  const s = CONVERSACIONES_STATS || {};
+  const statsHTML = `
+  <div class="stat-grid" style="grid-template-columns:repeat(5,1fr); margin-bottom:18px;">
+    <div class="stat-card"><div class="bar"></div><div class="num">${s.entrantes_hoy ?? '—'}</div><div class="label">Mensajes entrantes hoy</div></div>
+    <div class="stat-card"><div class="bar"></div><div class="num">${s.entrantes_semana ?? '—'}</div><div class="label">Mensajes entrantes (últimos 7 días)</div></div>
+    <div class="stat-card"><div class="bar"></div><div class="num">${s.conversaciones_totales ?? '—'}</div><div class="label">Conversaciones totales (números distintos)</div></div>
+    <div class="stat-card"><div class="bar"></div><div class="num">${s.conversaciones_nuevas_hoy ?? '—'}</div><div class="label">Conversaciones nuevas hoy</div></div>
+    <div class="stat-card ok"><div class="bar"></div><div class="num">${s.tasa_conversion!=null? s.tasa_conversion+'%':'—'}</div><div class="label">Calificaron como prospecto (${s.total_prospectos ?? 0} de ${s.conversaciones_totales ?? 0})</div></div>
+  </div>
+  ${(s.sin_responder > 0 || REINTENTO_EN_PROGRESO) ? `
+  <div class="notice" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:18px; margin-top:0;">
+    <div>${REINTENTO_EN_PROGRESO ? escapeHTML(REINTENTO_PROGRESO_TXT) : `<strong>${s.sin_responder}</strong> conversación${s.sin_responder===1?'':'es'} se quedaron sin respuesta real (falló la IA) y ${s.sin_responder===1?'puede':'pueden'} reintentarse ahora.`}</div>
+    <button class="btn" id="reintentarLoteBtn" ${REINTENTO_EN_PROGRESO?'disabled':''}>${REINTENTO_EN_PROGRESO ? 'Reintentando...' : 'Reintentar respuestas fallidas'}</button>
+  </div>` : ''}
+  ${actividadPorDiaHTML(s.por_dia || [])}
+  ${whatsappEmbudoHTML()}`;
+  if(!CONVERSACIONES.length){
+    return statsHTML + `<div class="panel"><div class="panel-body" style="padding:24px;">
+      <div class="notice">Todavía no hay conversaciones registradas del bot de WhatsApp.</div>
+    </div></div>`;
+  }
+  // El buscador del topbar (nombre, teléfono, o texto del último mensaje)
+  // no filtraba nada en esta vista — se conectó aquí, igual que ya
+  // filtraba en Expedientes y Prospectos.
+  const buscando = SEARCH_TERM.trim() !== '';
+  const q = SEARCH_TERM.trim().toLowerCase();
+  const lista = buscando
+    ? CONVERSACIONES.filter(c =>
+        (c.telefono||'').toLowerCase().includes(q) ||
+        (c.prospecto_nombre||'').toLowerCase().includes(q) ||
+        (c.ultimo_texto||'').toLowerCase().includes(q))
+    : CONVERSACIONES;
+  return statsHTML + `
+  <div class="panel">
+    <div class="panel-head"><h3>Todas las conversaciones</h3><span class="count">${lista.length}</span></div>
+    <div class="panel-body" style="padding:0;">
+      ${!lista.length ? `<div class="notice" style="margin:16px;">Ninguna conversación coincide con "${escapeHTML(SEARCH_TERM.trim())}".</div>` : lista.map(c=>{
+        const calificado = !!c.prospecto_tipo;
+        return `
+      <div class="alert-row" style="align-items:flex-start; cursor:pointer; ${CONVERSACION_ABIERTA===c.telefono?'background:var(--parchment);':''}" data-conversacion-abrir="${escapeHTML(c.telefono)}">
+        <span class="badge ${calificado ? (PROSPECTO_TIPO_BADGE[c.prospecto_tipo]||'closed') : 'warn'}" style="flex-shrink:0; margin-top:1px;">${calificado ? (PROSPECTO_TIPO_LABEL[c.prospecto_tipo]||c.prospecto_tipo) : 'Sin calificar'}</span>
+        ${c.fallo ? '<span class="badge crit" style="flex-shrink:0; margin-top:1px;">Falló</span>' : ''}
+        <div class="alert-info">
+          <div class="name">${escapeHTML(c.prospecto_nombre || c.telefono)}</div>
+          <div class="meta">${c.ultima_direccion==='entrante'?'Cliente: ':'Bot/Tú: '}${escapeHTML(truncate(c.ultimo_texto||'',90))}</div>
+        </div>
+        <span class="badge" style="flex-shrink:0; margin-top:1px;">${c.total_mensajes} mensaje${c.total_mensajes===1?'':'s'}</span>
+        <div style="flex-shrink:0; font-size:11px; color:var(--gray); text-align:right;">${fmtFechaHora(c.ultimo_mensaje)}</div>
+      </div>`;}).join("")}
+    </div>
+  </div>
+  `;
+}
+
+// ---------------------------------------------------------------
+// "Resumen ejecutivo (bot)" — análisis con IA de todas las conversaciones
+// de WhatsApp (temas comunes, por qué no califican, oportunidades), para
+// que el despacho (o quien lo asesore en optimizar el bot) lo lea directo
+// desde el sistema en vez de tener que pedirlo por fuera. Se guarda cada
+// uno generado para llevar historial.
+// ---------------------------------------------------------------
+// Conversión muy básica de markdown a HTML — el reporte lo redacta la IA
+// con # encabezados, **negritas** y guiones de lista; aquí solo se pinta
+// bien dentro del sistema (esto NO es el formato de WhatsApp, es un
+// reporte interno de solo lectura).
+function mdBasicoHTML(md){
+  const escapado = escapeHTML(md);
+  const lineas = escapado.split('\n');
+  let html = '';
+  let enLista = false;
+  for(const linea of lineas){
+    const esItem = /^\s*[-*]\s+/.test(linea);
+    if(esItem && !enLista){ html += '<ul style="margin:6px 0 10px 0; padding-left:20px;">'; enLista = true; }
+    if(!esItem && enLista){ html += '</ul>'; enLista = false; }
+    const conNegritas = linea.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    if(/^###\s+/.test(linea)) html += `<h4 style="margin:14px 0 6px 0; font-size:13.5px;">${conNegritas.replace(/^###\s+/,'')}</h4>`;
+    else if(/^##\s+/.test(linea)) html += `<h3 style="margin:16px 0 6px 0; font-size:15px; font-family:var(--serif);">${conNegritas.replace(/^##\s+/,'')}</h3>`;
+    else if(/^#\s+/.test(linea)) html += `<h2 style="margin:0 0 10px 0; font-size:17px; font-family:var(--serif);">${conNegritas.replace(/^#\s+/,'')}</h2>`;
+    else if(esItem) html += `<li style="font-size:13px; margin-bottom:4px;">${conNegritas.replace(/^\s*[-*]\s+/,'')}</li>`;
+    else if(linea.trim()==='') html += '<div style="height:6px;"></div>';
+    else html += `<div style="font-size:13px; margin-bottom:4px;">${conNegritas}</div>`;
+  }
+  if(enLista) html += '</ul>';
+  return html;
+}
+
+function resumenEjecutivoHTML(){
+  const chips = [
+    ['hoy','Hoy'], ['semana','Última semana'], ['mes_movil','Último mes'],
+    ['mes_actual','Este mes'], ['personalizado','Personalizado']
+  ];
+  return `
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px;">
+    <div class="filters" style="margin:0;">
+      ${chips.map(([v,label])=>`<div class="chip ${RESUMEN_EJECUTIVO_PERIODO===v?'active':''}" data-resumen-periodo="${v}">${label}</div>`).join("")}
+    </div>
+    <button class="btn" id="resumenEjecutivoGenerarBtn" ${RESUMEN_EJECUTIVO_GENERANDO?'disabled':''}>${RESUMEN_EJECUTIVO_GENERANDO ? 'Generando... (puede tardar ~1 min)' : 'Generar resumen de este periodo'}</button>
+  </div>
+  ${RESUMEN_EJECUTIVO_PERIODO==='personalizado' ? `
+  <div style="display:flex; gap:12px; align-items:end; margin-bottom:16px;">
+    <div class="field"><label>Desde</label><input type="date" id="resumenEjecutivoDesde" value="${RESUMEN_EJECUTIVO_DESDE}"></div>
+    <div class="field"><label>Hasta</label><input type="date" id="resumenEjecutivoHasta" value="${RESUMEN_EJECUTIVO_HASTA}"></div>
+  </div>` : ''}
+  <div style="font-size:12.5px; color:var(--gray); margin-bottom:16px;">${RESUMENES_EJECUTIVOS.length ? `Último generado: ${fmtFechaHora(RESUMENES_EJECUTIVOS[0].creado_en)} · ${RESUMENES_EJECUTIVOS[0].num_conversaciones} conversaciones` : 'Todavía no se ha generado ningún resumen.'}</div>
+  ${!RESUMENES_EJECUTIVOS.length ? `<div class="panel"><div class="panel-body" style="padding:24px;"><div class="notice">Elige el periodo de arriba y dale clic a "Generar resumen" — la IA revisa las conversaciones de ese periodo y arma un reporte de temas comunes, patrones y oportunidades.</div></div></div>` : ''}
+  ${RESUMENES_EJECUTIVOS.map((r,i)=>`
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-head"><h3>${i===0?'Más reciente':'Resumen anterior'} — ${fmtFechaHora(r.creado_en)}</h3>
+      <button class="btn secondary" data-resumen-copiar="${r.id}" style="font-size:11px; padding:6px 10px;">Copiar texto</button>
+    </div>
+    <div style="padding:0 24px; margin-top:-8px; font-size:12px; color:var(--gray);">Periodo: ${r.periodo_desde && r.periodo_hasta ? `${fmtDate(r.periodo_desde)} – ${fmtDate(r.periodo_hasta)}` : 'sin acotar (más recientes)'}</div>
+    <div class="panel-body" style="padding:20px 24px;">${mdBasicoHTML(r.contenido)}</div>
+  </div>`).join("")}
+  `;
+}
+
+function bindResumenEjecutivoEvents(){
+  document.querySelectorAll('.chip[data-resumen-periodo]').forEach(el=>{
+    el.addEventListener('click', ()=>{ RESUMEN_EJECUTIVO_PERIODO = el.dataset.resumenPeriodo; renderViewBody(); });
+  });
+  const generarBtn = document.getElementById('resumenEjecutivoGenerarBtn');
+  if(generarBtn){
+    generarBtn.addEventListener('click', async ()=>{
+      if(RESUMEN_EJECUTIVO_PERIODO==='personalizado'){
+        const desdeEl = document.getElementById('resumenEjecutivoDesde');
+        const hastaEl = document.getElementById('resumenEjecutivoHasta');
+        RESUMEN_EJECUTIVO_DESDE = desdeEl ? desdeEl.value : '';
+        RESUMEN_EJECUTIVO_HASTA = hastaEl ? hastaEl.value : '';
+        if(!RESUMEN_EJECUTIVO_DESDE || !RESUMEN_EJECUTIVO_HASTA){ alert('Elige las dos fechas del periodo personalizado.'); return; }
+      }
+      const rango = rangoPeriodo(RESUMEN_EJECUTIVO_PERIODO, RESUMEN_EJECUTIVO_DESDE, RESUMEN_EJECUTIVO_HASTA);
+      RESUMEN_EJECUTIVO_GENERANDO = true;
+      renderViewBody();
+      try{
+        await api('POST', 'resumen_ejecutivo.php', {desde: rango.desde, hasta: rango.hasta});
+        await loadResumenesEjecutivos();
+      }catch(err){
+        alert('No se pudo generar el resumen: ' + err.message);
+      }
+      RESUMEN_EJECUTIVO_GENERANDO = false;
+      renderViewBody();
+    });
+  }
+  document.querySelectorAll('[data-resumen-copiar]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = parseInt(btn.dataset.resumenCopiar);
+      const r = RESUMENES_EJECUTIVOS.find(x=>x.id===id);
+      if(!r) return;
+      navigator.clipboard.writeText(r.contenido).then(()=>{
+        const original = btn.textContent;
+        btn.textContent = '¡Copiado!';
+        setTimeout(()=>{ btn.textContent = original; }, 1500);
+      }).catch(()=> alert('No se pudo copiar. Selecciona el texto manualmente.'));
+    });
+  });
+}
+
+// Arma el texto completo de una tesis (para el botón "Copiar", tanto en la
+// lista como en el modal) -- listo para pegar en un escrito.
+function jurisprudenciaTextoParaCopiar(registro){
+  const t = ((JURISPRUDENCIA_RESULTADO && JURISPRUDENCIA_RESULTADO.tesis) || []).find(x=>x.registro_digital===registro);
+  if(!t) return '';
+  const meta = [t.instancia, t.epoca, t.fecha_publicacion ? ('Publicación: '+t.fecha_publicacion) : null].filter(Boolean).join(' · ');
+  return `[Registro digital: ${t.registro_digital}]\n${t.rubro}\n${meta}\n\n${t.texto_completo}`;
+}
+
+function copiarTesisAlPortapapeles(registro, btn){
+  const texto = jurisprudenciaTextoParaCopiar(registro);
+  if(!texto) return;
+  navigator.clipboard.writeText(texto).then(()=>{
+    if(!btn) return;
+    const original = btn.textContent;
+    btn.textContent = '¡Copiado!';
+    setTimeout(()=>{ btn.textContent = original; }, 1500);
+  }).catch(()=> alert('No se pudo copiar. Selecciona el texto manualmente.'));
+}
+
+// La respuesta de la IA menciona cada tesis por su registro digital (se le
+// pide explícitamente en el prompt) -- esta función convierte esos números,
+// donde aparezcan dentro del texto ya convertido a HTML, en una liga que
+// abre esa tesis directo (mismo modal que "Ver texto completo"), para no
+// tener que bajar hasta el final a buscarla.
+function jurisprudenciaVincularRegistros(html, listaTesis){
+  let resultado = html;
+  const vistos = new Set();
+  (listaTesis||[]).forEach(t=>{
+    const num = String(t.registro_digital);
+    if(vistos.has(num)) return;
+    vistos.add(num);
+    const re = new RegExp('\\b' + num + '\\b', 'g');
+    resultado = resultado.replace(re, `<a href="javascript:void(0)" data-jurisprudencia-ver="${num}" style="color:var(--brass-dim); font-weight:700; text-decoration:underline; cursor:pointer;" title="Ver esta tesis">${num}</a>`);
+  });
+  return resultado;
+}
+
+function jurisprudenciaHTML(){
+  const r = JURISPRUDENCIA_RESULTADO;
+  return `
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-body" style="padding:20px 24px;">
+      <div class="notice" style="margin-bottom:14px;">Describe los hechos concretos de tu caso (quién es el patrón, qué prestación o problema hay, qué pasó) — evita preguntas muy generales, entre más específico mejor. Solo cita tesis reales de esta biblioteca, nunca inventa una.</div>
+      <textarea id="jurisprudenciaPreguntaInput" placeholder="Describe los hechos de tu caso, entre más detalle mejor (ej. &quot;el trabajador fue despedido pero el patrón argumenta que ya no se presentó a trabajar, sin haberle dado ningún aviso de rescisión por escrito&quot;)..." style="width:100%; min-height:110px; padding:11px 13px; border:1px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; resize:vertical;">${escapeHTML(JURISPRUDENCIA_PREGUNTA)}</textarea>
+      <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:10px;">
+        <span style="font-size:11.5px; color:var(--gray);">Ctrl+Enter para buscar</span>
+        <button class="btn" id="jurisprudenciaBuscarBtn" ${JURISPRUDENCIA_CARGANDO?'disabled':''}>${JURISPRUDENCIA_CARGANDO ? 'Buscando <span class="loading-dots"><span></span><span></span><span></span></span>' : 'Buscar'}</button>
+      </div>
+      ${JURISPRUDENCIA_CARGANDO ? `<div class="notice" style="margin-top:12px; display:flex; align-items:center; gap:10px;"><span class="loading-dots" style="color:var(--brass);"><span></span><span></span><span></span></span> Revisando la biblioteca de tesis y armando el análisis, puede tardar unos segundos…</div>` : ''}
+      ${JURISPRUDENCIA_ERROR ? `<div class="notice" style="margin-top:12px; border-color:var(--red); color:var(--red);">${escapeHTML(JURISPRUDENCIA_ERROR)}</div>` : ''}
+    </div>
+  </div>
+  ${r ? `
+  <div class="panel" style="margin-bottom:16px;">
+    <div class="panel-head"><h3>Análisis del caso</h3>
+      <button class="btn secondary" id="jurisprudenciaCopiarAnalisisBtn" style="font-size:11px; padding:6px 10px;">Copiar análisis</button>
+    </div>
+    <div class="panel-body" style="padding:20px 24px;">${jurisprudenciaVincularRegistros(mdBasicoHTML(r.respuesta), r.tesis)}</div>
+    ${r.tesis.length ? `<div class="notice" style="margin:0 24px 20px 24px;">Dale clic al número de registro de cualquier tesis en el texto de arriba para ver su texto completo y copiarla. Se revisaron ${r.tesis.length} tesis candidatas por palabras clave — no todas necesariamente aparecen mencionadas arriba si la IA las descartó por no aplicar de verdad.</div>` : ''}
+  </div>
+  ` : ''}
+  `;
+}
+
+async function buscarJurisprudencia(){
+  const input = document.getElementById('jurisprudenciaPreguntaInput');
+  const pregunta = (input ? input.value : JURISPRUDENCIA_PREGUNTA).trim();
+  if(!pregunta) return;
+  JURISPRUDENCIA_PREGUNTA = pregunta;
+  JURISPRUDENCIA_CARGANDO = true;
+  JURISPRUDENCIA_ERROR = '';
+  renderViewBody();
+  try{
+    JURISPRUDENCIA_RESULTADO = await api('POST', 'jurisprudencia_buscar.php', {pregunta});
+  }catch(err){
+    JURISPRUDENCIA_ERROR = err.message;
+    JURISPRUDENCIA_RESULTADO = null;
+  }
+  JURISPRUDENCIA_CARGANDO = false;
+  renderViewBody();
+}
+
+function bindJurisprudenciaEvents(){
+  const buscarBtn = document.getElementById('jurisprudenciaBuscarBtn');
+  if(buscarBtn) buscarBtn.addEventListener('click', buscarJurisprudencia);
+  const input = document.getElementById('jurisprudenciaPreguntaInput');
+  if(input){
+    input.addEventListener('keydown', (e)=>{
+      if(e.key==='Enter' && (e.ctrlKey || e.metaKey)){ e.preventDefault(); buscarJurisprudencia(); }
+    });
+  }
+  document.querySelectorAll('[data-jurisprudencia-ver]').forEach(btn=>{
+    btn.addEventListener('click', ()=> abrirJurisprudenciaTesisModal(parseInt(btn.dataset.jurisprudenciaVer)));
+  });
+  const copiarAnalisisBtn = document.getElementById('jurisprudenciaCopiarAnalisisBtn');
+  if(copiarAnalisisBtn){
+    copiarAnalisisBtn.addEventListener('click', ()=>{
+      if(!JURISPRUDENCIA_RESULTADO) return;
+      navigator.clipboard.writeText(JURISPRUDENCIA_RESULTADO.respuesta).then(()=>{
+        const original = copiarAnalisisBtn.textContent;
+        copiarAnalisisBtn.textContent = '¡Copiado!';
+        setTimeout(()=>{ copiarAnalisisBtn.textContent = original; }, 1500);
+      }).catch(()=> alert('No se pudo copiar. Selecciona el texto manualmente.'));
+    });
+  }
+}
+
+// Texto completo de una tesis consultada — en un modal, igual que el resto
+// del sistema, para no perder la respuesta de la IA ni la lista de abajo.
+function abrirJurisprudenciaTesisModal(registro){
+  JURISPRUDENCIA_TESIS_ABIERTA = registro;
+  renderJurisprudenciaTesisModal();
+  document.getElementById('modalOverlay').classList.add('show');
+}
+function cerrarJurisprudenciaTesisModal(){
+  document.getElementById('modalOverlay').classList.remove('show');
+  document.getElementById('modalOverlay').innerHTML = "";
+  JURISPRUDENCIA_TESIS_ABIERTA = null;
+}
+function renderJurisprudenciaTesisModal(){
+  const t = ((JURISPRUDENCIA_RESULTADO && JURISPRUDENCIA_RESULTADO.tesis) || []).find(x=>x.registro_digital===JURISPRUDENCIA_TESIS_ABIERTA);
+  if(!t) return;
+  const overlay = document.getElementById('modalOverlay');
+  overlay.innerHTML = `<div class="modal" style="max-width:720px;">
+    <div class="modal-head">
+      <button class="close" id="modalClose">&times;</button>
+      <h2>${escapeHTML(t.rubro)}</h2>
+      <div class="sub">Registro digital: ${t.registro_digital} · ${escapeHTML(t.instancia||'—')} · ${escapeHTML(t.epoca||'—')}</div>
+    </div>
+    <div class="modal-body" style="padding:20px 24px;">
+      <button class="btn secondary" id="jurisprudenciaModalCopiarBtn" style="font-size:11px; padding:6px 12px; margin-bottom:14px;">Copiar tesis</button>
+      <div style="white-space:pre-wrap; font-size:13px; line-height:1.5;">${escapeHTML(t.texto_completo)}</div>
+    </div>
+  </div>`;
+  document.getElementById('modalClose').addEventListener('click', cerrarJurisprudenciaTesisModal);
+  document.getElementById('jurisprudenciaModalCopiarBtn').addEventListener('click', (e)=> copiarTesisAlPortapapeles(t.registro_digital, e.target));
+}
+
+// Detalle de una conversación — se muestra en un modal (ver
+// abrirConversacionModal/renderConversacionModal) para poder abrirlo con un
+// clic sin importar en qué parte de la lista esté la fila, sin tener que
+// bajar entre decenas de conversaciones para verlo.
+function conversacionDetalleHTML(c){
+  const r = CONVERSACION_RESUMEN;
+  return `
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+        ${c.prospecto_tipo ? `<span class="badge ${PROSPECTO_TIPO_BADGE[c.prospecto_tipo]||'closed'}">${PROSPECTO_TIPO_LABEL[c.prospecto_tipo]||c.prospecto_tipo}</span>` : `<span class="badge warn">Sin calificar como prospecto</span>`}
+        ${c.asignado_nombre ? `<span class="badge ok">Turnado a ${escapeHTML(c.asignado_nombre)}</span>` : ""}
+        ${c.expediente_id ? `<span class="badge ok">Convertido en expediente</span>` : ""}
+        ${c.fallo ? `<span class="badge crit">La IA no pudo contestar el último mensaje</span> <button class="btn secondary" id="conversacionReintentarBtn" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:5px 10px;">Reintentar esta conversación</button>` : ""}
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+        ${!c.prospecto_tipo ? `
+          <button class="btn secondary" data-marcar-prospecto="despido" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 12px;">Marcar como prospecto de despido</button>
+          <button class="btn secondary" data-marcar-prospecto="asesoria_paga" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 12px;">Marcar como asesoría de pago</button>
+        ` : (!c.expediente_id && c.prospecto_estatus !== 'nuevo' ? `
+          <button class="btn secondary" data-marcar-prospecto="${escapeHTML(c.prospecto_tipo)}" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 12px;">Reactivar como pendiente en Prospectos</button>
+        ` : "")}
+      </div>
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:14px;">
+        ${c.prospecto_id ? `
+        <select data-prospecto-estatus="${c.prospecto_id}" style="padding:7px 10px; border:1px solid var(--border); border-radius:8px; font-size:12px;">
+          ${Object.keys(PROSPECTO_ESTATUS_LABEL).map(k=>`<option value="${k}" ${c.prospecto_estatus===k?'selected':''}>${PROSPECTO_ESTATUS_LABEL[k]}</option>`).join("")}
+        </select>
+        ` : ""}
+        <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:var(--gray);">
+          <input type="checkbox" data-conversacion-pausada="${escapeHTML(c.telefono)}" ${c.pausado_bot?'checked':''}> Bot pausado (suspender respuestas automáticas)
+        </label>
+        ${c.bloqueado
+          ? `<button class="btn secondary" data-desbloquear-numero="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 10px; color:var(--danger, #b3261e);">🚫 Bloqueado — quitar bloqueo</button>`
+          : `<button class="btn secondary" data-bloquear-numero="${escapeHTML(c.telefono)}" style="font-size:11px; padding:6px 10px;">Bloquear número</button>`
+        }
+      </div>
+      <div style="background:var(--parchment); border-radius:8px; padding:12px 14px; margin-bottom:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:6px;">
+          <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--gray);">Resumen (IA) — para revisar cómo va contestando el bot</div>
+          <button class="btn secondary" id="conversacionResumenBtn" data-telefono="${escapeHTML(c.telefono)}" style="font-size:11px; padding:5px 10px;">${r ? 'Actualizar resumen' : 'Generar resumen'}</button>
+        </div>
+        <div id="conversacionResumenTexto" style="font-size:13px; color:var(--ink); white-space:pre-wrap;">${r ? escapeHTML(r.resumen) : 'Sin generar todavía. Dale clic a "Generar resumen".'}</div>
+        ${r ? `<div style="font-size:10.5px; color:var(--gray); margin-top:6px;">Generado el ${fmtFechaHora(r.generado_en)} con ${r.mensajes_contados} mensaje(s)${r.mensajes_contados !== c.total_mensajes ? ' — hay mensajes nuevos desde entonces, considera actualizarlo' : ''}.</div>` : ''}
+      </div>
+      <div class="chat-scroll" style="border:1px solid var(--border); border-radius:8px; padding:12px; background:var(--parchment);">
+        ${CONVERSACION_MENSAJES.length ? CONVERSACION_MENSAJES.map(m=>`
+          <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
+            <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
+              ${mensajeContenidoHTML(m)}
+              <div style="font-size:10px; opacity:.6; margin-top:3px;">${mensajeMetaHTML(m, 'Humano')}</div>
+            </div>
+          </div>`).join("") : `<div class="notice">Sin mensajes.</div>`}
+      </div>
+      <div style="display:flex; gap:8px; margin-top:12px;">
+        <input type="text" id="conversacionRespuestaInput" placeholder="Escribe una respuesta por WhatsApp..." style="flex:1; padding:9px 11px; border:1px solid var(--border); border-radius:8px; font-size:16px;">
+        <button class="btn" id="conversacionEnviarBtn" data-telefono="${escapeHTML(c.telefono)}">Enviar</button>
+        <label class="btn secondary" style="padding:9px 12px; cursor:pointer;" title="Mandar una imagen o PDF (ej. comprobante de devolución, cálculo)">
+          📎<input type="file" accept="image/jpeg,image/png,image/webp,application/pdf" id="conversacionImagenInput" data-telefono="${escapeHTML(c.telefono)}" style="display:none;">
+        </label>
+      </div>
+  `;
+}
+
+// Abre el detalle de una conversación en un modal (en vez de tener que
+// desplazarse hasta el fondo de la lista) — así queda encima de la pantalla
+// sin importar en qué fila se dio clic.
+function abrirConversacionModal(telefono){
+  CONVERSACION_ABIERTA = telefono;
+  renderConversacionModal();
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function cerrarConversacionModal(){
+  closeModal();
+  CONVERSACION_ABIERTA = null;
+}
+
+function renderConversacionModal(){
+  const c = CONVERSACIONES.find(x=>x.telefono===CONVERSACION_ABIERTA);
+  if(!c) return;
+  const overlay = document.getElementById('modalOverlay');
+  overlay.innerHTML = `<div class="modal" style="max-width:1040px;">
+    <div class="modal-head">
+      <button class="close" id="modalClose">&times;</button>
+      <h2>${escapeHTML(c.prospecto_nombre || c.telefono)}</h2>
+      <div class="sub">${escapeHTML(c.telefono)}</div>
+    </div>
+    <div class="modal-body">${conversacionDetalleHTML(c)}</div>
+  </div>`;
+  document.getElementById('modalClose').addEventListener('click', cerrarConversacionModal);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) cerrarConversacionModal(); });
+  bindConversacionModalEvents();
+  const scroll = overlay.querySelector('.chat-scroll');
+  if(scroll) scroll.scrollTop = scroll.scrollHeight;
+}
+
+function bindConversacionModalEvents(){
+  document.querySelectorAll('[data-prospecto-estatus]').forEach(sel=>{
+    sel.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'prospectos_update.php', {id: parseInt(sel.dataset.prospectoEstatus), estatus: sel.value});
+        await loadConversaciones();
+        renderConversacionModal();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); }
+    });
+  });
+  document.querySelectorAll('[data-conversacion-pausada]').forEach(chk=>{
+    chk.addEventListener('change', async ()=>{
+      try{
+        await api('POST', 'whatsapp_conversacion_pausar.php', {telefono: chk.dataset.conversacionPausada, pausado_bot: chk.checked});
+        await loadConversaciones();
+        renderConversacionModal();
+      }catch(err){ alert('No se pudo actualizar: ' + err.message); chk.checked = !chk.checked; }
+    });
+  });
+  document.querySelectorAll('[data-bloquear-numero]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const telefono = btn.dataset.bloquearNumero;
+      if(!confirm('¿Bloquear este número? El bot va a dejar de contestarle solo -- pero si escribe de nuevo, a ti sí te va a avisar (igual que un reclamo).')) return;
+      const motivo = prompt('Motivo del bloqueo (opcional):') || '';
+      btn.disabled = true;
+      try{
+        await api('POST', 'numeros_bloquear.php', {telefono, motivo});
+        await loadConversaciones();
+        renderConversacionModal();
+      }catch(err){ alert('No se pudo bloquear: ' + err.message); btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-desbloquear-numero]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const telefono = btn.dataset.desbloquearNumero;
+      if(!confirm('¿Quitar el bloqueo de este número?')) return;
+      btn.disabled = true;
+      try{
+        await api('POST', 'numeros_desbloquear.php', {telefono});
+        await loadConversaciones();
+        renderConversacionModal();
+      }catch(err){ alert('No se pudo quitar el bloqueo: ' + err.message); btn.disabled = false; }
+    });
+  });
+  const conversacionImagenInput = document.getElementById('conversacionImagenInput');
+  if(conversacionImagenInput){
+    conversacionImagenInput.addEventListener('change', async ()=>{
+      const file = conversacionImagenInput.files[0];
+      if(!file) return;
+      const telefono = conversacionImagenInput.dataset.telefono;
+      conversacionImagenInput.disabled = true;
+      try{
+        await apiSubirImagen(telefono, file);
+        await loadConversacionMensajes(telefono);
+        renderConversacionModal();
+      }catch(err){ alert('No se pudo mandar el archivo: ' + err.message); conversacionImagenInput.disabled = false; }
+    });
+  }
+  document.querySelectorAll('[data-borrar-mensaje]').forEach(a=>{
+    a.addEventListener('click', async (e)=>{
+      e.preventDefault();
+      const telefono = CONVERSACION_ABIERTA;
+      if(!telefono) return;
+      await borrarMensajeWhatsapp(a.dataset.borrarMensaje, async ()=>{
+        await loadConversacionMensajes(telefono);
+        renderConversacionModal();
+      });
+    });
+  });
+  const conversacionResumenBtn = document.getElementById('conversacionResumenBtn');
+  if(conversacionResumenBtn){
+    conversacionResumenBtn.addEventListener('click', async ()=>{
+      const telefono = conversacionResumenBtn.dataset.telefono;
+      conversacionResumenBtn.disabled = true;
+      conversacionResumenBtn.textContent = 'Generando...';
+      try{
+        await api('POST', 'conversaciones_resumen.php', {telefono});
+        await loadConversacionResumen(telefono);
+        renderConversacionModal();
+      }catch(err){
+        alert('No se pudo generar el resumen: ' + err.message);
+        conversacionResumenBtn.disabled = false;
+        conversacionResumenBtn.textContent = CONVERSACION_RESUMEN ? 'Actualizar resumen' : 'Generar resumen';
+      }
+    });
+  }
+  document.querySelectorAll('[data-marcar-prospecto]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const telefono = btn.dataset.telefono;
+      const tipo = btn.dataset.marcarProspecto;
+      const textoOriginal = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Guardando...';
+      try{
+        await api('POST', 'conversaciones_marcar_prospecto.php', {telefono, tipo});
+        await loadConversaciones();
+        renderConversacionModal();
+      }catch(err){
+        alert('No se pudo marcar el prospecto: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = textoOriginal;
+      }
+    });
+  });
+  const conversacionReintentarBtn = document.getElementById('conversacionReintentarBtn');
+  if(conversacionReintentarBtn){
+    conversacionReintentarBtn.addEventListener('click', async ()=>{
+      const telefono = conversacionReintentarBtn.dataset.telefono;
+      conversacionReintentarBtn.disabled = true;
+      conversacionReintentarBtn.textContent = 'Reintentando...';
+      try{
+        const d = await api('POST', 'conversaciones_reintentar.php', {telefono});
+        if(!d.ok){ alert('No se pudo reintentar: ' + d.motivo); }
+        await loadConversaciones();
+        await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
+        renderConversacionModal();
+      }catch(err){
+        alert('No se pudo reintentar: ' + err.message);
+        conversacionReintentarBtn.disabled = false;
+        conversacionReintentarBtn.textContent = 'Reintentar esta conversación';
+      }
+    });
+  }
+  const conversacionEnviarBtn = document.getElementById('conversacionEnviarBtn');
+  if(conversacionEnviarBtn){
+    conversacionEnviarBtn.addEventListener('click', async ()=>{
+      const input = document.getElementById('conversacionRespuestaInput');
+      const texto = input.value.trim();
+      if(!texto) return;
+      const telefono = conversacionEnviarBtn.dataset.telefono;
+      conversacionEnviarBtn.disabled = true;
+      try{
+        await api('POST', 'prospectos_enviar.php', {telefono, texto});
+        await loadConversacionMensajes(telefono);
+        renderConversacionModal();
+      }catch(err){
+        alert('No se pudo enviar: ' + err.message);
+        conversacionEnviarBtn.disabled = false;
+      }
+    });
+    const conversacionRespuestaInput = document.getElementById('conversacionRespuestaInput');
+    if(conversacionRespuestaInput){
+      conversacionRespuestaInput.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){ e.preventDefault(); conversacionEnviarBtn.click(); }
+      });
+    }
+  }
+}
+
+// ---------------------------------------------------------------
+// "Próximas asesorías agendadas" — lo que el bot agendó y cobró solo,
+// cruzando la disponibilidad de cada abogado con Mercado Pago. Un abogado
+// ve las suyas; el administrador las ve todas.
+// ---------------------------------------------------------------
+function citasPanelHTML(forzar){
+  if(!CITAS.length && !forzar) return "";
+  const isAdmin = CURRENT_USER.role === 'Administrador';
+  const CITA_ESTADO_BADGE = {confirmada:'ok', pendiente_pago:'warn'};
+  const CITA_ESTADO_LABEL = {confirmada:'Pagada', pendiente_pago:'Esperando pago'};
+  const ahora = new Date();
+  const vencidas = CITAS.filter(c => new Date(`${c.fecha}T${c.hora_inicio}:00`) < ahora);
+  return `
+  <div class="panel">
+    <div class="panel-head"><h3>Próximas asesorías agendadas</h3><span class="count">${CITAS.length}</span></div>
+    ${vencidas.length ? `<div class="notice" style="margin:0 16px 12px 16px;"><strong>${vencidas.length}</strong> ya pasó su hora y sigue sin marcarse como atendida — revisa si el cliente recibió su llamada.</div>` : ''}
+    <div class="panel-body" style="padding:0;">
+      ${CITAS.length ? CITAS.map(c=>{
+        const vencida = new Date(`${c.fecha}T${c.hora_inicio}:00`) < ahora;
+        return `
+      <div class="alert-row" style="align-items:flex-start;">
+        <span class="badge ${CITA_ESTADO_BADGE[c.estado]||'closed'}" style="flex-shrink:0; margin-top:1px;">${CITA_ESTADO_LABEL[c.estado]||c.estado}</span>
+        ${vencida ? '<span class="badge crit" style="flex-shrink:0; margin-top:1px;">¡Ya pasó!</span>' : ''}
+        <div class="alert-info" ${isAdmin?`data-cita-telefono="${escapeHTML(c.telefono)}" data-cita-nombre="${escapeHTML(c.nombre_cliente || '')}" style="cursor:pointer;"`:''}>
+          <div class="name">${escapeHTML(c.texto)}</div>
+          <div class="meta">${escapeHTML(c.nombre_cliente || c.telefono)} &middot; ${escapeHTML(c.telefono)} &middot; con ${escapeHTML(c.usuario_nombre)}</div>
+        </div>
+        <div style="flex-shrink:0; font-size:12px; color:var(--gray); text-align:right;">${c.tiene_link_pago ? `$${c.monto.toFixed(0)} MXN` : 'sin link de pago'}</div>
+        ${c.estado === 'confirmada' ? `<button class="btn secondary cita-atendida-btn" data-cita-id="${c.id}" style="flex-shrink:0; font-size:11px; padding:6px 10px;">Marcar atendida</button>` : ''}
+        <button class="btn secondary cita-cancelar-btn" data-cita-id="${c.id}" style="flex-shrink:0; font-size:11px; padding:6px 10px; color:var(--red); border-color:var(--red);">Cancelar</button>
+      </div>`;}).join("") : '<div class="empty">Sin asesorías agendadas por ahora.</div>'}
+    </div>
+  </div>`;
+}
+
+// Abre en una ventana emergente el chat de WhatsApp completo detrás de una
+// cita agendada — para revisar qué le contestó el bot sin tener que ir a
+// buscar el número en Conversaciones. No depende de que la vista
+// "Conversaciones (WhatsApp)" ya se haya cargado antes.
+async function abrirCitaConversacionModal(telefono, nombre){
+  await loadConversacionMensajes(telefono);
+  const overlay = document.getElementById('modalOverlay');
+  overlay.innerHTML = `<div class="modal" style="max-width:1040px;">
+    <div class="modal-head">
+      <button class="close" id="modalClose">&times;</button>
+      <h2>${escapeHTML(nombre || telefono)}</h2>
+      <div class="sub">${escapeHTML(telefono)}</div>
+    </div>
+    <div class="modal-body">
+      <div class="chat-scroll" style="border:1px solid var(--border); border-radius:8px; padding:12px; background:var(--parchment);">
+        ${CONVERSACION_MENSAJES.length ? CONVERSACION_MENSAJES.map(m=>`
+          <div style="margin-bottom:10px; text-align:${m.direccion==='entrante'?'left':'right'};">
+            <div style="display:inline-block; max-width:80%; padding:8px 12px; border-radius:10px; font-size:13px; background:${m.direccion==='entrante'?'#fff':'var(--ink)'}; color:${m.direccion==='entrante'?'var(--ink)':'#fff'}; text-align:left;">
+              ${mensajeContenidoHTML(m)}
+              <div style="font-size:10px; opacity:.6; margin-top:3px;">${mensajeMetaHTML(m, 'Humano')}</div>
+            </div>
+          </div>`).join("") : `<div class="notice">Sin mensajes.</div>`}
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('modalClose').addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
+  document.querySelectorAll('[data-borrar-mensaje]').forEach(a=>{
+    a.addEventListener('click', async (e)=>{
+      e.preventDefault();
+      await borrarMensajeWhatsapp(a.dataset.borrarMensaje, async ()=>{
+        await abrirCitaConversacionModal(telefono, nombre);
+      });
+    });
+  });
+  overlay.classList.add('show');
+  const scroll = overlay.querySelector('.chat-scroll');
+  if(scroll) scroll.scrollTop = scroll.scrollHeight;
+}
+
+// ---------------------------------------------------------------
+// "Mi disponibilidad para asesorías" — cada abogado (o administrador que
+// también las atienda) define los días y horas de la semana en que puede
+// tomar una llamada de asesoría de pago. Es la base para poder ofrecer
+// horarios reales desde el bot de WhatsApp más adelante.
+// ---------------------------------------------------------------
+function disponibilidadPanelHTML(){
+  const porDia = {};
+  DISPONIBILIDAD.forEach(b=>{
+    if(!porDia[b.dia_semana]) porDia[b.dia_semana] = [];
+    porDia[b.dia_semana].push(b);
+  });
+  const filas = Object.keys(porDia).map(Number).sort((a,b)=>a-b).map(dia=>
+    porDia[dia].map(b=>`
+      <tr>
+        <td>${DIA_SEMANA_LABEL[dia]}</td>
+        <td>${b.hora_inicio} – ${b.hora_fin}</td>
+        <td><button class="btn secondary" data-delete-disponibilidad="${b.id}" style="padding:5px 10px; font-size:11px;">Quitar</button></td>
+      </tr>`).join("")
+  ).join("");
+  return `
+  <div class="panel">
+    <div class="panel-head" style="cursor:pointer;" data-toggle-disponibilidad>
+      <h3>Mi disponibilidad para asesorías</h3>
+      <span class="count">${DISPONIBILIDAD.length}</span>
+    </div>
+    ${DISPONIBILIDAD_ABIERTA ? `
+    <div class="panel-body" style="padding:16px 20px;">
+      <div class="notice" style="margin-bottom:14px;">Define los días y horas en que puedes atender una asesoría telefónica de 1 hora. Esto es lo que se va a usar para ofrecer horarios reales a los clientes que agenden.</div>
+      <form id="addDisponibilidadForm" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;">
+        <div class="field" style="margin:0;"><label>Día</label>
+          <select id="disponibilidadDia" style="padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+            ${[1,2,3,4,5,6,7].map(d=>`<option value="${d}">${DIA_SEMANA_LABEL[d]}</option>`).join("")}
+          </select>
+        </div>
+        <div class="field" style="margin:0;"><label>Desde</label><input type="time" id="disponibilidadInicio" required></div>
+        <div class="field" style="margin:0;"><label>Hasta</label><input type="time" id="disponibilidadFin" required></div>
+        <button type="submit" class="btn">Agregar horario</button>
+      </form>
+      ${DISPONIBILIDAD.length ? `
+      <table><thead><tr><th>Día</th><th>Horario</th><th></th></tr></thead>
+      <tbody>${filas}</tbody></table>
+      ` : `<div class="notice">Todavía no tienes horarios registrados.</div>`}
+    </div>` : ""}
+  </div>`;
+}
 
 function agendaHTML(){
   const isAdmin = CURRENT_USER.role === 'Administrador';
-  let all = buildAgendaEntries();
+  let all = marcarChoquesDeAgenda(buildAgendaEntries());
   const today = new Date(); today.setHours(0,0,0,0);
   const todayISO = dateToISO(today);
 
   // Resumen por socio (solo Administrador) — cuenta pendientes/vencidos de
-  // cada socio sin filtrar todavía, para poder elegir a quién ver de un vistazo.
+  // cada socio sin filtrar todavía, para poder elegir a quién ver de un
+  // vistazo. Un asunto con dos socios asignados cuenta en el renglón de
+  // cada uno (los dos deben verlo en su propia agenda), pero el total de
+  // "Todos" se calcula aparte sobre la lista completa para no contarlo dos
+  // veces ahí.
   const resumenPorSocio = {};
+  const resumenIAporSocio = {};
+  const totalesSinDuplicar = {vencidas:0, proximas:0};
+  const totalesIASinDuplicar = {alta:0, media:0, baja:0};
   if(isAdmin){
     all.forEach(e=>{
-      const n = assignedLawyer(e.k);
-      if(!resumenPorSocio[n]) resumenPorSocio[n] = {vencidas:0, proximas:0};
-      if(e.fecha < todayISO) resumenPorSocio[n].vencidas++; else resumenPorSocio[n].proximas++;
+      if(e.fecha < todayISO) totalesSinDuplicar.vencidas++; else totalesSinDuplicar.proximas++;
+      if(e.tipo==='accion_ia') totalesIASinDuplicar[e.k.urgencia_ia]++;
+      const nombres = assignedLawyers(e.k);
+      (nombres.length ? nombres : ['Sin asignar']).forEach(n=>{
+        if(!resumenPorSocio[n]) resumenPorSocio[n] = {vencidas:0, proximas:0};
+        if(e.fecha < todayISO) resumenPorSocio[n].vencidas++; else resumenPorSocio[n].proximas++;
+        if(e.tipo==='accion_ia'){
+          if(!resumenIAporSocio[n]) resumenIAporSocio[n] = {alta:0, media:0, baja:0};
+          resumenIAporSocio[n][e.k.urgencia_ia]++;
+        }
+      });
     });
   }
 
   if(isAdmin && AGENDA_SOCIO !== 'todos'){
-    all = all.filter(e=> assignedLawyer(e.k) === AGENDA_SOCIO);
+    all = all.filter(e=> (assignedLawyers(e.k).length ? assignedLawyers(e.k) : ['Sin asignar']).includes(AGENDA_SOCIO));
   }
   const vencidas = all.filter(e=>e.fecha < todayISO);
   const proximas = all.filter(e=>e.fecha >= todayISO);
+  const accionesIA = all.filter(e=>e.tipo==='accion_ia');
 
-  const actionLabel = {pago:'Marcar cobrado', demanda:'Marcar demanda presentada', amparo:'Marcar amparo presentado', pendiente:'Marcar cumplido', abrir_etapas:'Revisar etapas', pendiente_generico:'Revisar etapas'};
+  const row = agendaRowHTML;
 
-  const row = (e,i)=>{
-    const t = AGENDA_TIPO[e.tipo];
-    return `<div class="alert-row" style="align-items:flex-start;">
-      <div style="width:76px; flex-shrink:0; text-align:center; padding-top:2px;">
-        <div style="font-size:11.5px; font-weight:700; color:${t.color};">${fmtDate(e.fecha)}</div>
+  const tabsHTML = `
+  <div style="display:flex; gap:8px; margin-bottom:16px;">
+    <button class="btn ${AGENDA_TAB==='general'?'':'secondary'}" data-agenda-tab="general" style="padding:8px 16px;">General</button>
+    <button class="btn ${AGENDA_TAB==='asesorias'?'':'secondary'}" data-agenda-tab="asesorias" style="padding:8px 16px;">Asesorías</button>
+    <button class="btn ${AGENDA_TAB==='ia'?'':'secondary'}" data-agenda-tab="ia" style="padding:8px 16px;">Seguimiento IA</button>
+  </div>`;
+
+  if(AGENDA_TAB === 'asesorias'){
+    return tabsHTML + citasPanelHTML(true) + disponibilidadPanelHTML();
+  }
+
+  if(AGENDA_TAB === 'ia'){
+    const vencidasIA = accionesIA.filter(e=>e.fecha < todayISO);
+    const proximasIA = accionesIA.filter(e=>e.fecha >= todayISO);
+    return tabsHTML + `
+    <div class="notice" style="margin-bottom:16px; max-width:100%;">Próxima acción sugerida por el informe ejecutivo con IA de cada expediente. La IA solo clasifica qué tan urgente es (alta/media/baja) a partir de lo que ya sabe del caso — la fecha de seguimiento la calcula el sistema con días hábiles normales, nunca es un plazo legal inventado por la IA.</div>
+    <div style="margin-bottom:16px;">
+      <button class="btn" id="actualizarTodosInformesBtn" ${SEGUIMIENTO_IA_BULK?'disabled':''}>${SEGUIMIENTO_IA_BULK ? `Actualizando ${SEGUIMIENTO_IA_BULK.actual} de ${SEGUIMIENTO_IA_BULK.total}...` : 'Actualizar informes de todos los expedientes activos'}</button>
+      ${!SEGUIMIENTO_IA_BULK ? `<span style="font-size:11.5px; color:var(--gray); margin-left:10px;">Hace falta una vez para que los expedientes que ya tenían informe generado antes traigan también la próxima acción.</span>` : ''}
+    </div>
+    ${isAdmin ? `
+    <div class="panel">
+      <div class="panel-head"><h3>Seguimiento por socio</h3><span class="count">${Object.keys(resumenIAporSocio).length}</span></div>
+      <div class="panel-body" style="padding:0;">
+        <table><thead><tr><th>Socio</th><th>Urgente</th><th>Media</th><th>Sin prisa</th><th></th></tr></thead><tbody>
+          <tr data-agenda-socio="todos" style="cursor:pointer; ${AGENDA_SOCIO==='todos'?'background:var(--parchment);':''}">
+            <td><strong>Todos</strong></td>
+            <td style="color:var(--red); font-weight:700;">${totalesIASinDuplicar.alta}</td>
+            <td>${totalesIASinDuplicar.media}</td>
+            <td>${totalesIASinDuplicar.baja}</td>
+            <td></td>
+          </tr>
+          ${Object.keys(resumenIAporSocio).sort((a,b)=>resumenIAporSocio[b].alta-resumenIAporSocio[a].alta).map(n=>`
+          <tr data-agenda-socio="${escapeHTML(n)}" style="cursor:pointer; ${AGENDA_SOCIO===n?'background:var(--parchment);':''}">
+            <td>${escapeHTML(n)}</td>
+            <td style="color:${resumenIAporSocio[n].alta>0?'var(--red)':'inherit'}; font-weight:${resumenIAporSocio[n].alta>0?'700':'400'};">${resumenIAporSocio[n].alta}</td>
+            <td>${resumenIAporSocio[n].media}</td>
+            <td>${resumenIAporSocio[n].baja}</td>
+            <td><button class="btn secondary" data-agenda-socio="${escapeHTML(n)}" style="padding:5px 10px; font-size:11px;">Ver</button></td>
+          </tr>`).join("")}
+        </tbody></table>
       </div>
-      <span class="badge" style="background:${t.color}1a; color:${t.color}; flex-shrink:0; margin-top:1px;">${t.label}</span>
-      <div class="alert-info" data-id="${e.k.id}" style="cursor:pointer;">
-        <div class="name">${escapeHTML(e.k.actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(e.k.demandado,30))}</div>
-        <div class="meta">${escapeHTML(e.label)} &middot; ${escapeHTML(assignedLawyer(e.k))}</div>
-      </div>
-      <button class="btn secondary agenda-complete" data-action="${e.action}" data-kid="${e.k.id}" data-idx="${e.actionIdx!=null?e.actionIdx:''}" style="flex-shrink:0; font-size:11px; padding:6px 10px;">${actionLabel[e.action]||'Marcar cumplido'}</button>
-    </div>`;
-  };
+    </div>` : ""}
+    ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
+    ${vencidasIA.length? `
+    <div class="panel">
+      <div class="panel-head"><h3>&#9888; Vencidas / requieren atención inmediata</h3><span class="count">${vencidasIA.length}</span></div>
+      <div class="panel-body">${vencidasIA.map(row).join("")}</div>
+    </div>` : ""}
+    <div class="panel">
+      <div class="panel-head"><h3>Seguimiento próximo</h3><span class="count">${proximasIA.length}</span></div>
+      <div class="panel-body">${proximasIA.length? proximasIA.map(row).join("") : '<div class="empty">Sin acciones sugeridas por ahora. Se llenan solas conforme se genera o actualiza el informe ejecutivo de cada expediente.</div>'}</div>
+    </div>
+    `;
+  }
 
-  return `
+  return tabsHTML + `
   <div class="panel">
     <div class="panel-head"><h3>Google Calendar</h3></div>
     <div class="panel-body" style="padding:16px 20px;">
@@ -3177,8 +6265,8 @@ function agendaHTML(){
       <table><thead><tr><th>Socio</th><th>Vencidas</th><th>Próximas</th><th></th></tr></thead><tbody>
         <tr data-agenda-socio="todos" style="cursor:pointer; ${AGENDA_SOCIO==='todos'?'background:var(--parchment);':''}">
           <td><strong>Todos</strong></td>
-          <td>${Object.values(resumenPorSocio).reduce((a,b)=>a+b.vencidas,0)}</td>
-          <td>${Object.values(resumenPorSocio).reduce((a,b)=>a+b.proximas,0)}</td>
+          <td>${totalesSinDuplicar.vencidas}</td>
+          <td>${totalesSinDuplicar.proximas}</td>
           <td></td>
         </tr>
         ${Object.keys(resumenPorSocio).sort((a,b)=>resumenPorSocio[b].vencidas-resumenPorSocio[a].vencidas).map(n=>`
@@ -3221,6 +6309,7 @@ function agendaHTML(){
         <div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+          ${a.documento_id? `<button class="btn secondary" data-aviso-borrar-doc="${a.id}" data-documento-id="${a.documento_id}" style="padding:6px 12px; font-size:11.5px; color:var(--red);">Borrar documento</button>`:''}
         </div>
       </div>`).join("")}</div>
   </div>` : ""}
@@ -3233,7 +6322,7 @@ function agendaHTML(){
     <div class="panel-head"><h3>Próximos eventos</h3><span class="count">${proximas.length}</span></div>
     <div class="panel-body">${proximas.length? proximas.map(row).join("") : '<div class="empty">Sin eventos programados. Agrega pagos, amparos, pendientes o marca etapas desde la ficha de cada asunto.</div>'}</div>
   </div>
-  <div class="notice" style="max-width:100%;">Esta agenda combina: pagos de convenios pendientes de cobro, vencimientos del plazo de prescripción del Art. 518 LFT, términos de amparo directo (Art. 17 Ley de Amparo, 15 días hábiles), pendientes que registres manualmente (objeciones, audiencias, desahogos) y avisos de posible atraso frente a los plazos del procedimiento ordinario laboral (Arts. 873 y 873-A LFT). Usa el botón de cada fila para marcarlo cumplido y que deje de aparecer como pendiente. Verifica siempre el calendario oficial de días inhábiles del Tribunal correspondiente.</div>
+  <div class="notice" style="max-width:100%;">Esta agenda combina: pagos de convenios pendientes de cobro, vencimientos del plazo de prescripción (Título Décimo LFT, según el tipo de cada asunto), términos de amparo directo (Art. 17 Ley de Amparo, 15 días hábiles), pendientes que registres manualmente (objeciones, audiencias, desahogos) y avisos de posible atraso frente a los plazos del procedimiento ordinario laboral (Arts. 873 y 873-A LFT). Usa el botón de cada fila para marcarlo cumplido y que deje de aparecer como pendiente. Verifica siempre el calendario oficial de días inhábiles del Tribunal correspondiente.</div>
   `;
 }
 
@@ -3258,7 +6347,7 @@ function formatoDemandaHTML(){
   </div>
 
   <div class="legal-box" style="margin-bottom:16px;">
-    <strong>Campos disponibles para usar en el Word:</strong> <code>{{actor}}, {{demandado}}, {{giro_empresa}}, {{dom_demandado}}, {{dom_testigos}}, {{puesto}}, {{puesto_despidio}}, {{fecha_ingreso_letra}}, {{fecha_baja_letra}}, {{salario_mensual_num}}, {{salario_diario_num}}, {{salario_mensual_letra}}, {{curp}}, {{instancia}}, {{quien_despidio}}, {{hora_despido}}, {{testigos}}, {{fecha_hoy_letra}}, {{ciudad_firma}}</code>
+    <strong>Campos disponibles para usar en el Word:</strong> <code>{{actor}}, {{demandado}}, {{giro_empresa}}, {{dom_demandado}}, {{dom_testigos}}, {{puesto}}, {{puesto_despidio}}, {{fecha_ingreso_letra}}, {{fecha_baja_letra}}, {{salario_mensual_num}}, {{salario_diario_num}}, {{salario_mensual_letra}}, {{curp}}, {{instancia}}, {{quien_despidio}}, {{hora_despido}}, {{testigos}}, {{fecha_hoy_letra}}, {{ciudad_firma}}, {{hora_entrada}}, {{hora_salida}}, {{hora_salida_normal}}, {{hora_inicio_extra}}, {{texto_comida}}, {{dias_laborados}}, {{tipo_jornada_texto}}, {{horas_extra_diarias}}, {{horas_extra_semanales}}, {{rescision_fraccion}}, {{rescision_motivo_breve}}, {{fecha_rescision_letra}}, {{fecha_desde_incumplimiento_letra}}, {{persona_responsable_incumplimiento}}, {{hecho_causa_auto}}, {{hecho_causa_narrativa}}, {{pruebas_adicionales}}, {{prestaciones_opcionales}} (solo en la plantilla "Rescisión Art. 51"), {{monto_prima_antiguedad_num}}, {{monto_prima_antiguedad_letra}}, {{fecha_solicitud_interna_letra}}, {{hora_solicitud_interna}}, {{folio_solicitud_interna}}, {{funcionario_rh_nombre}}, {{funcionario_rh_puesto}}, {{numero_oficio_respuesta}}, {{fecha_oficio_respuesta_letra}}, {{director_firma_nombre}}, {{coordinador_archivo_nombre}}, {{gerente_gestion_nombre}}, {{folio_fiscal_cfdi}}, {{periodo_recibo_desde_letra}}, {{periodo_recibo_hasta_letra}}, {{salario_quincenal_num}}, {{rfc_emisor_demandado}}, {{fecha_hoja_servicios_letra}}, {{numero_documento_fump}}, {{fecha_documento_fump_letra}}, {{periodo_recibo_desde_iso}}, {{periodo_recibo_hasta_iso}}, {{periodo_vacaciones_anterior}} (solo Rescisión Art. 51), {{periodo_vacaciones_actual}} (solo Rescisión Art. 51)</code>
   </div>
   <div id="plantillaStatus" style="font-size:12px; color:var(--gray);">${esOriginal ? 'Estado actual: usando la plantilla original del despacho.' : 'Estado actual: usando una plantilla personalizada, subida por el Administrador.'}</div>
   ${!esOriginal ? `<button class="btn secondary" id="resetPlantillaBtn" style="margin-top:10px;">Restaurar plantilla original del despacho</button>` : ''}
@@ -3337,6 +6426,16 @@ function equipoHTML(){
     </form>
   </div></div>
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Jornada máxima legal (Art. 61 LFT)</div>
+    <div class="notice" style="margin-bottom:14px;">Usada para calcular las horas extra en la demanda a partir del horario de entrada/salida capturado en cada asunto. Si la ley cambia (se prevé una reducción de jornada a partir de 2027), actualízala aquí — no hace falta tocar código ni la plantilla de Word.</div>
+    <form id="jornadaMaximaForm" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field" style="margin:0;"><label>Diurna (horas)</label><input type="text" id="jornadaDiurnaInput" value="${JORNADA_MAXIMA.diurna}" style="max-width:100px;"></div>
+      <div class="field" style="margin:0;"><label>Nocturna (horas)</label><input type="text" id="jornadaNocturnaInput" value="${JORNADA_MAXIMA.nocturna}" style="max-width:100px;"></div>
+      <div class="field" style="margin:0;"><label>Mixta (horas)</label><input type="text" id="jornadaMixtaInput" value="${JORNADA_MAXIMA.mixta}" style="max-width:100px;"></div>
+      <button type="submit" class="btn">Guardar</button>
+    </form>
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Respaldo de toda la información</div>
     <div class="notice" style="margin-bottom:14px;">Toda la información (etapas, notas, convenios, pagos, historial) vive ahora en la base de datos MySQL de tu hosting — el respaldo más confiable es el de cPanel (phpMyAdmin &rarr; Exportar, o la herramienta de "Copias de seguridad" de cPanel). Este botón descarga además un respaldo en JSON como referencia rápida.</div>
     <button class="btn secondary" id="descargarRespaldoBtn">Descargar respaldo (.json)</button>
@@ -3393,6 +6492,26 @@ function miCuentaHTML(){
     <div style="margin-top:12px; display:flex; gap:10px;">
       <button class="btn" id="savePjfCredencialesBtn">Guardar</button>
       ${configurado ? `<button class="btn secondary" id="borrarPjfCredencialesBtn">Quitar cuenta guardada</button>` : ''}
+    </div>
+  </div></div>
+  ${edomexCorreoCredencialesHTML()}`;
+}
+
+function edomexCorreoCredencialesHTML(){
+  const c = EDOMEX_CORREO_CREDENCIALES;
+  const configurado = c && c.configurado;
+  return `
+  <div class="notice" style="margin:18px 0;">El Poder Judicial del Estado de México (Tlalnepantla) notifica los acuerdos de tus juicios laborales por un correo institucional (mail.pjedomex.gob.mx) -- NO es un correo normal (no se puede configurar en Outlook/Gmail), solo se consulta entrando a esa página con usuario y contraseña. Guárdalos aquí para que el robot revise esa bandeja por ti y reporte los acuerdos solo. Tu contraseña se guarda cifrada — nadie del despacho puede verla, ni siquiera un administrador.</div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:10px;">Correo de notificaciones electrónicas (Edomex)</div>
+    ${configurado ? `<div class="notice" style="margin-bottom:14px; background:var(--amber-bg,#fdf6e3);">Ya tienes guardado el usuario <strong>${escapeHTML(c.edomex_correo_usuario)}</strong>${c.actualizado_en ? ' (actualizado el '+new Date(c.actualizado_en).toLocaleDateString('es-MX')+')' : ''}. Para cambiarlo, captura los datos de nuevo abajo.</div>` : ''}
+    <form id="edomexCorreoCredencialesForm" class="grid2">
+      <div class="field"><label>Usuario del correo (ej. tu número de cuenta)</label><input type="text" id="edomexCorreoUsuarioInput" placeholder="Tu usuario de mail.pjedomex.gob.mx" value="${configurado ? escapeHTML(c.edomex_correo_usuario) : ''}"></div>
+      <div class="field"><label>Contraseña del correo</label><input type="password" id="edomexCorreoPasswordInput" placeholder="Tu contraseña (siempre hay que volver a escribirla para guardar)"></div>
+    </form>
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button class="btn" id="saveEdomexCorreoCredencialesBtn">Guardar</button>
+      ${configurado ? `<button class="btn secondary" id="borrarEdomexCorreoCredencialesBtn">Quitar cuenta guardada</button>` : ''}
     </div>
   </div></div>`;
 }
@@ -3525,6 +6644,62 @@ function bindViewBody(){
       finally{ nuevoBtn.disabled = false; }
     });
   }
+  const busquedaIAToggleBtn = document.getElementById('busquedaIAToggleBtn');
+  if(busquedaIAToggleBtn){
+    busquedaIAToggleBtn.addEventListener('click', ()=>{
+      BUSQUEDA_IA_ACTIVA = !BUSQUEDA_IA_ACTIVA;
+      if(!BUSQUEDA_IA_ACTIVA){ BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:null}; BUSQUEDA_IA_PREGUNTA = ''; }
+      renderViewBody();
+    });
+  }
+  const busquedaIAInput = document.getElementById('busquedaIAInput');
+  if(busquedaIAInput){
+    busquedaIAInput.addEventListener('input', (e)=>{ BUSQUEDA_IA_PREGUNTA = e.target.value; });
+    busquedaIAInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); cargarBusquedaIA(); } });
+  }
+  const busquedaIABuscarBtn = document.getElementById('busquedaIABuscarBtn');
+  if(busquedaIABuscarBtn) busquedaIABuscarBtn.addEventListener('click', ()=> cargarBusquedaIA());
+  const busquedaIALimpiarBtn = document.getElementById('busquedaIALimpiarBtn');
+  if(busquedaIALimpiarBtn) busquedaIALimpiarBtn.addEventListener('click', ()=>{ BUSQUEDA_IA_STATE = {cargando:false, resultados:null, error:null}; renderViewBody(); });
+  const generarResumenSemanalBtn = document.getElementById('generarResumenSemanalBtn');
+  if(generarResumenSemanalBtn) generarResumenSemanalBtn.addEventListener('click', ()=> cargarResumenSemanal());
+  document.querySelectorAll('[data-curso-mes-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const mes = el.dataset.cursoMesToggle;
+      CURSO_MES_ABIERTO = CURSO_MES_ABIERTO === mes ? null : mes;
+      renderViewBody();
+    });
+  });
+  const consultarCostosBtn = document.querySelector('[data-consultar-costos]');
+  if(consultarCostosBtn) consultarCostosBtn.addEventListener('click', ()=> cargarCostosMensuales());
+  const guardarCostosBtn = document.getElementById('guardarCostosBtn');
+  if(guardarCostosBtn){
+    guardarCostosBtn.addEventListener('click', ()=>{
+      const mes = document.getElementById('costoMesInput').value;
+      if(!mes){ alert('Elige un mes.'); return; }
+      guardarCostosMensuales({
+        mes,
+        costo_ia: parseFloat(document.getElementById('costoIaInput').value) || 0,
+      });
+    });
+  }
+  document.querySelectorAll('[data-editar-costos-mes]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const mesInput = document.getElementById('costoMesInput');
+      const iaInput = document.getElementById('costoIaInput');
+      if(!mesInput || !iaInput) return;
+      mesInput.value = el.dataset.editarCostosMes;
+      iaInput.value = el.dataset.costoIa || '';
+      mesInput.scrollIntoView({behavior:'smooth', block:'center'});
+    });
+  });
+  document.querySelectorAll('[data-asesoria-mes-toggle]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const mes = el.dataset.asesoriaMesToggle;
+      ASESORIA_MES_ABIERTO = ASESORIA_MES_ABIERTO === mes ? null : mes;
+      renderViewBody();
+    });
+  });
   document.querySelectorAll('[data-id]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const id = parseInt(el.dataset.id);
@@ -3538,6 +6713,21 @@ function bindViewBody(){
   document.querySelectorAll('.chip[data-periodo]').forEach(el=>{
     el.addEventListener('click', ()=>{ INGRESOS_PERIODO = el.dataset.periodo; renderViewBody(); });
   });
+  document.querySelectorAll('.chip[data-embudo-periodo]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      WA_EMBUDO_PERIODO = el.dataset.embudoPeriodo;
+      if(WA_EMBUDO_PERIODO !== 'personalizado') loadWhatsappEmbudo().then(renderViewBody);
+      else renderViewBody();
+    });
+  });
+  const embudoAplicarBtn = document.getElementById('embudoAplicarBtn');
+  if(embudoAplicarBtn){
+    embudoAplicarBtn.addEventListener('click', ()=>{
+      WA_EMBUDO_DESDE = document.getElementById('embudoDesde').value;
+      WA_EMBUDO_HASTA = document.getElementById('embudoHasta').value;
+      loadWhatsappEmbudo().then(renderViewBody);
+    });
+  }
   const ingresosAbogadoSelect = document.getElementById('ingresosAbogadoSelect');
   if(ingresosAbogadoSelect){
     ingresosAbogadoSelect.addEventListener('change', ()=>{
@@ -3545,10 +6735,53 @@ function bindViewBody(){
       renderViewBody();
     });
   }
+  document.querySelectorAll('[data-agenda-tab]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      AGENDA_TAB = el.dataset.agendaTab;
+      renderViewBody();
+    });
+  });
+  const actualizarTodosInformesBtn = document.getElementById('actualizarTodosInformesBtn');
+  if(actualizarTodosInformesBtn){
+    actualizarTodosInformesBtn.addEventListener('click', actualizarTodosLosInformes);
+  }
   document.querySelectorAll('[data-agenda-socio]').forEach(el=>{
     el.addEventListener('click', ()=>{
       AGENDA_SOCIO = el.dataset.agendaSocio;
       renderViewBody();
+    });
+  });
+  const toggleDisponibilidad = document.querySelector('[data-toggle-disponibilidad]');
+  if(toggleDisponibilidad){
+    toggleDisponibilidad.addEventListener('click', ()=>{
+      DISPONIBILIDAD_ABIERTA = !DISPONIBILIDAD_ABIERTA;
+      renderViewBody();
+    });
+  }
+  const addDisponibilidadForm = document.getElementById('addDisponibilidadForm');
+  if(addDisponibilidadForm){
+    addDisponibilidadForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const dia_semana = parseInt(document.getElementById('disponibilidadDia').value, 10);
+      const hora_inicio = document.getElementById('disponibilidadInicio').value;
+      const hora_fin = document.getElementById('disponibilidadFin').value;
+      if(!hora_inicio || !hora_fin){ alert('Captura la hora de inicio y de fin.'); return; }
+      if(hora_inicio >= hora_fin){ alert('La hora de inicio debe ser antes que la hora de fin.'); return; }
+      try{
+        await api('POST', 'disponibilidad_agregar.php', {dia_semana, hora_inicio, hora_fin});
+        await loadDisponibilidad();
+        renderViewBody();
+      }catch(err){ alert('No se pudo agregar el horario: ' + err.message); }
+    });
+  }
+  document.querySelectorAll('[data-delete-disponibilidad]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = parseInt(btn.dataset.deleteDisponibilidad, 10);
+      try{
+        await api('POST', 'disponibilidad_eliminar.php', {id});
+        await loadDisponibilidad();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar el horario: ' + err.message); }
     });
   });
   const googleConnectBtn = document.getElementById('googleConnectBtn');
@@ -3600,6 +6833,27 @@ function bindViewBody(){
       renderViewBody();
     });
   }
+  document.querySelectorAll('.socio-liquidado-check').forEach(el=>{
+    el.addEventListener('change', async ()=>{
+      const kid = parseInt(el.dataset.kid);
+      const idx = parseInt(el.dataset.idx);
+      const meta = getMeta(kid);
+      const pagos = meta.pagos || [];
+      if(!pagos[idx]) return;
+      const valorNuevo = el.checked;
+      pagos[idx].socio_liquidado = valorNuevo;
+      el.disabled = true;
+      try{
+        await api('POST', 'expedientes_update_pagos.php', {id:kid, pagos});
+        renderViewBody();
+      }catch(err){
+        pagos[idx].socio_liquidado = !valorNuevo;
+        el.checked = !valorNuevo;
+        el.disabled = false;
+        alert('No se pudo guardar: ' + err.message);
+      }
+    });
+  });
   document.querySelectorAll('[data-demandado]').forEach(el=>{
     el.addEventListener('click', ()=>{
       SEARCH_TERM = el.dataset.demandado;
@@ -3646,6 +6900,9 @@ function bindViewBody(){
           MODAL_TAB = 'etapas';
           openModal(k);
           return;
+        } else if(action === 'ver_informe'){
+          openModal(k, 'resumen');
+          return;
         }
         await refreshBootstrap();
         syncGoogleIfConnected();
@@ -3659,12 +6916,182 @@ function bindViewBody(){
       try{
         await api('POST', 'avisos_mark.php', {id: parseInt(btn.dataset.avisoMark), estado: btn.dataset.estado});
         await loadAvisosBoletin();
-        if(ACTIVE_CASE) ACTIVE_CASE = findCase(ACTIVE_CASE.id);
-        renderModal();
+        if(ACTIVE_CASE){
+          ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+          renderModal();
+        }
         renderViewBody();
       }catch(err){ alert('No se pudo actualizar: ' + err.message); }
     });
   });
+  document.querySelectorAll('[data-aviso-borrar-doc]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      if(!confirm('¿Borrar el documento subido por el robot para este aviso? Esta acción no se puede deshacer (por ejemplo, si el robot subió el PDF equivocado).')) return;
+      try{
+        await api('POST', 'documentos_delete.php', {id: parseInt(btn.dataset.documentoId)});
+        await api('POST', 'avisos_mark.php', {id: parseInt(btn.dataset.avisoBorrarDoc), estado: 'descartado'});
+        await loadAvisosBoletin();
+        if(ACTIVE_CASE){
+          ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+          await loadDocumentos(ACTIVE_CASE.id);
+          renderModal();
+        }
+        renderViewBody();
+      }catch(err){ alert('No se pudo borrar: ' + err.message); }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-abrir]').forEach(el=>{
+    el.addEventListener('click', async ()=>{
+      const id = parseInt(el.dataset.prospectoAbrir);
+      const p = PROSPECTOS.find(x=>x.id===id);
+      if(!p) return;
+      await loadProspectoMensajes(p.telefono);
+      abrirProspectoModal(id);
+      if(p.mensaje_nuevo){
+        p.mensaje_nuevo = false;
+        api('POST', 'prospectos_update.php', {id, marcar_visto: true}).catch(()=>{});
+      }
+    });
+  });
+  document.querySelectorAll('[data-prospecto-descartar-rapido]').forEach(el=>{
+    el.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      if(!confirm('¿Descartar este prospecto? El bot le sigue contestando normal si vuelve a escribir — esto solo indica que el despacho no toma el caso.')) return;
+      const id = parseInt(el.dataset.prospectoDescartarRapido);
+      el.disabled = true;
+      try{
+        await api('POST', 'prospectos_update.php', {id, estatus: 'descartado'});
+        await loadProspectos();
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo descartar: ' + err.message);
+        el.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll('[data-cita-telefono]').forEach(el=>{
+    el.addEventListener('click', async ()=>{
+      // Una cita agendada casi siempre tiene un prospecto detrás (se creó
+      // al mostrar interés en la asesoría) — se abre ese modal completo
+      // (resumen del caso, cambiar estatus, turnar, enviar mensaje) en vez
+      // del visor de solo lectura, para no tener que ir a buscarlo aparte
+      // en "Prospectos (WhatsApp)". Si por alguna razón no hay prospecto
+      // para ese teléfono, se cae de vuelta al visor simple de siempre.
+      const p = PROSPECTOS.find(x=>x.telefono===el.dataset.citaTelefono);
+      if(p){
+        await loadProspectoMensajes(p.telefono);
+        abrirProspectoModal(p.id);
+        if(p.mensaje_nuevo){
+          p.mensaje_nuevo = false;
+          api('POST', 'prospectos_update.php', {id: p.id, marcar_visto: true}).catch(()=>{});
+        }
+      } else {
+        abrirCitaConversacionModal(el.dataset.citaTelefono, el.dataset.citaNombre);
+      }
+    });
+  });
+  document.querySelectorAll('.cita-atendida-btn').forEach(el=>{
+    el.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const id = parseInt(el.dataset.citaId);
+      el.disabled = true;
+      try{
+        await api('POST', 'citas_marcar_atendida.php', {id});
+        await loadCitas();
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo marcar: ' + err.message);
+        el.disabled = false;
+      }
+    });
+  });
+  document.querySelectorAll('.cita-cancelar-btn').forEach(el=>{
+    el.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      if(!confirm('¿Cancelar esta asesoría? El horario se libera de inmediato para que alguien más lo pueda apartar. Esto no avisa nada al cliente por WhatsApp — si hace falta, escríbele tú directo.')) return;
+      const id = parseInt(el.dataset.citaId);
+      el.disabled = true;
+      try{
+        await api('POST', 'citas_cancelar.php', {id});
+        await loadCitas();
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo cancelar: ' + err.message);
+        el.disabled = false;
+      }
+    });
+  });
+  const prospectosToggleAtendidos = document.querySelector('[data-prospectos-toggle-atendidos]');
+  if(prospectosToggleAtendidos){
+    prospectosToggleAtendidos.addEventListener('click', ()=>{
+      PROSPECTOS_MOSTRAR_ATENDIDOS = !PROSPECTOS_MOSTRAR_ATENDIDOS;
+      renderViewBody();
+    });
+  }
+  document.querySelectorAll('[data-prospectos-tab]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      PROSPECTOS_TAB = el.dataset.prospectosTab;
+      renderViewBody();
+    });
+  });
+  document.querySelectorAll('[data-conversacion-abrir]').forEach(el=>{
+    el.addEventListener('click', async ()=>{
+      const telefono = el.dataset.conversacionAbrir;
+      await Promise.all([loadConversacionMensajes(telefono), loadConversacionResumen(telefono)]);
+      abrirConversacionModal(telefono);
+    });
+  });
+  bindResumenEjecutivoEvents();
+  bindJurisprudenciaEvents();
+  const reintentarLoteBtn = document.getElementById('reintentarLoteBtn');
+  if(reintentarLoteBtn){
+    reintentarLoteBtn.addEventListener('click', async ()=>{
+      REINTENTO_EN_PROGRESO = true;
+      REINTENTO_PROGRESO_TXT = 'Reintentando respuestas fallidas...';
+      renderViewBody();
+      let motivosFallo = {}; // motivo -> cuántas veces pasó, para el resumen final
+      let atorado = false;
+      try{
+        let restantes = Infinity;
+        let restantesAnterior = Infinity;
+        let totalOk = 0, totalFallo = 0;
+        while(restantes > 0){
+          const d = await api('POST', 'conversaciones_reintentar.php', {lote:true, tamano:3});
+          totalOk += d.resultados.filter(r=>r.ok).length;
+          totalFallo += d.resultados.filter(r=>!r.ok).length;
+          d.resultados.filter(r=>!r.ok).forEach(r=>{
+            motivosFallo[r.motivo] = (motivosFallo[r.motivo]||0) + 1;
+          });
+          restantes = d.restantes;
+          REINTENTO_PROGRESO_TXT = `Reintentando... ${totalOk} contestadas, ${totalFallo} sin poder contestar, ${restantes} pendientes.`;
+          renderViewBody();
+          if(d.resultados.length === 0) break; // no debería pasar, pero evita loop infinito
+          // Si nadie se contestó en esta vuelta y el número de pendientes no bajó,
+          // son casos que se van a quedar fallando siempre (ej. sin saldo de
+          // Anthropic) — seguir insistiendo solo gastaría llamadas a la API sin
+          // avanzar, así que nos detenemos y lo explicamos en el resumen.
+          if(d.resultados.every(r=>!r.ok) && restantes === restantesAnterior){
+            atorado = true;
+            break;
+          }
+          restantesAnterior = restantes;
+        }
+        await loadConversaciones();
+        const resumenMotivos = Object.entries(motivosFallo).map(([m,n])=>`• ${n}× ${m}`).join('\n');
+        let mensaje = `Reintento terminado: ${totalOk} conversación${totalOk===1?'':'es'} contestada${totalOk===1?'':'s'}, ${totalFallo} sin poder contestar.`;
+        if(resumenMotivos) mensaje += `\n\nMotivos de las que no se pudieron:\n${resumenMotivos}`;
+        if(atorado) mensaje += `\n\nSe detuvo porque las restantes van a seguir fallando por la misma razón — dale clic de nuevo cuando esté resuelto.`;
+        if(totalOk > 0 || totalFallo > 0) alert(mensaje);
+      }catch(err){
+        alert('No se pudo completar el reintento en lote: ' + err.message);
+      }finally{
+        REINTENTO_EN_PROGRESO = false;
+        REINTENTO_PROGRESO_TXT = "";
+        renderViewBody();
+      }
+    });
+  }
   const edomexCaptchaBtn = document.getElementById('edomexCaptchaBtn');
   if(edomexCaptchaBtn){
     edomexCaptchaBtn.addEventListener('click', async ()=>{
@@ -3752,6 +7179,24 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo guardar: ' + err.message); }
     });
   }
+  const jornadaMaximaForm = document.getElementById('jornadaMaximaForm');
+  if(jornadaMaximaForm){
+    jornadaMaximaForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const vd = parseFloat(document.getElementById('jornadaDiurnaInput').value);
+      const vn = parseFloat(document.getElementById('jornadaNocturnaInput').value);
+      const vm = parseFloat(document.getElementById('jornadaMixtaInput').value);
+      if([vd,vn,vm].some(v=>isNaN(v) || v<=0)){ alert('Captura las 3 jornadas máximas con un número válido.'); return; }
+      try{
+        await saveConfiguracion('jornada_maxima_diurna', vd);
+        await saveConfiguracion('jornada_maxima_nocturna', vn);
+        await saveConfiguracion('jornada_maxima_mixta', vm);
+        JORNADA_MAXIMA = {diurna: vd, nocturna: vn, mixta: vm};
+        alert('Jornada máxima actualizada. Los documentos de demanda que generes de aquí en adelante usarán este valor.');
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+    });
+  }
   const addDiaInhabilForm = document.getElementById('addDiaInhabilForm');
   if(addDiaInhabilForm){
     addDiaInhabilForm.addEventListener('submit', async (e)=>{
@@ -3805,6 +7250,32 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo quitar: ' + err.message); }
     });
   }
+  const saveEdomexCorreoCredencialesBtn = document.getElementById('saveEdomexCorreoCredencialesBtn');
+  if(saveEdomexCorreoCredencialesBtn){
+    saveEdomexCorreoCredencialesBtn.addEventListener('click', async ()=>{
+      const edomex_correo_usuario = document.getElementById('edomexCorreoUsuarioInput').value.trim();
+      const edomex_correo_password = document.getElementById('edomexCorreoPasswordInput').value;
+      if(!edomex_correo_usuario || !edomex_correo_password){ alert('Escribe tu usuario y tu contraseña del correo de notificaciones.'); return; }
+      saveEdomexCorreoCredencialesBtn.disabled = true;
+      try{
+        await api('POST', 'edomex_correo_credenciales_set.php', {edomex_correo_usuario, edomex_correo_password});
+        await loadEdomexCorreoCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+      finally{ saveEdomexCorreoCredencialesBtn.disabled = false; }
+    });
+  }
+  const borrarEdomexCorreoCredencialesBtn = document.getElementById('borrarEdomexCorreoCredencialesBtn');
+  if(borrarEdomexCorreoCredencialesBtn){
+    borrarEdomexCorreoCredencialesBtn.addEventListener('click', async ()=>{
+      if(!confirm('¿Quitar tu cuenta guardada del correo de notificaciones de Edomex? El robot dejará de revisar tu bandeja hasta que la vuelvas a capturar.')) return;
+      try{
+        await api('POST', 'edomex_correo_credenciales_set.php', {borrar: true});
+        await loadEdomexCorreoCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); }
+    });
+  }
 }
 
 // ---------------------------------------------------------------
@@ -3814,15 +7285,57 @@ async function openModal(k, tab){
   detenerCamara();
   limpiarFotosCapturadas();
   CROP_PENDING = null;
+  ARCHIVO_CROP_QUEUE = [];
   ACTIVE_CASE = k; MODAL_TAB = tab || "resumen";
   if(MODAL_TAB === 'documentos') await loadDocumentos(k.id);
+  if(MODAL_TAB === 'resumen' && !k.resumen_ejecutivo && !(INFORME_EJECUTIVO_STATE[k.id]||{}).cargando) cargarInformeEjecutivo(k.id, false);
   renderModal();
   document.getElementById('modalOverlay').classList.add('show');
 }
+// Pide (o regenera) el informe ejecutivo con IA de un expediente. El backend
+// cachea el resultado y solo vuelve a llamar a la IA si el expediente cambió
+// desde la última vez -- por eso es seguro llamar esto sin forzar cada vez
+// que se abre la pestaña "Informe del juicio".
+async function cargarInformeEjecutivo(caseId, forzar){
+  INFORME_EJECUTIVO_STATE[caseId] = {cargando:true, error:null};
+  if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
+  try{
+    const r = await api('POST', 'expediente_resumen_ejecutivo.php', {id: caseId, forzar: !!forzar});
+    const kc = findCase(caseId);
+    if(kc){ kc.resumen_ejecutivo = r.resumen; kc.accion_sugerida_ia = r.accion; kc.urgencia_ia = r.urgencia; kc.resumen_ejecutivo_generado_en = r.generado_en; }
+    if(ACTIVE_CASE && ACTIVE_CASE.id===caseId){ ACTIVE_CASE.resumen_ejecutivo = r.resumen; ACTIVE_CASE.accion_sugerida_ia = r.accion; ACTIVE_CASE.urgencia_ia = r.urgencia; ACTIVE_CASE.resumen_ejecutivo_generado_en = r.generado_en; }
+    INFORME_EJECUTIVO_STATE[caseId] = {cargando:false, error: r.aviso || null};
+  }catch(err){
+    INFORME_EJECUTIVO_STATE[caseId] = {cargando:false, error: 'No se pudo generar el informe: ' + err.message};
+  }
+  if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
+}
+
+// Actualiza de un jalón el informe ejecutivo (y con él, la próxima acción +
+// urgencia) de todos los expedientes activos visibles para el usuario --
+// para cuando se agrega un dato nuevo al informe (como la próxima acción) y
+// hace falta que los ya generados antes lo traigan también, sin tener que
+// abrir expediente por expediente. Uno a la vez (no en paralelo) para no
+// saturar la API de la IA ni el servidor.
+async function actualizarTodosLosInformes(){
+  const casos = visibleCases().filter(k=>!estaConcluido(k));
+  if(!casos.length) return;
+  SEGUIMIENTO_IA_BULK = {actual:0, total:casos.length};
+  renderViewBody();
+  for(const k of casos){
+    SEGUIMIENTO_IA_BULK.actual++;
+    renderViewBody();
+    await cargarInformeEjecutivo(k.id, true);
+  }
+  SEGUIMIENTO_IA_BULK = null;
+  renderViewBody();
+}
+
 function closeModal(){
   detenerCamara();
   limpiarFotosCapturadas();
   CROP_PENDING = null;
+  ARCHIVO_CROP_QUEUE = [];
   document.getElementById('modalOverlay').classList.remove('show');
   document.getElementById('modalOverlay').innerHTML = "";
 }
@@ -3861,9 +7374,10 @@ function renderModal(){
   overlay.addEventListener('click', (e)=>{ if(e.target===overlay) closeModal(); });
   document.querySelectorAll('.modal-tabs button').forEach(b=>{
     b.addEventListener('click', async ()=>{
-      if(b.dataset.t !== 'documentos'){ detenerCamara(); CROP_PENDING = null; } // no dejar la cámara prendida al salir de la pestaña
+      if(b.dataset.t !== 'documentos'){ detenerCamara(); CROP_PENDING = null; ARCHIVO_CROP_QUEUE = []; } // no dejar la cámara prendida ni una cola de recorte a medias al salir de la pestaña
       MODAL_TAB = b.dataset.t;
       if(MODAL_TAB === 'documentos') await loadDocumentos(ACTIVE_CASE.id);
+      if(MODAL_TAB === 'resumen' && !ACTIVE_CASE.resumen_ejecutivo && !(INFORME_EJECUTIVO_STATE[ACTIVE_CASE.id]||{}).cargando) cargarInformeEjecutivo(ACTIVE_CASE.id, false);
       renderModal();
     });
   });
@@ -3924,8 +7438,10 @@ function bindFotosPanelEvents(){
 
 function cropPanelHTML(){
   const r = CROP_PENDING.rect;
+  const esArchivo = CROP_PENDING.origen === 'archivo' || CROP_PENDING.origen === 'archivo_multi';
+  const restantes = ARCHIVO_CROP_QUEUE.length;
   return `
-  <div class="notice" style="margin-bottom:12px;">El sistema ya intentó detectar el borde de la hoja. Arrastra las esquinas o los lados del recuadro para ajustarlo, o el recuadro completo para moverlo, y confirma.</div>
+  <div class="notice" style="margin-bottom:12px;">El sistema ya intentó detectar el borde de la hoja. Arrastra las esquinas o los lados del recuadro para ajustarlo, o el recuadro completo para moverlo. Si la imagen salió de lado o al revés, gírala antes de confirmar.${esArchivo && restantes ? ' Después sigue con la siguiente imagen ('+restantes+' más en espera).' : ''}</div>
   <div id="cropStage" style="position:relative; width:${CROP_PENDING.dispW}px; max-width:100%; margin:0 auto 14px; touch-action:none;">
     <img id="cropImg" src="${CROP_PENDING.dataURL}" style="display:block; width:${CROP_PENDING.dispW}px; max-width:100%; height:auto; border-radius:4px;">
     <div id="cropRect" style="position:absolute; left:${r.x}px; top:${r.y}px; width:${r.w}px; height:${r.h}px; border:2px solid #fff; box-shadow:0 0 0 9999px rgba(0,0,0,.55); cursor:move;">
@@ -3935,9 +7451,13 @@ function cropPanelHTML(){
       <div class="crop-handle" data-corner="br" style="position:absolute; right:-9px; bottom:-9px; width:18px; height:18px; background:#fff; border:2px solid var(--brass); border-radius:50%; cursor:nwse-resize;"></div>
     </div>
   </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+    <button class="btn secondary" id="girarIzqBtn" type="button">&#8634; Girar izquierda</button>
+    <button class="btn secondary" id="girarDerBtn" type="button">&#8635; Girar derecha</button>
+  </div>
   <div style="display:flex; gap:8px; flex-wrap:wrap;">
-    <button class="btn" id="confirmarRecorteBtn">Usar este recorte</button>
-    <button class="btn secondary" id="cancelarRecorteBtn">Descartar foto</button>
+    <button class="btn" id="confirmarRecorteBtn">${CROP_PENDING.origen==='archivo' ? 'Usar este recorte y subir' : (CROP_PENDING.origen==='archivo_multi' ? 'Usar este recorte' + (restantes? ' y seguir':'') : 'Usar este recorte')}</button>
+    <button class="btn secondary" id="cancelarRecorteBtn">${esArchivo ? 'Cancelar' : 'Descartar foto'}</button>
   </div>
   `;
 }
@@ -3987,27 +7507,63 @@ function bindCropEvents(){
   rectEl.querySelectorAll('.crop-handle').forEach(h=>{
     h.addEventListener('pointerdown', (e)=>{ e.stopPropagation(); startDrag(e, h.dataset.corner); });
   });
+  const girarIzqBtn = document.getElementById('girarIzqBtn');
+  if(girarIzqBtn) girarIzqBtn.addEventListener('click', ()=> rotarCropPendiente(-90));
+  const girarDerBtn = document.getElementById('girarDerBtn');
+  if(girarDerBtn) girarDerBtn.addEventListener('click', ()=> rotarCropPendiente(90));
+  // Si quedan más imágenes en la cola (varios archivos elegidos de una
+  // vez), pasa a la siguiente en el visor de recorte; si no, listo.
+  function continuarColaArchivos(){
+    if(ARCHIVO_CROP_QUEUE.length){
+      iniciarCropArchivo(ARCHIVO_CROP_QUEUE.shift(), true);
+    } else {
+      CROP_PENDING = null;
+      renderModal();
+    }
+  }
   const confirmarRecorteBtn = document.getElementById('confirmarRecorteBtn');
   if(confirmarRecorteBtn){
     confirmarRecorteBtn.addEventListener('click', ()=>{
-      const {canvas, scale, rect} = CROP_PENDING;
+      const {canvas, scale, rect, origen, nombreOriginal} = CROP_PENDING;
       const sx = rect.x/scale, sy = rect.y/scale, sw = rect.w/scale, sh = rect.h/scale;
       const out = document.createElement('canvas');
       out.width = Math.max(1, Math.round(sw));
       out.height = Math.max(1, Math.round(sh));
       out.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
       out.toBlob(blob=>{
-        if(blob){
+        if(!blob){ continuarColaArchivos(); return; }
+        // Una sola imagen elegida del disco se sube de inmediato, ya
+        // recortada; varias imágenes elegidas juntas (o fotos de cámara)
+        // se van juntando en FOTOS_CAPTURADAS para armar un solo PDF,
+        // bien acomodado, al terminar.
+        if(origen === 'archivo'){
+          const categoria = document.getElementById('documentoCategoria').value;
+          const nombre = (nombreOriginal || 'documento').replace(/\.[^.]+$/, '') + '.jpg';
+          const croppedFile = new File([blob], nombre, {type:'image/jpeg'});
+          CROP_PENDING = null;
+          renderModal();
+          const status = document.getElementById('documentoStatus');
+          if(status) status.textContent = 'Subiendo...';
+          subirDocumento(ACTIVE_CASE.id, croppedFile, categoria)
+            .then(()=> loadDocumentos(ACTIVE_CASE.id))
+            .then(()=> renderModal())
+            .catch(err=>{ alert('No se pudo subir el documento: ' + err.message); });
+        } else {
           FOTOS_CAPTURADAS.push({blob, url: URL.createObjectURL(blob), width: out.width, height: out.height});
+          continuarColaArchivos();
         }
-        CROP_PENDING = null;
-        renderModal();
       }, 'image/jpeg', 0.85);
     });
   }
   const cancelarRecorteBtn = document.getElementById('cancelarRecorteBtn');
   if(cancelarRecorteBtn){
-    cancelarRecorteBtn.addEventListener('click', ()=>{ CROP_PENDING = null; renderModal(); });
+    cancelarRecorteBtn.addEventListener('click', ()=>{
+      // Si es una de varias imágenes en cola, "Cancelar" solo descarta
+      // ésta y sigue con la siguiente; no cancela todo el lote.
+      if(CROP_PENDING && CROP_PENDING.origen === 'archivo_multi'){ continuarColaArchivos(); return; }
+      CROP_PENDING = null;
+      renderModal();
+    });
   }
 }
 
@@ -4019,7 +7575,22 @@ function modalTabContent(k,p,meta){
     const det = juicioDetenido(k);
     const pAlerta = isPrescripcionRelevant(k) ? computePrescripcion(k) : null;
     const liqResumen = computeLiquidacion(k);
+    const infEstado = INFORME_EJECUTIVO_STATE[k.id] || {cargando:false, error:null};
     return `
+    <div class="legal-box" style="margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px; margin-bottom:6px;">
+        <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--brass);">Informe ejecutivo &middot; generado con IA</div>
+        ${!infEstado.cargando ? `<button class="btn secondary" id="actualizarInformeBtn" style="padding:4px 10px; font-size:11px; flex-shrink:0;">${k.resumen_ejecutivo ? 'Actualizar' : 'Generar'}</button>` : ''}
+      </div>
+      ${infEstado.cargando
+        ? `<div class="loading-dots" style="margin:6px 0 2px;"><span></span><span></span><span></span></div>`
+        : (k.resumen_ejecutivo
+            ? `<div style="font-size:13.5px; color:var(--ink); white-space:pre-wrap; line-height:1.5;">${escapeHTML(k.resumen_ejecutivo)}</div>
+               ${k.accion_sugerida_ia ? `<div style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--border); display:flex; align-items:center; gap:8px;">${urgenciaBadgeHTML(k.urgencia_ia)}<span style="font-size:12.5px; color:var(--ink);"><strong>Próxima acción:</strong> ${escapeHTML(k.accion_sugerida_ia)}</span></div>` : ''}
+               <div style="font-size:11px; color:var(--gray); margin-top:8px;">Generado el ${new Date(k.resumen_ejecutivo_generado_en).toLocaleString('es-MX', {day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})}</div>`
+            : `<div class="empty" style="margin:2px 0;">Aún no se ha generado un informe ejecutivo de este asunto.</div>`)}
+      ${infEstado.error ? `<div style="font-size:11.5px; color:var(--red); margin-top:6px;">${escapeHTML(infEstado.error)}</div>` : ''}
+    </div>
     <div class="legal-box" style="margin-bottom:16px;">
       <div style="font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--brass); margin-bottom:4px;">Situación actual del asunto</div>
       <div style="font-family:var(--serif); font-size:17px; font-weight:700; color:var(--ink); margin-bottom:4px;">${escapeHTML(etapaAct.label)}</div>
@@ -4033,7 +7604,7 @@ function modalTabContent(k,p,meta){
     ${(()=>{ const pago = proximoPago(k); return pago ? `<div class="legal-box" style="border-left-color:var(--green); margin-bottom:14px;"><strong>&#128176; Pago programado:</strong> ${fmtDate(pago.fecha)}${pago.monto!=null? ' — '+fmtMoney(pago.monto) : ' — monto sin capturar'}. Esto también le aparece a tu cliente en su portal.</div>` : ''; })()}
     ${det ? `<div class="legal-box" style="border-left-color:var(--amber); margin-bottom:14px;"><strong>&#9888; Sin movimiento en ${det.dias} días.</strong> Última actividad registrada el ${fmtDate(det.ultima)}. Vale la pena revisar en qué quedó este asunto y darle seguimiento.</div>` : ''}
     ${est ? `<div class="legal-box" style="border-left-color:var(--red); margin-bottom:14px;"><strong>&#9888; Posible atraso.</strong> Se esperaba "${escapeHTML(est.siguiente)}" desde el ${fmtDate(dateToISO(est.expected))} (${est.diasAtraso} día(s) de atraso) y no se ha registrado.</div>` : ''}
-    ${pAlerta ? `<div class="legal-box" style="border-left-color:${pAlerta.daysLeft<=10?'var(--red)':'var(--amber)'}; margin-bottom:14px;"><strong>Prescripción (Art. 518 LFT):</strong> vence el ${fmtDate(dateToISO(pAlerta.deadline))} — ${pAlerta.daysLeft} día(s) restantes.</div>` : ''}
+    ${pAlerta ? `<div class="legal-box" style="border-left-color:${pAlerta.daysLeft<=10?'var(--red)':'var(--amber)'}; margin-bottom:14px;"><strong>Prescripción (${pAlerta.plazo.articulo}):</strong> vence el ${fmtDate(dateToISO(pAlerta.deadline))} — ${pAlerta.daysLeft} día(s) restantes.</div>` : ''}
     <div class="divider"></div>
     <div class="grid2">
       <div class="field"><label>Puesto</label><div class="v">${escapeHTML(k.puesto||'—')}</div></div>
@@ -4084,7 +7655,7 @@ function modalTabContent(k,p,meta){
       <div class="field"><label>Días restantes hoy</label><div class="v">${p.daysLeft} día(s)</div></div>
       <div class="field"><label>Ajuste por fin de semana</label><div class="v">${p.adjustedForWeekend? 'Sí, se recorrió al siguiente día hábil':'No aplicó'}</div></div>
     </div>
-    <div class="legal-box">Cómputo con base en el Art. 518 de la Ley Federal del Trabajo (dos meses de calendario, contados a partir del día siguiente a la separación) y el criterio de la Segunda Sala de la SCJN sobre meses completos y suspensión durante el procedimiento de conciliación. Verifique el calendario oficial de días inhábiles del Tribunal o Centro de Conciliación correspondiente antes de tomar decisiones procesales.</div>
+    <div class="legal-box">Cómputo con base en el Art. 518 de la Ley Federal del Trabajo: 60 días naturales contados uno por uno a partir del día siguiente a la separación, suspendiéndose durante el procedimiento de conciliación (desde la solicitud hasta la constancia de no conciliación, ambos días inclusive) y reanudándose al día siguiente de ésta. Verifique el calendario oficial de días inhábiles del Tribunal o Centro de Conciliación correspondiente antes de tomar decisiones procesales.</div>
     `;
   }
   if(MODAL_TAB==='calculo'){
@@ -4181,6 +7752,7 @@ function modalTabContent(k,p,meta){
   }
   if(MODAL_TAB==='amparo'){
     const a = computeAmparoDeadline(meta);
+    const circuitoActual = amparoCircuitoDeTribunal(meta.amparo_tribunal);
     return `
     <label style="display:flex; align-items:center; gap:8px; margin-bottom:14px; font-size:13px; color:var(--ink);">
       <input type="checkbox" id="amparoActivo" ${meta.amparo_activo?'checked':''}> Este asunto tiene o podría requerir amparo directo
@@ -4191,8 +7763,25 @@ function modalTabContent(k,p,meta){
         <div class="v" style="font-weight:700; color:${a && a.daysLeft<=5? 'var(--red)': a? 'var(--ink)':'var(--gray)'}">${a? fmtDate(dateToISO(a.deadline)) + ' ('+a.daysLeft+' d.)' : '—'}</div>
       </div>
     </div>
-    <div class="field" style="margin-top:14px;"><label>Notas sobre el amparo</label><textarea id="amparoNotas" placeholder="Acto reclamado, Tribunal Colegiado, número de expediente...">${escapeHTML(meta.amparo_notas||'')}</textarea></div>
-    <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo descarta sábados, domingos y los días inhábiles capturados en "Días inhábiles"; aun así, verifica el calendario oficial del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales.</div>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="field"><label>Circuito del amparo</label>
+        <select id="amparoCircuito">
+          <option value="">Selecciona...</option>
+          <option value="primero" ${circuitoActual==='primero'?'selected':''}>Primer Circuito (Ciudad de México)</option>
+          <option value="segundo" ${circuitoActual==='segundo'?'selected':''}>Segundo Circuito (Estado de México)</option>
+        </select>
+      </div>
+      <div class="field"><label>Tribunal Colegiado</label>
+        <select id="amparoTribunalSelect">${amparoTribunalOptionsHTML(circuitoActual, meta.amparo_tribunal||'')}</select>
+      </div>
+    </div>
+    <div class="field" id="amparoTribunalOtroWrap" style="margin-top:10px; ${circuitoActual===''&&meta.amparo_tribunal?'':'display:none;'}">
+      <label>Especifica el tribunal (o juzgado)</label>
+      <input type="text" id="amparoTribunalOtro" placeholder="Nombre completo del tribunal o juzgado" value="${circuitoActual===''?escapeHTML(meta.amparo_tribunal||''):''}">
+    </div>
+    <div class="field" style="margin-top:10px;"><label>Número de expediente del amparo</label><input type="text" id="amparoExpediente" placeholder="Ej. AD 123/2026 (distinto al expediente del juicio laboral)" value="${escapeHTML(meta.amparo_expediente||'')}"></div>
+    <div class="field" style="margin-top:14px;"><label>Notas sobre el amparo</label><textarea id="amparoNotas" placeholder="Acto reclamado, observaciones...">${escapeHTML(meta.amparo_notas||'')}</textarea></div>
+    <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo descarta sábados, domingos y los días inhábiles capturados en "Días inhábiles"; aun así, verifica el calendario oficial del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales. El número de expediente del amparo (una vez que el Tribunal lo asigne) es lo que permite que el robot Federal también avise cuando haya movimientos ahí -- captúralo en cuanto lo tengas.</div>
     <div style="margin-top:14px;"><button class="btn" id="saveAmparoBtn">Guardar datos de amparo</button></div>
     `;
   }
@@ -4226,6 +7815,7 @@ function modalTabContent(k,p,meta){
         ${a.estado==='nuevo' ? `<div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+          ${a.documento_id? `<button class="btn secondary" data-aviso-borrar-doc="${a.id}" data-documento-id="${a.documento_id}" style="padding:6px 12px; font-size:11.5px; color:var(--red);">Borrar documento</button>`:''}
         </div>` : ''}
       </div>`).join("") : '<div class="empty">Sin revisiones registradas todavía.</div>'}
     `;
@@ -4239,21 +7829,31 @@ function modalTabContent(k,p,meta){
           <label>${escapeHTML(f.label)}</label>
           ${f.type==='date' ?
             `<input type="date" class="edit-field" data-field="${f.key}" value="${k[f.key]||''}">` :
+            f.type==='time' ?
+            `<input type="time" class="edit-field" data-field="${f.key}" value="${(k[f.key]||'').slice(0,5)}">` :
+            f.type==='tipo_asunto' ?
+            tipoAsuntoFieldHTML(k.tipo_asunto!=null ? String(k.tipo_asunto) : '') :
             f.type==='select' ?
             (()=>{
               const actual = k[f.key]!=null ? String(k[f.key]) : '';
+              // Las opciones pueden ser strings simples (valor === texto
+              // mostrado) u objetos {value,label} cuando el valor guardado
+              // debe ser corto (ej. "V") pero el texto mostrado más
+              // descriptivo (ver rescision_fraccion).
+              const opts = f.options.map(o => typeof o === 'string' ? {value:o, label:o} : o);
+              const valores = opts.map(o=>o.value);
               // Si el valor guardado no está en la lista cerrada (dato legado), se
               // agrega como primera opción para no perderlo ni cambiarlo solo.
-              const extra = actual && !f.options.includes(actual) ? `<option value="${escapeHTML(actual)}" selected>${escapeHTML(actual)} (dato anterior — vuelve a elegir para estandarizar)</option>` : '';
+              const extra = actual && !valores.includes(actual) ? `<option value="${escapeHTML(actual)}" selected>${escapeHTML(actual)} (dato anterior — vuelve a elegir para estandarizar)</option>` : '';
               return `<select class="edit-field" data-field="${f.key}" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
                 <option value="">— Sin definir —</option>
                 ${extra}
-                ${f.options.map(o=>`<option value="${escapeHTML(o)}" ${actual===o?'selected':''}>${escapeHTML(o)}</option>`).join("")}
+                ${opts.map(o=>`<option value="${escapeHTML(o.value)}" ${actual===o.value?'selected':''}>${escapeHTML(o.label)}</option>`).join("")}
               </select>`;
             })() :
             f.type==='tribunal' ?
             tribunalFieldHTML(f, k[f.key]!=null ? String(k[f.key]) : '') :
-            f.key==='ultima_nota' ?
+            (f.key==='ultima_nota' || f.type==='textarea') ?
             `<textarea class="edit-field" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
           }
@@ -4264,14 +7864,14 @@ function modalTabContent(k,p,meta){
   }
   if(MODAL_TAB==='documentos'){
     return `
-    <div class="notice" style="margin-bottom:16px;">Sube aquí los documentos de este asunto (demanda, contestación, pruebas, actas de audiencia...). Formatos permitidos: PDF, Word, Excel e imágenes (JPG/PNG), hasta 20 MB por archivo.</div>
+    <div class="notice" style="margin-bottom:16px;">Sube aquí los documentos de este asunto (demanda, contestación, pruebas, actas de audiencia...). Formatos permitidos: PDF, Word, Excel e imágenes (JPG/PNG), hasta 20 MB por archivo. Si eliges una o varias imágenes, cada una se abre primero en un visor donde puedes ajustar el recuadro a las orillas del documento y girarla si salió de lado o al revés; si eliges varias juntas, al terminar se arman en un solo PDF, ya recortadas y acomodadas en orden.</div>
     <div class="grid2" style="margin-bottom:6px;">
       <div class="field"><label>Categoría</label>
         <select id="documentoCategoria" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
           ${Object.keys(CATEGORIA_DOCUMENTO_LABEL).map(c=>`<option value="${c}">${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[c])}</option>`).join("")}
         </select>
       </div>
-      <div class="field"><label>Archivo</label><input type="file" id="documentoArchivo" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx"></div>
+      <div class="field"><label>Archivo (puedes elegir varias imágenes a la vez)</label><input type="file" id="documentoArchivo" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" multiple></div>
     </div>
     <div style="margin-top:8px;"><button class="btn" id="subirDocumentoBtn">Subir documento</button> <span id="documentoStatus" style="font-size:12px; color:var(--gray); margin-left:8px;"></span></div>
     <div class="divider"></div>
@@ -4328,6 +7928,14 @@ function modalTabContent(k,p,meta){
         ${PLANTILLAS_LIB.map(p=>`<option value="${p.id}">${escapeHTML(p.nombre)}</option>`).join("")}
       </select>
     </div>
+    <div id="prestacionesRescisionPanel" style="display:none; margin-bottom:16px; border:1px solid var(--border); border-radius:10px; padding:14px 16px; background:var(--paper);">
+      <div style="font-family:var(--serif); font-weight:700; font-size:14px; color:var(--ink); margin-bottom:8px;">Prestaciones a incluir (además de la rescisión, que siempre va)</div>
+      <div class="notice" style="margin-bottom:10px;">Desmarca las que no apliquen a este caso. Las letras (B, C, D...) se acomodan solas según lo que dejes marcado.</div>
+      ${PRESTACIONES_RESCISION_OPCIONES.map(o=>`
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:12.5px; color:var(--ink);">
+          <input type="checkbox" class="prestacion-rescision-check" data-key="${o.key}" ${o.checkedPorDefecto?'checked':''}> ${escapeHTML(o.label)}
+        </label>`).join("")}
+    </div>
     <button class="btn" id="genDemandaBtn">Generar documento en Word (.docx)</button>
     <span id="genDemandaStatus" style="margin-left:10px; font-size:12px; color:var(--gray);"></span>
     `;
@@ -4357,13 +7965,23 @@ function modalTabContent(k,p,meta){
       </div>
       <div style="margin-top:10px;"><button class="btn" id="saveConvenioManualBtn">Guardar convenio/pago</button> <span id="avisoClienteConvenio"></span></div>
     </div>
-    <div class="field" style="margin-bottom:14px;">
-      <label>Socio asignado</label>
-      <select id="lawyerSelect" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
-        <option value="" ${!k.abogado_id?'selected':''}>Sin asignar</option>
-        ${EQUIPO.map(u=>`<option value="${u.id}" ${k.abogado_id===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
-      </select>
+    <div class="grid2" style="margin-bottom:14px;">
+      <div class="field">
+        <label>Socio asignado</label>
+        <select id="lawyerSelect" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+          <option value="" ${!k.abogado_id?'selected':''}>Sin asignar</option>
+          ${EQUIPO.map(u=>`<option value="${u.id}" ${k.abogado_id===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field">
+        <label>Segundo socio (opcional)</label>
+        <select id="lawyerSelect2" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+          <option value="" ${!k.abogado_id_2?'selected':''}>Sin asignar</option>
+          ${EQUIPO.map(u=>`<option value="${u.id}" ${k.abogado_id_2===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+        </select>
+      </div>
     </div>
+    <div class="notice" style="margin-bottom:14px;">Un asunto puede asignarse a dos socios a la vez si se apoyan entre ellos en el mismo caso — ambos ven el asunto en su agenda y pueden editarlo igual.</div>
     <div class="field" style="margin-top:14px;">
       <label>Notas internas del despacho</label>
       <textarea id="notasInternas" placeholder="Notas de seguimiento, acuerdos, pendientes...">${escapeHTML(meta.notas||'')}</textarea>
@@ -4380,6 +7998,12 @@ function modalTabContent(k,p,meta){
     <div class="notice" style="margin-bottom:10px;">Comparte con tu cliente su apellido y este código, para que consulte su asunto en "Acceder como cliente" — sin este código no puede ver nada.</div>
     <div id="codigoAccesoBox" style="font-family:var(--mono); font-size:13px; color:var(--gray);">Cargando código de acceso…</div>
     <button class="btn secondary" id="regenCodigoBtn" style="margin-top:8px;">Generar código nuevo (invalida el anterior)</button>
+    ${CURRENT_USER.role==='Administrador' ? `
+    <div class="divider"></div>
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--red); margin-bottom:6px;">Zona de riesgo</div>
+    <div class="notice" style="margin-bottom:10px;">Borra este expediente por completo: datos, etapas, pagos, pendientes, notas, historial y documentos. No se puede deshacer — úsalo solo para corregir un asunto duplicado o dado de alta por error.</div>
+    <button class="btn secondary" id="deleteExpedienteBtn" style="border-color:var(--red); color:var(--red);">Borrar este expediente</button>
+    ` : ""}
   `;
   if(MODAL_TAB==='etapas'){
     const estancado = estancadoInfo(k);
@@ -4387,13 +8011,14 @@ function modalTabContent(k,p,meta){
     ${estancado ? `<div class="legal-box" style="border-left-color:var(--red); margin-bottom:16px;">
       <strong>&#9888; Este asunto podría estar atorado.</strong> Última etapa registrada: "${escapeHTML(estancado.ultima)}". Debió haberse registrado "${escapeHTML(estancado.siguiente)}" antes del ${fmtDate(dateToISO(estancado.expected))} (${estancado.diasAtraso} día(s) de atraso). Verifica el estado real ante el Tribunal.
     </div>` : ''}
-    <div class="notice" style="margin-bottom:14px;">Marca cada etapa conforme vaya ocurriendo. Al registrar "Demanda presentada" el sistema deja de contar la prescripción del Art. 518 LFT para este asunto automáticamente. En las audiencias puedes capturar la fecha en que están agendadas aunque todavía no se celebren — eso es lo que le aparece a tu cliente como "próxima audiencia".</div>
+    <div class="notice" style="margin-bottom:14px;">Marca cada etapa conforme vaya ocurriendo. Al registrar "Demanda presentada" el sistema deja de contar la prescripción de este asunto automáticamente. En las audiencias puedes capturar la fecha en que están agendadas aunque todavía no se celebren — eso es lo que le aparece a tu cliente como "próxima audiencia".</div>
     ${ETAPAS_DEF.map(def=>{
       const val = k_etapa_valor(meta, def.key);
       const esAudiencia = def.key==='audiencia_preliminar' || def.key==='audiencia_juicio';
       const esSentencia = def.key==='sentencia';
       const programada = (meta.etapas[def.key] && meta.etapas[def.key].fecha_programada) || '';
       const resultado = (meta.etapas[def.key] && meta.etapas[def.key].resultado) || '';
+      const hora = (meta.etapas[def.key] && meta.etapas[def.key].hora) || '';
       return `<div style="display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid #f0ece1; flex-wrap:wrap;" data-etapa-row="${def.key}">
         <input type="checkbox" class="etapa-check" data-etapa="${def.key}" ${val?'checked':''} style="width:16px;height:16px;">
         <div style="flex:1; min-width:200px;">
@@ -4408,7 +8033,9 @@ function modalTabContent(k,p,meta){
             <option value="desfavorable" ${resultado==='desfavorable'?'selected':''}>Desfavorable</option>
           </select></div>` : ''}
         ${esAudiencia ? `<div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">Fecha agendada</label><input type="date" class="etapa-fecha-programada" data-etapa="${def.key}" value="${programada}" style="padding:6px 8px; border:1px solid var(--brass-dim); border-radius:6px; font-size:12px;"></div>` : ''}
+        ${esAudiencia && def.conHora ? `<div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">Hora agendada</label><input type="time" class="etapa-hora" data-etapa="${def.key}" value="${hora}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></div>` : ''}
         <div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">${esAudiencia?'Fecha en que se celebró':''}</label><input type="date" class="etapa-fecha" data-etapa="${def.key}" value="${val||''}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></div>
+        ${(!esAudiencia && def.conHora) ? `<div style="text-align:right;"><label style="font-size:10px; color:var(--gray); display:block;">Hora</label><input type="time" class="etapa-hora" data-etapa="${def.key}" value="${hora}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12px;"></div>` : ''}
       </div>`;
     }).join("")}
     <div style="margin-top:18px;"><button class="btn" id="saveEtapasBtn">Guardar etapas</button> <span id="avisoClienteEtapas"></span></div>
@@ -4488,26 +8115,93 @@ function readPendientesFromDOM(){
   return items;
 }
 
+// Carga un archivo de imagen elegido del disco (no de la cámara) en un
+// <img> para poder dibujarlo a un canvas — mismo punto de partida que usa
+// la captura de cámara para poder reusar el visor de recorte.
+function cargarImagenDesdeArchivo(file){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{ URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen.')); };
+    img.src = url;
+  });
+}
+
+// Abre una imagen elegida del disco en el visor de recorte. esMulti=true
+// cuando viene de un lote de varias imágenes elegidas juntas: al confirmar
+// se junta con las demás en FOTOS_CAPTURADAS (en vez de subirse sola) para
+// armar un solo PDF, bien acomodado, con todas al terminar la cola.
+async function iniciarCropArchivo(file, esMulti){
+  const status = document.getElementById('documentoStatus');
+  try{
+    const img = await cargarImagenDesdeArchivo(file);
+    const canvas = document.createElement('canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+    const rectReal = detectarBordeHoja(canvas);
+    const dispW = Math.min(320, canvas.width);
+    const scale = dispW / canvas.width;
+    const dispH = Math.round(canvas.height * scale);
+    CROP_PENDING = {
+      canvas, scale, dispW, dispH,
+      dataURL: canvas.toDataURL('image/jpeg', 0.9),
+      rect: {x: rectReal.x*scale, y: rectReal.y*scale, w: rectReal.w*scale, h: rectReal.h*scale},
+      origen: esMulti ? 'archivo_multi' : 'archivo', nombreOriginal: file.name,
+    };
+    if(status) status.textContent = '';
+    renderModal();
+  }catch(err){
+    if(status) status.textContent = 'No se pudo abrir "' + file.name + '": ' + err.message;
+    // si venía de un lote, no se atora ahí — sigue con la siguiente imagen
+    if(esMulti && ARCHIVO_CROP_QUEUE.length) await iniciarCropArchivo(ARCHIVO_CROP_QUEUE.shift(), true);
+    else renderModal();
+  }
+}
+
 function bindModalTabEvents(){
   bindTribunalFieldEvents();
+  bindTipoAsuntoField();
   const subirDocumentoBtn = document.getElementById('subirDocumentoBtn');
   if(subirDocumentoBtn){
     subirDocumentoBtn.addEventListener('click', async ()=>{
       const input = document.getElementById('documentoArchivo');
       const categoria = document.getElementById('documentoCategoria').value;
       const status = document.getElementById('documentoStatus');
-      const file = input.files[0];
-      if(!file){ if(status) status.textContent = 'Elige un archivo primero.'; return; }
-      subirDocumentoBtn.disabled = true;
-      if(status) status.textContent = 'Subiendo...';
-      try{
-        await subirDocumento(ACTIVE_CASE.id, file, categoria);
-        await loadDocumentos(ACTIVE_CASE.id);
-        renderModal();
-      }catch(err){
-        if(status) status.textContent = 'Error: ' + err.message;
-      } finally {
+      const files = Array.from(input.files || []);
+      if(!files.length){ if(status) status.textContent = 'Elige uno o más archivos primero.'; return; }
+      const esImagen = f => ['jpg','jpeg','png'].includes((f.name.split('.').pop() || '').toLowerCase());
+      const imagenes = files.filter(esImagen);
+      const otros = files.filter(f => !esImagen(f));
+
+      // PDF/Word/Excel se suben tal cual, sin recorte.
+      if(otros.length){
+        subirDocumentoBtn.disabled = true;
+        if(status) status.textContent = 'Subiendo...';
+        try{
+          for(const f of otros) await subirDocumento(ACTIVE_CASE.id, f, categoria);
+          await loadDocumentos(ACTIVE_CASE.id);
+        }catch(err){
+          if(status) status.textContent = 'Error: ' + err.message;
+          subirDocumentoBtn.disabled = false;
+          return;
+        }
         subirDocumentoBtn.disabled = false;
+      }
+      // Las imágenes pasan primero por el visor de recorte (con giro),
+      // para poder ajustarlas a las orillas del documento antes de
+      // subirlas — igual que las fotos tomadas con la cámara. Si se
+      // eligió más de una junta, se recortan una por una y se arman en un
+      // solo PDF al terminar; si es una sola, se sube directo al confirmar.
+      if(imagenes.length > 1){
+        ARCHIVO_CROP_QUEUE = imagenes.slice(1);
+        await iniciarCropArchivo(imagenes[0], true);
+      } else if(imagenes.length === 1){
+        ARCHIVO_CROP_QUEUE = [];
+        await iniciarCropArchivo(imagenes[0], false);
+      } else {
+        renderModal();
       }
     });
   }
@@ -4555,6 +8249,7 @@ function bindModalTabEvents(){
         canvas, scale, dispW, dispH,
         dataURL: canvas.toDataURL('image/jpeg', 0.85),
         rect: {x: rectReal.x*scale, y: rectReal.y*scale, w: rectReal.w*scale, h: rectReal.h*scale},
+        origen: 'camara',
       };
       renderModal();
     });
@@ -4581,12 +8276,30 @@ function bindModalTabEvents(){
   if(exportarCalculoBtn){
     exportarCalculoBtn.addEventListener('click', ()=> abrirCalculoPDF(ACTIVE_CASE));
   }
+  const escritoPlantillaSelect = document.getElementById('escritoPlantillaSelect');
+  const prestacionesRescisionPanel = document.getElementById('prestacionesRescisionPanel');
+  if(escritoPlantillaSelect && prestacionesRescisionPanel){
+    const togglePanel = ()=>{
+      const opt = escritoPlantillaSelect.options[escritoPlantillaSelect.selectedIndex];
+      const esRescision = opt && opt.textContent === NOMBRE_PLANTILLA_RESCISION_51;
+      prestacionesRescisionPanel.style.display = esRescision ? 'block' : 'none';
+    };
+    escritoPlantillaSelect.addEventListener('change', togglePanel);
+    togglePanel();
+  }
   const genDemandaBtn = document.getElementById('genDemandaBtn');
   if(genDemandaBtn){
     genDemandaBtn.addEventListener('click', async ()=>{
       const status = document.getElementById('genDemandaStatus');
       const select = document.getElementById('escritoPlantillaSelect');
       const elegido = select ? select.value : 'demanda';
+      const opt = select ? select.options[select.selectedIndex] : null;
+      const esRescision51 = opt && opt.textContent === NOMBRE_PLANTILLA_RESCISION_51;
+      const extraTags = {};
+      if(esRescision51){
+        const selKeys = Array.from(document.querySelectorAll('.prestacion-rescision-check:checked')).map(c=>c.dataset.key);
+        extraTags.prestaciones_opcionales = construirPrestacionesOpcionalesTexto(ACTIVE_CASE, selKeys);
+      }
       genDemandaBtn.disabled = true;
       if(status) status.textContent = 'Generando...';
       const onDone = ()=>{ genDemandaBtn.disabled = false; if(status) status.textContent = 'Listo ✓ revisa tus descargas.'; };
@@ -4596,10 +8309,14 @@ function bindModalTabEvents(){
       } else {
         try{
           const p = await api('GET', 'plantillas_get.php?id=' + elegido);
-          generarDocxDesdePlantilla(ACTIVE_CASE, p.base64, p.nombre, onDone, onError);
+          generarDocxDesdePlantilla(ACTIVE_CASE, p.base64, p.nombre, onDone, onError, extraTags);
         }catch(err){ onError(err); }
       }
     });
+  }
+  const actualizarInformeBtn = document.getElementById('actualizarInformeBtn');
+  if(actualizarInformeBtn){
+    actualizarInformeBtn.addEventListener('click', ()=> cargarInformeEjecutivo(ACTIVE_CASE.id, true));
   }
   const agregarNotaBtn = document.getElementById('agregarNotaBtn');
   if(agregarNotaBtn){
@@ -4681,7 +8398,9 @@ function bindModalTabEvents(){
         const fecha_programada = progInput ? progInput.value : '';
         const resInput = row.querySelector('.etapa-resultado');
         const resultado = resInput ? resInput.value : '';
-        if(checked || fecha || fecha_programada || resultado) etapas[key] = {fecha: (checked||fecha) ? (fecha || dateToISO(new Date())) : '', fecha_programada, resultado};
+        const horaInput = row.querySelector('.etapa-hora');
+        const hora = horaInput ? horaInput.value : '';
+        if(checked || fecha || fecha_programada || resultado || hora) etapas[key] = {fecha: (checked||fecha) ? (fecha || dateToISO(new Date())) : '', fecha_programada, resultado, hora};
       });
       try{
         // El servidor activa amparo_activo/amparo_presentado automáticamente
@@ -4822,14 +8541,32 @@ function bindModalTabEvents(){
       }
     });
   }
+  const amparoCircuitoSel = document.getElementById('amparoCircuito');
+  const amparoTribunalSel = document.getElementById('amparoTribunalSelect');
+  const amparoTribunalOtroWrap = document.getElementById('amparoTribunalOtroWrap');
+  if(amparoCircuitoSel && amparoTribunalSel && amparoTribunalOtroWrap){
+    amparoCircuitoSel.addEventListener('change', ()=>{
+      amparoTribunalSel.innerHTML = amparoTribunalOptionsHTML(amparoCircuitoSel.value, '');
+      amparoTribunalOtroWrap.style.display = 'none';
+    });
+    amparoTribunalSel.addEventListener('change', ()=>{
+      amparoTribunalOtroWrap.style.display = amparoTribunalSel.value === AMPARO_TRIBUNAL_OTRO ? '' : 'none';
+    });
+  }
   const saveAmparoBtn = document.getElementById('saveAmparoBtn');
   if(saveAmparoBtn){
     saveAmparoBtn.addEventListener('click', async ()=>{
+      const tribunalSelVal = amparoTribunalSel ? amparoTribunalSel.value : '';
+      const amparoTribunalFinal = tribunalSelVal === AMPARO_TRIBUNAL_OTRO
+        ? (document.getElementById('amparoTribunalOtro') ? document.getElementById('amparoTribunalOtro').value.trim() : '')
+        : tribunalSelVal;
       try{
         await api('POST', 'expedientes_update_amparo.php', {
           id: ACTIVE_CASE.id,
           amparo_activo: document.getElementById('amparoActivo').checked,
           amparo_fecha_notif: document.getElementById('amparoFecha').value,
+          amparo_tribunal: amparoTribunalFinal,
+          amparo_expediente: document.getElementById('amparoExpediente').value.trim(),
           amparo_notas: document.getElementById('amparoNotas').value
         });
         saveAmparoBtn.textContent = "Guardado ✓";
@@ -4889,7 +8626,8 @@ function bindModalTabEvents(){
           notas: document.getElementById('notasInternas').value,
           cobro_pendiente: document.getElementById('cobroPendiente').checked,
           concluido_manual: document.getElementById('concluidoManual').checked,
-          abogado_id: document.getElementById('lawyerSelect').value
+          abogado_id: document.getElementById('lawyerSelect').value,
+          abogado_id_2: document.getElementById('lawyerSelect2').value
         });
         saveBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(saveBtn) saveBtn.textContent = "Guardar cambios"; }, 1600);
@@ -4897,6 +8635,25 @@ function bindModalTabEvents(){
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         renderViewBody();
       }catch(err){ alert('No se pudo guardar: ' + err.message); }
+    });
+  }
+  const deleteBtn = document.getElementById('deleteExpedienteBtn');
+  if(deleteBtn){
+    deleteBtn.addEventListener('click', async ()=>{
+      const k = ACTIVE_CASE;
+      if(!confirm('¿Borrar por completo el expediente de "'+(k.actor||'sin nombre')+'" vs "'+(k.demandado||'')+'"? Se perderán sus datos, etapas, pagos, pendientes, notas, historial y documentos. Esto NO se puede deshacer.')) return;
+      if(!confirm('Confírmalo una vez más: se va a borrar permanentemente. ¿Continuar?')) return;
+      deleteBtn.disabled = true; deleteBtn.textContent = 'Borrando…';
+      try{
+        await api('POST', 'expedientes_delete.php', {id: k.id});
+        closeModal();
+        await refreshBootstrap();
+        VIEW = 'tablero';
+        render();
+      }catch(err){
+        alert('No se pudo borrar: ' + err.message);
+        deleteBtn.disabled = false; deleteBtn.textContent = 'Borrar este expediente';
+      }
     });
   }
 }
@@ -4967,6 +8724,9 @@ function bindClientPortal(){
 const ETAPA_CLIENTE_LABEL = {
   conciliacion_prejudicial: 'Tu abogado(a) buscó un arreglo directo con la empresa',
   conciliacion_solicitada: 'Se inició el trámite de conciliación con la empresa',
+  conciliacion_primer_citatorio: 'Tienes tu primera cita de conciliación con la empresa',
+  conciliacion_segundo_citatorio: 'Tienes tu segunda cita de conciliación con la empresa',
+  conciliacion_convenio: 'Se llegó a un convenio con la empresa',
   constancia_no_conciliacion: 'No se llegó a un acuerdo con la empresa; se procede a demandar',
   demanda_presentada: 'Se presentó tu demanda ante el Tribunal',
   prevencion: 'El Tribunal pidió corregir o aclarar algo de la demanda',
@@ -4984,6 +8744,9 @@ const ETAPA_CLIENTE_LABEL = {
 const ETAPA_CLIENTE_SIGUIENTE = {
   conciliacion_prejudicial: 'Si no hay arreglo directo, se presentará la solicitud de conciliación ante el Centro correspondiente.',
   conciliacion_solicitada: 'Se espera la audiencia de conciliación con la empresa.',
+  conciliacion_primer_citatorio: 'Se espera el resultado de esa cita de conciliación.',
+  conciliacion_segundo_citatorio: 'Se espera el resultado de esa cita de conciliación.',
+  conciliacion_convenio: 'Tu abogado(a) le dará seguimiento al cumplimiento del convenio.',
   constancia_no_conciliacion: 'Tu abogado(a) está preparando la demanda para presentarla ante el Tribunal.',
   demanda_presentada: 'El Tribunal debe admitir la demanda y ordenar notificar a la empresa.',
   prevencion: 'Tu abogado(a) corregirá o aclarará lo que pidió el Tribunal para que se admita la demanda.',
@@ -5012,6 +8775,7 @@ function clienteEstadoInfo(kase){
     return {
       label: ETAPA_CLIENTE_LABEL[def.key] || def.label,
       fecha: meta.etapas[def.key].fecha,
+      hora: def.conHora ? (meta.etapas[def.key].hora || null) : null,
       siguiente: ETAPA_CLIENTE_SIGUIENTE[def.key] || 'Tu abogado(a) te informará del siguiente paso.',
       completado: []
     };
@@ -5041,7 +8805,7 @@ function clientCardHTML(k){
       <div class="legal-box" style="margin-bottom:16px;">
         <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--brass); margin-bottom:4px;">Cómo va tu caso ahora mismo</div>
         <div style="font-size:15px; font-weight:700; color:var(--ink); line-height:1.4;">${escapeHTML(estado.label)}</div>
-        ${estado.fecha ? `<div style="font-size:12px; color:#3c4a63; margin-top:4px;">Desde el ${fmtDate(estado.fecha)}${dias!=null? ' ('+dias+' día(s))':''}</div>` : ''}
+        ${estado.fecha ? `<div style="font-size:12px; color:#3c4a63; margin-top:4px;">${estado.hora ? 'El '+fmtDate(estado.fecha)+' a las '+escapeHTML(estado.hora)+' hrs' : 'Desde el '+fmtDate(estado.fecha)+(dias!=null? ' ('+dias+' día(s))':'')}</div>` : ''}
       </div>
 
       ${estado.siguiente ? `<div style="background:var(--parchment); border-radius:8px; padding:12px 14px; margin-bottom:16px;">
@@ -5051,7 +8815,7 @@ function clientCardHTML(k){
 
       ${(()=>{ const aud = proximaAudiencia(k); return aud ? `<div style="background:var(--amber-bg); border:1px solid var(--brass-dim); border-radius:8px; padding:12px 14px; margin-bottom:16px;">
         <div style="font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:#6b4d18; margin-bottom:3px;">&#128197; Tienes una audiencia programada</div>
-        <div style="font-size:15px; font-weight:700; color:var(--ink);">${fmtDate(aud.fecha)}</div>
+        <div style="font-size:15px; font-weight:700; color:var(--ink);">${fmtDate(aud.fecha)}${aud.hora ? ' a las '+escapeHTML(aud.hora)+' hrs' : ''}</div>
         <div style="font-size:12.5px; color:#6b4d18; margin-top:2px;">${escapeHTML(aud.label)}</div>
       </div>` : ''; })()}
 
@@ -5087,7 +8851,7 @@ function clientTimeline(k){
   ETAPAS_DEF.forEach(def=>{
     if(meta.etapas[def.key] && meta.etapas[def.key].fecha){
       algunaEtapaManual = true;
-      stages.push({label: ETAPA_CLIENTE_LABEL[def.key] || def.label, done:true, date: meta.etapas[def.key].fecha});
+      stages.push({label: ETAPA_CLIENTE_LABEL[def.key] || def.label, done:true, date: meta.etapas[def.key].fecha, hora: def.conHora ? (meta.etapas[def.key].hora || null) : null});
     }
   });
   if(!algunaEtapaManual){
@@ -5100,7 +8864,7 @@ function clientTimeline(k){
   return stages.map(s=>`
     <div class="tl-item done">
       <div class="tl-dot">&#10003;</div>
-      <div class="tl-text"><div class="t">${escapeHTML(s.label)}</div>${s.date?`<div class="d">${fmtDate(s.date)}</div>`:''}</div>
+      <div class="tl-text"><div class="t">${escapeHTML(s.label)}</div>${s.date?`<div class="d">${fmtDate(s.date)}${s.hora?' a las '+escapeHTML(s.hora)+' hrs':''}</div>`:''}</div>
     </div>`).join("");
 }
 
@@ -5119,6 +8883,7 @@ async function init(){
         CURRENT_USER = {id:data.user.id, name:data.user.nombre, email:data.user.email, role:mapRol(data.user.rol)};
         await refreshBootstrap();
         await loadPlantillaDocx();
+        iniciarPolling();
       }
     }
   }catch(e){ /* no hay sesión activa: se queda en la pantalla de acceso */ }
@@ -5131,6 +8896,26 @@ async function init(){
     else if(googleParam === 'error_denegado') alert('Cancelaste el acceso a Google Calendar — no se conectó nada.');
     else alert('No se pudo conectar con Google Calendar. Intenta de nuevo.');
   }
+
+  // Se abrió la app desde una notificación push (ver sw.js) — abre directo
+  // esa conversación en vez de dejar al usuario en la pantalla general.
+  const abrirParam = new URLSearchParams(location.search).get('abrir');
+  if(abrirParam){
+    history.replaceState(null, '', location.pathname);
+    abrirConversacionDesdeNotificacion(abrirParam);
+  }
 }
 init();
+
+// La app ya estaba abierta en una pestaña y le dieron clic a una
+// notificación push — sw.js le avisa por mensaje para abrir esa
+// conversación ahí mismo, sin recargar ni abrir una pestaña nueva.
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.addEventListener('message', (event)=>{
+    if(event.data && event.data.type === 'abrir-conversacion' && event.data.url){
+      const telefono = new URL(event.data.url, location.origin).searchParams.get('abrir');
+      if(telefono) abrirConversacionDesdeNotificacion(telefono);
+    }
+  });
+}
 

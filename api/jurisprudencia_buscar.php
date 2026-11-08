@@ -1,0 +1,354 @@
+<?php
+declare(strict_types=1);
+require_once __DIR__ . '/config.php';
+
+// Haiku 4.5 en vez de Sonnet 5 para las dos llamadas de este buscador
+// (expandir términos y analizar candidatas) -- ambas son tareas acotadas
+// (dar términos, interpretar tesis ya preseleccionadas) que no necesitan
+// el modelo más caro, y el Paso 2 es ~90% del costo total de la búsqueda.
+const JURISPRUDENCIA_MODELO_BARATO = 'claude-haiku-4-5-20251001';
+
+// Buscador de jurisprudencia laboral — versión barata en 3 pasos,
+// disponible para cualquier usuario con sesión (la biblioteca de tesis es
+// compartida entre todos los despachos, no se divide por despacho).
+//
+// La versión anterior (ver historial de git) revisaba TODO el catálogo
+// (~4,080 tesis) con la IA, en varias llamadas paralelas con razonamiento
+// extendido — salía en ~$1.60-3.00 USD por búsqueda, no rentable. Esta
+// versión hace la parte de "encontrar candidatas" con una búsqueda de
+// texto normal de MySQL (FULLTEXT sobre el rubro/título — gratis e
+// instantánea) y solo le pide a Claude que analice ese puñado ya
+// preseleccionado, sin razonamiento extendido — mucho más barato.
+//
+// Paso 0 — expandir términos (barato, ~1-2 centavos): traduce la
+// descripción coloquial del abogado a términos jurídicos probables antes
+// de buscar (ver jurisprudencia_expandir_terminos) — sin esto, preguntas
+// tan normales como "cómo se integra el salario" no encontraban la tesis
+// general del tema, solo resoluciones muy específicas que compartían la
+// palabra "salario" pero no el concepto. Esto no es búsqueda semántica de
+// verdad (si el abogado y la tesis usan vocabulario MUY distinto, puede
+// seguir sin aparecer) — si con uso real se ve que sigue sin bastar, el
+// siguiente paso sería usar embeddings en vez de FULLTEXT, pero eso es
+// otro proveedor/costo aparte, se evalúa solo si de verdad hace falta.
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Método no permitido.', 405);
+require_login();
+require_csrf();
+
+$in = json_input();
+$pregunta = trim((string)($in['pregunta'] ?? ''));
+if ($pregunta === '') fail('Describe los hechos del caso.', 400);
+if (mb_strlen($pregunta) > 2000) fail('La descripción es demasiado larga.', 400);
+
+$pdo = db();
+
+$credentialsFile = __DIR__ . '/anthropic_credentials.php';
+if (!file_exists($credentialsFile)) fail('Falta anthropic_credentials.php.', 500);
+require_once $credentialsFile;
+
+// Paso 0 (barato, ~1-2 centavos): antes de buscar, se le pide a Claude que
+// traduzca los hechos del caso (lenguaje coloquial del abogado) a los
+// TÉRMINOS jurídicos con los que probablemente está redactado el rubro de
+// la tesis real -- sin esto, una pregunta tan normal como "cómo se integra
+// el salario" no encontraba la tesis general del tema (Art. 84 LFT), solo
+// resoluciones muy específicas que sí compartían la palabra "salario"
+// pero no el concepto general. El texto original del abogado NO se
+// descarta -- los términos se agregan aparte, para no perder ninguna
+// palabra específica que ya haya usado bien.
+function jurisprudencia_expandir_terminos(string $pregunta): array
+{
+    $payload = [
+        'model' => JURISPRUDENCIA_MODELO_BARATO,
+        'max_tokens' => 200,
+        'thinking' => ['type' => 'disabled'],
+        'system' => 'Un abogado laboralista mexicano te describe, en lenguaje coloquial, los hechos de un caso '
+            . 'real. Tu única tarea es traducir esa descripción a los términos y frases jurídicas EXACTAS con '
+            . 'las que probablemente esté redactado el RUBRO (título) de una tesis o jurisprudencia real de la '
+            . "SCJN sobre ese tema.\n\n"
+            . "Reglas:\n"
+            . "- Da de 5 a 8 términos o frases, ordenados del más específico/probable al más general.\n"
+            . '- Usa nombres técnicos reales de figuras e instituciones jurídicas laborales mexicanas (ej. '
+            . '"presunción de relación laboral", "sustitución patronal", "responsabilidad solidaria", "falta de '
+            . 'inscripción ante el IMSS"), no descripciones genéricas de lo que pasó.'
+            . "\n"
+            . '- Evita términos sueltos demasiado amplios que por sí solos aparecen en cientos de tesis de temas '
+            . 'no relacionados (ej. nunca des solo "prestaciones", "salario" o "seguridad social" sueltos) -- si '
+            . 'hace falta un concepto así de amplio, combínalo con lo específico del caso en la misma frase (ej. '
+            . '"prestaciones de seguridad social por riesgo de trabajo", no "prestaciones de seguridad social").'
+            . "\n"
+            . '- Si el caso apunta claramente a un artículo específico de la LFT o la LSS, inclúyelo (ej. '
+            . "\"artículo 47 LFT\").\n"
+            . '- CUIDADO: los hechos pueden incluir un argumento o postura de UNA de las partes (ej. "el patrón '
+            . 'alega que se rige por el Apartado B"), que puede ser falso o estar en disputa -- NUNCA conviertas '
+            . 'ese argumento en un término de búsqueda como si fuera un hecho jurídico ya resuelto (no des '
+            . "\"aplicabilidad del apartado B\" como término solo porque una parte lo alegó).\n"
+            . '- No repitas el texto original tal cual ni des explicaciones.'
+            . "\n\n"
+            . "Responde en EXACTAMENTE dos líneas, en este formato:\n"
+            . "INSTITUCION: [nombre TAL CUAL de la institución, empresa o patrón real y específico que se "
+            . 'mencione en los hechos (ej. "Servicio Postal Mexicano", "IMSS", "Petróleos Mexicanos"), o vacío '
+            . "si no se menciona ninguna -- deja la línea después de los dos puntos vacía en ese caso\n"
+            . 'TERMINOS: [los 5-8 términos, separados por comas, sin numerar]',
+        'messages' => [['role' => 'user', 'content' => "Hechos del caso: {$pregunta}"]],
+    ];
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [jurisprudencia_buscar expandir_terminos] FALLÓ status=$status | curl=$curlError | body="
+            . mb_strimwidth((string)$raw, 0, 500, '…') . "\n", FILE_APPEND);
+        return ['terminos' => '', 'institucion' => ''];
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+
+    $institucion = trim((string)(preg_match('/INSTITUCION:\s*(.*)/i', $texto, $m) ? $m[1] : ''));
+    $terminos = trim((string)(preg_match('/TERMINOS:\s*(.*)/is', $texto, $m) ? $m[1] : $texto));
+
+    $u = $data['usage'] ?? [];
+    file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+        . " | [jurisprudencia_buscar expandir_terminos] input=" . ($u['input_tokens'] ?? 0)
+        . " | output=" . ($u['output_tokens'] ?? 0) . " | institucion=" . $institucion
+        . " | terminos=" . $terminos . "\n", FILE_APPEND);
+    return ['terminos' => $terminos, 'institucion' => $institucion];
+}
+
+$expandido = jurisprudencia_expandir_terminos($pregunta);
+$terminosExpandidos = $expandido['terminos'];
+$institucionMencionada = $expandido['institucion'];
+// Si este paso falla por cualquier motivo (red, la IA no contestó, etc.),
+// simplemente no hay términos que sumar y se sigue solo con el texto
+// original del abogado, como antes de este cambio.
+
+// Paso 1 (gratis, instantáneo): candidatas por búsqueda de texto normal de
+// MySQL sobre el rubro (el título) de cada tesis. Requiere el índice
+// FULLTEXT ft_rubro — ver sql/migraciones/031_jurisprudencia_fulltext_rubro.sql.
+//
+// Importante: el texto original y los términos expandidos del Paso 0 se
+// buscan CADA UNO POR SEPARADO (no concatenados en una sola consulta) y
+// luego se juntan los resultados sin duplicar. Se probó concatenarlos en
+// un solo MATCH ... AGAINST() y salió peor -- MySQL en NATURAL LANGUAGE
+// MODE no exige que coincidan todas las palabras, solo suma puntos por
+// cada una que aparezca, así que meter 10 términos de golpe hacía que
+// tesis que no tenían nada que ver con el caso real (pero sí coincidían
+// en varios términos sueltos como "aguinaldo" + "prima vacacional" +
+// "artículo 84") le ganaran en relevancia a la tesis correcta, que solo
+// coincidía fuerte en un término específico ("vales de despensa"). Buscar
+// cada texto aparte y unir resultados deja que el texto original siga
+// encontrando lo que ya encontraba bien, y los términos expandidos solo
+// SUMAN candidatas nuevas para preguntas genéricas, nunca le quitan lugar
+// a las que ya iban a aparecer.
+// Tope de candidatas por lado (texto original / términos expandidos) y
+// filtro de relevancia -- bajados de 20 a 15 y con piso de relevancia,
+// para no mandarle al Paso 2 cola larga de coincidencias débiles que solo
+// suben el costo sin aportar (el Paso 2 es ~90% del costo de la búsqueda,
+// y su input crece directo con cuántas candidatas se le mandan). El piso
+// es RELATIVO a la mejor coincidencia de esa misma búsqueda (no un número
+// fijo) porque la escala de relevancia de MySQL varía mucho según cuántos
+// términos tenga el texto buscado -- un piso fijo sería demasiado
+// agresivo con textos cortos y demasiado laxo con textos largos.
+const JURISPRUDENCIA_CANDIDATAS_POR_LADO = 15;
+const JURISPRUDENCIA_RELEVANCIA_MINIMA_RELATIVA = 0.10;
+
+function jurisprudencia_buscar_candidatas(PDO $pdo, string $texto): array
+{
+    if (trim($texto) === '') return [];
+    $stmt = $pdo->prepare(
+        'SELECT registro_digital, instancia, epoca, numero_tesis, tipo, rubro, texto_completo, fecha_publicacion,
+                MATCH(rubro) AGAINST (:q IN NATURAL LANGUAGE MODE) AS relevancia
+         FROM jurisprudencia_tesis
+         WHERE MATCH(rubro) AGAINST (:q2 IN NATURAL LANGUAGE MODE)
+         ORDER BY relevancia DESC
+         LIMIT ' . JURISPRUDENCIA_CANDIDATAS_POR_LADO
+    );
+    $stmt->execute([':q' => $texto, ':q2' => $texto]);
+    $filas = $stmt->fetchAll();
+    if (!$filas) return [];
+
+    $mejorRelevancia = (float)$filas[0]['relevancia'];
+    $piso = $mejorRelevancia * JURISPRUDENCIA_RELEVANCIA_MINIMA_RELATIVA;
+    return array_values(array_filter($filas, static fn($f) => (float)$f['relevancia'] >= $piso));
+}
+
+$candidatas = jurisprudencia_buscar_candidatas($pdo, $pregunta);
+$yaIncluidas = array_column($candidatas, 'registro_digital');
+foreach (jurisprudencia_buscar_candidatas($pdo, $terminosExpandidos) as $t) {
+    if (!in_array($t['registro_digital'], $yaIncluidas, true)) {
+        $candidatas[] = $t;
+        $yaIncluidas[] = $t['registro_digital'];
+    }
+}
+// Tercera búsqueda dedicada SOLO al nombre de la institución/patrón, si el
+// Paso 0 detectó uno -- en textos largos con muchos temas (ej. un párrafo
+// de varias oraciones), el nombre de la institución se diluye dentro de la
+// búsqueda del texto completo y puede no alcanzar a aparecer entre las
+// candidatas, aunque literalmente esté escrito ahí. Buscarlo aparte, solo,
+// le da su propia oportunidad limpia de encontrar la jurisprudencia
+// específica de esa entidad.
+if ($institucionMencionada !== '') {
+    foreach (jurisprudencia_buscar_candidatas($pdo, $institucionMencionada) as $t) {
+        if (!in_array($t['registro_digital'], $yaIncluidas, true)) {
+            $candidatas[] = $t;
+            $yaIncluidas[] = $t['registro_digital'];
+        }
+    }
+}
+
+if (!$candidatas) {
+    respond([
+        'respuesta' => 'No encontré ninguna tesis cuyo título coincida con las palabras de los hechos que describiste (esta primera etapa busca por palabras clave, no por significado). Intenta reformular usando los términos jurídicos más específicos del tema — por ejemplo, en vez de contar toda la historia, usa palabras como "sustitución patronal", "abandono de empleo", "carga de la prueba", "salarios caídos", etc.',
+        'tesis' => [],
+    ]);
+}
+
+// Paso 2 (barato): una sola llamada a Claude, sin razonamiento extendido,
+// que revisa SOLO estas ≤30 candidatas ya preseleccionadas (no las 4,080)
+// y descarta con criterio jurídico las que no aplican de verdad.
+$bloques = [];
+foreach ($candidatas as $t) {
+    $bloques[] = "[Registro digital: {$t['registro_digital']}]\n"
+        . "Rubro: {$t['rubro']}\n"
+        . 'Instancia: ' . ($t['instancia'] ?: '(sin dato)') . ' | Tipo: ' . ($t['tipo'] ?: '(sin dato)')
+        . ' | Época: ' . ($t['epoca'] ?: '(sin dato)') . ' | Tesis: ' . ($t['numero_tesis'] ?: '(sin dato)')
+        . ' | Publicación: ' . ($t['fecha_publicacion'] ?: '(sin dato)') . "\n"
+        . 'Texto: ' . mb_strimwidth((string)$t['texto_completo'], 0, 1200, '…');
+}
+$contexto = implode("\n\n---\n\n", $bloques);
+
+$payload = [
+    'model' => JURISPRUDENCIA_MODELO_BARATO,
+    'max_tokens' => 3000,
+    'thinking' => ['type' => 'disabled'],
+    'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado del '
+        . 'despacho (no un cliente, no alguien que necesita que le digan qué hacer) te describe los HECHOS de un '
+        . 'caso real, y te doy junto con ellos una lista corta de tesis de la SCJN que una búsqueda por palabras '
+        . 'clave preseleccionó como posibles candidatas (pueden incluir falsos positivos que solo coinciden en '
+        . 'tema general, no en fondo). '
+        . 'Tu trabajo NO es decirle al abogado qué estrategia seguir ni qué le conviene hacer -- eso ya lo sabe '
+        . 'de sobra, es abogado. Tu trabajo es (1) descartar sin miedo las tesis que no aplican de verdad a los '
+        . 'hechos, y (2) para cada una que sí aplica, darle una INTERPRETACIÓN jurídica real: qué es lo que esa '
+        . "tesis establece de fondo (el criterio, no el rubro repetido) y cómo conecta con los hechos concretos "
+        . 'del caso. Lo que escribe el abogado puede ser DE DOS TIPOS, y no debes tratarlos igual: (a) una '
+        . 'narración de hechos de un caso -- casi siempre incompleta (es una descripción corta, no un '
+        . 'expediente), y eso NO es motivo para descartar una tesis: si el criterio de una tesis aplicaría bajo '
+        . 'un escenario razonable compatible con lo poco que se sabe, inclúyela e interprétala de forma '
+        . 'CONDICIONADA (ej. "si el patrón niega la relación laboral, esta tesis..."); o (b) una PREGUNTA '
+        . 'jurídica directa (ej. "¿el servicio postal es Apartado A o B?", "¿procede la reinstalación en X '
+        . 'caso?") -- ahí NO hay "hechos" que puedan faltar, es una duda de derecho puntual: contesta directo '
+        . 'con el criterio de la tesis aplicable, sin pedir más contexto ni tratarla como escueta. Reserva el '
+        . 'descarte de una tesis solo para '
+        . "tesis que de verdad son de otro tema (falsos positivos reales de la búsqueda por palabras clave), no "
+        . "para tesis relevantes que simplemente necesitan una condición para aplicar. "
+        . 'IMPORTANTE sobre jerarquía: cada tesis trae su "Tipo" (Jurisprudencia = obligatoria, por reiteración o '
+        . 'resolución de contradicción; Tesis Aislada = orientadora, NO obligatoria) y su "Instancia" (Pleno > '
+        . 'Salas > Plenos Regionales / Tribunales Colegiados, en ese orden de peso). Cuando dos o más candidatas '
+        . 'tratan EXACTAMENTE el mismo punto jurídico y llegan a conclusiones distintas o contradictorias entre '
+        . 'sí, NUNCA las presentes como si ambas aplicaran por igual -- identifica cuál es la que de verdad '
+        . 'controla (mayor jerarquía de tipo e instancia; si son del mismo nivel, la más reciente que resuelva '
+        . 'expresamente el punto de la anterior) y dilo explícitamente en la interpretación de la que sí aplica '
+        . '(ej. "esta jurisprudencia, por ser posterior y obligatoria, supera el criterio de la tesis aislada '
+        . '[registro] que sostenía lo contrario"). No te quedes solo con la coincidencia por palabras clave para '
+        . 'decidir cuál mencionar como aplicable -- si hay conflicto entre candidatas, resuélvelo con este '
+        . "criterio antes de escribir la interpretación. Responde SIEMPRE con este formato exacto:\n\n"
+        . "## En resumen\n"
+        . '1-2 líneas, SOLO si de las tesis aplicables (ya resuelto cualquier conflicto de jerarquía) se '
+        . 'desprende un dato o criterio jurídico puntual y objetivo que responda directo a lo que se preguntó. '
+        . 'Esto es un DATO, no una recomendación -- nunca uses "conviene", "deberías", "lo mejor es". Si los '
+        . 'hechos son una narración de caso (no una pregunta puntual de sí/no o de dato concreto) y no hay un '
+        . "solo dato objetivo que resumir, omite esta sección por completo (no la fuerces).\n\n"
+        . "## Tesis aplicables\n"
+        . "Una subsección por cada tesis que SÍ aplica (aplique directo o de forma condicionada -- omite solo "
+        . "las que son de otro tema), en este orden exacto: `### [registro digital] — [versión corta del rubro, "
+        . "máximo ~12 palabras]`, seguido de una interpretación de 3-5 líneas en español claro y concreto: qué "
+        . "criterio jurídico fija realmente esa tesis (no repitas el rubro ni des un resumen genérico) y cómo "
+        . "conecta con los hechos descritos (directo, o bajo qué condición). No le digas al abogado qué hacer "
+        . "con la tesis -- explícasela, él decide cómo usarla.\n\n"
+        . "## Sin aplicación directa\n"
+        . 'Solo si de verdad NINGUNA tesis de la lista tiene relación con el tema de los hechos (todas resultaron '
+        . 'ser falsos positivos de otro tema), dilo aquí en 1-2 líneas -- no des consejo de qué hacer, solo señala '
+        . "de qué tema son en realidad las candidatas descartadas.\n\n"
+        . 'Reglas: NUNCA menciones, cites, ni inventes una tesis que no esté en la lista que te doy. No repitas '
+        . 'el rubro completo de cada tesis (ya se ve aparte en pantalla) — ve directo a la interpretación. Nada '
+        . 'de introducciones ni cierres genéricos fuera de estas secciones, y nunca frases del tipo "te conviene", '
+        . '"deberías", "la mejor estrategia es" -- describe el criterio de la tesis, no una recomendación.',
+    'messages' => [[
+        'role' => 'user',
+        'content' => "Hechos del caso: {$pregunta}\n\nTesis candidatas (preseleccionadas por palabras clave, revísalas con criterio):\n\n{$contexto}",
+    ]],
+];
+
+$ch = curl_init('https://api.anthropic.com/v1/messages');
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_POST => true,
+    CURLOPT_HTTPHEADER => [
+        'x-api-key: ' . ANTHROPIC_API_KEY,
+        'anthropic-version: 2023-06-01',
+        'content-type: application/json',
+    ],
+    CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+    CURLOPT_TIMEOUT => 90,
+]);
+$raw = curl_exec($ch);
+$status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$curlError = curl_error($ch);
+curl_close($ch);
+
+if ($raw === false || $status !== 200) {
+    file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+        . " | [jurisprudencia_buscar] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+    fail('Falló la llamada a la IA. Revisa ia_debug.log.', 502);
+}
+
+$data = json_decode($raw, true);
+$texto = '';
+foreach (($data['content'] ?? []) as $bloque) {
+    if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+}
+$texto = trim($texto);
+if ($texto === '') fail('La IA no devolvió texto.', 502);
+
+// Log temporal de costo real (tokens de entrada/salida de esta búsqueda) —
+// para poder comparar contra la versión anterior con datos reales, no
+// adivinando. Se puede quitar cuando ya se confirme que el costo se quedó
+// bajo con uso real.
+$u = $data['usage'] ?? [];
+file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+    . " | [jurisprudencia_buscar] candidatas=" . count($candidatas)
+    . " | input=" . ($u['input_tokens'] ?? 0) . " | output=" . ($u['output_tokens'] ?? 0) . "\n", FILE_APPEND);
+
+$tesisConsultadas = array_map(static function ($t) {
+    return [
+        'registro_digital' => (int)$t['registro_digital'],
+        'rubro' => $t['rubro'],
+        'instancia' => $t['instancia'],
+        'tipo' => $t['tipo'],
+        'epoca' => $t['epoca'],
+        'numero_tesis' => $t['numero_tesis'],
+        'fecha_publicacion' => $t['fecha_publicacion'],
+        'texto_completo' => $t['texto_completo'],
+    ];
+}, $candidatas);
+
+respond([
+    'respuesta' => $texto,
+    'tesis' => $tesisConsultadas,
+]);

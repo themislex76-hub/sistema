@@ -8,7 +8,7 @@ require_admin();
 $pdo = db();
 $rows = $pdo->query(
     'SELECT u.id, u.nombre, u.email, u.rol, u.activo, u.debe_cambiar_password, u.creado_en,
-            (SELECT COUNT(*) FROM expedientes e WHERE e.abogado_id = u.id) AS num_casos
+            (SELECT COUNT(*) FROM expedientes e WHERE e.abogado_id = u.id OR e.abogado_id_2 = u.id) AS num_casos
      FROM usuarios u ORDER BY u.rol DESC, u.nombre ASC'
 )->fetchAll();
 

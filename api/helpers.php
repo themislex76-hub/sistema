@@ -151,5 +151,6 @@ function log_historial(PDO $pdo, int $expedienteId, array $usuario, string $camp
 function expediente_visible_where(array $usuario): string
 {
     if ($usuario['rol'] === 'administrador') return '1=1';
-    return 'e.abogado_id = ' . (int)$usuario['id'];
+    $uid = (int)$usuario['id'];
+    return "(e.abogado_id = $uid OR e.abogado_id_2 = $uid)";
 }

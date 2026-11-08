@@ -31,6 +31,9 @@ CREATE TABLE usuarios (
   pjf_usuario VARCHAR(190) NULL,
   pjf_password_enc TEXT NULL,
   pjf_actualizado_en DATETIME NULL,
+  resumen_hoy_texto TEXT NULL,
+  resumen_hoy_hash VARCHAR(64) NULL,
+  resumen_hoy_generado_en DATETIME NULL,
   creado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_usuarios_email (email)
@@ -47,12 +50,18 @@ CREATE TABLE usuarios (
 CREATE TABLE expedientes (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   exp VARCHAR(60) NULL,
+  -- Catálogo fijo (ver TIPO_ASUNTO_OPCIONES en assets/app.js) que define
+  -- qué plazo de prescripción de la LFT le corresponde a cada expediente.
+  -- NULL en registros viejos se trata como "Despido" (Art. 518), que es
+  -- lo único que manejaba el sistema antes de este campo.
+  tipo_asunto VARCHAR(150) NULL,
   status VARCHAR(150) NULL,
   instancia VARCHAR(255) NULL,
   ultima_nota TEXT NULL,
   actor VARCHAR(255) NULL,
   demandado VARCHAR(255) NULL,
   abogado_id INT UNSIGNED NULL,
+  abogado_id_2 INT UNSIGNED NULL,
   puesto VARCHAR(255) NULL,
   junta VARCHAR(255) NULL,
   dom_demandado TEXT NULL,
@@ -85,6 +94,49 @@ CREATE TABLE expedientes (
   quien_despidio VARCHAR(255) NULL,
   puesto_despidio VARCHAR(255) NULL,
   hora_despido VARCHAR(30) NULL,
+  hora_entrada TIME NULL,
+  hora_salida TIME NULL,
+  comida_inicio TIME NULL,
+  comida_fin TIME NULL,
+  dias_laborados VARCHAR(100) NULL,
+  dias_laborados_num TINYINT UNSIGNED NULL,
+  tipo_jornada VARCHAR(20) NULL,
+  -- Rescisión Art. 51 (causa imputable al patrón) -- ver "Otras plantillas de escritos".
+  rescision_fraccion VARCHAR(10) NULL,
+  rescision_motivo_breve VARCHAR(255) NULL,
+  fecha_rescision DATE NULL,
+  hecho_causa_narrativa TEXT NULL,
+  periodo_vacaciones_anterior VARCHAR(20) NULL,
+  periodo_vacaciones_actual VARCHAR(20) NULL,
+  banco1_nombre VARCHAR(150) NULL,
+  banco1_cuenta VARCHAR(50) NULL,
+  banco2_nombre VARCHAR(150) NULL,
+  banco2_cuenta VARCHAR(50) NULL,
+  banco3_nombre VARCHAR(150) NULL,
+  banco3_cuenta VARCHAR(50) NULL,
+  inspeccion_extremos_texto TEXT NULL,
+  -- Prima de antigüedad (estilo jubilación / apartado B).
+  monto_prima_antiguedad DECIMAL(12,2) NULL,
+  fecha_solicitud_interna DATE NULL,
+  hora_solicitud_interna TIME NULL,
+  folio_solicitud_interna VARCHAR(50) NULL,
+  funcionario_rh_nombre VARCHAR(150) NULL,
+  funcionario_rh_puesto VARCHAR(150) NULL,
+  numero_oficio_respuesta VARCHAR(100) NULL,
+  fecha_oficio_respuesta DATE NULL,
+  director_firma_nombre VARCHAR(150) NULL,
+  coordinador_archivo_nombre VARCHAR(150) NULL,
+  gerente_gestion_nombre VARCHAR(150) NULL,
+  folio_fiscal_cfdi VARCHAR(50) NULL,
+  periodo_recibo_desde DATE NULL,
+  periodo_recibo_hasta DATE NULL,
+  salario_quincenal_num DECIMAL(12,2) NULL,
+  rfc_emisor_demandado VARCHAR(20) NULL,
+  fecha_hoja_servicios DATE NULL,
+  numero_documento_fump VARCHAR(50) NULL,
+  fecha_documento_fump DATE NULL,
+  fecha_desde_incumplimiento DATE NULL,
+  persona_responsable_incumplimiento VARCHAR(255) NULL,
   testigos TEXT NULL,
   dom_testigos TEXT NULL,
 
@@ -108,6 +160,8 @@ CREATE TABLE expedientes (
   amparo_activo TINYINT(1) NOT NULL DEFAULT 0,
   amparo_presentado TINYINT(1) NOT NULL DEFAULT 0,
   amparo_fecha_notif DATE NULL,
+  amparo_tribunal VARCHAR(190) NULL,
+  amparo_expediente VARCHAR(60) NULL,
   amparo_notas TEXT NULL,
   convenio_activo TINYINT(1) NOT NULL DEFAULT 0,
   convenio_monto DECIMAL(12,2) NULL,
@@ -122,8 +176,10 @@ CREATE TABLE expedientes (
   actualizado_en DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
   KEY idx_expedientes_abogado (abogado_id),
+  KEY idx_expedientes_abogado_2 (abogado_id_2),
   KEY idx_expedientes_status (status(50)),
-  CONSTRAINT fk_expedientes_abogado FOREIGN KEY (abogado_id) REFERENCES usuarios(id) ON DELETE SET NULL
+  CONSTRAINT fk_expedientes_abogado FOREIGN KEY (abogado_id) REFERENCES usuarios(id) ON DELETE SET NULL,
+  CONSTRAINT fk_expedientes_abogado_2 FOREIGN KEY (abogado_id_2) REFERENCES usuarios(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------------------------
@@ -136,6 +192,7 @@ CREATE TABLE expediente_etapas (
   expediente_id INT UNSIGNED NOT NULL,
   etapa_key VARCHAR(60) NOT NULL,
   fecha DATE NULL,
+  hora TIME NULL,
   fecha_programada DATE NULL,
   resultado VARCHAR(30) NULL,
   UNIQUE KEY uq_expediente_etapa (expediente_id, etapa_key),

@@ -8,14 +8,15 @@ $user = require_login();
 $pdo = db();
 $isAdmin = $user['rol'] === 'administrador';
 
-$where = $isAdmin ? '1=1' : 'e.abogado_id = :uid';
-$sql = "SELECT e.*, u.nombre AS abogado_nombre
+$where = $isAdmin ? '1=1' : '(e.abogado_id = :uid1 OR e.abogado_id_2 = :uid2)';
+$sql = "SELECT e.*, u.nombre AS abogado_nombre, u2.nombre AS abogado_2_nombre
         FROM expedientes e
         LEFT JOIN usuarios u ON u.id = e.abogado_id
+        LEFT JOIN usuarios u2 ON u2.id = e.abogado_id_2
         WHERE $where
         ORDER BY e.id ASC";
 $stmt = $pdo->prepare($sql);
-if (!$isAdmin) $stmt->execute([':uid' => $user['id']]);
+if (!$isAdmin) $stmt->execute([':uid1' => $user['id'], ':uid2' => $user['id']]);
 else $stmt->execute();
 $expedientesRows = $stmt->fetchAll();
 
@@ -36,6 +37,7 @@ if ($ids) {
     foreach ($q->fetchAll() as $r) {
         $etapasByCase[$r['expediente_id']][$r['etapa_key']] = [
             'fecha' => $r['fecha'],
+            'hora' => $r['hora'],
             'fecha_programada' => $r['fecha_programada'],
             'resultado' => $r['resultado'],
         ];
@@ -50,6 +52,7 @@ if ($ids) {
             'monto' => $r['monto'] !== null ? (float)$r['monto'] : null,
             'cobrado' => (bool)$r['cobrado'],
             'fecha_cobro' => $r['fecha_cobro'],
+            'socio_liquidado' => (bool)$r['socio_liquidado'],
         ];
     }
 
@@ -105,10 +108,12 @@ $expedientes = [];
 foreach ($expedientesRows as $r) {
     $id = (int)$r['id'];
     $case = cast_numeric_fields($r);
-    unset($case['abogado_nombre']);
+    unset($case['abogado_nombre'], $case['abogado_2_nombre']);
     $case['id'] = $id;
     $case['abogado'] = $r['abogado_nombre'];
     $case['abogado_id'] = $r['abogado_id'] !== null ? (int)$r['abogado_id'] : null;
+    $case['abogado_2'] = $r['abogado_2_nombre'];
+    $case['abogado_id_2'] = $r['abogado_id_2'] !== null ? (int)$r['abogado_id_2'] : null;
 
     $case['meta'] = [
         'notas' => $r['notas_internas'] ?? '',
@@ -117,6 +122,8 @@ foreach ($expedientesRows as $r) {
         'amparo_activo' => (bool)$r['amparo_activo'],
         'amparo_presentado' => (bool)$r['amparo_presentado'],
         'amparo_fecha_notif' => $r['amparo_fecha_notif'] ?? '',
+        'amparo_tribunal' => $r['amparo_tribunal'] ?? '',
+        'amparo_expediente' => $r['amparo_expediente'] ?? '',
         'amparo_notas' => $r['amparo_notas'] ?? '',
         'convenio_manual' => [
             'activo' => (bool)$r['convenio_activo'],
@@ -133,7 +140,7 @@ foreach ($expedientesRows as $r) {
 
     // Estas columnas ya viven aparte en meta.*; no duplicarlas en el nivel superior.
     foreach (['notas_internas','cobro_pendiente','concluido_manual','amparo_activo','amparo_presentado',
-              'amparo_fecha_notif','amparo_notas','convenio_activo','convenio_monto','convenio_fecha_pago',
+              'amparo_fecha_notif','amparo_tribunal','amparo_expediente','amparo_notas','convenio_activo','convenio_monto','convenio_fecha_pago',
               'codigo_acceso','portal_intentos_fallidos','portal_bloqueado_hasta','creado_en','actualizado_en'] as $k) {
         unset($case[$k]);
     }
