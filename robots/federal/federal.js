@@ -623,14 +623,23 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
     }
     if (!entroMenu) {
       console.log('  AVISO: no se encontró el menú "Consulta de Expediente Electrónico" -- el portal pudo cambiar otra vez.');
-      await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}.png`), fullPage: true }).catch(() => {});
+      await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}.png`), fullPage: true })
+        .then(() => console.log(`  Captura guardada: debug_error_${cuenta.pjf_usuario}.png`))
+        .catch((e) => console.log(`  (no se pudo guardar la captura: ${e.message})`));
       const diagnostico = await page.evaluate(() => ({
         modales: document.querySelectorAll('.modal').length,
         modalesAbiertos: document.querySelectorAll('.modal.in, .modal.show').length,
         backdrops: document.querySelectorAll('.modal-backdrop').length,
         url: location.href,
+        // Cuenta cuántas veces aparece el texto del menú en TODO el body,
+        // sin filtrar por visibilidad -- si da 0, el texto de plano no
+        // está ahí (portal cambió / sesión expiró); si da >0, el texto SÍ
+        // está pero Playwright nunca lo consideró "visible" a tiempo.
+        textoMenuEnBody: (document.body.innerText || '').split('Consulta de Expediente Electrónico').length - 1,
       })).catch((e) => `(no se pudo leer: ${e.message})`);
       console.log(`  Diagnóstico de la página en ese momento: ${JSON.stringify(diagnostico)}`);
+      const textoBody = await page.locator('body').innerText().catch((e) => `(no se pudo leer: ${e.message})`);
+      console.log(`  Texto visible de la página (primeros 800 caracteres): ${textoBody.replace(/\s+/g, ' ').trim().slice(0, 800)}`);
       return 0;
     }
     await page.waitForTimeout(500);
