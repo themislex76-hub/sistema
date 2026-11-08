@@ -24,11 +24,37 @@ contexto -- no se comparten entre sí automáticamente. Este archivo
 (`CLAUDE.md`) es el mecanismo para que cada sesión nueva se entere de lo
 que hicieron las otras: se lee solo al empezar, así que **toca
 actualizarlo tú mismo cada vez que termines algo importante**, no
-solo confiar en que el usuario lo recuerde. Antes de empezar trabajo
-nuevo: `git pull` (puede haber commits de otra sesión). Al terminar:
-commit/push + agrega aquí un resumen breve de qué cambiaste y qué
-migración SQL es la más reciente que el usuario ya corrió (para que la
-siguiente sesión sepa desde dónde continuar sin repetir ni pisar nada).
+solo confiar en que el usuario lo recuerde.
+
+**Cada conversación corre en SU PROPIA rama de git** (no hay una rama
+`main` tradicional -- la rama por defecto del repo es literalmente
+`claude/hola-i5mb6q`, la de esta conversación). Un `git pull` normal
+(de tu propia rama) **NO** te trae los commits de las otras 2
+conversaciones -- viven en ramas aparte y solo se juntan cuando alguien
+las fusiona a mano. Confirmado el 9 nov 2026: la rama de "Bot"
+(`claude/labor-advisory-bot-tiktok-wqsmim`) llevaba 2 días con arreglos
+reales (SDI real del recibo de nómina, reutilizar horario ya apartado)
+que esta rama no tenía -- se fusionaron sin conflicto porque tocaban
+archivos distintos, pero de haber seguido divergiendo en el MISMO
+archivo (ej. las dos tocando `api/ia_helpers.php`), la siguiente entrega
+de cualquiera de las dos sesiones pudo haber borrado silenciosamente el
+arreglo de la otra.
+
+Por eso, **antes de empezar trabajo nuevo**: además de tu propio
+`git pull`, revisa si hay otras ramas con commits nuevos que tu rama no
+tenga y fusiónalas si no hay conflicto (avisa al usuario si sí lo hay,
+no elijas una versión a ciegas):
+```
+git branch -r                                   # ver qué otras ramas existen
+git fetch origin <otra-rama>
+git merge --no-commit --no-ff FETCH_HEAD         # revisa el resultado antes de confirmar
+```
+Al terminar: commit/push a TU rama + agrega aquí un resumen breve de qué
+cambiaste y qué migración SQL es la más reciente que el usuario ya corrió
+(para que la siguiente sesión -- la tuya o cualquiera de las otras 2 --
+sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
+funciona si de verdad se fusiona periódicamente; si una rama se queda
+semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
 **Última migración aplicada por el usuario: `057_edomex_correo_credenciales.sql`.**
 
