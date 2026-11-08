@@ -15,7 +15,7 @@ require_once __DIR__ . '/whatsapp_helpers.php';
 //        &fecha_ingreso=2025-08-25&fecha_baja=2026-10-01
 //        &salario_diario=682.11&tipo=injustificado
 //        &dias_vacaciones_anteriores=6&dias_salarios_devengados=0
-//        &modo=despido&nombre=Fulano
+//        &modo=despido&nombre=Fulano&sdi=456.17
 require_admin();
 header('Content-Type: text/plain; charset=utf-8');
 
@@ -28,6 +28,10 @@ $diasVacAnt = (float)($_GET['dias_vacaciones_anteriores'] ?? 0);
 $diasSalDev = (float)($_GET['dias_salarios_devengados'] ?? 0);
 $modo = trim((string)($_GET['modo'] ?? 'despido'));
 $nombre = trim((string)($_GET['nombre'] ?? ''));
+// SDI real del recibo de nómina, si lo hay -- ver REGLA DURA
+// correspondiente en ia_helpers.php. Solo se usa si es mayor al mínimo
+// que calcularía la herramienta sola.
+$sdiReportado = isset($_GET['sdi']) && (float)$_GET['sdi'] > 0 ? (float)$_GET['sdi'] : null;
 
 if ($telefono === '' || $fechaIngreso === '' || $fechaBaja === '' || $salarioDiario <= 0) {
     echo "Faltan datos. Uso: debug_enviar_pdf_calculo.php?telefono=52XXXXXXXXXX"
@@ -46,7 +50,9 @@ $calc = calcular_estimado_liquidacion(
     $tipo,
     $diasVacAnt,
     $diasSalDev,
-    $modo
+    $modo,
+    false,
+    $sdiReportado
 );
 
 if ($calc === null) {

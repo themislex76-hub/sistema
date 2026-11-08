@@ -182,7 +182,8 @@ function calcular_estimado_liquidacion(
     float $diasVacacionesAnteriores = 0,
     float $diasSalariosDevengados = 0,
     string $modo = 'despido',
-    bool $trabajadorConfianza = false
+    bool $trabajadorConfianza = false,
+    ?float $sdiReportado = null
 ): ?array {
     if (!in_array($modo, ['despido', 'renuncia', 'rescision'], true)) {
         $modo = 'despido';
@@ -246,6 +247,22 @@ function calcular_estimado_liquidacion(
     $factorIntegracion = (365 + 15 + $vacEnt * 0.25) / 365;
     $sdi = $salarioDiario * $factorIntegracion;
 
+    // Si la persona mandó su recibo de nómina y ahí viene el SDI real
+    // (que casi siempre incluye prestaciones por arriba del mínimo de
+    // ley -- vales de despensa, fondo de ahorro, comisiones regulares,
+    // etc.), ese es el dato real para la indemnización, no el mínimo
+    // calculado arriba. Solo se usa si es MAYOR al calculado -- nunca a
+    // la baja, para no perjudicar a la persona si reportó mal el dato o
+    // el recibo trae un SDI menor al mínimo de ley por error del patrón.
+    // Bug real detectado en producción: un recibo con SDI $456.17 se
+    // ignoró por completo y la herramienta calculó su propio SDI de
+    // $344.19 con solo las prestaciones mínimas -- la indemnización de
+    // 90 días salió $10,078.54 más baja de lo que en realidad le
+    // correspondía.
+    if ($sdiReportado !== null && $sdiReportado > $sdi) {
+        $sdi = $sdiReportado;
+    }
+
     // Indemnización — depende del modo:
     // - despido injustificado (Art. 48 LFT): 90 días de SDI. Más 20 días
     //   por año (Art. 50-II) SOLO si es trabajador/a de confianza (Art.
@@ -277,6 +294,7 @@ function calcular_estimado_liquidacion(
         'antiguedad_anios_completos' => $cy,
         'antiguedad_texto' => antiguedad_texto_lft($ing, $baj),
         'sdi_usado' => round($sdi, 2),
+        'sdi_reportado_usado' => $sdiReportado !== null && $sdiReportado > 0 && $sdiReportado === $sdi,
         'prima_antiguedad_procede' => $primaAntiguedadProcede,
         'aguinaldo_dias' => round($aguinaldoDias, 1),
         'aguinaldo_monto' => round($aguinaldoMonto, 2),
