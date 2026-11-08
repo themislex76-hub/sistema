@@ -271,13 +271,13 @@ async function cookiesParaPlaywright(jar) {
 // puede existir duplicado en el DOM (version de escritorio/movil, un menu
 // colapsado que sigue en el HTML aunque este oculto, etc.) -- se busca
 // entre todos los candidatos el primero que de verdad este visible.
-async function clickTextoVisible(page, texto, exact = true) {
+async function clickTextoVisible(page, texto, exact = true, timeoutMs = 30000) {
   const candidatos = page.getByText(texto, { exact });
   const n = await candidatos.count();
   for (let i = 0; i < n; i++) {
     const el = candidatos.nth(i);
     if (await el.isVisible().catch(() => false)) {
-      await el.click();
+      await el.click({ timeout: timeoutMs });
       return true;
     }
   }
@@ -584,19 +584,34 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
     // "...Consulta de Expediente Electrónico Vista Global Vista por Órgano
     // Jurisdiccional..." justo después de darle clic) -- hace falta un
     // segundo clic en "Vista Global" para que de verdad aparezca la tabla.
-    let entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false).catch(() => false);
+    // Timeouts cortos (8s) en los primeros intentos para no perder 30s por
+    // intento cuando el problema real es un fondo oscuro atorado (se
+    // arregla en menos de un segundo, no hace falta esperar tanto) --
+    // confirmado real: este clic ha tronado más de una vez justo después
+    // de cerrar la ventana de "Seleccione un perfil".
+    let entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false, 8000).catch(() => false);
     if (!entroMenu) {
-      // Pudo haber quedado un modal/fondo oscuro bloqueando el clic sin
-      // avisar -- confirmado con una corrida real: timeout de 30s en este
-      // mismo clic justo después de cerrar la ventana de "Seleccione un
-      // perfil" con clic forzado. Se limpia y se reintenta una vez antes
-      // de darse por vencido.
+      await cerrarCualquierModalAbierto(page);
+      entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false, 8000).catch(() => false);
+    }
+    if (!entroMenu) {
+      // Último recurso: recargar desde cero por si quedó algo atorado que
+      // la limpieza de modales no cubre, con el timeout normal de 30s.
+      await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
+      await cerrarModalSiAparece(page, cuenta.pjf_usuario);
       await cerrarCualquierModalAbierto(page);
       entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false).catch(() => false);
     }
     if (!entroMenu) {
       console.log('  AVISO: no se encontró el menú "Consulta de Expediente Electrónico" -- el portal pudo cambiar otra vez.');
       await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}.png`), fullPage: true }).catch(() => {});
+      const diagnostico = await page.evaluate(() => ({
+        modales: document.querySelectorAll('.modal').length,
+        modalesAbiertos: document.querySelectorAll('.modal.in, .modal.show').length,
+        backdrops: document.querySelectorAll('.modal-backdrop').length,
+        url: location.href,
+      })).catch((e) => `(no se pudo leer: ${e.message})`);
+      console.log(`  Diagnóstico de la página en ese momento: ${JSON.stringify(diagnostico)}`);
       return 0;
     }
     await page.waitForTimeout(500);
