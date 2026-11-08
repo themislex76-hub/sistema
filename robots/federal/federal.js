@@ -291,6 +291,24 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
     const htmlModal = await modal.innerHTML().catch((e) => `(no se pudo leer: ${e.message})`);
     console.log(`    AVISO: no se pudo descargar el PDF desde el modal del documento -- revisa debug_pdf_${etiquetaDebug}.png.`);
     console.log(`    HTML real adentro del modal (primeros 1000 caracteres): ${htmlModal.replace(/\s+/g, ' ').trim().slice(0, 1000)}`);
+    // Nunca se había mirado qué hay DENTRO del <iframe> una vez que carga
+    // -- 0 peticiones de red capturadas sugiere que tal vez el archivo ya
+    // viene incluido en la respuesta inicial (sin petición nueva que
+    // interceptar) y la mini app solo lo muestra (ej. en un <embed>,
+    // <canvas> o con una URL "blob:"). Se entra al documento REAL del
+    // iframe (no el de la página que lo contiene) para ver qué armó.
+    try {
+      const manija = await iframe.elementHandle({ timeout: 3000 });
+      const frame = manija ? await manija.contentFrame() : null;
+      if (frame) {
+        const htmlIframe = await frame.locator('body').innerHTML().catch((e) => `(no se pudo leer: ${e.message})`);
+        console.log(`    HTML real DENTRO del iframe (primeros 1500 caracteres): ${htmlIframe.replace(/\s+/g, ' ').trim().slice(0, 1500)}`);
+      } else {
+        console.log('    No se pudo obtener el frame del iframe (contentFrame devolvió null).');
+      }
+    } catch (e) {
+      console.log(`    (no se pudo leer adentro del iframe: ${e.message})`);
+    }
   }
   await cerrarCualquierModalAbierto(page);
   return pdf;
