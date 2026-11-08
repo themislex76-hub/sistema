@@ -428,9 +428,12 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     // si de verdad se atora, ya avisa aparte (ver
     // ia_registrar_prospecto_atorado).
     if ($prospecto && $prospecto['estatus'] !== 'descartado' && (int)$prospecto['pausado_bot'] === 1) {
+        // Siempre al Administrador, aunque el prospecto ya tenga abogado
+        // asignado -- pedido explícito del usuario: el abogado no debe
+        // recibir estos, el Administrador coordina con él directamente.
         push_notificar_prospecto(
             $pdo,
-            $prospecto['asignado_a'] !== null ? (int)$prospecto['asignado_a'] : null,
+            null,
             'Nuevo mensaje de ' . ($prospecto['nombre'] ?: $telefono),
             mb_strimwidth($texto, 0, 140, '…'),
             '/sistema/?abrir=' . urlencode($telefono)

@@ -377,13 +377,11 @@ guardar_prospecto($pdo, $cita['telefono'], $cita['nombre_cliente'], [
     'resumen' => $resumenCompleto,
 ], true, true);
 
-// Se avisa directo al abogado que le tocó la cita (no al "asignado" del
-// prospecto, que normalmente está vacío en este punto) — es quien tiene
-// que hacer la llamada.
+// Se avisa al Administrador (no al abogado que le tocó la cita -- pedido
+// explícito del usuario: él coordina con el abogado directamente).
 $notaPush = $citaYaPaso ? ' (pago llegó tarde, la fecha original ya pasó -- se le mandaron horarios para que elija, falta confirmar cuál con ella)' : '';
-push_enviar_a_usuario(
-    $pdo,
-    (int)$cita['usuario_id'],
+push_notificar_prospecto(
+    $pdo, null,
     '¡Pago confirmado!',
     ($cita['nombre_cliente'] ?: $cita['telefono']) . ' — asesoría agendada para ' . $horarioTexto . $notaPush,
     '/sistema/?abrir=' . urlencode($cita['telefono'])
