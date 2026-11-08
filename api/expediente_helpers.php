@@ -44,6 +44,8 @@ const EDITABLE_CAMPOS = [
     'funcionario_rh_nombre','funcionario_rh_puesto','numero_oficio_respuesta','fecha_oficio_respuesta',
     'director_firma_nombre','coordinador_archivo_nombre','gerente_gestion_nombre','folio_fiscal_cfdi',
     'periodo_recibo_desde','periodo_recibo_hasta','salario_quincenal_num','rfc_emisor_demandado',
+    'fecha_hoja_servicios','numero_documento_fump','fecha_documento_fump',
+    'fecha_desde_incumplimiento','persona_responsable_incumplimiento',
 ];
 
 const ETAPA_KEYS = [

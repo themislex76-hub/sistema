@@ -256,6 +256,61 @@ function bindTipoAsuntoField(){
   otro.addEventListener('input', ()=>{ hidden.value = otro.value; });
 }
 
+// Las 9 fracciones del artículo 51 LFT (causas de rescisión imputables al
+// patrón). Elegir una arma sola el hecho 4 de la demanda de Rescisión Art.
+// 51 (ver construirHechoCausaAuto más abajo) y el "motivo breve" de la
+// prestación A) -- así el abogado no redacta ningún párrafo en blanco, solo
+// elige la causa y captura la fecha desde la que ocurre (y, si aplica, el
+// nombre de quien incurrió en ella).
+const FRACCION_51 = {
+  I: {
+    label: 'I — Engaño sobre las condiciones de trabajo ofrecidas al contratar',
+    textoBreve: 'proporcionar a la trabajadora las condiciones de trabajo que le ofreció al contratarla',
+    inicio: (tags,k)=> `Es el caso que, desde el inicio de la relación laboral, la demandada me engañó respecto de las condiciones de trabajo que me ofreció al momento de la contratación, hecho del cual tuve conocimiento el ${tags.fecha_desde_incumplimiento_letra}`,
+  },
+  II: {
+    label: 'II — Violencia, injurias o malos tratos (dentro del servicio)',
+    textoBreve: 'abstenerse de incurrir, por sí o por conducto de su personal, en actos de violencia, injurias o malos tratamientos en contra de la suscrita',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} incurrió, dentro del servicio, en actos de violencia, injurias y malos tratamientos en contra de la suscrita, siendo de tal manera graves que hicieron imposible la continuación de la relación de trabajo`,
+  },
+  III: {
+    label: 'III — Violencia, injurias o malos tratos (fuera del servicio)',
+    textoBreve: 'abstenerse de incurrir, por sí o por conducto de su personal, en actos de violencia, injurias o malos tratamientos en contra de la suscrita',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} incurrió, fuera del servicio, en actos de violencia, injurias y malos tratamientos en contra de la suscrita, siendo de tal manera graves que hicieron imposible la continuación de la relación de trabajo`,
+  },
+  IV: {
+    label: 'IV — Reducción del salario',
+    textoBreve: 'no reducir el salario que le correspondía a la trabajadora',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada redujo unilateralmente el salario que venía percibiendo la suscrita, sin mi consentimiento y sin causa legal que lo justificara`,
+  },
+  V: {
+    label: 'V — Falta de pago del salario en la fecha o lugar convenidos',
+    textoBreve: 'pagar el salario correspondiente en la fecha o lugar convenidos',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada dejó de cubrirme el pago del salario correspondiente en la fecha y lugar convenidos y acostumbrados, pese a los requerimientos que realicé para su pago`,
+  },
+  VI: {
+    label: 'VI — Perjuicios maliciosos en herramientas o útiles de trabajo',
+    textoBreve: 'evitar que se causaran perjuicios maliciosos en las herramientas o útiles de trabajo de la suscrita',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} causó maliciosamente perjuicios en las herramientas y útiles de trabajo de la suscrita`,
+  },
+  VII: {
+    label: 'VII — Falta de condiciones higiénicas o de seguridad',
+    textoBreve: 'proporcionar condiciones higiénicas y de seguridad en el centro de trabajo',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada puso en peligro mi seguridad al carecer el establecimiento de condiciones higiénicas y de seguridad, y al no cumplir con las medidas preventivas que las leyes establecen`,
+  },
+  VIII: {
+    label: 'VIII — Imprudencia o descuido inexcusable que compromete la seguridad',
+    textoBreve: 'evitar poner en riesgo, por imprudencia o descuido inexcusable, la seguridad del establecimiento o de las personas que ahí se encuentran',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} comprometió, con su imprudencia o descuido inexcusable, la seguridad del establecimiento y de las personas que ahí se encontraban, incluida la suscrita`,
+  },
+  IX: {
+    label: 'IX — Causas análogas, igualmente graves',
+    textoBreve: 'cumplir con sus obligaciones laborales',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada incurrió en conductas análogas a las demás causales de rescisión previstas en el artículo 51 de la Ley Federal del Trabajo, igualmente graves y de consecuencias semejantes`,
+  },
+};
+const FRACCION_51_SELECT_OPTIONS = Object.keys(FRACCION_51).map(code => ({value: code, label: FRACCION_51[code].label}));
+
 const EDITABLE_FIELDS = [
   {key:'tipo_asunto', label:'Tipo de asunto', type:'tipo_asunto'},
   {key:'actor', label:'Nombre del actor (trabajador)'},
@@ -287,19 +342,20 @@ const EDITABLE_FIELDS = [
   {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number'},
   {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta']},
   // Rescisión Art. 51 (ver "Otras plantillas de escritos" → Rescisión Art. 51).
-  {key:'rescision_fraccion', label:'Rescisión — fracción del art. 51 LFT (ej. "V")'},
-  {key:'rescision_motivo_breve', label:'Rescisión — motivo breve (ej. "pagar el salario correspondiente a los servicios que preste")'},
+  // El hecho 4 y el "motivo breve" de la prestación A) se arman solos a
+  // partir de estos 3 datos + la fracción elegida -- ver FRACCION_51 más
+  // abajo. No hay párrafo en blanco que redactar.
+  {key:'rescision_fraccion', label:'Rescisión — causa (fracción del art. 51 LFT)', type:'select', options:FRACCION_51_SELECT_OPTIONS},
   {key:'fecha_rescision', label:'Rescisión — fecha en que el actor decidió rescindir', type:'date'},
-  {key:'hecho_causa_narrativa', label:'Rescisión — narrativa del hecho (salario/causa), texto libre para el hecho correspondiente', type:'textarea'},
-  {key:'periodo_vacaciones_anterior', label:'Rescisión — periodo de vacaciones adeudadas anterior (ej. "2025-2026")'},
-  {key:'periodo_vacaciones_actual', label:'Rescisión — periodo de vacaciones proporcionales actual (ej. "2026-2027")'},
+  {key:'fecha_desde_incumplimiento', label:'Rescisión — fecha desde la que ocurre el incumplimiento/causa', type:'date'},
+  {key:'persona_responsable_incumplimiento', label:'Rescisión — nombre de quien incurrió en la causa (si no es la empresa en general)'},
+  {key:'hecho_causa_narrativa', label:'Rescisión — detalle adicional del hecho (opcional; se agrega después del párrafo que ya arma el sistema)', type:'textarea'},
   {key:'banco1_nombre', label:'Rescisión — banco 1, institución'},
   {key:'banco1_cuenta', label:'Rescisión — banco 1, número de cuenta'},
   {key:'banco2_nombre', label:'Rescisión — banco 2, institución'},
   {key:'banco2_cuenta', label:'Rescisión — banco 2, número de cuenta'},
   {key:'banco3_nombre', label:'Rescisión — banco 3, institución'},
   {key:'banco3_cuenta', label:'Rescisión — banco 3, número de cuenta'},
-  {key:'inspeccion_extremos_texto', label:'Rescisión — extremos a probar en la inspección judicial (texto libre, uno por línea)', type:'textarea'},
   // Prima de antigüedad (estilo jubilación / apartado B) -- ver "Otras plantillas de escritos".
   {key:'monto_prima_antiguedad', label:'Prima antigüedad — monto reclamado', type:'number'},
   {key:'fecha_solicitud_interna', label:'Prima antigüedad — fecha de la solicitud interna de pago', type:'date'},
@@ -317,6 +373,9 @@ const EDITABLE_FIELDS = [
   {key:'periodo_recibo_hasta', label:'Prima antigüedad — periodo del recibo CFDI, hasta', type:'date'},
   {key:'salario_quincenal_num', label:'Prima antigüedad — salario quincenal', type:'number'},
   {key:'rfc_emisor_demandado', label:'Prima antigüedad — RFC de la demandada (emisor del CFDI)'},
+  {key:'fecha_hoja_servicios', label:'Prima antigüedad — fecha de la Hoja Única de Servicios', type:'date'},
+  {key:'numero_documento_fump', label:'Prima antigüedad — número de documento del Formato Único de Movimientos de Personal'},
+  {key:'fecha_documento_fump', label:'Prima antigüedad — fecha de elaboración de ese documento', type:'date'},
   {key:'testigos', label:'Nombre de los testigos'},
   {key:'dom_testigos', label:'Domicilios de los testigos'},
   {key:'ultima_nota', label:'Última actuación / nota'},
@@ -1463,10 +1522,13 @@ function mergeTags(k){
     // selección de casillas del abogado (ver generarEscritoConOpciones()),
     // para poder incluir/excluir cada una y renumerar las letras.
     rescision_fraccion: k.rescision_fraccion || '____',
-    rescision_motivo_breve: k.rescision_motivo_breve || '________________',
+    rescision_motivo_breve: (FRACCION_51[k.rescision_fraccion] && FRACCION_51[k.rescision_fraccion].textoBreve) || '________________',
     fecha_rescision_letra: fechaLetras(k.fecha_rescision),
-    hecho_causa_narrativa: k.hecho_causa_narrativa || '________________',
-    inspeccion_extremos_texto: k.inspeccion_extremos_texto || '________________',
+    fecha_desde_incumplimiento_letra: fechaLetras(k.fecha_desde_incumplimiento),
+    persona_responsable_incumplimiento: k.persona_responsable_incumplimiento || 'una persona que actuaba a nombre de la demandada',
+    // Párrafo adicional OPCIONAL -- si se deja vacío, el hecho 4 queda
+    // completo solo con hecho_causa_auto (ver abajo) y aquí no se agrega nada.
+    hecho_causa_narrativa: k.hecho_causa_narrativa || '',
     // Prima de antigüedad (estilo jubilación / apartado B).
     monto_prima_antiguedad_num: k.monto_prima_antiguedad!=null ? Number(k.monto_prima_antiguedad).toFixed(2) : '____________',
     monto_prima_antiguedad_letra: k.monto_prima_antiguedad!=null ? pesosEnLetras(k.monto_prima_antiguedad) : '____________',
@@ -1487,9 +1549,41 @@ function mergeTags(k){
     periodo_recibo_hasta_iso: k.periodo_recibo_hasta || '____',
     salario_quincenal_num: k.salario_quincenal_num!=null ? Number(k.salario_quincenal_num).toFixed(2) : '________',
     rfc_emisor_demandado: (k.rfc_emisor_demandado || '____').toUpperCase(),
+    fecha_hoja_servicios_letra: fechaLetras(k.fecha_hoja_servicios),
+    numero_documento_fump: k.numero_documento_fump || '____',
+    fecha_documento_fump_letra: fechaLetras(k.fecha_documento_fump),
   };
+  tags.hecho_causa_auto = construirHechoCausaAuto(tags, k);
+  const periodos = calcularPeriodosVacacionesRescision(k);
+  tags.periodo_vacaciones_anterior = periodos.anterior;
+  tags.periodo_vacaciones_actual = periodos.actual;
   tags.pruebas_adicionales = construirPruebasAdicionalesTexto(k, tags);
   return tags;
+}
+
+// Arma solo el hecho 4 completo (sin que el abogado redacte nada) a partir
+// de la fracción del art. 51 elegida + la fecha desde la que ocurre + (si
+// aplica) quién incurrió en ella. Si todavía no se eligió fracción, deja un
+// párrafo genérico editable, igual que el resto de los campos sin capturar.
+function construirHechoCausaAuto(tags, k){
+  const f = FRACCION_51[k.rescision_fraccion];
+  if(!f){
+    return `Es el caso que, ante el incumplimiento de la demandada respecto de sus obligaciones laborales, la suscrita decidió rescindir la relación laboral por causa imputable al patrón, separándome de mis labores el día ${tags.fecha_rescision_letra}, al considerar que la conducta patronal actualizaba la causa prevista en el artículo 51, fracción ____, de la Ley Federal del Trabajo.`;
+  }
+  return `${f.inicio(tags,k)}, por lo que ante dicho incumplimiento, la suscrita decidió rescindir la relación laboral por causa imputable al patrón, separándome de mis labores el día ${tags.fecha_rescision_letra}, al considerar que la conducta patronal actualizaba la causa prevista en el artículo 51, fracción ${k.rescision_fraccion}, de la Ley Federal del Trabajo.`;
+}
+
+// Periodo de vacaciones (anterior y actual, "YYYY-YYYY") a partir del
+// aniversario de ingreso más cercano a la fecha de rescisión -- mismo
+// criterio que usa computeLiquidacion() para el resto del sistema, sin que
+// el abogado tenga que escribirlo a mano.
+function calcularPeriodosVacacionesRescision(k){
+  const ing = parseDate(k.fecha_ingreso);
+  const fin = parseDate(k.fecha_rescision) || parseDate(k.fecha_baja);
+  if(!ing || !fin || fin < ing) return {anterior: '________', actual: '________'};
+  const anniv = lastAnniversaryLFT(ing, fin);
+  const y = anniv.getFullYear();
+  return {anterior: `${y-1}-${y}`, actual: `${y}-${y+1}`};
 }
 
 // Bloque único (con saltos de línea) que junta TODAS las pruebas desde el
@@ -1513,7 +1607,7 @@ function construirPruebasAdicionalesTexto(k, tags){
     bloques.push(`${n}.- EL INFORME que se sirva rendir la institución bancaria ${b.nombre}, con relación a la moral demandada, por el periodo comprendido entre la fecha de ingreso y la fecha de baja de la parte actora, para lo cual solicito a esta H. Autoridad se sirva girar oficio correspondiente a efecto de que informe si la cuenta número ${b.cuenta} pertenece a la parte actora, los estados de cuenta mensuales de dicho periodo, y si dicha cuenta recibió depósitos y/o transferencias por parte de la moral demandada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada, así como el incumplimiento por parte de la demandada respecto a sus obligaciones.`);
     n++;
   });
-  bloques.push(`${n}.- LA INSPECCIÓN JUDICIAL, que se realice por conducto del C. Actuario en el local de este H. Tribunal en los siguientes documentos que se encuentran en la empresa demandada ${tags.demandado} en el domicilio ubicado en calle ${tags.dom_demandado}: 1) Contrato individual y/o colectivo de trabajo; 2) Listas de raya; 3) Recibos de pago de salarios, de vacaciones, de prima vacacional y de aguinaldo; 4) Tarjetas o controles de asistencia. Documentos que el demandado tiene obligación de conservar y exhibir en juicio de conformidad con lo establecido en los artículos 784 y 804 de la Ley Federal del Trabajo y que se ofrecen para acreditar los siguientes extremos:\n\n${tags.inspeccion_extremos_texto}\n\nPara el desahogo de esta prueba de INSPECCIÓN deberá apercibirse a la demandada que para el caso de no exhibir la totalidad de la documentación base para tal efecto se tendrán por presuntivamente ciertos los extremos a acreditar con fundamento en lo dispuesto por los artículos 805, 827 y 828 de la Ley Federal del Trabajo en relación con el artículo 804 y demás relativos y aplicables de la ley citada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.`);
+  bloques.push(`${n}.- LA INSPECCIÓN JUDICIAL, que se realice por conducto del C. Actuario en el local de este H. Tribunal en los siguientes documentos que se encuentran en la empresa demandada ${tags.demandado} en el domicilio ubicado en calle ${tags.dom_demandado}: 1) Contrato individual y/o colectivo de trabajo; 2) Listas de raya; 3) Recibos de pago de salarios, de vacaciones, de prima vacacional y de aguinaldo; 4) Tarjetas o controles de asistencia. Documentos que el demandado tiene obligación de conservar y exhibir en juicio de conformidad con lo establecido en los artículos 784 y 804 de la Ley Federal del Trabajo y que se ofrecen para acreditar los siguientes extremos:\n\na) Que la parte actora ingresó a prestar sus servicios para la demandada, a partir del ${tags.fecha_ingreso_letra}.\nb) Que la demandada pagó a la parte actora por la prestación de sus servicios la cantidad de $${tags.salario_mensual_num} pesos mensuales.\nc) Que la parte actora laboró al servicio de la empresa demandada en un horario comprendido de las ${tags.hora_entrada} horas a las ${tags.hora_salida} horas ${tags.dias_laborados}.\nd) Que la demandada dejó de cumplir con sus obligaciones laborales a partir del ${tags.fecha_desde_incumplimiento_letra}, tal como se precisa en el capítulo de hechos.\n\nPara el desahogo de esta prueba de INSPECCIÓN deberá apercibirse a la demandada que para el caso de no exhibir la totalidad de la documentación base para tal efecto se tendrán por presuntivamente ciertos los extremos a acreditar con fundamento en lo dispuesto por los artículos 805, 827 y 828 de la Ley Federal del Trabajo en relación con el artículo 804 y demás relativos y aplicables de la ley citada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.`);
   n++;
   bloques.push(`${n}.- LA TESTIMONIAL a cargo de los CC. ${tags.testigos}, quienes tienen sus domicilios en ${tags.dom_testigos} respectivamente y a quienes me comprometo a presentar el día y hora que esta H. Autoridad determine la audiencia para su celebración, testigos que declararan sobre los hechos del escrito inicial de demanda como de sus aclaraciones y modificaciones a la misma.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.\n\nTestigos que declararan sobre los hechos ocurridos el día ${tags.fecha_rescision_letra}.`);
   return bloques.join('\n\n');
@@ -2797,13 +2891,13 @@ const PRESTACIONES_RESCISION_OPCIONES = [
       return `EL PAGO DE AGUINALDO PROPORCIONAL AL AÑO ${anio}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos, lo anterior en términos del artículo 87 de la Ley Federal del Trabajo.`;
     }},
   {key:'vacaciones_periodo1', label:'Vacaciones adeudadas, periodo anterior', checkedPorDefecto:false,
-    texto:(tags,k)=> `EL PAGO DE VACACIONES ADEUDADAS correspondiente al periodo ${k.periodo_vacaciones_anterior || '________'}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+    texto:(tags,k)=> `EL PAGO DE VACACIONES ADEUDADAS correspondiente al periodo ${tags.periodo_vacaciones_anterior}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
   {key:'prima_vacacional_periodo1', label:'Prima vacacional, periodo anterior', checkedPorDefecto:false,
-    texto:(tags,k)=> `EL PAGO DE PRIMA VACACIONAL correspondiente al periodo ${k.periodo_vacaciones_anterior || '________'}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+    texto:(tags,k)=> `EL PAGO DE PRIMA VACACIONAL correspondiente al periodo ${tags.periodo_vacaciones_anterior}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
   {key:'vacaciones_periodo2', label:'Vacaciones adeudadas, periodo actual', checkedPorDefecto:true,
-    texto:(tags,k)=> `EL PAGO DE VACACIONES ADEUDADAS correspondiente al periodo ${k.periodo_vacaciones_actual || '________'}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+    texto:(tags,k)=> `EL PAGO DE VACACIONES ADEUDADAS correspondiente al periodo ${tags.periodo_vacaciones_actual}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
   {key:'prima_vacacional_periodo2', label:'Prima vacacional, periodo actual', checkedPorDefecto:true,
-    texto:(tags,k)=> `EL PAGO DE PRIMA VACACIONAL correspondiente al periodo ${k.periodo_vacaciones_actual || '________'}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+    texto:(tags,k)=> `EL PAGO DE PRIMA VACACIONAL correspondiente al periodo ${tags.periodo_vacaciones_actual}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
   {key:'horas_extras', label:'Horas extras (reutiliza el horario capturado en Editar datos)', checkedPorDefecto:false,
     texto:(tags,k)=> `EL PAGO DE HORAS EXTRAS, por todo el tiempo laborado en virtud de que, por necesidades del Servicio, mi jefe inmediato de manera habitual, continua y reiterada, me solicitaba que me quedara a laborar tiempo extraordinario por lo que diariamente laboraba de las ${tags.hora_entrada} a las ${tags.hora_salida}, con una hora para tomar alimentos ${tags.texto_comida}, en tal virtud el suscrito laboraba materialmente ${tags.horas_extra_diarias} horas extras por día, ${tags.dias_laborados} de cada semana, lo que da un total de ${tags.horas_extra_semanales} horas extras semanales.`},
 ];
@@ -6239,7 +6333,7 @@ function formatoDemandaHTML(){
   </div>
 
   <div class="legal-box" style="margin-bottom:16px;">
-    <strong>Campos disponibles para usar en el Word:</strong> <code>{{actor}}, {{demandado}}, {{giro_empresa}}, {{dom_demandado}}, {{dom_testigos}}, {{puesto}}, {{puesto_despidio}}, {{fecha_ingreso_letra}}, {{fecha_baja_letra}}, {{salario_mensual_num}}, {{salario_diario_num}}, {{salario_mensual_letra}}, {{curp}}, {{instancia}}, {{quien_despidio}}, {{hora_despido}}, {{testigos}}, {{fecha_hoy_letra}}, {{ciudad_firma}}, {{hora_entrada}}, {{hora_salida}}, {{hora_salida_normal}}, {{hora_inicio_extra}}, {{texto_comida}}, {{dias_laborados}}, {{tipo_jornada_texto}}, {{horas_extra_diarias}}, {{horas_extra_semanales}}, {{rescision_fraccion}}, {{rescision_motivo_breve}}, {{fecha_rescision_letra}}, {{hecho_causa_narrativa}}, {{pruebas_adicionales}}, {{inspeccion_extremos_texto}}, {{prestaciones_opcionales}} (solo en la plantilla "Rescisión Art. 51"), {{monto_prima_antiguedad_num}}, {{monto_prima_antiguedad_letra}}, {{fecha_solicitud_interna_letra}}, {{hora_solicitud_interna}}, {{folio_solicitud_interna}}, {{funcionario_rh_nombre}}, {{funcionario_rh_puesto}}, {{numero_oficio_respuesta}}, {{fecha_oficio_respuesta_letra}}, {{director_firma_nombre}}, {{coordinador_archivo_nombre}}, {{gerente_gestion_nombre}}, {{folio_fiscal_cfdi}}, {{periodo_recibo_desde_letra}}, {{periodo_recibo_hasta_letra}}, {{salario_quincenal_num}}, {{rfc_emisor_demandado}}</code>
+    <strong>Campos disponibles para usar en el Word:</strong> <code>{{actor}}, {{demandado}}, {{giro_empresa}}, {{dom_demandado}}, {{dom_testigos}}, {{puesto}}, {{puesto_despidio}}, {{fecha_ingreso_letra}}, {{fecha_baja_letra}}, {{salario_mensual_num}}, {{salario_diario_num}}, {{salario_mensual_letra}}, {{curp}}, {{instancia}}, {{quien_despidio}}, {{hora_despido}}, {{testigos}}, {{fecha_hoy_letra}}, {{ciudad_firma}}, {{hora_entrada}}, {{hora_salida}}, {{hora_salida_normal}}, {{hora_inicio_extra}}, {{texto_comida}}, {{dias_laborados}}, {{tipo_jornada_texto}}, {{horas_extra_diarias}}, {{horas_extra_semanales}}, {{rescision_fraccion}}, {{rescision_motivo_breve}}, {{fecha_rescision_letra}}, {{fecha_desde_incumplimiento_letra}}, {{persona_responsable_incumplimiento}}, {{hecho_causa_auto}}, {{hecho_causa_narrativa}}, {{pruebas_adicionales}}, {{prestaciones_opcionales}} (solo en la plantilla "Rescisión Art. 51"), {{monto_prima_antiguedad_num}}, {{monto_prima_antiguedad_letra}}, {{fecha_solicitud_interna_letra}}, {{hora_solicitud_interna}}, {{folio_solicitud_interna}}, {{funcionario_rh_nombre}}, {{funcionario_rh_puesto}}, {{numero_oficio_respuesta}}, {{fecha_oficio_respuesta_letra}}, {{director_firma_nombre}}, {{coordinador_archivo_nombre}}, {{gerente_gestion_nombre}}, {{folio_fiscal_cfdi}}, {{periodo_recibo_desde_letra}}, {{periodo_recibo_hasta_letra}}, {{salario_quincenal_num}}, {{rfc_emisor_demandado}}, {{fecha_hoja_servicios_letra}}, {{numero_documento_fump}}, {{fecha_documento_fump_letra}}</code>
   </div>
   <div id="plantillaStatus" style="font-size:12px; color:var(--gray);">${esOriginal ? 'Estado actual: usando la plantilla original del despacho.' : 'Estado actual: usando una plantilla personalizada, subida por el Administrador.'}</div>
   ${!esOriginal ? `<button class="btn secondary" id="resetPlantillaBtn" style="margin-top:10px;">Restaurar plantilla original del despacho</button>` : ''}
@@ -7664,13 +7758,19 @@ function modalTabContent(k,p,meta){
             f.type==='select' ?
             (()=>{
               const actual = k[f.key]!=null ? String(k[f.key]) : '';
+              // Las opciones pueden ser strings simples (valor === texto
+              // mostrado) u objetos {value,label} cuando el valor guardado
+              // debe ser corto (ej. "V") pero el texto mostrado más
+              // descriptivo (ver rescision_fraccion).
+              const opts = f.options.map(o => typeof o === 'string' ? {value:o, label:o} : o);
+              const valores = opts.map(o=>o.value);
               // Si el valor guardado no está en la lista cerrada (dato legado), se
               // agrega como primera opción para no perderlo ni cambiarlo solo.
-              const extra = actual && !f.options.includes(actual) ? `<option value="${escapeHTML(actual)}" selected>${escapeHTML(actual)} (dato anterior — vuelve a elegir para estandarizar)</option>` : '';
+              const extra = actual && !valores.includes(actual) ? `<option value="${escapeHTML(actual)}" selected>${escapeHTML(actual)} (dato anterior — vuelve a elegir para estandarizar)</option>` : '';
               return `<select class="edit-field" data-field="${f.key}" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
                 <option value="">— Sin definir —</option>
                 ${extra}
-                ${f.options.map(o=>`<option value="${escapeHTML(o)}" ${actual===o?'selected':''}>${escapeHTML(o)}</option>`).join("")}
+                ${opts.map(o=>`<option value="${escapeHTML(o.value)}" ${actual===o.value?'selected':''}>${escapeHTML(o.label)}</option>`).join("")}
               </select>`;
             })() :
             f.type==='tribunal' ?

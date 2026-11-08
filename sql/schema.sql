@@ -132,6 +132,11 @@ CREATE TABLE expedientes (
   periodo_recibo_hasta DATE NULL,
   salario_quincenal_num DECIMAL(12,2) NULL,
   rfc_emisor_demandado VARCHAR(20) NULL,
+  fecha_hoja_servicios DATE NULL,
+  numero_documento_fump VARCHAR(50) NULL,
+  fecha_documento_fump DATE NULL,
+  fecha_desde_incumplimiento DATE NULL,
+  persona_responsable_incumplimiento VARCHAR(255) NULL,
   testigos TEXT NULL,
   dom_testigos TEXT NULL,
 
