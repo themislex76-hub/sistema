@@ -49,32 +49,6 @@ function guardarProcesados(obj) {
 function normalizeExp(s) {
   return (s || '').replace(/\s+/g, '').toUpperCase();
 }
-function sinAcentos(s) {
-  return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
-}
-
-// El numero de expediente NO es unico entre tribunales -- distintos
-// órganos reutilizan el mismo numero cada año (bug real detectado en el
-// robot de CDMX con datos de producción). Se exige además que el resumen
-// mencione a las partes antes de confiar en una coincidencia de número.
-const PALABRAS_VACIAS = new Set([
-  'DE', 'DEL', 'LA', 'LAS', 'LOS', 'EL', 'Y', 'S', 'A', 'C', 'V', 'SA', 'CV', 'SC', 'SRL', 'VS',
-]);
-function tokensSignificativos(nombre) {
-  return sinAcentos(nombre)
-    .replace(/[^A-Z0-9\s]/g, ' ')
-    .split(/\s+/)
-    .filter(t => t.length > 1 && !PALABRAS_VACIAS.has(t));
-}
-function pareceElMismoCaso(resumen, actor, demandado) {
-  const texto = sinAcentos(resumen);
-  const coincideTodo = (nombre) => {
-    const tokens = tokensSignificativos(nombre);
-    return tokens.length > 0 && tokens.every(t => texto.includes(t));
-  };
-  return coincideTodo(actor) || coincideTodo(demandado);
-}
-
 // dd/mm/yyyy (formato del portal) -> yyyy-mm-dd (formato que usa el sistema)
 function parseFechaMX(s) {
   const m = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s || '');
@@ -205,6 +179,20 @@ async function cerrarModalSiAparece(page, etiquetaDebug) {
           await page.waitForTimeout(800);
           const sigueAhi = await modal.isVisible().catch(() => false);
           if (!sigueAhi) {
+            // El modal ya no es visible, pero a veces (sobre todo con el
+            // clic forzado) queda vivo el fondo oscuro (".modal-backdrop")
+            // que Bootstrap pone detrás -- eso basta para que cualquier
+            // clic posterior en la página (ej. el menú) quede bloqueado
+            // aunque el elemento se vea clickeable (confirmado con una
+            // corrida real: el modal cerraba pero el siguiente clic
+            // tronaba en timeout). Se limpia por si acaso, sin importar si
+            // realmente quedó ahí.
+            await page.evaluate(() => {
+              document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+              document.body.classList.remove('modal-open');
+              document.body.style.removeProperty('padding-right');
+              document.body.style.removeProperty('overflow');
+            }).catch(() => {});
             console.log(`  Ventana emergente cerrada${forzar ? ' (con clic forzado)' : ''}.`);
             return;
           }
@@ -218,9 +206,19 @@ async function cerrarModalSiAparece(page, etiquetaDebug) {
 // Si la tabla (DataTables) permite elegir cuantas entradas mostrar por
 // pagina ("Mostrar X entradas"), se pone el maximo disponible, para no
 // tener que navegar pagina por pagina. No es grave si no lo encuentra.
-async function maximizarEntradasPorPagina(page) {
+async function maximizarEntradasPorPagina(page, tabla) {
   try {
-    const select = page.getByText('Mostrar', { exact: false }).locator('..').locator('select').first();
+    // La página puede traer MÁS de una tabla DataTables (algunas ocultas,
+    // ej. "tableOficialia") -- cada una tiene su propio "Mostrar X
+    // entradas", así que buscarlo por texto a secas (sin acotar a la
+    // tabla que realmente nos interesa) puede agarrar el select de otra
+    // tabla, invisible, y quedarse esperando 30s en vano (confirmado con
+    // una corrida real). Se acota por el "aria-controls" del select, que
+    // en DataTables apunta al id de SU tabla.
+    const tablaId = tabla ? await tabla.getAttribute('id').catch(() => null) : null;
+    const select = tablaId
+      ? page.locator(`select[aria-controls="${tablaId}"]`).first()
+      : page.getByText('Mostrar', { exact: false }).locator('..').locator('select').first();
     if (await select.count() === 0) return;
     const opciones = await select.locator('option').allInnerTexts();
     if (!opciones.length) return;
@@ -272,9 +270,8 @@ async function procesarExpediente(page, numeroExpediente, match, estado) {
     console.log(`    AVISO: no cargó la tabla de acuerdos del expediente ${numeroExpediente} -- se omite esta vez.`);
     return 0;
   }
-  await maximizarEntradasPorPagina(page);
-
   const tabla = page.locator('table').filter({ has: page.getByText('Fecha de Acuerdo') }).first();
+  await maximizarEntradasPorPagina(page, tabla);
   const filas = await leerTablaPorEncabezados(tabla);
 
   const key = normalizeExp(numeroExpediente);
@@ -288,17 +285,9 @@ async function procesarExpediente(page, numeroExpediente, match, estado) {
     const fechaPublicacion = (fila['Fecha de Publicación'] || {}).texto || '';
     const resumen = `Acuerdo No. ${no} del expediente ${numeroExpediente}, de fecha ${fechaAcuerdo || '(sin fecha)'}`
       + (fechaPublicacion ? `, publicado el ${fechaPublicacion}.` : '.');
-    if (!pareceElMismoCaso(`${resumen} ${numeroExpediente}`, match.actor, match.demandado)) {
-      // Esto no debería pasar casi nunca aquí (ya se filtró por cuenta
-      // autorizada + número de expediente), pero se deja la misma
-      // protección que en CDMX por si dos expedientes federales
-      // distintos comparten número.
-      console.log(`    Expediente ${numeroExpediente}: acuerdo No. ${no} no menciona a "${match.actor}"/"${match.demandado}" -- se omite por seguridad.`);
-    } else {
-      await reportarAviso(match.id, resumen, parseFechaMX(fechaPublicacion || fechaAcuerdo));
-      reportados++;
-      console.log(`    Aviso reportado: expediente ${numeroExpediente}, acuerdo No. ${no}.`);
-    }
+    await reportarAviso(match.id, resumen, parseFechaMX(fechaPublicacion || fechaAcuerdo));
+    reportados++;
+    console.log(`    Aviso reportado: expediente ${numeroExpediente}, acuerdo No. ${no}.`);
     if (no > maxNo) maxNo = no;
   }
   estado[key] = maxNo;
