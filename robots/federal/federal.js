@@ -49,6 +49,14 @@ function guardarProcesados(obj) {
 function normalizeExp(s) {
   return (s || '').replace(/\s+/g, '').toUpperCase();
 }
+// El número de expediente trae "/" (ej. "114/2026") -- usarlo tal cual en
+// un nombre de archivo de captura hace que Windows (y Playwright) lo
+// interprete como una subcarpeta que no existe, y la captura se pierde en
+// silencio (bug real: pasó en la corrida del 8 nov 2026 con los PDF de
+// acuerdos -- "revisa debug_pdf_114/2026_1.png" nunca se había guardado).
+function sanitizarParaArchivo(s) {
+  return (s || '').replace(/[\/\\]/g, '-');
+}
 // dd/mm/yyyy (formato del portal) -> yyyy-mm-dd (formato que usa el sistema)
 function parseFechaMX(s) {
   const m = /(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(s || '');
@@ -387,7 +395,7 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
     let documentoId = null;
     try {
       const celda = celdaBotonDocumento(fila);
-      const pdf = celda ? await descargarPdfAcuerdo(context, page, celda, `${key}_${no}`) : null;
+      const pdf = celda ? await descargarPdfAcuerdo(context, page, celda, `${sanitizarParaArchivo(key)}_${no}`) : null;
       if (pdf) {
         documentoId = await subirPdfAlSistema(pdf, match.id, `Acuerdo_No_${no}_Exp_${numeroExpediente.replace(/\//g, '-')}.pdf`);
       }
@@ -477,7 +485,7 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
         reportados += await procesarExpediente(context, page, numExp, match, estado);
       } catch (e) {
         console.log(`    Error revisando el expediente ${numExp}: ${e.message}`);
-        await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}_${normalizeExp(numExp)}.png`), fullPage: true }).catch(() => {});
+        await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}_${sanitizarParaArchivo(normalizeExp(numExp))}.png`), fullPage: true }).catch(() => {});
       }
 
       // Regresa a la vista global para poder abrir el siguiente expediente.
