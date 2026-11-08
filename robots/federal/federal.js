@@ -193,7 +193,17 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   const hayArchivo = await filaArchivo.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
   if (!hayArchivo) {
     await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+    // Las capturas reales siguen mostrando el archivo perfectamente
+    // visible aunque este código diga que no -- en vez de seguir ajustando
+    // el selector a ciegas, se cuentan cuántos ".modal.in"/".modal.show"
+    // hay en TODA la página (puede que haya más de uno y se esté agarrando
+    // el equivocado) y se vuelca el HTML real de adentro del modal que sí
+    // se agarró.
+    const totalModales = await page.locator('.modal.in, .modal.show').count().catch(() => -1);
+    const htmlModal = await modal.innerHTML().catch((e) => `(no se pudo leer: ${e.message})`);
     console.log(`    AVISO: el modal del documento no mostró ningún archivo -- revisa debug_pdf_${etiquetaDebug}.png.`);
+    console.log(`    Modales ".modal.in/.modal.show" en la página: ${totalModales}.`);
+    console.log(`    HTML real adentro del modal (primeros 1000 caracteres): ${htmlModal.replace(/\s+/g, ' ').trim().slice(0, 1000)}`);
     await cerrarCualquierModalAbierto(page);
     return null;
   }
