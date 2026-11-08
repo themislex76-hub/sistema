@@ -155,13 +155,15 @@ async function clickTextoVisible(page, texto, exact = true) {
 }
 
 // El portal muestra, al menos la primera vez después de iniciar sesión,
-// una ventana emergente ("modalModalidad" -- "Asignar Modalidad") que tapa
-// la pantalla y bloquea cualquier clic hasta que se cierra (confirmado con
-// una corrida real: "subtree intercepts pointer events" apuntando
-// exactamente a ese modal). Se imprime su texto en la consola (para saber
-// qué decía, por si el botón correcto resulta ser otro) y se intenta
-// cerrarla probando varios botones comunes, del más específico al más
-// genérico.
+// una ventana emergente ("modalModalidad") pidiendo elegir un perfil para
+// entrar: "Persona Física", "Representante de persona jurídica pública" o
+// "Representante de persona jurídica privada" -- tapa la pantalla y
+// bloquea cualquier clic hasta que se cierra (confirmado con una corrida
+// real: "subtree intercepts pointer events" apuntando exactamente a ese
+// modal, y con capturas de pantalla reales del despacho). La opción
+// correcta, confirmada por el despacho, es siempre "Persona Física". Se
+// imprime el texto del modal en la consola por si en algún momento
+// cambiara, y de respaldo se intenta con botones genéricos.
 async function cerrarModalSiAparece(page, etiquetaDebug) {
   const modal = page.locator('.modal.in, .modal.show').first();
   const hayModal = await modal.isVisible({ timeout: 3000 }).catch(() => false);
@@ -172,6 +174,7 @@ async function cerrarModalSiAparece(page, etiquetaDebug) {
   await page.screenshot({ path: path.join(__dirname, `debug_modal_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
 
   const botones = [
+    modal.getByText('Persona Física', { exact: false }),
     modal.getByRole('button', { name: /aceptar|continuar|entendido|confirmar|cerrar/i }),
     modal.locator('button[data-dismiss="modal"], button.close, [aria-label="Close"]'),
     modal.getByRole('button').first(),
