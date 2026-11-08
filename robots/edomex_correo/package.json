@@ -1,0 +1,14 @@
+{
+  "name": "robot-edomex-correo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Robot de monitoreo del correo de notificaciones electrónicas del Poder Judicial del Estado de México (Tribunales Laborales, región Tlalnepantla).",
+  "main": "edomex_correo.js",
+  "scripts": {
+    "start": "node edomex_correo.js"
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "playwright": "^1.47.0"
+  }
+}
