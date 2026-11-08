@@ -8,6 +8,45 @@
   cPanel → Administrador de archivos.
 - Cambios de base de datos: dar el SQL, el usuario lo corre por phpMyAdmin.
 
+## Varias sesiones trabajando sobre el mismo repo (IMPORTANTE)
+El usuario tiene 3 conversaciones de Claude activas sobre este proyecto
+("sistema y bot completo", "Bot", "chats"), cada una con su propio
+contexto -- no se comparten entre sí automáticamente. Este archivo
+(`CLAUDE.md`) es el mecanismo para que cada sesión nueva se entere de lo
+que hicieron las otras: se lee solo al empezar, así que **toca
+actualizarlo tú mismo cada vez que termines algo importante**, no
+solo confiar en que el usuario lo recuerde. Antes de empezar trabajo
+nuevo: `git pull` (puede haber commits de otra sesión). Al terminar:
+commit/push + agrega aquí un resumen breve de qué cambiaste y qué
+migración SQL es la más reciente que el usuario ya corrió (para que la
+siguiente sesión sepa desde dónde continuar sin repetir ni pisar nada).
+
+**Última migración aplicada por el usuario: `055_pericial_caligrafica_prima_antiguedad.sql`.**
+
+Resumen de lo agregado en la sesión del 6-8 nov 2026 ("sistema y bot
+completo"):
+- Asignación de expedientes a 2 abogados a la vez (`abogado_id_2`).
+- Borrar expediente (`api/expedientes_delete.php`, solo Administrador).
+- Jornada laboral / horas extra dinámicas en la demanda: el abogado
+  captura horario de entrada/salida/comida/días en "Editar datos" y el
+  Word calcula solo las horas extra y adecúa el texto (`calcularJornada()`,
+  `mergeTags()` en app.js). Jornada máxima legal (Art. 61 LFT) configurable
+  en Equipo (pensado para el cambio de ley de 2027).
+- Dos escritos nuevos generables desde "Generar escrito" → "Otras
+  plantillas de escritos" (hay que subir el .docx ahí, no viven en el
+  repo, igual que la plantilla de demanda real):
+  - **Rescisión Art. 51**: la causa se elige de una lista (fracciones I-IX
+    del art. 51) y arma solo el hecho narrativo; prestaciones opcionales
+    con checkboxes (letras se recalculan solas); reutiliza el horario/horas
+    extra ya existente.
+  - **Prima de Antigüedad (jubilación)**: estilo "Mir Castro" -- trámite
+    interno con funcionario de RH/folio/oficio, pericial caligráfica
+    completa, verificación de CFDI ante el SAT.
+- Pendiente / sin hacer todavía: la plantilla real `data/plantilla_demanda.docx`
+  en el servidor en vivo ya se actualizó con los tags de jornada (el
+  usuario la subió), pero confirma con el usuario antes de asumir que algo
+  de esta lista ya se usó en un caso real.
+
 ## Robots locales (Node + Playwright)
 - Corren en la máquina de Windows del usuario (Ruben), **no** en esta sesión
   remota — esta sesión no tiene salida a internet hacia sitios externos
