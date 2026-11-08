@@ -116,6 +116,14 @@ async function subirPdfAlSistema(buffer, expedienteIdSistema, nombreArchivo) {
 // dispare la descarga del PDF. Si no se puede, se regresa null (el aviso
 // se manda igual, solo sin documento) y se deja evidencia para ajustar
 // sin adivinar.
+// Confirmado real (8 nov 2026): lo "descargado" a veces es el cascarón
+// HTML de la mini app (~1000 bytes, "<!doctype html>...") en vez del PDF
+// -- se valida que de verdad empiece con la cabecera mágica de PDF antes
+// de aceptarlo.
+function pdfEsValido(buf) {
+  return !!buf && buf.length > 4 && buf.slice(0, 4).toString('latin1') === '%PDF';
+}
+
 async function intentarCapturarPdf(context, page, disparador) {
   // No solo "pdf" en el content-type -- la mini app Angular de adentro del
   // iframe puede pedir el archivo con otro content-type (ej.
@@ -165,16 +173,32 @@ async function intentarCapturarPdf(context, page, disparador) {
 async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   const abrirModal = celda.locator('button, a, [role="button"]').first();
   if ((await abrirModal.count().catch(() => 0)) === 0) return null;
-  await abrirModal.click({ timeout: 8000 }).catch(() => {});
 
-  // OJO: modal.isVisible({timeout}) NO espera de verdad -- es una revisión
-  // instantánea (confirmado con una corrida real: el volcado del DOM del
-  // modal, tomado justo DESPUÉS de que isVisible() ya había dicho que no,
-  // a veces mostraba "class=modal fade in" display:block, es decir, ya
-  // estaba abierto). waitFor({state:'visible'}) sí reintenta de verdad
-  // hasta que aparezca o se cumpla el timeout.
-  const modal = page.locator('.modal.in, .modal.show').first();
-  const hayModal = await modal.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
+  // Confirmado real: un intento que empezó a escuchar descarga/respuesta
+  // DESPUÉS de que el modal ya estaba abierto no vio NADA en 6s -- la
+  // mini app del iframe debe cargar y pedir el archivo muy rápido, antes
+  // de que isVisible()/waitFor() del modal siquiera terminen. Por eso
+  // intentarCapturarPdf() ahora envuelve TODO el clic + espera del modal
+  // como "disparador", para que sus listeners (download/response/página
+  // nueva) queden armados DESDE ANTES del primer clic, no después.
+  const peticiones = [];
+  const verPeticion = (req) => peticiones.push(`${req.method()} ${req.url()}`);
+  page.on('request', verPeticion);
+
+  let modal = page.locator('.modal.in, .modal.show').first();
+  const pdfTemprano = await intentarCapturarPdf(context, page, async () => {
+    await abrirModal.click({ timeout: 8000 }).catch(() => {});
+    await modal.waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+    // Margen extra por si la mini app del iframe tarda un poco más.
+    await page.waitForTimeout(4000);
+  });
+  page.off('request', verPeticion);
+
+  const hayModal = await modal.isVisible().catch(() => false);
+  if (pdfEsValido(pdfTemprano)) {
+    await cerrarCualquierModalAbierto(page);
+    return pdfTemprano;
+  }
   if (!hayModal) {
     await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
     // La captura ya mostró que SÍ aparece un fondo oscuro (el backdrop) pero
@@ -256,7 +280,7 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   // que de verdad empiece con la cabecera mágica de PDF ("%PDF") antes de
   // aceptarlo -- si no, se trata como si no se hubiera conseguido nada,
   // para no seguir subiendo basura al sistema.
-  if (pdf && pdf.slice(0, 4).toString('latin1') !== '%PDF') {
+  if (pdf && !pdfEsValido(pdf)) {
     console.log(`    AVISO: lo descargado no es un PDF real (no empieza con "%PDF", pesa ${pdf.length} bytes) -- se descarta.`);
     console.log(`    Contenido real de esos bytes (primeros 500 caracteres): ${pdf.toString('utf8').replace(/\s+/g, ' ').trim().slice(0, 500)}`);
     pdf = null;
