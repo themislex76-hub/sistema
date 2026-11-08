@@ -183,7 +183,13 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
     return null;
   }
 
-  const filaArchivo = modal.locator('tbody tr').first();
+  // OJO: ".first()" sobre "tbody tr" a secas agarra la PRIMERA fila del
+  // HTML, que puede ser una fila oculta de plantilla/placeholder -- las
+  // capturas reales muestran el archivo perfectamente visible en el modal
+  // mientras este código decía "no mostró ningún archivo". Se filtra por
+  // ":visible" (extensión de Playwright) para agarrar la fila que de
+  // verdad se ve, sea cual sea su posición en el HTML.
+  const filaArchivo = modal.locator('tbody tr:visible').first();
   const hayArchivo = await filaArchivo.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
   if (!hayArchivo) {
     await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
