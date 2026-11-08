@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/push_helpers.php';
 
 // Llamado por los robots de monitoreo (Federal, CDMX, Edomex) cuando
 // encuentran una novedad real en el boletín de un expediente. Se evita
@@ -45,4 +46,28 @@ $stmt->execute([
     ':documento_id' => $documentoId > 0 ? $documentoId : null,
 ]);
 
-respond(['id' => (int)$pdo->lastInsertId()], 201);
+$avisoId = (int)$pdo->lastInsertId();
+
+// Avisa por push al Administrador y al/los abogado(s) asignados al
+// expediente -- mismo criterio de "quién debe enterarse" que ya usa
+// jurisprudencia_cruce_helpers.php, pero aquí siempre se incluye al
+// Administrador también (no solo cuando nadie está asignado).
+$expStmt = $pdo->prepare('SELECT exp, actor, demandado, abogado_id, abogado_id_2 FROM expedientes WHERE id = :id');
+$expStmt->execute([':id' => $expedienteId]);
+$exp = $expStmt->fetch();
+if ($exp) {
+    $destinatarios = [];
+    $admins = $pdo->query("SELECT id FROM usuarios WHERE rol = 'administrador' AND activo = 1")->fetchAll();
+    foreach ($admins as $a) $destinatarios[(int)$a['id']] = true;
+    if (!empty($exp['abogado_id'])) $destinatarios[(int)$exp['abogado_id']] = true;
+    if (!empty($exp['abogado_id_2'])) $destinatarios[(int)$exp['abogado_id_2']] = true;
+
+    $caso = trim(($exp['actor'] ?? '') . ' vs ' . ($exp['demandado'] ?? ''), ' vs');
+    $referencia = $exp['exp'] ? "Exp. {$exp['exp']}" : ($caso !== '' ? $caso : 'expediente');
+    $titulo = '📋 Aviso nuevo de boletín -- ' . $referencia;
+    foreach (array_keys($destinatarios) as $usuarioId) {
+        push_enviar_a_usuario($pdo, $usuarioId, $titulo, $resumen, '/sistema/');
+    }
+}
+
+respond(['id' => $avisoId], 201);
