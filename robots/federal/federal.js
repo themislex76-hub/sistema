@@ -183,53 +183,47 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
     return null;
   }
 
-  // OJO: ".first()" sobre "tbody tr" a secas agarra la PRIMERA fila del
-  // HTML, que puede ser una fila oculta de plantilla/placeholder -- las
-  // capturas reales muestran el archivo perfectamente visible en el modal
-  // mientras este código decía "no mostró ningún archivo". Se filtra por
-  // ":visible" (extensión de Playwright) para agarrar la fila que de
-  // verdad se ve, sea cual sea su posición en el HTML.
-  const filaArchivo = modal.locator('tbody tr:visible').first();
-  const hayArchivo = await filaArchivo.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
-  if (!hayArchivo) {
-    await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
-    // Las capturas reales siguen mostrando el archivo perfectamente
-    // visible aunque este código diga que no -- en vez de seguir ajustando
-    // el selector a ciegas, se cuentan cuántos ".modal.in"/".modal.show"
-    // hay en TODA la página (puede que haya más de uno y se esté agarrando
-    // el equivocado) y se vuelca el HTML real de adentro del modal que sí
-    // se agarró.
-    const totalModales = await page.locator('.modal.in, .modal.show').count().catch(() => -1);
-    const htmlModal = await modal.innerHTML().catch((e) => `(no se pudo leer: ${e.message})`);
-    console.log(`    AVISO: el modal del documento no mostró ningún archivo -- revisa debug_pdf_${etiquetaDebug}.png.`);
-    console.log(`    Modales ".modal.in/.modal.show" en la página: ${totalModales}.`);
-    console.log(`    HTML real adentro del modal (primeros 1000 caracteres): ${htmlModal.replace(/\s+/g, ' ').trim().slice(0, 1000)}`);
-    await cerrarCualquierModalAbierto(page);
-    return null;
-  }
-
-  // El ícono de descarga (flechita) va primero que el de ver (ojito) en la
-  // captura real, confirmado por el usuario -- se intenta por título/
-  // aria-label primero (más confiable si cambia el orden) y, de respaldo,
-  // por posición. Las capturas muestran que son íconos sueltos (sin
-  // envoltura de <a>/<button> visible), así que también se intenta con
-  // <i>/<svg>/<img> a secas, no solo elementos "clickeables" típicos.
-  const candidatosDescarga = [
-    filaArchivo.locator('[title*="escargar" i], [aria-label*="escargar" i]').first(),
-    filaArchivo.locator('a, button, [role="button"]').first(),
-    filaArchivo.locator('i, svg, img').first(),
-  ];
-
+  // Confirmado con el HTML real del modal (volcado en una corrida real):
+  // cuando el acuerdo tiene un solo archivo, el modal NO muestra una tabla
+  // con botones -- mete directo un <iframe src="...cjf-downloadfileweb/
+  // files?param1=...&param2=...&param3=..."> con la URL real del PDF. No
+  // hace falta clickear nada adentro: se lee esa URL y se pide directo con
+  // las mismas cookies de la sesión (context.request comparte el login).
+  const iframe = modal.locator('iframe').first();
+  const hayIframe = await iframe.waitFor({ state: 'attached', timeout: 8000 }).then(() => true).catch(() => false);
   let pdf = null;
-  for (const candidato of candidatosDescarga) {
-    if ((await candidato.count().catch(() => 0)) === 0) continue;
-    pdf = await intentarCapturarPdf(context, page, () => candidato.click({ timeout: 5000 }).catch(() => {}));
-    if (pdf) break;
+  if (hayIframe) {
+    const src = await iframe.getAttribute('src').catch(() => null);
+    if (src) {
+      const url = src.startsWith('http') ? src : new URL(src, page.url()).toString();
+      const r = await context.request.get(url).catch(() => null);
+      if (r && r.ok()) pdf = await r.body().catch(() => null);
+    }
+  } else {
+    // Respaldo, por si algún acuerdo SÍ muestra una tabla con varios
+    // archivos en vez del iframe directo (no confirmado todavía con una
+    // corrida real) -- se intenta la fila visible y su ícono de descarga.
+    const filaArchivo = modal.locator('tbody tr:visible').first();
+    const hayArchivo = await filaArchivo.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
+    if (hayArchivo) {
+      const candidatosDescarga = [
+        filaArchivo.locator('[title*="escargar" i], [aria-label*="escargar" i]').first(),
+        filaArchivo.locator('a, button, [role="button"]').first(),
+        filaArchivo.locator('i, svg, img').first(),
+      ];
+      for (const candidato of candidatosDescarga) {
+        if ((await candidato.count().catch(() => 0)) === 0) continue;
+        pdf = await intentarCapturarPdf(context, page, () => candidato.click({ timeout: 5000 }).catch(() => {}));
+        if (pdf) break;
+      }
+    }
   }
 
   if (!pdf) {
     await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+    const htmlModal = await modal.innerHTML().catch((e) => `(no se pudo leer: ${e.message})`);
     console.log(`    AVISO: no se pudo descargar el PDF desde el modal del documento -- revisa debug_pdf_${etiquetaDebug}.png.`);
+    console.log(`    HTML real adentro del modal (primeros 1000 caracteres): ${htmlModal.replace(/\s+/g, ' ').trim().slice(0, 1000)}`);
   }
   await cerrarCualquierModalAbierto(page);
   return pdf;
