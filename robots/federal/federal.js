@@ -24,6 +24,24 @@
 // funcione a la primera. Si truena, manda el mensaje de error COMPLETO de
 // la terminal y, si se generó, el archivo debug_error_<cuenta>.png que se
 // guarda en esta misma carpeta -- con eso se ajusta rápido.
+//
+// AGREGADO (8 nov 2026): el Portal de Servicios en Línea en realidad tiene
+// DOS entidades separadas detrás de la misma pantalla de login --
+// "Tribunales Laborales" (donde vive el juicio laboral) y "Juzgados de
+// Distrito y Tribunales de Circuito" (donde se resuelven los amparos
+// directos/indirectos contra la sentencia laboral) -- cada una es una
+// sesión/cookie DISTINTA que solo ve SU propia "Vista Global" de
+// expedientes, aunque el resto de la pantalla (menú, tabla, modal de
+// documento) es idéntico. Confirmado con una captura real de la petición
+// de login del navegador: cambia el campo EntidadExterna ("Laboral" vs
+// "SinEntidad") y el campo tipo ("3" vs "1") -- ver SESIONES más abajo.
+// Por eso cada cuenta ahora se revisa DOS veces, una por cada sesión.
+// Sin confirmar todavía con una corrida real completa (sí se confirmó en
+// vivo, con el navegador normal del despacho, que esa sección SÍ lista
+// los amparos reales del despacho con esas mismas columnas) -- si el
+// login de la sesión "colegiados" falla, el payload real también traía
+// un campo "ip" que el login de Laboral nunca manda; probar agregándolo
+// antes de seguir adivinando.
 const { chromium } = require('playwright');
 const axios = require('axios');
 const { wrapper } = require('axios-cookiejar-support');
@@ -322,14 +340,24 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
 // mantiene igual, vía API directa, en vez de llenar el formulario visible
 // (del que no conocemos los selectores exactos). Regresa el CookieJar ya
 // autenticado, para pasarle esas cookies a Playwright después.
-async function loginPJF(usuario, password) {
+//
+// El portal en realidad tiene DOS "entidades" separadas con la MISMA
+// pantalla de login: "Tribunales Laborales" (EntidadExterna=Laboral,
+// tipo=3 -- la de siempre) y "Juzgados de Distrito y Tribunales de
+// Circuito" (EntidadExterna=SinEntidad, tipo=1 -- la de los amparos),
+// confirmado el 8 nov 2026 capturando la petición real del navegador con
+// las herramientas de desarrollador. Cada una es una sesión/cookie
+// DISTINTA que solo ve SU propia "Vista Global" (Laboral ve los
+// expedientes laborales, Colegiados ve los amparos directos) -- por eso
+// cada cuenta hay que revisarla dos veces, una por cada SESIONES[].
+async function loginPJF(usuario, password, entidadExterna, tipo) {
   const jar = new CookieJar();
   const cliente = wrapper(axios.create({ jar, timeout: 20000 }));
   const params = new URLSearchParams();
-  params.append('EntidadExterna', 'Laboral');
+  params.append('EntidadExterna', entidadExterna);
   params.append('UserName', usuario);
   params.append('UserPassword', password);
-  params.append('tipo', '3');
+  params.append('tipo', tipo);
   const res = await cliente.post(`${PJF_BASE}/Home/Login`, params.toString(), {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
@@ -337,6 +365,17 @@ async function loginPJF(usuario, password) {
   if (!data.success) throw new Error('Login PJF falló: ' + (data.error || 'motivo desconocido'));
   return jar;
 }
+
+// Las dos sesiones que hay que revisar por cada cuenta -- ver el
+// comentario de loginPJF(). La petición real capturada traía también un
+// campo "ip" (la IP pública de quien inicia sesión) que el login de
+// Laboral, ya confirmado funcionando, nunca manda -- se prueba primero
+// sin mandarlo; si el login de Colegiados llegara a fallar por eso, hay
+// que agregarlo.
+const SESIONES = [
+  { etiqueta: 'laboral', entidadExterna: 'Laboral', tipo: '3' },
+  { etiqueta: 'colegiados (amparo)', entidadExterna: 'SinEntidad', tipo: '1' },
+];
 
 async function cookiesParaPlaywright(jar) {
   const cookiesTough = await jar.getCookies(PJF_BASE);
@@ -671,8 +710,22 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
 
 async function revisarCuenta(cuenta, porNumero, estado, browser) {
   console.log(`--- Cuenta: ${cuenta.nombre} (${cuenta.pjf_usuario}) ---`);
-  const jar = await loginPJF(cuenta.pjf_usuario, cuenta.pjf_password);
-  console.log('  Login PJF OK.');
+  let totalReportados = 0;
+  for (const sesion of SESIONES) {
+    try {
+      totalReportados += await revisarSesion(cuenta, sesion, porNumero, estado, browser);
+    } catch (e) {
+      console.log(`  Error en la sesión "${sesion.etiqueta}" de la cuenta ${cuenta.pjf_usuario}: ${e.message}`);
+    }
+  }
+  return totalReportados;
+}
+
+async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
+  const etiquetaDebug = `${cuenta.pjf_usuario}_${sesion.etiqueta.replace(/[^a-z0-9]+/gi, '-')}`;
+  console.log(`  Sesión "${sesion.etiqueta}" (EntidadExterna=${sesion.entidadExterna}, tipo=${sesion.tipo})...`);
+  const jar = await loginPJF(cuenta.pjf_usuario, cuenta.pjf_password, sesion.entidadExterna, sesion.tipo);
+  console.log('    Login PJF OK.');
 
   const context = await browser.newContext();
   await context.addCookies(await cookiesParaPlaywright(jar));
@@ -689,7 +742,7 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
   let reportados = 0;
   try {
     await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' });
-    await cerrarModalSiAparece(page, cuenta.pjf_usuario);
+    await cerrarModalSiAparece(page, etiquetaDebug);
     // De respaldo, por si quedó huérfano el fondo oscuro del modal que se
     // acaba de cerrar (confirmado real: pasó en las 2 cuentas de la misma
     // corrida, justo después del clic forzado) -- nunca está de más.
@@ -713,14 +766,14 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
       // Último recurso: recargar desde cero por si quedó algo atorado que
       // la limpieza de modales no cubre, con el timeout normal de 30s.
       await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
-      await cerrarModalSiAparece(page, cuenta.pjf_usuario);
+      await cerrarModalSiAparece(page, etiquetaDebug);
       await cerrarCualquierModalAbierto(page);
       entroMenu = await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false).catch(() => false);
     }
     if (!entroMenu) {
       console.log('  AVISO: no se encontró el menú "Consulta de Expediente Electrónico" -- el portal pudo cambiar otra vez.');
-      await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}.png`), fullPage: true })
-        .then(() => console.log(`  Captura guardada: debug_error_${cuenta.pjf_usuario}.png`))
+      await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true })
+        .then(() => console.log(`  Captura guardada: debug_error_${etiquetaDebug}.png`))
         .catch((e) => console.log(`  (no se pudo guardar la captura: ${e.message})`));
       const diagnostico = await page.evaluate(() => ({
         modales: document.querySelectorAll('.modal').length,
@@ -760,7 +813,7 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
     const entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false);
     if (!entroVistaGlobal) {
       console.log('  AVISO: no se encontró "Vista Global" dentro del submenú -- el portal pudo cambiar otra vez.');
-      await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}.png`), fullPage: true }).catch(() => {});
+      await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
       return 0;
     }
 
@@ -771,7 +824,7 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
       filas = await leerFilasVistaGlobal(page);
     } catch (e) {
       console.log('  AVISO: no apareció la tabla de expedientes después de entrar al menú -- se deja evidencia para diagnosticar.');
-      await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}.png`), fullPage: true }).catch(() => {});
+      await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
       const url = page.url();
       const textoPagina = await page.locator('body').innerText().catch(() => '(no se pudo leer)');
       console.log(`  URL en ese momento: ${url}`);
@@ -793,7 +846,7 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
         reportados += await procesarExpediente(context, page, numExp, match, estado);
       } catch (e) {
         console.log(`    Error revisando el expediente ${numExp}: ${e.message}`);
-        await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}_${sanitizarParaArchivo(normalizeExp(numExp))}.png`), fullPage: true }).catch(() => {});
+        await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}_${sanitizarParaArchivo(normalizeExp(numExp))}.png`), fullPage: true }).catch(() => {});
       }
 
       // Regresa a la vista global para poder abrir el siguiente expediente.
@@ -815,7 +868,7 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
   } finally {
     await context.close();
   }
-  console.log(`  ${reportados} aviso(s) nuevo(s) para esta cuenta.`);
+  console.log(`  ${reportados} aviso(s) nuevo(s) en la sesión "${sesion.etiqueta}".`);
   return reportados;
 }
 
