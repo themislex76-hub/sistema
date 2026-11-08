@@ -2236,6 +2236,7 @@ const AMBITO_INHABIL_LABEL = {
 };
 
 let DOCUMENTOS_ACTIVOS = []; // documentos del expediente actualmente abierto en el modal
+let DOCUMENTOS_SUBTAB = 'juicio'; // 'juicio' | 'amparo' -- separa la tabla de Documentos en dos, ver documentosDelSubtab()
 let CAMARA_STREAM = null; // MediaStream activo del visor de cámara (pestaña Documentos), o null si está cerrado
 let FOTOS_CAPTURADAS = []; // {blob, url, width, height} tomadas con la cámara, pendientes de armar el PDF
 // Foto recién tomada, en pantalla de recorte antes de agregarse a FOTOS_CAPTURADAS:
@@ -2396,7 +2397,16 @@ function documentosAgrupadosPorCategoria(documentos){
   });
 }
 
+// Separa los documentos del juicio principal de los del amparo en dos
+// pestañas aparte dentro de "Documentos" -- pedido del usuario pensando en
+// que con el tiempo cada lado va a acumular bastantes documentos y, sin
+// esta separación, iban a quedar revueltos en una sola tabla larga.
+function documentosDelSubtab(documentos, subtab){
+  return documentos.filter(d => (d.categoria === 'acuerdo_amparo') === (subtab === 'amparo'));
+}
+
 async function loadDocumentos(expedienteId){
+  DOCUMENTOS_SUBTAB = 'juicio';
   try{
     const d = await api('GET', 'documentos_list.php?expediente_id=' + expedienteId);
     DOCUMENTOS_ACTIVOS = d.documentos;
@@ -7882,12 +7892,25 @@ function modalTabContent(k,p,meta){
     `;
   }
   if(MODAL_TAB==='documentos'){
+    const docsJuicio = documentosDelSubtab(DOCUMENTOS_ACTIVOS, 'juicio');
+    const docsAmparo = documentosDelSubtab(DOCUMENTOS_ACTIVOS, 'amparo');
+    const docsSubtabActual = DOCUMENTOS_SUBTAB === 'amparo' ? docsAmparo : docsJuicio;
+    // En la subpestaña Amparo el desplegable de categoría solo ofrece
+    // 'acuerdo_amparo' (no tendría sentido subir ahí una "Demanda" o
+    // "Pruebas" del juicio principal); en Juicio se ofrecen todas las
+    // demás, igual que antes.
+    const categoriasDisponibles = Object.keys(CATEGORIA_DOCUMENTO_LABEL)
+      .filter(c => DOCUMENTOS_SUBTAB === 'amparo' ? c === 'acuerdo_amparo' : c !== 'acuerdo_amparo');
     return `
+    <div class="doc-subtabs" style="margin-bottom:16px;">
+      <button data-docsubtab="juicio" class="${DOCUMENTOS_SUBTAB==='juicio'?'active':''}">Juicio principal ${docsJuicio.length ? `<span class="nav-badge">${docsJuicio.length}</span>` : ""}</button>
+      <button data-docsubtab="amparo" class="${DOCUMENTOS_SUBTAB==='amparo'?'active':''}">Amparo ${docsAmparo.length ? `<span class="nav-badge">${docsAmparo.length}</span>` : ""}</button>
+    </div>
     <div class="notice" style="margin-bottom:16px;">Sube aquí los documentos de este asunto (demanda, contestación, pruebas, actas de audiencia...). Formatos permitidos: PDF, Word, Excel e imágenes (JPG/PNG), hasta 20 MB por archivo. Si eliges una o varias imágenes, cada una se abre primero en un visor donde puedes ajustar el recuadro a las orillas del documento y girarla si salió de lado o al revés; si eliges varias juntas, al terminar se arman en un solo PDF, ya recortadas y acomodadas en orden.</div>
     <div class="grid2" style="margin-bottom:6px;">
       <div class="field"><label>Categoría</label>
         <select id="documentoCategoria" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
-          ${Object.keys(CATEGORIA_DOCUMENTO_LABEL).map(c=>`<option value="${c}">${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[c])}</option>`).join("")}
+          ${categoriasDisponibles.map(c=>`<option value="${c}">${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[c])}</option>`).join("")}
         </select>
       </div>
       <div class="field"><label>Archivo (puedes elegir varias imágenes a la vez)</label><input type="file" id="documentoArchivo" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" multiple></div>
@@ -7908,9 +7931,9 @@ function modalTabContent(k,p,meta){
     `}
     <div id="fotosPanel">${fotosPanelHTML()}</div>
     <div class="divider"></div>
-    <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Documentos subidos (${DOCUMENTOS_ACTIVOS.length})</div>
-    ${DOCUMENTOS_ACTIVOS.length ? `<table><thead><tr><th>Archivo</th><th>Categoría</th><th>Tamaño</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead><tbody>
-      ${documentosAgrupadosPorCategoria(DOCUMENTOS_ACTIVOS).map(d=>`
+    <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Documentos subidos (${docsSubtabActual.length})</div>
+    ${docsSubtabActual.length ? `<table><thead><tr><th>Archivo</th><th>Categoría</th><th>Tamaño</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead><tbody>
+      ${documentosAgrupadosPorCategoria(docsSubtabActual).map(d=>`
         <tr>
           <td>${escapeHTML(d.nombre_archivo)}</td>
           <td>${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[d.categoria] || d.categoria)}</td>
@@ -7923,7 +7946,7 @@ function modalTabContent(k,p,meta){
             <button class="btn secondary" data-delete-documento="${d.id}" style="padding:5px 10px; font-size:11px;">Eliminar</button>
           </td>
         </tr>`).join("")}
-    </tbody></table>` : '<div class="empty">Sin documentos subidos todavía.</div>'}
+    </tbody></table>` : `<div class="empty">Sin documentos ${DOCUMENTOS_SUBTAB==='amparo' ? 'de amparo' : 'del juicio'} subidos todavía.</div>`}
     `;
   }
   if(MODAL_TAB==='historial'){
@@ -8182,6 +8205,12 @@ async function iniciarCropArchivo(file, esMulti){
 function bindModalTabEvents(){
   bindTribunalFieldEvents();
   bindTipoAsuntoField();
+  document.querySelectorAll('[data-docsubtab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      DOCUMENTOS_SUBTAB = btn.dataset.docsubtab;
+      renderModal();
+    });
+  });
   const subirDocumentoBtn = document.getElementById('subirDocumentoBtn');
   if(subirDocumentoBtn){
     subirDocumentoBtn.addEventListener('click', async ()=>{

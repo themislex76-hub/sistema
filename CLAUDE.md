@@ -204,10 +204,31 @@ completo"):
     `acuerdo_amparo` (antes cualquier acuerdo, de juicio o de amparo,
     caía en la misma categoría genérica `acuerdo` y los abogados se
     confundían viéndolos revueltos en la pestaña "Documentos"). Migración
-    `sql/migraciones/058_categoria_documento_acuerdo_amparo.sql` agrega
-    esa categoría al ENUM -- **pendiente que el usuario la corra**. La
-    tabla de "Documentos subidos" (`app.js?v=114`) ahora además se
-    agrupa por categoría (antes solo por orden de subida).
+    `sql/migraciones/058_categoria_documento_acuerdo_amparo.sql` --
+    **confirmada corrida por el usuario**. OJO con un bug real que esto
+    destapó: el usuario corrió esta migración primero en la base de
+    Control de Expedientes por error (cuenta equivocada, confusión ya
+    documentada varias veces en este archivo) y luego, al intentar el
+    `UPDATE` de recategorización en la base correcta ANTES de correr el
+    ALTER TABLE ahí, MySQL aceptó el UPDATE pero con warnings "Datos
+    truncados para columna 'categoria'" -- guardó un valor de ENUM
+    inválido en vez de fallar limpio, dejando esas filas con una
+    categoría corrupta (ya no 'acuerdo', tampoco 'acuerdo_amparo'). Se
+    corrigió repitiendo el UPDATE filtrando por `nombre_archivo LIKE
+    '...'` en vez de por `categoria = 'acuerdo'` (que ya no las
+    encontraba). Lección: si un UPDATE a una columna ENUM sale con ese
+    warning, el ALTER TABLE que agrega el valor nuevo no se aplicó de
+    verdad en esa base -- correrlo primero y confirmar sin warnings antes
+    de repetir el UPDATE.
+  - **Pestaña "Documentos" dividida en dos subpestañas (9 nov 2026)**:
+    "Juicio principal" y "Amparo" (`DOCUMENTOS_SUBTAB`, botones
+    `data-docsubtab`, clase CSS `doc-subtabs` -- a propósito NO
+    `modal-tabs`, para que el click global que mueve `MODAL_TAB` no las
+    agarre también sin querer). Pedido explícito del usuario pensando en
+    que con el tiempo cada expediente va a acumular bastantes documentos
+    de cada lado. El desplegable de categoría al subir un documento
+    también se filtra según la subpestaña activa (en Amparo solo ofrece
+    "Acuerdo (amparo)"). `app.js?v=115`.
   - Pendiente: portar lo mismo (dos sesiones por cuenta, amparos) a
     `control-de-expedientes/robots/federal-multidespacho/federal.js` --
     el usuario ya pidió que se haga en cuanto esto quedara confirmado
