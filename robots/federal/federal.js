@@ -158,8 +158,14 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   if ((await abrirModal.count().catch(() => 0)) === 0) return null;
   await abrirModal.click({ timeout: 8000 }).catch(() => {});
 
+  // OJO: modal.isVisible({timeout}) NO espera de verdad -- es una revisión
+  // instantánea (confirmado con una corrida real: el volcado del DOM del
+  // modal, tomado justo DESPUÉS de que isVisible() ya había dicho que no,
+  // a veces mostraba "class=modal fade in" display:block, es decir, ya
+  // estaba abierto). waitFor({state:'visible'}) sí reintenta de verdad
+  // hasta que aparezca o se cumpla el timeout.
   const modal = page.locator('.modal.in, .modal.show').first();
-  const hayModal = await modal.isVisible({ timeout: 8000 }).catch(() => false);
+  const hayModal = await modal.waitFor({ state: 'visible', timeout: 8000 }).then(() => true).catch(() => false);
   if (!hayModal) {
     await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
     // La captura ya mostró que SÍ aparece un fondo oscuro (el backdrop) pero
@@ -178,7 +184,7 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   }
 
   const filaArchivo = modal.locator('tbody tr').first();
-  const hayArchivo = await filaArchivo.isVisible({ timeout: 5000 }).catch(() => false);
+  const hayArchivo = await filaArchivo.waitFor({ state: 'visible', timeout: 5000 }).then(() => true).catch(() => false);
   if (!hayArchivo) {
     await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
     console.log(`    AVISO: el modal del documento no mostró ningún archivo -- revisa debug_pdf_${etiquetaDebug}.png.`);
