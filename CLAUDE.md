@@ -117,12 +117,17 @@ completo"):
     tabla oculta de la página (ej. "tableOficialia"), quedándose 30s
     esperando en vano. Ahora se acota por `aria-controls` contra el id de
     la tabla que de verdad se está leyendo.
-  - Pendiente de confirmar con el usuario: que con estos 3 fixes juntos
-    (commit `92a58e7`) una corrida completa reporte bien los acuerdos
-    nuevos de las 2 cuentas guardadas sin que truene en ningún punto. Si
-    algo más truena, pedir el error completo de la terminal + la captura
-    `debug_error_*.png` o `debug_modal_*.png` que se guarda junto al
-    robot -- no adivinar el selector sin eso.
+  - **Confirmado funcionando (8 nov 2026, commit `92a58e7`)**: corrida
+    real limpia con las 2 cuentas guardadas (buerhend y maluli20) -- cerró
+    el modal sin tronar en ninguna de las 2, no se quedó esperando en el
+    "Mostrar entradas", y reportó los 4 acuerdos nuevos reales del
+    expediente 114/2026 (No. 11-14) sin repetir los que ya tenía vistos
+    (1-10). Si en una corrida futura algo truena, seguir pidiendo el
+    error completo de la terminal + la captura `debug_error_*.png` o
+    `debug_modal_*.png` -- no adivinar el selector sin eso. Falta
+    programarlo para correr solo todos los días (Task Scheduler en la
+    máquina del usuario, ver README.md de esta carpeta) -- por ahora solo
+    se ha corrido a mano.
 
 ## Robot de jurisprudencia (`robots/jurisprudencia/`)
 - Scrapea sjf2.scjn.gob.mx (Semanario Judicial de la Federación), materia
