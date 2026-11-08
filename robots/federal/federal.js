@@ -169,27 +169,45 @@ async function cerrarModalSiAparece(page, etiquetaDebug) {
   const hayModal = await modal.isVisible({ timeout: 3000 }).catch(() => false);
   if (!hayModal) return;
 
+  // El modal es de Bootstrap ("modal fade in") -- tiene una transición de
+  // aparición de ~300-500ms; si se le da clic demasiado pronto (justo
+  // cuando "isVisible" empieza a dar true) a veces el clic no llega a
+  // registrarse del todo (confirmado con una corrida real: a veces sí
+  // cerraba, a veces no, con el mismo código). Se espera a que termine la
+  // animación antes de intentar nada.
+  await page.waitForTimeout(700);
+
   const texto = await modal.innerText().catch(() => '(no se pudo leer el texto)');
   console.log(`  Apareció una ventana emergente al entrar -- texto: "${texto.replace(/\s+/g, ' ').trim().slice(0, 300)}"`);
   await page.screenshot({ path: path.join(__dirname, `debug_modal_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
 
-  const botones = [
+  // "Persona Física" es una tarjeta (ícono + texto) -- se intenta con el
+  // texto, con su tarjeta contenedora (el padre) y, si nada cierra el
+  // modal, con un clic "forzado" (que ignora si Playwright cree que el
+  // elemento todavía no es clickeable del todo).
+  const candidatosPersonaFisica = [
     modal.getByText('Persona Física', { exact: false }),
+    modal.getByText('Persona Física', { exact: false }).locator('..'),
+  ];
+  const otrosBotones = [
     modal.getByRole('button', { name: /aceptar|continuar|entendido|confirmar|cerrar/i }),
     modal.locator('button[data-dismiss="modal"], button.close, [aria-label="Close"]'),
     modal.getByRole('button').first(),
   ];
-  for (const candidato of botones) {
-    const n = await candidato.count();
-    for (let i = 0; i < n; i++) {
-      const el = candidato.nth(i);
-      if (await el.isVisible().catch(() => false)) {
-        await el.click().catch(() => {});
-        await page.waitForTimeout(800);
-        const sigueAhi = await modal.isVisible().catch(() => false);
-        if (!sigueAhi) {
-          console.log('  Ventana emergente cerrada.');
-          return;
+
+  for (const forzar of [false, true]) {
+    for (const candidato of [...candidatosPersonaFisica, ...otrosBotones]) {
+      const n = await candidato.count();
+      for (let i = 0; i < n; i++) {
+        const el = candidato.nth(i);
+        if (forzar || (await el.isVisible().catch(() => false))) {
+          await el.click({ force: forzar, timeout: 5000 }).catch(() => {});
+          await page.waitForTimeout(800);
+          const sigueAhi = await modal.isVisible().catch(() => false);
+          if (!sigueAhi) {
+            console.log(`  Ventana emergente cerrada${forzar ? ' (con clic forzado)' : ''}.`);
+            return;
+          }
         }
       }
     }
