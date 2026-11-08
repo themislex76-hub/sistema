@@ -205,12 +205,20 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       await page.waitForTimeout(800);
       const fila = filas.nth(i);
       await fila.scrollIntoViewIfNeeded().catch(() => {});
-      await fila.click({ timeout: 10000 }).catch(() => {});
-      // El texto que matchea puede no ser el elemento clickeable real
-      // (puede ser un <span> suelto adentro de la fila, no la fila
-      // entera) -- se espera de verdad a que la URL cambie a
-      // ".../conversation/-<id>", no solo un timeout fijo.
-      await page.waitForURL(/conversation\/-?\d+/, { timeout: 8000 }).catch(() => {});
+      // Confirmado por el usuario (con capturas reales de la bandeja): el
+      // texto que matchea es un <span> suelto adentro de la fila -- el
+      // clic que de verdad abre el correo es en el CONTENEDOR de la fila
+      // completa (remitente+asunto+fecha), no en ese texto. No se sabe
+      // cuántos niveles hay que subir, así que se prueba el elemento y
+      // hasta 4 niveles de padres, deteniéndose en el primero que sí
+      // cambia la URL.
+      let objetivo = fila;
+      for (let nivel = 0; nivel <= 4; nivel++) {
+        await objetivo.click({ timeout: 5000, force: true }).catch(() => {});
+        const cambio = await page.waitForURL(/conversation\/-?\d+/, { timeout: 3000 }).then(() => true).catch(() => false);
+        if (cambio) break;
+        objetivo = objetivo.locator('..');
+      }
       const url = page.url();
       const idConversacion = (/conversation\/(-?\d+)/.exec(url) || [])[1];
       if (!idConversacion) {
