@@ -182,7 +182,17 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     // ".../conversation/-<id>" (confirmado con una captura real) -- se usa
     // ese id numérico para no reprocesar lo ya visto.
     const filas = page.locator('text=/Notificacion Electronica Laboral/i');
-    const hayBandeja = await filas.first().waitFor({ state: 'visible', timeout: 20000 }).then(() => true).catch(() => false);
+    // Confirmado real: a veces la bandeja tarda en cargar la lista de
+    // correos (el resto de la página -- carpetas, "Inbox 100" -- ya está)
+    // más de lo esperado, de forma intermitente. Se espera bastante más
+    // (45s) y, si aun así no aparece, se recarga la página UNA vez antes
+    // de darse por vencido.
+    let hayBandeja = await filas.first().waitFor({ state: 'visible', timeout: 45000 }).then(() => true).catch(() => false);
+    if (!hayBandeja) {
+      console.log('  (la bandeja no cargó en 45s -- se recarga la página y se reintenta una vez)');
+      await page.reload({ waitUntil: 'networkidle' }).catch(() => {});
+      hayBandeja = await filas.first().waitFor({ state: 'visible', timeout: 45000 }).then(() => true).catch(() => false);
+    }
     if (!hayBandeja) {
       console.log('  AVISO: no apareció la bandeja de entrada (o no hay correos de "Notificacion Electronica Laboral") -- el portal pudo cambiar.');
       await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.edomex_correo_usuario}.png`), fullPage: true })
