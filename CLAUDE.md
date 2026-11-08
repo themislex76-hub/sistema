@@ -208,9 +208,13 @@ completo"):
   una liga directa (con token JWT) a `frmGetDocument.php` para bajar el PDF
   -- sin necesitar sesión, el token es la autenticación.
 - Esto reemplaza al robot viejo de boletín con captcha
-  (`robots/edomex/edomex.js`, que sigue ahí sin tocarse por ahora) --
-  mucho más confiable: sin captcha, sin el filtro de seguridad por nombres
-  (la notificación ya viene dirigida personalmente y con sello digital).
+  (`robots/edomex/edomex.js`) -- mucho más confiable: sin captcha, sin el
+  filtro de seguridad por nombres (la notificación ya viene dirigida
+  personalmente y con sello digital). **Retirado del repo el 8 nov 2026**
+  (el usuario confirmó y ya borró también su carpeta local
+  `ROBOTS\EDOMEX\`) una vez que `edomex_correo.js` quedó confirmado
+  funcionando de punta a punta -- si en claude.ai/code aparece referenciado
+  en commits viejos, ya no existe.
 - Nueva infraestructura de credenciales (mismo patrón que PJF): columnas
   `edomex_correo_usuario`/`edomex_correo_password_enc`/
   `edomex_correo_actualizado_en` en `usuarios` (migración 057, ya
@@ -266,10 +270,7 @@ completo"):
     corrida.
   - Pendiente: falta programarlo para correr solo todos los días (Task
     Scheduler en la máquina del usuario, igual que Federal) -- por ahora
-    solo se ha corrido a mano. El robot viejo `robots/edomex/edomex.js`
-    (boletín con captcha) sigue en el repo sin tocarse; con esto ya
-    confirmado, puede retirarse cuando el usuario lo decida, pero no se
-    ha quitado nada todavía.
+    solo se ha corrido a mano.
 
 ## Robot de jurisprudencia (`robots/jurisprudencia/`)
 - Scrapea sjf2.scjn.gob.mx (Semanario Judicial de la Federación), materia
