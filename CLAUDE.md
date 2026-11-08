@@ -152,24 +152,51 @@ completo"):
   para cuando el robot haya subido el PDF equivocado -- borra el documento
   y descarta el aviso. `app.js?v=112`.
 - **Federal** (`federal.js`): cuando encuentra un acuerdo nuevo, antes de
-  reportarlo intenta descargar su PDF con Playwright (`descargarPdfAcuerdo()`)
-  dándole clic al botón de la fila que parezca ser "ver documento" (no se
-  conoce el encabezado exacto de esa columna -- se intentan varios nombres
-  probables y si no, la última columna) y cubriendo con Promise.race los 3
-  comportamientos posibles que no se pudieron ver en vivo: PDF servido
-  directo en la misma pestaña, pestaña nueva que dispara su propia
-  descarga/respuesta PDF, o pestaña nueva que ya es la URL del PDF. Si no
-  consigue el PDF, el aviso se manda igual nada más sin documento adjunto
-  (nunca bloquea el aviso). **Sin probar en vivo todavía** -- es la parte
-  menos probada de todo el robot Federal (a diferencia del resto, que sí se
-  construyó viendo capturas reales antes de escribirse); muy probable que
-  truene o no encuentre el botón correcto en la primera corrida real --
-  pedir el terminal completo + `debug_pdf_*.png` si pasa, no adivinar el
-  selector sin eso.
+  reportarlo intenta descargar su PDF con Playwright
+  (`descargarPdfAcuerdo()`). **Confirmado funcionando de punta a punta (8
+  nov 2026)**: PDFs reales de 500-635 KB subidos y abren bien desde "Ver"
+  en la pestaña Documentos. Cómo quedó al final (después de muchas
+  vueltas en vivo el mismo día, ver commits de esa fecha si hace falta el
+  detalle de cada bug):
+  - La celda "Documento Acuerdo" de la fila abre un modal ("Acuerdo",
+    `id="DocumentosModal"`, `data-keyboard="false"`) que mete un
+    `<iframe src=".../cjf-downloadfileweb/files?param1=...">`-- ese
+    iframe NO es la URL directa del PDF, es el cascarón de una mini app
+    Angular ("cjf-lista-archivos") que arma su propia tabla con un ícono
+    `<i class="fas fa-download iconDescarga">` -- VIVEN DENTRO DEL
+    DOCUMENTO PROPIO DEL IFRAME (hay que entrar con
+    `iframe.elementHandle().contentFrame()`, buscarlos en la página de
+    afuera nunca funciona).
+  - `intentarCapturarPdf()` arma sus escuchas (descarga/respuesta
+    PDF-u-octet-stream/pestaña nueva) ANTES del clic que abre el modal,
+    no después -- la mini app del iframe actúa muy rápido.
+  - `pdfEsValido()` exige que el contenido empiece con "%PDF" antes de
+    subirlo (atrapó varias veces el cascarón HTML de ~1000 bytes que no
+    era el archivo real).
+  - De paso se corrigieron 2 bugs de fondo en `clickTextoVisible()`
+    (usada en todo el robot, no solo aquí) que causaban que el clic al
+    menú "Consulta de Expediente Electrónico" fallara de forma
+    intermitente: (a) la espera de visibilidad por candidato estaba fija
+    en 3000ms sin importar el timeout que se le pidiera, y (b)
+    `candidatos.count()` era una sola foto del DOM que podía dar 0 si la
+    página apenas estaba renderizando (ej. justo tras una recarga),
+    haciendo que el ciclo nunca se ejecutara. Si este clic vuelve a
+    fallar, ya no debería ser por esto.
+  - Pendiente / sin confirmar todavía: el clic a "Ver Expediente
+    Electrónico" en Vista Global tronó una vez con el expediente 242/2026
+    específicamente (`locator.click: Timeout 30000ms exceeded`) -- no se
+    volvió a reproducir, puede ser la misma familia de bug (conteo
+    instantáneo) sin corregir ahí todavía. Si pasa seguido, aplicar el
+    mismo arreglo de `clickTextoVisible()` a ese clic directo.
+  - Limpieza pendiente: expediente 242/2026 puede tener documentos viejos
+    de ~1000 bytes subidos ANTES de que existiera `pdfEsValido()` -- si
+    siguen ahí, borrarlos a mano desde la pestaña Documentos (botón
+    "Eliminar").
 - **CDMX** (`cdmx.js`): no hay PDF que descargar ahí (el boletín ya se lee
   como texto), así que sube el texto del caso ya recortado como un `.txt`
-  (`subirTextoBoletinAlSistema()`) -- mucho más simple y sin el riesgo de
-  lo anterior, debería funcionar a la primera.
+  (`subirTextoBoletinAlSistema()`). **Todavía sin confirmar en una corrida
+  real** -- más simple y de menor riesgo que lo de Federal, pero nadie lo
+  ha corrido en vivo todavía; confirmar antes de asumir que funciona.
 
 ## Robot de jurisprudencia (`robots/jurisprudencia/`)
 - Scrapea sjf2.scjn.gob.mx (Semanario Judicial de la Federación), materia
