@@ -19,7 +19,11 @@ $generic = 'No se encontró ningún expediente con esos datos. Verifica tu apell
 // El código de acceso (8 caracteres al azar, ver random_access_code()) ya
 // identifica al expediente por sí solo -- el apellido es nada más un
 // segundo dato para confirmar que es la persona correcta.
-$stmt = $pdo->prepare("SELECT e.*, u.nombre AS abogado_nombre FROM expedientes e LEFT JOIN usuarios u ON u.id = e.abogado_id WHERE e.codigo_acceso = :codigo LIMIT 1");
+$stmt = $pdo->prepare("SELECT e.*, u.nombre AS abogado_nombre, u2.nombre AS abogado_2_nombre
+     FROM expedientes e
+     LEFT JOIN usuarios u ON u.id = e.abogado_id
+     LEFT JOIN usuarios u2 ON u2.id = e.abogado_id_2
+     WHERE e.codigo_acceso = :codigo LIMIT 1");
 $stmt->execute([':codigo' => $codigo]);
 $row = $stmt->fetch();
 
@@ -44,9 +48,9 @@ $pdo->prepare('UPDATE expedientes SET portal_intentos_fallidos = 0, portal_bloqu
 $logIntento($id, true);
 
 $case = cast_numeric_fields($row);
-unset($case['abogado_nombre'], $case['codigo_acceso'], $case['portal_intentos_fallidos'], $case['portal_bloqueado_hasta']);
+unset($case['abogado_nombre'], $case['abogado_2_nombre'], $case['codigo_acceso'], $case['portal_intentos_fallidos'], $case['portal_bloqueado_hasta']);
 $case['id'] = $id;
-$case['abogado'] = $row['abogado_nombre'];
+$case['abogado'] = implode(' y ', array_filter([$row['abogado_nombre'], $row['abogado_2_nombre']]));
 
 $etapas = [];
 $q = $pdo->prepare('SELECT * FROM expediente_etapas WHERE expediente_id = :id');

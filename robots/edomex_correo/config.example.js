@@ -1,7 +1,7 @@
 // Copia este archivo como config.js (misma carpeta) y llena los datos
 // reales. config.js NUNCA debe subirse a git (ya está en .gitignore) —
-// solo vive en la computadora donde corre el robot. No lo compartas ni lo
-// pegues en ningún chat.
+// solo vive en la computadora/servidor donde corre el robot. No lo
+// compartas ni lo pegues en ningún chat.
 
 module.exports = {
   sistema: {

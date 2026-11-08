@@ -8,14 +8,15 @@ $user = require_login();
 $pdo = db();
 $isAdmin = $user['rol'] === 'administrador';
 
-$where = $isAdmin ? '1=1' : 'e.abogado_id = :uid';
-$sql = "SELECT e.*, u.nombre AS abogado_nombre
+$where = $isAdmin ? '1=1' : '(e.abogado_id = :uid1 OR e.abogado_id_2 = :uid2)';
+$sql = "SELECT e.*, u.nombre AS abogado_nombre, u2.nombre AS abogado_2_nombre
         FROM expedientes e
         LEFT JOIN usuarios u ON u.id = e.abogado_id
+        LEFT JOIN usuarios u2 ON u2.id = e.abogado_id_2
         WHERE $where
         ORDER BY e.id ASC";
 $stmt = $pdo->prepare($sql);
-if (!$isAdmin) $stmt->execute([':uid' => $user['id']]);
+if (!$isAdmin) $stmt->execute([':uid1' => $user['id'], ':uid2' => $user['id']]);
 else $stmt->execute();
 $expedientesRows = $stmt->fetchAll();
 
@@ -107,10 +108,12 @@ $expedientes = [];
 foreach ($expedientesRows as $r) {
     $id = (int)$r['id'];
     $case = cast_numeric_fields($r);
-    unset($case['abogado_nombre']);
+    unset($case['abogado_nombre'], $case['abogado_2_nombre']);
     $case['id'] = $id;
     $case['abogado'] = $r['abogado_nombre'];
     $case['abogado_id'] = $r['abogado_id'] !== null ? (int)$r['abogado_id'] : null;
+    $case['abogado_2'] = $r['abogado_2_nombre'];
+    $case['abogado_id_2'] = $r['abogado_id_2'] !== null ? (int)$r['abogado_id_2'] : null;
 
     $case['meta'] = [
         'notas' => $r['notas_internas'] ?? '',

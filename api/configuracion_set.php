@@ -13,7 +13,7 @@ if ($clave === '') fail('Falta la clave.', 400);
 
 // Lista blanca: este endpoint genérico de clave/valor solo debe poder tocar
 // las claves que el sistema realmente usa.
-$permitidas = ['salario_minimo_diario'];
+$permitidas = ['salario_minimo_diario', 'jornada_maxima_diurna', 'jornada_maxima_nocturna', 'jornada_maxima_mixta'];
 if (!in_array($clave, $permitidas, true)) fail('Clave no reconocida.', 400);
 
 $pdo = db();

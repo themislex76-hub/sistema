@@ -256,6 +256,61 @@ function bindTipoAsuntoField(){
   otro.addEventListener('input', ()=>{ hidden.value = otro.value; });
 }
 
+// Las 9 fracciones del artículo 51 LFT (causas de rescisión imputables al
+// patrón). Elegir una arma sola el hecho 4 de la demanda de Rescisión Art.
+// 51 (ver construirHechoCausaAuto más abajo) y el "motivo breve" de la
+// prestación A) -- así el abogado no redacta ningún párrafo en blanco, solo
+// elige la causa y captura la fecha desde la que ocurre (y, si aplica, el
+// nombre de quien incurrió en ella).
+const FRACCION_51 = {
+  I: {
+    label: 'I — Engaño sobre las condiciones de trabajo ofrecidas al contratar',
+    textoBreve: 'proporcionar a la trabajadora las condiciones de trabajo que le ofreció al contratarla',
+    inicio: (tags,k)=> `Es el caso que, desde el inicio de la relación laboral, la demandada me engañó respecto de las condiciones de trabajo que me ofreció al momento de la contratación, hecho del cual tuve conocimiento el ${tags.fecha_desde_incumplimiento_letra}`,
+  },
+  II: {
+    label: 'II — Violencia, injurias o malos tratos (dentro del servicio)',
+    textoBreve: 'abstenerse de incurrir, por sí o por conducto de su personal, en actos de violencia, injurias o malos tratamientos en contra de la suscrita',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} incurrió, dentro del servicio, en actos de violencia, injurias y malos tratamientos en contra de la suscrita, siendo de tal manera graves que hicieron imposible la continuación de la relación de trabajo`,
+  },
+  III: {
+    label: 'III — Violencia, injurias o malos tratos (fuera del servicio)',
+    textoBreve: 'abstenerse de incurrir, por sí o por conducto de su personal, en actos de violencia, injurias o malos tratamientos en contra de la suscrita',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} incurrió, fuera del servicio, en actos de violencia, injurias y malos tratamientos en contra de la suscrita, siendo de tal manera graves que hicieron imposible la continuación de la relación de trabajo`,
+  },
+  IV: {
+    label: 'IV — Reducción del salario',
+    textoBreve: 'no reducir el salario que le correspondía a la trabajadora',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada redujo unilateralmente el salario que venía percibiendo la suscrita, sin mi consentimiento y sin causa legal que lo justificara`,
+  },
+  V: {
+    label: 'V — Falta de pago del salario en la fecha o lugar convenidos',
+    textoBreve: 'pagar el salario correspondiente en la fecha o lugar convenidos',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada dejó de cubrirme el pago del salario correspondiente en la fecha y lugar convenidos y acostumbrados, pese a los requerimientos que realicé para su pago`,
+  },
+  VI: {
+    label: 'VI — Perjuicios maliciosos en herramientas o útiles de trabajo',
+    textoBreve: 'evitar que se causaran perjuicios maliciosos en las herramientas o útiles de trabajo de la suscrita',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} causó maliciosamente perjuicios en las herramientas y útiles de trabajo de la suscrita`,
+  },
+  VII: {
+    label: 'VII — Falta de condiciones higiénicas o de seguridad',
+    textoBreve: 'proporcionar condiciones higiénicas y de seguridad en el centro de trabajo',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada puso en peligro mi seguridad al carecer el establecimiento de condiciones higiénicas y de seguridad, y al no cumplir con las medidas preventivas que las leyes establecen`,
+  },
+  VIII: {
+    label: 'VIII — Imprudencia o descuido inexcusable que compromete la seguridad',
+    textoBreve: 'evitar poner en riesgo, por imprudencia o descuido inexcusable, la seguridad del establecimiento o de las personas que ahí se encuentran',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, ${tags.persona_responsable_incumplimiento} comprometió, con su imprudencia o descuido inexcusable, la seguridad del establecimiento y de las personas que ahí se encontraban, incluida la suscrita`,
+  },
+  IX: {
+    label: 'IX — Causas análogas, igualmente graves',
+    textoBreve: 'cumplir con sus obligaciones laborales',
+    inicio: (tags,k)=> `Es el caso que, a partir del ${tags.fecha_desde_incumplimiento_letra}, la demandada incurrió en conductas análogas a las demás causales de rescisión previstas en el artículo 51 de la Ley Federal del Trabajo, igualmente graves y de consecuencias semejantes`,
+  },
+};
+const FRACCION_51_SELECT_OPTIONS = Object.keys(FRACCION_51).map(code => ({value: code, label: FRACCION_51[code].label}));
+
 const EDITABLE_FIELDS = [
   {key:'tipo_asunto', label:'Tipo de asunto', type:'tipo_asunto'},
   {key:'actor', label:'Nombre del actor (trabajador)'},
@@ -279,6 +334,48 @@ const EDITABLE_FIELDS = [
   {key:'quien_despidio', label:'Nombre de quien despidió'},
   {key:'puesto_despidio', label:'Puesto de quien despidió'},
   {key:'hora_despido', label:'Hora del despido'},
+  {key:'hora_entrada', label:'Horario — hora de entrada', type:'time'},
+  {key:'hora_salida', label:'Horario — hora de salida real (incluyendo tiempo extra)', type:'time'},
+  {key:'comida_inicio', label:'Horario — comida, hora de inicio (opcional, déjalo vacío para no especificar)', type:'time'},
+  {key:'comida_fin', label:'Horario — comida, hora de fin (opcional, déjalo vacío para no especificar)', type:'time'},
+  {key:'dias_laborados', label:'Horario — días que laboraba, en texto (ej. "lunes a sábado")'},
+  {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number'},
+  {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta']},
+  // Rescisión Art. 51 (ver "Otras plantillas de escritos" → Rescisión Art. 51).
+  // El hecho 4 y el "motivo breve" de la prestación A) se arman solos a
+  // partir de estos 3 datos + la fracción elegida -- ver FRACCION_51 más
+  // abajo. No hay párrafo en blanco que redactar.
+  {key:'rescision_fraccion', label:'Rescisión — causa (fracción del art. 51 LFT)', type:'select', options:FRACCION_51_SELECT_OPTIONS},
+  {key:'fecha_rescision', label:'Rescisión — fecha en que el actor decidió rescindir', type:'date'},
+  {key:'fecha_desde_incumplimiento', label:'Rescisión — fecha desde la que ocurre el incumplimiento/causa', type:'date'},
+  {key:'persona_responsable_incumplimiento', label:'Rescisión — nombre de quien incurrió en la causa (si no es la empresa en general)'},
+  {key:'hecho_causa_narrativa', label:'Rescisión — detalle adicional del hecho (opcional; se agrega después del párrafo que ya arma el sistema)', type:'textarea'},
+  {key:'banco1_nombre', label:'Rescisión — banco 1, institución'},
+  {key:'banco1_cuenta', label:'Rescisión — banco 1, número de cuenta'},
+  {key:'banco2_nombre', label:'Rescisión — banco 2, institución'},
+  {key:'banco2_cuenta', label:'Rescisión — banco 2, número de cuenta'},
+  {key:'banco3_nombre', label:'Rescisión — banco 3, institución'},
+  {key:'banco3_cuenta', label:'Rescisión — banco 3, número de cuenta'},
+  // Prima de antigüedad (estilo jubilación / apartado B) -- ver "Otras plantillas de escritos".
+  {key:'monto_prima_antiguedad', label:'Prima antigüedad — monto reclamado', type:'number'},
+  {key:'fecha_solicitud_interna', label:'Prima antigüedad — fecha de la solicitud interna de pago', type:'date'},
+  {key:'hora_solicitud_interna', label:'Prima antigüedad — hora de la solicitud interna', type:'time'},
+  {key:'folio_solicitud_interna', label:'Prima antigüedad — folio asignado a la solicitud'},
+  {key:'funcionario_rh_nombre', label:'Prima antigüedad — nombre del funcionario de RH que recibió la solicitud'},
+  {key:'funcionario_rh_puesto', label:'Prima antigüedad — puesto de ese funcionario'},
+  {key:'numero_oficio_respuesta', label:'Prima antigüedad — número de oficio de respuesta (negativa)'},
+  {key:'fecha_oficio_respuesta', label:'Prima antigüedad — fecha del oficio de respuesta', type:'date'},
+  {key:'director_firma_nombre', label:'Prima antigüedad — nombre de quien firma el oficio de negativa'},
+  {key:'coordinador_archivo_nombre', label:'Prima antigüedad — nombre del Coordinador de Archivo (verificó)'},
+  {key:'gerente_gestion_nombre', label:'Prima antigüedad — nombre del Gerente de Gestión y Servicios al Personal (autorizó)'},
+  {key:'folio_fiscal_cfdi', label:'Prima antigüedad — folio fiscal del CFDI/recibo de nómina ofrecido'},
+  {key:'periodo_recibo_desde', label:'Prima antigüedad — periodo del recibo CFDI, desde', type:'date'},
+  {key:'periodo_recibo_hasta', label:'Prima antigüedad — periodo del recibo CFDI, hasta', type:'date'},
+  {key:'salario_quincenal_num', label:'Prima antigüedad — salario quincenal', type:'number'},
+  {key:'rfc_emisor_demandado', label:'Prima antigüedad — RFC de la demandada (emisor del CFDI)'},
+  {key:'fecha_hoja_servicios', label:'Prima antigüedad — fecha de la Hoja Única de Servicios', type:'date'},
+  {key:'numero_documento_fump', label:'Prima antigüedad — número de documento del Formato Único de Movimientos de Personal'},
+  {key:'fecha_documento_fump', label:'Prima antigüedad — fecha de elaboración de ese documento', type:'date'},
   {key:'testigos', label:'Nombre de los testigos'},
   {key:'dom_testigos', label:'Domicilios de los testigos'},
   {key:'ultima_nota', label:'Última actuación / nota'},
@@ -1320,12 +1417,74 @@ function xmlEscape(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
 }
 
+// Igual que xmlEscape, pero además convierte los saltos de línea del valor
+// en <w:br/> reales de Word -- así un tag puede traer varios párrafos (p.ej.
+// una lista de prestaciones armada dinámicamente) y se ven como líneas
+// separadas en vez de perderse dentro de un solo <w:t>. Mantiene el mismo
+// <w:r> (misma fuente/negritas del lugar donde se puso el tag).
+function xmlEscapeMultiline(s){
+  return xmlEscape(s).split('\n').join('</w:t></w:r><w:r><w:br/><w:t xml:space="preserve"></w:t></w:r><w:r><w:t xml:space="preserve">');
+}
+
+// Siempre se resta 1 hora de comida al calcular la jornada, se hayan
+// capturado horarios específicos de comida o no (así lo pidió el
+// despacho) -- comida_inicio/comida_fin solo deciden si el TEXTO generado
+// menciona un horario específico o queda genérico.
+const COMIDA_HORAS_FIJA = 1;
+
+function horaAMinutos(hhmm){
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(hhmm||''));
+  if(!m) return null;
+  return parseInt(m[1],10)*60 + parseInt(m[2],10);
+}
+function minutosAHora(mins){
+  mins = ((mins % (24*60)) + 24*60) % (24*60);
+  return String(Math.floor(mins/60)).padStart(2,'0') + ':' + String(mins%60).padStart(2,'0');
+}
+function fmtHoras(n){
+  return (Math.round(n*100)/100).toString();
+}
+
+// Calcula, a partir de hora_entrada/hora_salida (la de salida REAL, con
+// tiempo extra incluido) y el tipo de jornada, las horas extra diarias y
+// semanales y la hora de salida "normal" (sin extras) -- esta última es la
+// que, junto con hora_entrada, describe la jornada pactada en el hecho 3
+// de la demanda (ver mergeTags()). Devuelve null si falta algún dato.
+function calcularJornada(k){
+  const minsEntrada = horaAMinutos(k.hora_entrada);
+  let minsSalida = horaAMinutos(k.hora_salida);
+  if(minsEntrada===null || minsSalida===null) return null;
+  if(minsSalida <= minsEntrada) minsSalida += 24*60; // jornada que cruza la medianoche
+  const tipo = (k.tipo_jornada || 'Diurna').toLowerCase();
+  const jornadaMax = JORNADA_MAXIMA[tipo]!=null ? JORNADA_MAXIMA[tipo] : JORNADA_MAXIMA.diurna;
+  const horasPresencia = (minsSalida - minsEntrada) / 60;
+  const horasTrabajadas = horasPresencia - COMIDA_HORAS_FIJA;
+  const horasExtraDiarias = Math.max(0, Math.round((horasTrabajadas - jornadaMax) * 100) / 100);
+  const minsSalidaNormal = minsEntrada + Math.round((jornadaMax + COMIDA_HORAS_FIJA) * 60);
+  const dias = parseInt(k.dias_laborados_num, 10) || 6;
+  return {
+    tipo, jornadaMax,
+    horaSalidaNormal: minutosAHora(minsSalidaNormal),
+    horaInicioExtra: minutosAHora(minsSalidaNormal + 1),
+    horasExtraDiarias,
+    horasExtraSemanales: Math.round(horasExtraDiarias * dias * 100) / 100,
+  };
+}
+
 function mergeTags(k){
   const junta = k.junta || k.instancia || '';
   const ciudad = /tlalnepantla/i.test(junta) ? 'Tlalnepantla de Baz, Estado de México' :
                  /ciudad de méxico|cdmx/i.test(junta) ? 'Ciudad de México' :
                  /naucalpan/i.test(junta) ? 'Naucalpan de Juárez, Estado de México' : 'Estado de México';
-  return {
+  const jornada = calcularJornada(k);
+  // Texto de la comida: específico si se capturaron horarios, genérico si no
+  // (así lo pidió el despacho) -- de cualquier forma siempre se resta 1
+  // hora al calcular (ver COMIDA_HORAS_FIJA).
+  const textoComida = (k.comida_inicio && k.comida_fin)
+    ? `de ${k.comida_inicio.slice(0,5)} a ${k.comida_fin.slice(0,5)} horas fuera del centro de trabajo`
+    : `fuera del centro de trabajo`;
+  const diasTexto = k.dias_laborados || '________________';
+  const tags = {
     actor: k.actor || '________________',
     demandado: k.demandado || '________________',
     giro_empresa: k.giro_empresa || '________________',
@@ -1345,7 +1504,113 @@ function mergeTags(k){
     testigos: k.testigos || '________________',
     fecha_hoy_letra: fechaLetras(dateToISO(new Date())),
     ciudad_firma: ciudad,
+    // Jornada y horas extra -- ver calcularJornada() arriba. Si falta
+    // hora_entrada/hora_salida, se dejan los placeholders de siempre para
+    // que la demanda siga siendo editable a mano como antes.
+    hora_entrada: k.hora_entrada ? k.hora_entrada.slice(0,5) : '____',
+    hora_salida: k.hora_salida ? k.hora_salida.slice(0,5) : '____',
+    hora_salida_normal: jornada ? jornada.horaSalidaNormal : (k.hora_salida ? k.hora_salida.slice(0,5) : '____'),
+    hora_inicio_extra: jornada ? jornada.horaInicioExtra : '____',
+    tipo_jornada_texto: (k.tipo_jornada || 'diurna').toLowerCase(),
+    dias_laborados: diasTexto,
+    texto_comida: textoComida,
+    horas_extra_diarias: jornada ? fmtHoras(jornada.horasExtraDiarias) : '____',
+    horas_extra_semanales: jornada ? fmtHoras(jornada.horasExtraSemanales) : '____',
+    // Rescisión Art. 51 -- ver "Otras plantillas de escritos". Las
+    // prestaciones opcionales (letras b en adelante) NO se arman aquí: se
+    // construyen en el momento de generar el escrito, a partir de la
+    // selección de casillas del abogado (ver generarEscritoConOpciones()),
+    // para poder incluir/excluir cada una y renumerar las letras.
+    rescision_fraccion: k.rescision_fraccion || '____',
+    rescision_motivo_breve: (FRACCION_51[k.rescision_fraccion] && FRACCION_51[k.rescision_fraccion].textoBreve) || '________________',
+    fecha_rescision_letra: fechaLetras(k.fecha_rescision),
+    fecha_desde_incumplimiento_letra: fechaLetras(k.fecha_desde_incumplimiento),
+    persona_responsable_incumplimiento: k.persona_responsable_incumplimiento || 'una persona que actuaba a nombre de la demandada',
+    // Párrafo adicional OPCIONAL -- si se deja vacío, el hecho 4 queda
+    // completo solo con hecho_causa_auto (ver abajo) y aquí no se agrega nada.
+    hecho_causa_narrativa: k.hecho_causa_narrativa || '',
+    // Prima de antigüedad (estilo jubilación / apartado B).
+    monto_prima_antiguedad_num: k.monto_prima_antiguedad!=null ? Number(k.monto_prima_antiguedad).toFixed(2) : '____________',
+    monto_prima_antiguedad_letra: k.monto_prima_antiguedad!=null ? pesosEnLetras(k.monto_prima_antiguedad) : '____________',
+    fecha_solicitud_interna_letra: fechaLetras(k.fecha_solicitud_interna),
+    hora_solicitud_interna: k.hora_solicitud_interna ? k.hora_solicitud_interna.slice(0,5) : '____',
+    folio_solicitud_interna: k.folio_solicitud_interna || '____',
+    funcionario_rh_nombre: k.funcionario_rh_nombre || '________________',
+    funcionario_rh_puesto: k.funcionario_rh_puesto || '________________',
+    numero_oficio_respuesta: k.numero_oficio_respuesta || '____',
+    fecha_oficio_respuesta_letra: fechaLetras(k.fecha_oficio_respuesta),
+    director_firma_nombre: k.director_firma_nombre || '________________',
+    coordinador_archivo_nombre: k.coordinador_archivo_nombre || '________________',
+    gerente_gestion_nombre: k.gerente_gestion_nombre || '________________',
+    folio_fiscal_cfdi: k.folio_fiscal_cfdi || '____',
+    periodo_recibo_desde_letra: fechaLetras(k.periodo_recibo_desde),
+    periodo_recibo_hasta_letra: fechaLetras(k.periodo_recibo_hasta),
+    periodo_recibo_desde_iso: k.periodo_recibo_desde || '____',
+    periodo_recibo_hasta_iso: k.periodo_recibo_hasta || '____',
+    salario_quincenal_num: k.salario_quincenal_num!=null ? Number(k.salario_quincenal_num).toFixed(2) : '________',
+    rfc_emisor_demandado: (k.rfc_emisor_demandado || '____').toUpperCase(),
+    fecha_hoja_servicios_letra: fechaLetras(k.fecha_hoja_servicios),
+    numero_documento_fump: k.numero_documento_fump || '____',
+    fecha_documento_fump_letra: fechaLetras(k.fecha_documento_fump),
   };
+  tags.hecho_causa_auto = construirHechoCausaAuto(tags, k);
+  const periodos = calcularPeriodosVacacionesRescision(k);
+  tags.periodo_vacaciones_anterior = periodos.anterior;
+  tags.periodo_vacaciones_actual = periodos.actual;
+  tags.pruebas_adicionales = construirPruebasAdicionalesTexto(k, tags);
+  return tags;
+}
+
+// Arma solo el hecho 4 completo (sin que el abogado redacte nada) a partir
+// de la fracción del art. 51 elegida + la fecha desde la que ocurre + (si
+// aplica) quién incurrió en ella. Si todavía no se eligió fracción, deja un
+// párrafo genérico editable, igual que el resto de los campos sin capturar.
+function construirHechoCausaAuto(tags, k){
+  const f = FRACCION_51[k.rescision_fraccion];
+  if(!f){
+    return `Es el caso que, ante el incumplimiento de la demandada respecto de sus obligaciones laborales, la suscrita decidió rescindir la relación laboral por causa imputable al patrón, separándome de mis labores el día ${tags.fecha_rescision_letra}, al considerar que la conducta patronal actualizaba la causa prevista en el artículo 51, fracción ____, de la Ley Federal del Trabajo.`;
+  }
+  return `${f.inicio(tags,k)}, por lo que ante dicho incumplimiento, la suscrita decidió rescindir la relación laboral por causa imputable al patrón, separándome de mis labores el día ${tags.fecha_rescision_letra}, al considerar que la conducta patronal actualizaba la causa prevista en el artículo 51, fracción ${k.rescision_fraccion}, de la Ley Federal del Trabajo.`;
+}
+
+// Periodo de vacaciones (anterior y actual, "YYYY-YYYY") a partir del
+// aniversario de ingreso más cercano a la fecha de rescisión -- mismo
+// criterio que usa computeLiquidacion() para el resto del sistema, sin que
+// el abogado tenga que escribirlo a mano.
+function calcularPeriodosVacacionesRescision(k){
+  const ing = parseDate(k.fecha_ingreso);
+  const fin = parseDate(k.fecha_rescision) || parseDate(k.fecha_baja);
+  if(!ing || !fin || fin < ing) return {anterior: '________', actual: '________'};
+  const anniv = lastAnniversaryLFT(ing, fin);
+  const y = anniv.getFullYear();
+  return {anterior: `${y-1}-${y}`, actual: `${y}-${y+1}`};
+}
+
+// Bloque único (con saltos de línea) que junta TODAS las pruebas desde el
+// punto 5 en adelante -- así no importa cuántos bancos se capturaron (0 a
+// 3), la Inspección Judicial y la Testimonial que siguen quedan siempre
+// numeradas correctamente. Los puntos 1 a 4 (instrumental, presuncional,
+// confesional de la empresa e informe del IMSS) van fijos en la plantilla
+// de Rescisión Art. 51.
+// Recibe `tags` ya calculado por mergeTags() (nunca llama a mergeTags() él
+// mismo, para no crear un ciclo infinito: mergeTags() es quien invoca esta
+// función al armar el tag {{pruebas_adicionales}}).
+function construirPruebasAdicionalesTexto(k, tags){
+  const bloques = [];
+  const bancos = [
+    {nombre: k.banco1_nombre, cuenta: k.banco1_cuenta},
+    {nombre: k.banco2_nombre, cuenta: k.banco2_cuenta},
+    {nombre: k.banco3_nombre, cuenta: k.banco3_cuenta},
+  ].filter(b => b.nombre && b.cuenta);
+  let n = 5;
+  bancos.forEach(b=>{
+    bloques.push(`${n}.- EL INFORME que se sirva rendir la institución bancaria ${b.nombre}, con relación a la moral demandada, por el periodo comprendido entre la fecha de ingreso y la fecha de baja de la parte actora, para lo cual solicito a esta H. Autoridad se sirva girar oficio correspondiente a efecto de que informe si la cuenta número ${b.cuenta} pertenece a la parte actora, los estados de cuenta mensuales de dicho periodo, y si dicha cuenta recibió depósitos y/o transferencias por parte de la moral demandada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada, así como el incumplimiento por parte de la demandada respecto a sus obligaciones.`);
+    n++;
+  });
+  bloques.push(`${n}.- LA INSPECCIÓN JUDICIAL, que se realice por conducto del C. Actuario en el local de este H. Tribunal en los siguientes documentos que se encuentran en la empresa demandada ${tags.demandado} en el domicilio ubicado en calle ${tags.dom_demandado}: 1) Contrato individual y/o colectivo de trabajo; 2) Listas de raya; 3) Recibos de pago de salarios, de vacaciones, de prima vacacional y de aguinaldo; 4) Tarjetas o controles de asistencia. Documentos que el demandado tiene obligación de conservar y exhibir en juicio de conformidad con lo establecido en los artículos 784 y 804 de la Ley Federal del Trabajo y que se ofrecen para acreditar los siguientes extremos:\n\na) Que la parte actora ingresó a prestar sus servicios para la demandada, a partir del ${tags.fecha_ingreso_letra}.\nb) Que la demandada pagó a la parte actora por la prestación de sus servicios la cantidad de $${tags.salario_mensual_num} pesos mensuales.\nc) Que la parte actora laboró al servicio de la empresa demandada en un horario comprendido de las ${tags.hora_entrada} horas a las ${tags.hora_salida} horas ${tags.dias_laborados}.\nd) Que la demandada dejó de cumplir con sus obligaciones laborales a partir del ${tags.fecha_desde_incumplimiento_letra}, tal como se precisa en el capítulo de hechos.\n\nPara el desahogo de esta prueba de INSPECCIÓN deberá apercibirse a la demandada que para el caso de no exhibir la totalidad de la documentación base para tal efecto se tendrán por presuntivamente ciertos los extremos a acreditar con fundamento en lo dispuesto por los artículos 805, 827 y 828 de la Ley Federal del Trabajo en relación con el artículo 804 y demás relativos y aplicables de la ley citada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.`);
+  n++;
+  bloques.push(`${n}.- LA TESTIMONIAL a cargo de los CC. ${tags.testigos}, quienes tienen sus domicilios en ${tags.dom_testigos} respectivamente y a quienes me comprometo a presentar el día y hora que esta H. Autoridad determine la audiencia para su celebración, testigos que declararan sobre los hechos del escrito inicial de demanda como de sus aclaraciones y modificaciones a la misma.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.\n\nTestigos que declararan sobre los hechos ocurridos el día ${tags.fecha_rescision_letra}.`);
+  return bloques.join('\n\n');
 }
 
 // ---------------------------------------------------------------
@@ -1400,15 +1665,15 @@ async function resetPlantillaDocx(){
 // Genera y descarga un .docx a partir de cualquier plantilla (en base64) con
 // los mismos {{tags}} que usa la demanda — motor compartido por
 // generarDemandaDocx() y por la biblioteca de plantillas de escritos.
-function generarDocxDesdePlantilla(k, plantillaB64, nombreBase, onDone, onError){
+function generarDocxDesdePlantilla(k, plantillaB64, nombreBase, onDone, onError, extraTags){
   ensureJSZip(async ()=>{
     try{
-      const tags = mergeTags(k);
+      const tags = Object.assign({}, mergeTags(k), extraTags||{});
       const bytes = base64ToUint8Array(plantillaB64);
       const zip = await JSZip.loadAsync(bytes);
       let xml = await zip.file('word/document.xml').async('string');
       Object.keys(tags).forEach(key=>{
-        xml = xml.split('{{'+key+'}}').join(xmlEscape(tags[key]));
+        xml = xml.split('{{'+key+'}}').join(xmlEscapeMultiline(tags[key]));
       });
       zip.file('word/document.xml', xml);
       const out = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
@@ -1872,6 +2137,17 @@ async function loadPjfCredenciales(){
   }catch(e){ PJF_CREDENCIALES = null; }
 }
 
+// Igual que PJF_CREDENCIALES pero para el correo de notificaciones
+// electrónicas de Edomex (mail.pjedomex.gob.mx) -- el robot nuevo
+// (robots/edomex_correo) usa las cuentas guardadas por cada abogado.
+let EDOMEX_CORREO_CREDENCIALES = null;
+async function loadEdomexCorreoCredenciales(){
+  try{
+    const d = await api('GET', 'edomex_correo_credenciales_get.php');
+    EDOMEX_CORREO_CREDENCIALES = d;
+  }catch(e){ EDOMEX_CORREO_CREDENCIALES = null; }
+}
+
 // Avisos de boletín/lista de acuerdos por expediente — registrados a mano
 // o encontrados por los robots de monitoreo automático (Federal, CDMX,
 // Edomex). Ver api/avisos_*.php.
@@ -2097,6 +2373,7 @@ const CATEGORIA_DOCUMENTO_LABEL = {
   pruebas: 'Pruebas',
   actas: 'Actas de audiencia',
   convenio: 'Convenio',
+  acuerdo: 'Acuerdo (boletín)',
   otro: 'Otro',
 };
 
@@ -2337,6 +2614,7 @@ async function refreshBootstrap(){
   await loadAvisosBoletin();
   await loadEdomexCaptchaPendiente();
   await loadPjfCredenciales();
+  await loadEdomexCorreoCredenciales();
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
     await loadProspectos();
     await loadDisponibilidad();
@@ -2588,12 +2866,76 @@ async function loadTribunalesCustom(){
 // "configuracion" y lo edita el Administrador en "Equipo" — así no hay que
 // tocar el código cada vez que la CONASAMI publica un nuevo salario mínimo.
 let SALARIO_MINIMO_DIARIO = 315.04; // valor de respaldo (zona general, 2026) si aún no se ha guardado ninguno
+// Jornada máxima legal (Art. 61 LFT) por tipo, en horas. Igual que el
+// salario mínimo: se guarda en "configuracion" y lo edita el Administrador
+// en "Equipo" — así cuando cambie la ley (reducción de jornada prevista a
+// partir de 2027) solo hay que actualizar el número aquí, sin tocar código.
+let JORNADA_MAXIMA = {diurna: 8, nocturna: 7, mixta: 7.5}; // valores de respaldo (vigentes 2026) si aún no se ha guardado ninguno
+
+// Nombre EXACTO con el que debe subirse la plantilla de Rescisión Art. 51 en
+// "Otras plantillas de escritos" -- así el sistema sabe cuándo mostrar la
+// selección de prestaciones opcionales antes de generar el documento.
+const NOMBRE_PLANTILLA_RESCISION_51 = 'Rescisión Art. 51';
+
+// Prestaciones opcionales de la demanda de Rescisión Art. 51 (letras B en
+// adelante -- la "A" es la rescisión misma, siempre presente, fija en la
+// plantilla). El abogado marca cuáles aplican a cada caso; las letras se
+// recalculan solas según cuáles queden seleccionadas.
+const PRESTACIONES_RESCISION_OPCIONES = [
+  {key:'indemnizacion', label:'Indemnización constitucional (arts. 50, 51, 52)', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE LA INDEMNIZACIÓN, que legalmente corresponda con motivo de la rescisión justificada de la relación laboral, en términos de los artículos 50, 51 y 52 de la Ley Federal del Trabajo.`},
+  {key:'veinte_dias', label:'20 días de salario por año laborado (art. 50)', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE 20 DÍAS DE SALARIO POR CADA AÑO LABORADO, que legalmente corresponda con motivo de la rescisión justificada de la relación laboral, en términos del artículo 50 de la Ley Federal del Trabajo, tomando como base para ello, el salario integrado con las totalidades de las prestaciones que el demandado se comprometió a pagar a la actora, tal como se expresa en el capítulo de hechos.`},
+  {key:'prima_antiguedad', label:'Prima de antigüedad (art. 162, 12 días por año)', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE PRIMA DE ANTIGÜEDAD, en términos del artículo 162 de la Ley Federal del Trabajo, consistente en 12 días de salario por cada año de servicios prestados al patrón.`},
+  {key:'salarios_devengados', label:'Salarios devengados no cubiertos', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE LOS SALARIOS DEVENGADOS, y no cubiertos durante la relación laboral, tomando como base el salario mínimo legal aplicable a cada periodo reclamado, o el salario que resulte acreditado si fuera superior, con la cuantificación correspondiente.`},
+  {key:'aguinaldo_completo', label:'Aguinaldo del año anterior (omitido por completo)', checkedPorDefecto:false,
+    texto:(tags,k)=>{
+      const baj = parseDate(k.fecha_baja);
+      const anio = baj ? baj.getFullYear()-1 : '________';
+      const dias = k.aguinaldo_dias_pactados > 0 ? k.aguinaldo_dias_pactados : 15;
+      return `EL PAGO DE AGUINALDO POR EL AÑO ${anio}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos, lo anterior debido a que la demandada omitió hacer el pago, señalando que se pactaron ${dias} días anuales por dicho concepto.`;
+    }},
+  {key:'aguinaldo_proporcional', label:'Aguinaldo proporcional del año de la baja', checkedPorDefecto:true,
+    texto:(tags,k)=>{
+      const baj = parseDate(k.fecha_baja);
+      const anio = baj ? baj.getFullYear() : '________';
+      return `EL PAGO DE AGUINALDO PROPORCIONAL AL AÑO ${anio}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos, lo anterior en términos del artículo 87 de la Ley Federal del Trabajo.`;
+    }},
+  {key:'vacaciones_periodo1', label:'Vacaciones adeudadas, periodo anterior', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE VACACIONES ADEUDADAS correspondiente al periodo ${tags.periodo_vacaciones_anterior}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'prima_vacacional_periodo1', label:'Prima vacacional, periodo anterior', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE PRIMA VACACIONAL correspondiente al periodo ${tags.periodo_vacaciones_anterior}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'vacaciones_periodo2', label:'Vacaciones adeudadas, periodo actual', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE VACACIONES ADEUDADAS correspondiente al periodo ${tags.periodo_vacaciones_actual}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'prima_vacacional_periodo2', label:'Prima vacacional, periodo actual', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE PRIMA VACACIONAL correspondiente al periodo ${tags.periodo_vacaciones_actual}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'horas_extras', label:'Horas extras (reutiliza el horario capturado en Editar datos)', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE HORAS EXTRAS, por todo el tiempo laborado en virtud de que, por necesidades del Servicio, mi jefe inmediato de manera habitual, continua y reiterada, me solicitaba que me quedara a laborar tiempo extraordinario por lo que diariamente laboraba de las ${tags.hora_entrada} a las ${tags.hora_salida}, con una hora para tomar alimentos ${tags.texto_comida}, en tal virtud el suscrito laboraba materialmente ${tags.horas_extra_diarias} horas extras por día, ${tags.dias_laborados} de cada semana, lo que da un total de ${tags.horas_extra_semanales} horas extras semanales.`},
+];
+
+const LETRAS_B_EN_ADELANTE = 'BCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+// Arma el texto final (con letras B, C, D... recalculadas) a partir de las
+// claves de PRESTACIONES_RESCISION_OPCIONES que el abogado dejó marcadas.
+function construirPrestacionesOpcionalesTexto(k, selKeys){
+  const tags = mergeTags(k);
+  const seleccionadas = PRESTACIONES_RESCISION_OPCIONES.filter(o => selKeys.includes(o.key));
+  return seleccionadas.map((o,i)=> `${LETRAS_B_EN_ADELANTE[i]}) ${o.texto(tags,k)}`).join('\n\n');
+}
 async function loadConfiguracion(){
   try{
     const d = await api('GET', 'configuracion_get.php');
     const v = parseFloat(d.configuracion && d.configuracion.salario_minimo_diario);
     if(!isNaN(v) && v > 0) SALARIO_MINIMO_DIARIO = v;
-  }catch(e){ /* se conserva el valor de respaldo */ }
+    const vd = parseFloat(d.configuracion && d.configuracion.jornada_maxima_diurna);
+    if(!isNaN(vd) && vd > 0) JORNADA_MAXIMA.diurna = vd;
+    const vn = parseFloat(d.configuracion && d.configuracion.jornada_maxima_nocturna);
+    if(!isNaN(vn) && vn > 0) JORNADA_MAXIMA.nocturna = vn;
+    const vm = parseFloat(d.configuracion && d.configuracion.jornada_maxima_mixta);
+    if(!isNaN(vm) && vm > 0) JORNADA_MAXIMA.mixta = vm;
+  }catch(e){ /* se conservan los valores de respaldo */ }
 }
 async function saveConfiguracion(clave, valor){
   await api('POST', 'configuracion_set.php', {clave, valor: String(valor)});
@@ -2624,8 +2966,15 @@ function getMeta(id){
   return m;
 }
 
+// Un asunto puede estar asignado a dos socios a la vez (se apoyan entre
+// ellos en el mismo caso) -- esta devuelve los nombres realmente asignados,
+// sin "Sin asignar", para poder filtrar/agrupar por cada uno.
+function assignedLawyers(kase){
+  return [kase.abogado, kase.abogado_2].filter(Boolean);
+}
 function assignedLawyer(kase){
-  return kase.abogado || "Sin asignar";
+  const names = assignedLawyers(kase);
+  return names.length ? names.join(' y ') : "Sin asignar";
 }
 
 // ---------------------------------------------------------------
@@ -3839,7 +4188,7 @@ function ingresosHTML(){
   const isAdmin = CURRENT_USER.role === 'Administrador';
   let todos = todosLosPagosCobrados();
   if(isAdmin && INGRESOS_ABOGADO !== 'todos'){
-    todos = todos.filter(p => assignedLawyer(p.k) === INGRESOS_ABOGADO);
+    todos = todos.filter(p => assignedLawyers(p.k).includes(INGRESOS_ABOGADO));
   }
   const enPeriodo = todos.filter(p => p.fecha >= rango.desde && p.fecha <= rango.hasta).sort((a,b)=> b.fecha.localeCompare(a.fecha));
 
@@ -5804,23 +6153,33 @@ function agendaHTML(){
   const todayISO = dateToISO(today);
 
   // Resumen por socio (solo Administrador) — cuenta pendientes/vencidos de
-  // cada socio sin filtrar todavía, para poder elegir a quién ver de un vistazo.
+  // cada socio sin filtrar todavía, para poder elegir a quién ver de un
+  // vistazo. Un asunto con dos socios asignados cuenta en el renglón de
+  // cada uno (los dos deben verlo en su propia agenda), pero el total de
+  // "Todos" se calcula aparte sobre la lista completa para no contarlo dos
+  // veces ahí.
   const resumenPorSocio = {};
   const resumenIAporSocio = {};
+  const totalesSinDuplicar = {vencidas:0, proximas:0};
+  const totalesIASinDuplicar = {alta:0, media:0, baja:0};
   if(isAdmin){
     all.forEach(e=>{
-      const n = assignedLawyer(e.k);
-      if(!resumenPorSocio[n]) resumenPorSocio[n] = {vencidas:0, proximas:0};
-      if(e.fecha < todayISO) resumenPorSocio[n].vencidas++; else resumenPorSocio[n].proximas++;
-      if(e.tipo==='accion_ia'){
-        if(!resumenIAporSocio[n]) resumenIAporSocio[n] = {alta:0, media:0, baja:0};
-        resumenIAporSocio[n][e.k.urgencia_ia]++;
-      }
+      if(e.fecha < todayISO) totalesSinDuplicar.vencidas++; else totalesSinDuplicar.proximas++;
+      if(e.tipo==='accion_ia') totalesIASinDuplicar[e.k.urgencia_ia]++;
+      const nombres = assignedLawyers(e.k);
+      (nombres.length ? nombres : ['Sin asignar']).forEach(n=>{
+        if(!resumenPorSocio[n]) resumenPorSocio[n] = {vencidas:0, proximas:0};
+        if(e.fecha < todayISO) resumenPorSocio[n].vencidas++; else resumenPorSocio[n].proximas++;
+        if(e.tipo==='accion_ia'){
+          if(!resumenIAporSocio[n]) resumenIAporSocio[n] = {alta:0, media:0, baja:0};
+          resumenIAporSocio[n][e.k.urgencia_ia]++;
+        }
+      });
     });
   }
 
   if(isAdmin && AGENDA_SOCIO !== 'todos'){
-    all = all.filter(e=> assignedLawyer(e.k) === AGENDA_SOCIO);
+    all = all.filter(e=> (assignedLawyers(e.k).length ? assignedLawyers(e.k) : ['Sin asignar']).includes(AGENDA_SOCIO));
   }
   const vencidas = all.filter(e=>e.fecha < todayISO);
   const proximas = all.filter(e=>e.fecha >= todayISO);
@@ -5855,9 +6214,9 @@ function agendaHTML(){
         <table><thead><tr><th>Socio</th><th>Urgente</th><th>Media</th><th>Sin prisa</th><th></th></tr></thead><tbody>
           <tr data-agenda-socio="todos" style="cursor:pointer; ${AGENDA_SOCIO==='todos'?'background:var(--parchment);':''}">
             <td><strong>Todos</strong></td>
-            <td style="color:var(--red); font-weight:700;">${Object.values(resumenIAporSocio).reduce((a,b)=>a+b.alta,0)}</td>
-            <td>${Object.values(resumenIAporSocio).reduce((a,b)=>a+b.media,0)}</td>
-            <td>${Object.values(resumenIAporSocio).reduce((a,b)=>a+b.baja,0)}</td>
+            <td style="color:var(--red); font-weight:700;">${totalesIASinDuplicar.alta}</td>
+            <td>${totalesIASinDuplicar.media}</td>
+            <td>${totalesIASinDuplicar.baja}</td>
             <td></td>
           </tr>
           ${Object.keys(resumenIAporSocio).sort((a,b)=>resumenIAporSocio[b].alta-resumenIAporSocio[a].alta).map(n=>`
@@ -5906,8 +6265,8 @@ function agendaHTML(){
       <table><thead><tr><th>Socio</th><th>Vencidas</th><th>Próximas</th><th></th></tr></thead><tbody>
         <tr data-agenda-socio="todos" style="cursor:pointer; ${AGENDA_SOCIO==='todos'?'background:var(--parchment);':''}">
           <td><strong>Todos</strong></td>
-          <td>${Object.values(resumenPorSocio).reduce((a,b)=>a+b.vencidas,0)}</td>
-          <td>${Object.values(resumenPorSocio).reduce((a,b)=>a+b.proximas,0)}</td>
+          <td>${totalesSinDuplicar.vencidas}</td>
+          <td>${totalesSinDuplicar.proximas}</td>
           <td></td>
         </tr>
         ${Object.keys(resumenPorSocio).sort((a,b)=>resumenPorSocio[b].vencidas-resumenPorSocio[a].vencidas).map(n=>`
@@ -5950,6 +6309,7 @@ function agendaHTML(){
         <div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+          ${a.documento_id? `<button class="btn secondary" data-aviso-borrar-doc="${a.id}" data-documento-id="${a.documento_id}" style="padding:6px 12px; font-size:11.5px; color:var(--red);">Borrar documento</button>`:''}
         </div>
       </div>`).join("")}</div>
   </div>` : ""}
@@ -5987,7 +6347,7 @@ function formatoDemandaHTML(){
   </div>
 
   <div class="legal-box" style="margin-bottom:16px;">
-    <strong>Campos disponibles para usar en el Word:</strong> <code>{{actor}}, {{demandado}}, {{giro_empresa}}, {{dom_demandado}}, {{dom_testigos}}, {{puesto}}, {{puesto_despidio}}, {{fecha_ingreso_letra}}, {{fecha_baja_letra}}, {{salario_mensual_num}}, {{salario_diario_num}}, {{salario_mensual_letra}}, {{curp}}, {{instancia}}, {{quien_despidio}}, {{hora_despido}}, {{testigos}}, {{fecha_hoy_letra}}, {{ciudad_firma}}</code>
+    <strong>Campos disponibles para usar en el Word:</strong> <code>{{actor}}, {{demandado}}, {{giro_empresa}}, {{dom_demandado}}, {{dom_testigos}}, {{puesto}}, {{puesto_despidio}}, {{fecha_ingreso_letra}}, {{fecha_baja_letra}}, {{salario_mensual_num}}, {{salario_diario_num}}, {{salario_mensual_letra}}, {{curp}}, {{instancia}}, {{quien_despidio}}, {{hora_despido}}, {{testigos}}, {{fecha_hoy_letra}}, {{ciudad_firma}}, {{hora_entrada}}, {{hora_salida}}, {{hora_salida_normal}}, {{hora_inicio_extra}}, {{texto_comida}}, {{dias_laborados}}, {{tipo_jornada_texto}}, {{horas_extra_diarias}}, {{horas_extra_semanales}}, {{rescision_fraccion}}, {{rescision_motivo_breve}}, {{fecha_rescision_letra}}, {{fecha_desde_incumplimiento_letra}}, {{persona_responsable_incumplimiento}}, {{hecho_causa_auto}}, {{hecho_causa_narrativa}}, {{pruebas_adicionales}}, {{prestaciones_opcionales}} (solo en la plantilla "Rescisión Art. 51"), {{monto_prima_antiguedad_num}}, {{monto_prima_antiguedad_letra}}, {{fecha_solicitud_interna_letra}}, {{hora_solicitud_interna}}, {{folio_solicitud_interna}}, {{funcionario_rh_nombre}}, {{funcionario_rh_puesto}}, {{numero_oficio_respuesta}}, {{fecha_oficio_respuesta_letra}}, {{director_firma_nombre}}, {{coordinador_archivo_nombre}}, {{gerente_gestion_nombre}}, {{folio_fiscal_cfdi}}, {{periodo_recibo_desde_letra}}, {{periodo_recibo_hasta_letra}}, {{salario_quincenal_num}}, {{rfc_emisor_demandado}}, {{fecha_hoja_servicios_letra}}, {{numero_documento_fump}}, {{fecha_documento_fump_letra}}, {{periodo_recibo_desde_iso}}, {{periodo_recibo_hasta_iso}}, {{periodo_vacaciones_anterior}} (solo Rescisión Art. 51), {{periodo_vacaciones_actual}} (solo Rescisión Art. 51)</code>
   </div>
   <div id="plantillaStatus" style="font-size:12px; color:var(--gray);">${esOriginal ? 'Estado actual: usando la plantilla original del despacho.' : 'Estado actual: usando una plantilla personalizada, subida por el Administrador.'}</div>
   ${!esOriginal ? `<button class="btn secondary" id="resetPlantillaBtn" style="margin-top:10px;">Restaurar plantilla original del despacho</button>` : ''}
@@ -6066,6 +6426,16 @@ function equipoHTML(){
     </form>
   </div></div>
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Jornada máxima legal (Art. 61 LFT)</div>
+    <div class="notice" style="margin-bottom:14px;">Usada para calcular las horas extra en la demanda a partir del horario de entrada/salida capturado en cada asunto. Si la ley cambia (se prevé una reducción de jornada a partir de 2027), actualízala aquí — no hace falta tocar código ni la plantilla de Word.</div>
+    <form id="jornadaMaximaForm" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
+      <div class="field" style="margin:0;"><label>Diurna (horas)</label><input type="text" id="jornadaDiurnaInput" value="${JORNADA_MAXIMA.diurna}" style="max-width:100px;"></div>
+      <div class="field" style="margin:0;"><label>Nocturna (horas)</label><input type="text" id="jornadaNocturnaInput" value="${JORNADA_MAXIMA.nocturna}" style="max-width:100px;"></div>
+      <div class="field" style="margin:0;"><label>Mixta (horas)</label><input type="text" id="jornadaMixtaInput" value="${JORNADA_MAXIMA.mixta}" style="max-width:100px;"></div>
+      <button type="submit" class="btn">Guardar</button>
+    </form>
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Respaldo de toda la información</div>
     <div class="notice" style="margin-bottom:14px;">Toda la información (etapas, notas, convenios, pagos, historial) vive ahora en la base de datos MySQL de tu hosting — el respaldo más confiable es el de cPanel (phpMyAdmin &rarr; Exportar, o la herramienta de "Copias de seguridad" de cPanel). Este botón descarga además un respaldo en JSON como referencia rápida.</div>
     <button class="btn secondary" id="descargarRespaldoBtn">Descargar respaldo (.json)</button>
@@ -6122,6 +6492,26 @@ function miCuentaHTML(){
     <div style="margin-top:12px; display:flex; gap:10px;">
       <button class="btn" id="savePjfCredencialesBtn">Guardar</button>
       ${configurado ? `<button class="btn secondary" id="borrarPjfCredencialesBtn">Quitar cuenta guardada</button>` : ''}
+    </div>
+  </div></div>
+  ${edomexCorreoCredencialesHTML()}`;
+}
+
+function edomexCorreoCredencialesHTML(){
+  const c = EDOMEX_CORREO_CREDENCIALES;
+  const configurado = c && c.configurado;
+  return `
+  <div class="notice" style="margin:18px 0;">El Poder Judicial del Estado de México (Tlalnepantla) notifica los acuerdos de tus juicios laborales por un correo institucional (mail.pjedomex.gob.mx) -- NO es un correo normal (no se puede configurar en Outlook/Gmail), solo se consulta entrando a esa página con usuario y contraseña. Guárdalos aquí para que el robot revise esa bandeja por ti y reporte los acuerdos solo. Tu contraseña se guarda cifrada — nadie del despacho puede verla, ni siquiera un administrador.</div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:10px;">Correo de notificaciones electrónicas (Edomex)</div>
+    ${configurado ? `<div class="notice" style="margin-bottom:14px; background:var(--amber-bg,#fdf6e3);">Ya tienes guardado el usuario <strong>${escapeHTML(c.edomex_correo_usuario)}</strong>${c.actualizado_en ? ' (actualizado el '+new Date(c.actualizado_en).toLocaleDateString('es-MX')+')' : ''}. Para cambiarlo, captura los datos de nuevo abajo.</div>` : ''}
+    <form id="edomexCorreoCredencialesForm" class="grid2">
+      <div class="field"><label>Usuario del correo (ej. tu número de cuenta)</label><input type="text" id="edomexCorreoUsuarioInput" placeholder="Tu usuario de mail.pjedomex.gob.mx" value="${configurado ? escapeHTML(c.edomex_correo_usuario) : ''}"></div>
+      <div class="field"><label>Contraseña del correo</label><input type="password" id="edomexCorreoPasswordInput" placeholder="Tu contraseña (siempre hay que volver a escribirla para guardar)"></div>
+    </form>
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button class="btn" id="saveEdomexCorreoCredencialesBtn">Guardar</button>
+      ${configurado ? `<button class="btn secondary" id="borrarEdomexCorreoCredencialesBtn">Quitar cuenta guardada</button>` : ''}
     </div>
   </div></div>`;
 }
@@ -6534,6 +6924,23 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo actualizar: ' + err.message); }
     });
   });
+  document.querySelectorAll('[data-aviso-borrar-doc]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      if(!confirm('¿Borrar el documento subido por el robot para este aviso? Esta acción no se puede deshacer (por ejemplo, si el robot subió el PDF equivocado).')) return;
+      try{
+        await api('POST', 'documentos_delete.php', {id: parseInt(btn.dataset.documentoId)});
+        await api('POST', 'avisos_mark.php', {id: parseInt(btn.dataset.avisoBorrarDoc), estado: 'descartado'});
+        await loadAvisosBoletin();
+        if(ACTIVE_CASE){
+          ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+          await loadDocumentos(ACTIVE_CASE.id);
+          renderModal();
+        }
+        renderViewBody();
+      }catch(err){ alert('No se pudo borrar: ' + err.message); }
+    });
+  });
   document.querySelectorAll('[data-prospecto-abrir]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const id = parseInt(el.dataset.prospectoAbrir);
@@ -6772,6 +7179,24 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo guardar: ' + err.message); }
     });
   }
+  const jornadaMaximaForm = document.getElementById('jornadaMaximaForm');
+  if(jornadaMaximaForm){
+    jornadaMaximaForm.addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const vd = parseFloat(document.getElementById('jornadaDiurnaInput').value);
+      const vn = parseFloat(document.getElementById('jornadaNocturnaInput').value);
+      const vm = parseFloat(document.getElementById('jornadaMixtaInput').value);
+      if([vd,vn,vm].some(v=>isNaN(v) || v<=0)){ alert('Captura las 3 jornadas máximas con un número válido.'); return; }
+      try{
+        await saveConfiguracion('jornada_maxima_diurna', vd);
+        await saveConfiguracion('jornada_maxima_nocturna', vn);
+        await saveConfiguracion('jornada_maxima_mixta', vm);
+        JORNADA_MAXIMA = {diurna: vd, nocturna: vn, mixta: vm};
+        alert('Jornada máxima actualizada. Los documentos de demanda que generes de aquí en adelante usarán este valor.');
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+    });
+  }
   const addDiaInhabilForm = document.getElementById('addDiaInhabilForm');
   if(addDiaInhabilForm){
     addDiaInhabilForm.addEventListener('submit', async (e)=>{
@@ -6821,6 +7246,32 @@ function bindViewBody(){
       try{
         await api('POST', 'pjf_credenciales_set.php', {borrar: true});
         await loadPjfCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); }
+    });
+  }
+  const saveEdomexCorreoCredencialesBtn = document.getElementById('saveEdomexCorreoCredencialesBtn');
+  if(saveEdomexCorreoCredencialesBtn){
+    saveEdomexCorreoCredencialesBtn.addEventListener('click', async ()=>{
+      const edomex_correo_usuario = document.getElementById('edomexCorreoUsuarioInput').value.trim();
+      const edomex_correo_password = document.getElementById('edomexCorreoPasswordInput').value;
+      if(!edomex_correo_usuario || !edomex_correo_password){ alert('Escribe tu usuario y tu contraseña del correo de notificaciones.'); return; }
+      saveEdomexCorreoCredencialesBtn.disabled = true;
+      try{
+        await api('POST', 'edomex_correo_credenciales_set.php', {edomex_correo_usuario, edomex_correo_password});
+        await loadEdomexCorreoCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+      finally{ saveEdomexCorreoCredencialesBtn.disabled = false; }
+    });
+  }
+  const borrarEdomexCorreoCredencialesBtn = document.getElementById('borrarEdomexCorreoCredencialesBtn');
+  if(borrarEdomexCorreoCredencialesBtn){
+    borrarEdomexCorreoCredencialesBtn.addEventListener('click', async ()=>{
+      if(!confirm('¿Quitar tu cuenta guardada del correo de notificaciones de Edomex? El robot dejará de revisar tu bandeja hasta que la vuelvas a capturar.')) return;
+      try{
+        await api('POST', 'edomex_correo_credenciales_set.php', {borrar: true});
+        await loadEdomexCorreoCredenciales();
         renderViewBody();
       }catch(err){ alert('No se pudo quitar: ' + err.message); }
     });
@@ -7364,6 +7815,7 @@ function modalTabContent(k,p,meta){
         ${a.estado==='nuevo' ? `<div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+          ${a.documento_id? `<button class="btn secondary" data-aviso-borrar-doc="${a.id}" data-documento-id="${a.documento_id}" style="padding:6px 12px; font-size:11.5px; color:var(--red);">Borrar documento</button>`:''}
         </div>` : ''}
       </div>`).join("") : '<div class="empty">Sin revisiones registradas todavía.</div>'}
     `;
@@ -7377,23 +7829,31 @@ function modalTabContent(k,p,meta){
           <label>${escapeHTML(f.label)}</label>
           ${f.type==='date' ?
             `<input type="date" class="edit-field" data-field="${f.key}" value="${k[f.key]||''}">` :
+            f.type==='time' ?
+            `<input type="time" class="edit-field" data-field="${f.key}" value="${(k[f.key]||'').slice(0,5)}">` :
             f.type==='tipo_asunto' ?
             tipoAsuntoFieldHTML(k.tipo_asunto!=null ? String(k.tipo_asunto) : '') :
             f.type==='select' ?
             (()=>{
               const actual = k[f.key]!=null ? String(k[f.key]) : '';
+              // Las opciones pueden ser strings simples (valor === texto
+              // mostrado) u objetos {value,label} cuando el valor guardado
+              // debe ser corto (ej. "V") pero el texto mostrado más
+              // descriptivo (ver rescision_fraccion).
+              const opts = f.options.map(o => typeof o === 'string' ? {value:o, label:o} : o);
+              const valores = opts.map(o=>o.value);
               // Si el valor guardado no está en la lista cerrada (dato legado), se
               // agrega como primera opción para no perderlo ni cambiarlo solo.
-              const extra = actual && !f.options.includes(actual) ? `<option value="${escapeHTML(actual)}" selected>${escapeHTML(actual)} (dato anterior — vuelve a elegir para estandarizar)</option>` : '';
+              const extra = actual && !valores.includes(actual) ? `<option value="${escapeHTML(actual)}" selected>${escapeHTML(actual)} (dato anterior — vuelve a elegir para estandarizar)</option>` : '';
               return `<select class="edit-field" data-field="${f.key}" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
                 <option value="">— Sin definir —</option>
                 ${extra}
-                ${f.options.map(o=>`<option value="${escapeHTML(o)}" ${actual===o?'selected':''}>${escapeHTML(o)}</option>`).join("")}
+                ${opts.map(o=>`<option value="${escapeHTML(o.value)}" ${actual===o.value?'selected':''}>${escapeHTML(o.label)}</option>`).join("")}
               </select>`;
             })() :
             f.type==='tribunal' ?
             tribunalFieldHTML(f, k[f.key]!=null ? String(k[f.key]) : '') :
-            f.key==='ultima_nota' ?
+            (f.key==='ultima_nota' || f.type==='textarea') ?
             `<textarea class="edit-field" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
           }
@@ -7468,6 +7928,14 @@ function modalTabContent(k,p,meta){
         ${PLANTILLAS_LIB.map(p=>`<option value="${p.id}">${escapeHTML(p.nombre)}</option>`).join("")}
       </select>
     </div>
+    <div id="prestacionesRescisionPanel" style="display:none; margin-bottom:16px; border:1px solid var(--border); border-radius:10px; padding:14px 16px; background:var(--paper);">
+      <div style="font-family:var(--serif); font-weight:700; font-size:14px; color:var(--ink); margin-bottom:8px;">Prestaciones a incluir (además de la rescisión, que siempre va)</div>
+      <div class="notice" style="margin-bottom:10px;">Desmarca las que no apliquen a este caso. Las letras (B, C, D...) se acomodan solas según lo que dejes marcado.</div>
+      ${PRESTACIONES_RESCISION_OPCIONES.map(o=>`
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:12.5px; color:var(--ink);">
+          <input type="checkbox" class="prestacion-rescision-check" data-key="${o.key}" ${o.checkedPorDefecto?'checked':''}> ${escapeHTML(o.label)}
+        </label>`).join("")}
+    </div>
     <button class="btn" id="genDemandaBtn">Generar documento en Word (.docx)</button>
     <span id="genDemandaStatus" style="margin-left:10px; font-size:12px; color:var(--gray);"></span>
     `;
@@ -7497,13 +7965,23 @@ function modalTabContent(k,p,meta){
       </div>
       <div style="margin-top:10px;"><button class="btn" id="saveConvenioManualBtn">Guardar convenio/pago</button> <span id="avisoClienteConvenio"></span></div>
     </div>
-    <div class="field" style="margin-bottom:14px;">
-      <label>Socio asignado</label>
-      <select id="lawyerSelect" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
-        <option value="" ${!k.abogado_id?'selected':''}>Sin asignar</option>
-        ${EQUIPO.map(u=>`<option value="${u.id}" ${k.abogado_id===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
-      </select>
+    <div class="grid2" style="margin-bottom:14px;">
+      <div class="field">
+        <label>Socio asignado</label>
+        <select id="lawyerSelect" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+          <option value="" ${!k.abogado_id?'selected':''}>Sin asignar</option>
+          ${EQUIPO.map(u=>`<option value="${u.id}" ${k.abogado_id===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+        </select>
+      </div>
+      <div class="field">
+        <label>Segundo socio (opcional)</label>
+        <select id="lawyerSelect2" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
+          <option value="" ${!k.abogado_id_2?'selected':''}>Sin asignar</option>
+          ${EQUIPO.map(u=>`<option value="${u.id}" ${k.abogado_id_2===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+        </select>
+      </div>
     </div>
+    <div class="notice" style="margin-bottom:14px;">Un asunto puede asignarse a dos socios a la vez si se apoyan entre ellos en el mismo caso — ambos ven el asunto en su agenda y pueden editarlo igual.</div>
     <div class="field" style="margin-top:14px;">
       <label>Notas internas del despacho</label>
       <textarea id="notasInternas" placeholder="Notas de seguimiento, acuerdos, pendientes...">${escapeHTML(meta.notas||'')}</textarea>
@@ -7520,6 +7998,12 @@ function modalTabContent(k,p,meta){
     <div class="notice" style="margin-bottom:10px;">Comparte con tu cliente su apellido y este código, para que consulte su asunto en "Acceder como cliente" — sin este código no puede ver nada.</div>
     <div id="codigoAccesoBox" style="font-family:var(--mono); font-size:13px; color:var(--gray);">Cargando código de acceso…</div>
     <button class="btn secondary" id="regenCodigoBtn" style="margin-top:8px;">Generar código nuevo (invalida el anterior)</button>
+    ${CURRENT_USER.role==='Administrador' ? `
+    <div class="divider"></div>
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--red); margin-bottom:6px;">Zona de riesgo</div>
+    <div class="notice" style="margin-bottom:10px;">Borra este expediente por completo: datos, etapas, pagos, pendientes, notas, historial y documentos. No se puede deshacer — úsalo solo para corregir un asunto duplicado o dado de alta por error.</div>
+    <button class="btn secondary" id="deleteExpedienteBtn" style="border-color:var(--red); color:var(--red);">Borrar este expediente</button>
+    ` : ""}
   `;
   if(MODAL_TAB==='etapas'){
     const estancado = estancadoInfo(k);
@@ -7792,12 +8276,30 @@ function bindModalTabEvents(){
   if(exportarCalculoBtn){
     exportarCalculoBtn.addEventListener('click', ()=> abrirCalculoPDF(ACTIVE_CASE));
   }
+  const escritoPlantillaSelect = document.getElementById('escritoPlantillaSelect');
+  const prestacionesRescisionPanel = document.getElementById('prestacionesRescisionPanel');
+  if(escritoPlantillaSelect && prestacionesRescisionPanel){
+    const togglePanel = ()=>{
+      const opt = escritoPlantillaSelect.options[escritoPlantillaSelect.selectedIndex];
+      const esRescision = opt && opt.textContent === NOMBRE_PLANTILLA_RESCISION_51;
+      prestacionesRescisionPanel.style.display = esRescision ? 'block' : 'none';
+    };
+    escritoPlantillaSelect.addEventListener('change', togglePanel);
+    togglePanel();
+  }
   const genDemandaBtn = document.getElementById('genDemandaBtn');
   if(genDemandaBtn){
     genDemandaBtn.addEventListener('click', async ()=>{
       const status = document.getElementById('genDemandaStatus');
       const select = document.getElementById('escritoPlantillaSelect');
       const elegido = select ? select.value : 'demanda';
+      const opt = select ? select.options[select.selectedIndex] : null;
+      const esRescision51 = opt && opt.textContent === NOMBRE_PLANTILLA_RESCISION_51;
+      const extraTags = {};
+      if(esRescision51){
+        const selKeys = Array.from(document.querySelectorAll('.prestacion-rescision-check:checked')).map(c=>c.dataset.key);
+        extraTags.prestaciones_opcionales = construirPrestacionesOpcionalesTexto(ACTIVE_CASE, selKeys);
+      }
       genDemandaBtn.disabled = true;
       if(status) status.textContent = 'Generando...';
       const onDone = ()=>{ genDemandaBtn.disabled = false; if(status) status.textContent = 'Listo ✓ revisa tus descargas.'; };
@@ -7807,7 +8309,7 @@ function bindModalTabEvents(){
       } else {
         try{
           const p = await api('GET', 'plantillas_get.php?id=' + elegido);
-          generarDocxDesdePlantilla(ACTIVE_CASE, p.base64, p.nombre, onDone, onError);
+          generarDocxDesdePlantilla(ACTIVE_CASE, p.base64, p.nombre, onDone, onError, extraTags);
         }catch(err){ onError(err); }
       }
     });
@@ -8124,7 +8626,8 @@ function bindModalTabEvents(){
           notas: document.getElementById('notasInternas').value,
           cobro_pendiente: document.getElementById('cobroPendiente').checked,
           concluido_manual: document.getElementById('concluidoManual').checked,
-          abogado_id: document.getElementById('lawyerSelect').value
+          abogado_id: document.getElementById('lawyerSelect').value,
+          abogado_id_2: document.getElementById('lawyerSelect2').value
         });
         saveBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(saveBtn) saveBtn.textContent = "Guardar cambios"; }, 1600);
@@ -8132,6 +8635,25 @@ function bindModalTabEvents(){
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         renderViewBody();
       }catch(err){ alert('No se pudo guardar: ' + err.message); }
+    });
+  }
+  const deleteBtn = document.getElementById('deleteExpedienteBtn');
+  if(deleteBtn){
+    deleteBtn.addEventListener('click', async ()=>{
+      const k = ACTIVE_CASE;
+      if(!confirm('¿Borrar por completo el expediente de "'+(k.actor||'sin nombre')+'" vs "'+(k.demandado||'')+'"? Se perderán sus datos, etapas, pagos, pendientes, notas, historial y documentos. Esto NO se puede deshacer.')) return;
+      if(!confirm('Confírmalo una vez más: se va a borrar permanentemente. ¿Continuar?')) return;
+      deleteBtn.disabled = true; deleteBtn.textContent = 'Borrando…';
+      try{
+        await api('POST', 'expedientes_delete.php', {id: k.id});
+        closeModal();
+        await refreshBootstrap();
+        VIEW = 'tablero';
+        render();
+      }catch(err){
+        alert('No se pudo borrar: ' + err.message);
+        deleteBtn.disabled = false; deleteBtn.textContent = 'Borrar este expediente';
+      }
     });
   }
 }

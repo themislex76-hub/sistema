@@ -36,13 +36,29 @@ encuentra un expediente que tengas capturado con tribunal de CDMX.
 Una vez que la prueba manual funciona, prográmalo para que corra solo
 una vez al día (por ejemplo, temprano en la mañana):
 
-- **Windows**: usa el "Programador de tareas" (Task Scheduler) — crea una
-  tarea que ejecute `node` con este archivo (`cdmx.js`) como argumento,
-  con "Iniciar en" apuntando a esta carpeta.
-- **Mac/Linux**: agrega una línea a tu crontab (`crontab -e`), por
-  ejemplo para las 6:30 am:
+- **Windows**: ya incluye `run_diario.bat` (entra a esta carpeta y corre
+  `node cdmx.js`, guardando la salida en `robot.log`). Para programarlo
+  sin tener que navegar el Programador de tareas a mano, abre PowerShell
+  **como administrador** y pega este comando (ajusta la ruta si tu carpeta
+  no es exactamente esta):
   ```
-  30 6 * * * cd /ruta/completa/a/robots/cdmx && /usr/local/bin/node cdmx.js >> robot.log 2>&1
+  schtasks /create /tn "CDMX Expertos Laborales" /tr "C:\Users\Ruben\Desktop\ROBOTS\CDMX\run_diario.bat" /sc daily /st 06:20 /rl LIMITED
+  ```
+  Esto crea una tarea que corre todos los días a las 6:20 am (20 minutos
+  después del robot Federal, para no empalmarse), aunque no hayas
+  iniciado sesión con la ventana abierta (mientras la computadora esté
+  prendida). Para comprobar que quedó programada:
+  ```
+  schtasks /query /tn "CDMX Expertos Laborales"
+  ```
+  Y para quitarla si algún día ya no la quieres:
+  ```
+  schtasks /delete /tn "CDMX Expertos Laborales" /f
+  ```
+- **Mac/Linux**: agrega una línea a tu crontab (`crontab -e`), por
+  ejemplo para las 6:20 am:
+  ```
+  20 6 * * * cd /ruta/completa/a/robots/cdmx && /usr/local/bin/node cdmx.js >> robot.log 2>&1
   ```
 
 ## Cómo funciona
