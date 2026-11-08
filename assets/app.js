@@ -2362,6 +2362,7 @@ const CATEGORIA_DOCUMENTO_LABEL = {
   pruebas: 'Pruebas',
   actas: 'Actas de audiencia',
   convenio: 'Convenio',
+  acuerdo: 'Acuerdo (boletín)',
   otro: 'Otro',
 };
 
@@ -6296,6 +6297,7 @@ function agendaHTML(){
         <div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+          ${a.documento_id? `<button class="btn secondary" data-aviso-borrar-doc="${a.id}" data-documento-id="${a.documento_id}" style="padding:6px 12px; font-size:11.5px; color:var(--red);">Borrar documento</button>`:''}
         </div>
       </div>`).join("")}</div>
   </div>` : ""}
@@ -6888,6 +6890,23 @@ function bindViewBody(){
         }
         renderViewBody();
       }catch(err){ alert('No se pudo actualizar: ' + err.message); }
+    });
+  });
+  document.querySelectorAll('[data-aviso-borrar-doc]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      if(!confirm('¿Borrar el documento subido por el robot para este aviso? Esta acción no se puede deshacer (por ejemplo, si el robot subió el PDF equivocado).')) return;
+      try{
+        await api('POST', 'documentos_delete.php', {id: parseInt(btn.dataset.documentoId)});
+        await api('POST', 'avisos_mark.php', {id: parseInt(btn.dataset.avisoBorrarDoc), estado: 'descartado'});
+        await loadAvisosBoletin();
+        if(ACTIVE_CASE){
+          ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+          await loadDocumentos(ACTIVE_CASE.id);
+          renderModal();
+        }
+        renderViewBody();
+      }catch(err){ alert('No se pudo borrar: ' + err.message); }
     });
   });
   document.querySelectorAll('[data-prospecto-abrir]').forEach(el=>{
@@ -7738,6 +7757,7 @@ function modalTabContent(k,p,meta){
         ${a.estado==='nuevo' ? `<div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+          ${a.documento_id? `<button class="btn secondary" data-aviso-borrar-doc="${a.id}" data-documento-id="${a.documento_id}" style="padding:6px 12px; font-size:11.5px; color:var(--red);">Borrar documento</button>`:''}
         </div>` : ''}
       </div>`).join("") : '<div class="empty">Sin revisiones registradas todavía.</div>'}
     `;

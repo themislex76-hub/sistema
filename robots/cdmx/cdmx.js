@@ -236,13 +236,39 @@ async function obtenerExpedientesMonitoreados() {
   return res.data.data.expedientes;
 }
 
-async function reportarAviso(expedienteId, resumen, fecha) {
+async function reportarAviso(expedienteId, resumen, fecha, documentoId) {
   await axios.post(config.sistema.apiBase + '/avisos_ingest.php', {
     expediente_id: expedienteId,
     fuente: 'cdmx_local',
     resumen,
     fecha_publicacion: fecha,
+    documento_id: documentoId || undefined,
   }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
+}
+
+// Sube el texto del boletin (el caso ya recortado, no el PDF completo) como
+// un documento mas del expediente -- aqui no hay PDF que descargar como en
+// Federal, asi que se guarda el texto tal cual en un .txt, para que quede
+// adjunto en la pestana "Documentos" sin tener que ir a buscarlo al
+// boletin original. Si falla, no debe tronar el reporte del aviso: se
+// regresa null y el aviso se manda igual, solo sin documento adjunto.
+async function subirTextoBoletinAlSistema(expedienteId, tribunal, resumen, fecha, numeroExp) {
+  try {
+    const contenido = 'Boletin Judicial CDMX -- ' + tribunal + '\n'
+      + 'Fecha del boletin: ' + fecha + '\n'
+      + 'Expediente: ' + numeroExp + '\n\n'
+      + resumen;
+    const res = await axios.post(config.sistema.apiBase + '/documentos_subir_robot.php', {
+      expediente_id: expedienteId,
+      nombre_archivo: 'Boletin_CDMX_' + fecha + '_' + numeroExp.replace(/\//g, '-') + '.txt',
+      contenido_base64: Buffer.from(contenido, 'utf8').toString('base64'),
+      categoria: 'acuerdo',
+    }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
+    return res.data.data.id;
+  } catch (e) {
+    console.log('    (no se pudo subir el texto del boletin como documento: ' + e.message + ')');
+    return null;
+  }
 }
 
 async function main() {
@@ -306,7 +332,8 @@ async function main() {
           + '", el boletin dice: "' + c.resumen.slice(0, 150) + '..."');
         continue;
       }
-      await reportarAviso(match.id, c.resumen, b.fecha);
+      const documentoId = await subirTextoBoletinAlSistema(match.id, c.tribunal, c.resumen, b.fecha, c.exp);
+      await reportarAviso(match.id, c.resumen, b.fecha, documentoId);
       reportados++;
       console.log('  Aviso reportado: expediente ' + c.exp);
     }

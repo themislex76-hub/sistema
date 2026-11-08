@@ -15,6 +15,7 @@ $fuente = (string)($in['fuente'] ?? 'otro');
 $resumen = trim((string)($in['resumen'] ?? ''));
 $fechaPublicacion = ($in['fecha_publicacion'] ?? '') !== '' ? $in['fecha_publicacion'] : null;
 $url = trim((string)($in['url_verificacion'] ?? ''));
+$documentoId = (int)($in['documento_id'] ?? 0);
 
 if ($expedienteId <= 0) fail('Falta el expediente.', 400);
 if ($resumen === '') fail('Falta el resumen del aviso.', 400);
@@ -35,12 +36,13 @@ if ($existe->fetch()) {
 }
 
 $stmt = $pdo->prepare(
-    'INSERT INTO avisos_boletin (expediente_id, fuente, origen, fecha_publicacion, resumen, url_verificacion, estado)
-     VALUES (:eid, :fuente, \'automatico\', :fecha, :resumen, :url, \'nuevo\')'
+    'INSERT INTO avisos_boletin (expediente_id, fuente, origen, fecha_publicacion, resumen, url_verificacion, documento_id, estado)
+     VALUES (:eid, :fuente, \'automatico\', :fecha, :resumen, :url, :documento_id, \'nuevo\')'
 );
 $stmt->execute([
     ':eid' => $expedienteId, ':fuente' => $fuente, ':fecha' => $fechaPublicacion,
     ':resumen' => $resumen, ':url' => $url !== '' ? $url : null,
+    ':documento_id' => $documentoId > 0 ? $documentoId : null,
 ]);
 
 respond(['id' => (int)$pdo->lastInsertId()], 201);

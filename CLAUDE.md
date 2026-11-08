@@ -129,6 +129,49 @@ completo"):
     máquina del usuario, ver README.md de esta carpeta) -- por ahora solo
     se ha corrido a mano.
 
+## Avisos de boletín con documento adjunto (8 nov 2026)
+- Pedido del usuario: que al reportarse un acuerdo/aviso nuevo, se pueda
+  ver (o de plano se descargue) el documento sin tener que entrar a mano al
+  portal de origen.
+- **Migración pendiente de correr: `sql/migraciones/056_avisos_documento_robot.sql`**
+  (agrega `documento_id` a `avisos_boletin` + categoría `'acuerdo'` en
+  `expediente_documentos.categoria`, y de paso agrega `'constancia_no_conciliacion'`
+  a ese mismo ENUM -- el código ya la esperaba como categoría válida pero
+  nunca se había agregado en la base de datos). **Esta es la migración más
+  reciente escrita -- NO se ha confirmado que el usuario ya la haya
+  corrido; preguntar/revisar antes de asumir que ya está aplicada.**
+- Diseño: se reutiliza el almacén de documentos que ya tiene cada
+  expediente (pestaña "Documentos", `api/documentos_descargar.php`, mismo
+  control de acceso de siempre) en vez de inventar uno nuevo. Nuevo
+  endpoint `api/documentos_subir_robot.php` (protegido con la llave de
+  robot) para que CUALQUIER robot pueda subir un archivo a un expediente.
+  El aviso (`avisos_boletin.documento_id`) queda ligado a ese documento; el
+  link "ver fuente" que ya existía en la tarjeta de aviso ahora abre ese
+  documento directo (`documentos_descargar.php?id=X&inline=1`), y se
+  agregó un botón nuevo "Borrar documento" junto a "Marcar revisado" /
+  "Descartar" (en Agenda general y en la pestaña Boletín del expediente)
+  para cuando el robot haya subido el PDF equivocado -- borra el documento
+  y descarta el aviso. `app.js?v=112`.
+- **Federal** (`federal.js`): cuando encuentra un acuerdo nuevo, antes de
+  reportarlo intenta descargar su PDF con Playwright (`descargarPdfAcuerdo()`)
+  dándole clic al botón de la fila que parezca ser "ver documento" (no se
+  conoce el encabezado exacto de esa columna -- se intentan varios nombres
+  probables y si no, la última columna) y cubriendo con Promise.race los 3
+  comportamientos posibles que no se pudieron ver en vivo: PDF servido
+  directo en la misma pestaña, pestaña nueva que dispara su propia
+  descarga/respuesta PDF, o pestaña nueva que ya es la URL del PDF. Si no
+  consigue el PDF, el aviso se manda igual nada más sin documento adjunto
+  (nunca bloquea el aviso). **Sin probar en vivo todavía** -- es la parte
+  menos probada de todo el robot Federal (a diferencia del resto, que sí se
+  construyó viendo capturas reales antes de escribirse); muy probable que
+  truene o no encuentre el botón correcto en la primera corrida real --
+  pedir el terminal completo + `debug_pdf_*.png` si pasa, no adivinar el
+  selector sin eso.
+- **CDMX** (`cdmx.js`): no hay PDF que descargar ahí (el boletín ya se lee
+  como texto), así que sube el texto del caso ya recortado como un `.txt`
+  (`subirTextoBoletinAlSistema()`) -- mucho más simple y sin el riesgo de
+  lo anterior, debería funcionar a la primera.
+
 ## Robot de jurisprudencia (`robots/jurisprudencia/`)
 - Scrapea sjf2.scjn.gob.mx (Semanario Judicial de la Federación), materia
   laboral, y manda tesis nuevas a `api/jurisprudencia_ingest.php`.

@@ -37,6 +37,7 @@ foreach ($stmt->fetchAll() as $r) {
         'fecha_publicacion' => $r['fecha_publicacion'],
         'resumen' => $r['resumen'],
         'url_verificacion' => $r['url_verificacion'],
+        'documento_id' => $r['documento_id'] !== null ? (int)$r['documento_id'] : null,
         'estado' => $r['estado'],
         'creado_por_nombre' => $r['creado_por_nombre'],
         'creado_en' => $r['creado_en'],

@@ -94,13 +94,15 @@ function cast_numeric_fields(array $row): array
 // alcance HTTP directo (data/.htaccess tiene "Require all denied"); solo se
 // sirven a través de documentos_descargar.php, que valida sesión y permisos.
 // ----------------------------------------------------------------------------
-const CATEGORIA_DOCUMENTO_KEYS = ['constancia_no_conciliacion', 'demanda', 'contestacion', 'pruebas', 'actas', 'convenio', 'otro'];
+const CATEGORIA_DOCUMENTO_KEYS = ['constancia_no_conciliacion', 'demanda', 'contestacion', 'pruebas', 'actas', 'convenio', 'acuerdo', 'otro'];
 
-const EXTENSION_DOCUMENTO_PERMITIDA = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
+const EXTENSION_DOCUMENTO_PERMITIDA = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx', 'txt'];
 
-// Tipos que el navegador puede mostrar solo, sin descargar (PDF e imágenes).
+// Tipos que el navegador puede mostrar solo, sin descargar (PDF, imágenes y
+// texto plano -- este último es lo que sube el robot de CDMX, que no tiene
+// un PDF que descargar, solo el texto ya recortado del boletín).
 // Word/Excel no se pueden visualizar así — siempre se descargan.
-const EXTENSION_VISUALIZABLE_INLINE = ['pdf', 'jpg', 'jpeg', 'png'];
+const EXTENSION_VISUALIZABLE_INLINE = ['pdf', 'jpg', 'jpeg', 'png', 'txt'];
 
 function documentos_dir(int $expedienteId): string
 {

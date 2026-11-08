@@ -70,13 +70,95 @@ async function obtenerCuentasPJF() {
   return res.data.data.cuentas;
 }
 
-async function reportarAviso(expedienteId, resumen, fecha) {
+async function reportarAviso(expedienteId, resumen, fecha, documentoId) {
   await axios.post(`${config.sistema.apiBase}/avisos_ingest.php`, {
     expediente_id: expedienteId,
     fuente: 'federal_laboral',
     resumen,
     fecha_publicacion: fecha,
+    documento_id: documentoId || undefined,
   }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
+}
+
+// Sube el PDF del acuerdo (ya descargado del portal) al mismo almacén de
+// documentos que usa cada expediente -- regresa el id del documento, o null
+// si algo falla (nunca debe tronar el reporte del aviso por esto).
+async function subirPdfAlSistema(buffer, expedienteIdSistema, nombreArchivo) {
+  try {
+    const res = await axios.post(`${config.sistema.apiBase}/documentos_subir_robot.php`, {
+      expediente_id: expedienteIdSistema,
+      nombre_archivo: nombreArchivo,
+      contenido_base64: buffer.toString('base64'),
+      categoria: 'acuerdo',
+    }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
+    return res.data.data.id;
+  } catch (e) {
+    console.log(`    (no se pudo subir el PDF al sistema: ${e.message})`);
+    return null;
+  }
+}
+
+// Intenta conseguir los bytes del PDF de un acuerdo dándole clic al botón
+// de "ver documento" de su fila. NO se sabe de antemano qué pasa después
+// del clic (no se pudo ver en vivo desde aquí) -- según lo que describió el
+// usuario de los pasos manuales ("si le das al ojito abre atrás un visor y
+// si das la flechita baja el pdf"), puede ser: (a) el PDF se sirve directo
+// como respuesta a esta misma página, (b) se abre una pestaña nueva con un
+// visor que dispara su propia descarga o responde el PDF directo, o (c) la
+// pestaña nueva YA ES la URL del PDF. Se cubren las 3 a la vez con
+// listeners en paralelo; si ninguna atina, se regresa null (el aviso se
+// manda igual, solo sin documento) y se deja evidencia para ajustar sin
+// adivinar.
+async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
+  const objetivo = celda.locator('button, a, [role="button"]').first();
+  const esBoton = (await objetivo.count()) > 0;
+  if (!esBoton) return null;
+
+  const esPdf = (resp) => (resp.headers()['content-type'] || '').toLowerCase().includes('pdf');
+  const esperaRespuesta = page.waitForResponse(esPdf, { timeout: 12000 }).catch(() => null);
+  const esperaDescarga = page.waitForEvent('download', { timeout: 12000 }).catch(() => null);
+  const esperaPaginaNueva = context.waitForEvent('page', { timeout: 12000 }).catch(() => null);
+
+  await objetivo.click({ timeout: 8000 }).catch(() => {});
+
+  const [respuesta, descarga, paginaNueva] = await Promise.all([esperaRespuesta, esperaDescarga, esperaPaginaNueva]);
+
+  if (descarga) {
+    const ruta = await descarga.path().catch(() => null);
+    if (ruta) return fs.readFileSync(ruta);
+  }
+  if (paginaNueva) {
+    await paginaNueva.waitForLoadState('load', { timeout: 8000 }).catch(() => {});
+    const descargaEnNueva = await paginaNueva.waitForEvent('download', { timeout: 8000 }).catch(() => null);
+    if (descargaEnNueva) {
+      const ruta = await descargaEnNueva.path().catch(() => null);
+      await paginaNueva.close().catch(() => {});
+      if (ruta) return fs.readFileSync(ruta);
+      return null;
+    }
+    const respuestaEnNueva = await paginaNueva.waitForResponse(esPdf, { timeout: 8000 }).catch(() => null);
+    if (respuestaEnNueva) {
+      const cuerpo = await respuestaEnNueva.body().catch(() => null);
+      await paginaNueva.close().catch(() => {});
+      return cuerpo;
+    }
+    // Último recurso: la pestaña nueva ya navegó directo a la URL del PDF.
+    const urlNueva = paginaNueva.url();
+    await paginaNueva.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+    await paginaNueva.close().catch(() => {});
+    if (/\.pdf(\?|$)/i.test(urlNueva)) {
+      const r = await context.request.get(urlNueva).catch(() => null);
+      if (r && r.ok()) return await r.body();
+    }
+    console.log(`    AVISO: se abrió una pestaña nueva (${urlNueva}) pero no se pudo obtener el PDF -- revisa debug_pdf_${etiquetaDebug}.png.`);
+    return null;
+  }
+  if (respuesta) {
+    return await respuesta.body().catch(() => null);
+  }
+  await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+  console.log(`    AVISO: no se detectó ni descarga ni pestaña nueva ni respuesta PDF al darle clic -- revisa debug_pdf_${etiquetaDebug}.png.`);
+  return null;
 }
 
 // Login confirmado que SÍ funciona (corrida real: "Login PJF OK") -- se
@@ -260,10 +342,26 @@ async function leerFilasVistaGlobal(page) {
   return leerTablaPorEncabezados(tabla);
 }
 
+// Busca en la fila la celda que tenga el botón para ver/descargar el
+// documento del acuerdo. No se conoce el nombre exacto del encabezado (no
+// se pudo ver en vivo desde aquí) -- se intentan varios nombres probables
+// primero y, si ninguno aparece, se cae de respaldo a la ÚLTIMA columna de
+// la fila (ahí suele vivir la acción, como ya pasó con "Ver Expediente
+// Electrónico" en Vista Global).
+function celdaBotonDocumento(fila) {
+  const candidatosHeader = ['Documento Acuerdo', 'Ver Documento', 'Documento', 'Acuerdo', 'Ver Acuerdo', 'Acciones', 'Ver'];
+  for (const h of candidatosHeader) {
+    if (fila[h] && fila[h].celda) return fila[h].celda;
+  }
+  const headers = Object.keys(fila);
+  if (!headers.length) return null;
+  return fila[headers[headers.length - 1]].celda;
+}
+
 // Procesa UN expediente ya abierto (después de darle clic al "ojito"):
 // lee su tabla de acuerdos, reporta los que tengan un "No." mayor al que
 // ya se tenía guardado para ese expediente, y regresa cuántos reportó.
-async function procesarExpediente(page, numeroExpediente, match, estado) {
+async function procesarExpediente(context, page, numeroExpediente, match, estado) {
   const ok = await page.getByText('Fecha de Acuerdo', { exact: false }).first()
     .waitFor({ timeout: 15000 }).then(() => true).catch(() => false);
   if (!ok) {
@@ -285,7 +383,32 @@ async function procesarExpediente(page, numeroExpediente, match, estado) {
     const fechaPublicacion = (fila['Fecha de Publicación'] || {}).texto || '';
     const resumen = `Acuerdo No. ${no} del expediente ${numeroExpediente}, de fecha ${fechaAcuerdo || '(sin fecha)'}`
       + (fechaPublicacion ? `, publicado el ${fechaPublicacion}.` : '.');
-    await reportarAviso(match.id, resumen, parseFechaMX(fechaPublicacion || fechaAcuerdo));
+
+    let documentoId = null;
+    try {
+      const celda = celdaBotonDocumento(fila);
+      const pdf = celda ? await descargarPdfAcuerdo(context, page, celda, `${key}_${no}`) : null;
+      if (pdf) {
+        documentoId = await subirPdfAlSistema(pdf, match.id, `Acuerdo_No_${no}_Exp_${numeroExpediente.replace(/\//g, '-')}.pdf`);
+      }
+    } catch (e) {
+      console.log(`    (no se pudo obtener el PDF del acuerdo No. ${no}: ${e.message})`);
+    }
+
+    // El clic para ver el documento pudo haber navegado la MISMA pestaña
+    // directo al PDF (en vez de abrir una pestaña nueva) -- si la tabla de
+    // acuerdos ya no está visible, hay que regresar antes de seguir con la
+    // siguiente fila (si no, las filas restantes de este "for" ya no
+    // encuentran sus celdas y truena).
+    const siguetabla = await page.getByText('Fecha de Acuerdo', { exact: false }).first()
+      .isVisible({ timeout: 2000 }).catch(() => false);
+    if (!siguetabla) {
+      await page.goBack({ timeout: 10000 }).catch(() => {});
+      await page.getByText('Fecha de Acuerdo', { exact: false }).first()
+        .waitFor({ timeout: 10000 }).catch(() => {});
+    }
+
+    await reportarAviso(match.id, resumen, parseFechaMX(fechaPublicacion || fechaAcuerdo), documentoId);
     reportados++;
     console.log(`    Aviso reportado: expediente ${numeroExpediente}, acuerdo No. ${no}.`);
     if (no > maxNo) maxNo = no;
@@ -351,7 +474,7 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
       const boton = botonVer.locator('button, a, [role="button"]').first();
       try {
         await boton.click();
-        reportados += await procesarExpediente(page, numExp, match, estado);
+        reportados += await procesarExpediente(context, page, numExp, match, estado);
       } catch (e) {
         console.log(`    Error revisando el expediente ${numExp}: ${e.message}`);
         await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}_${normalizeExp(numExp)}.png`), fullPage: true }).catch(() => {});
