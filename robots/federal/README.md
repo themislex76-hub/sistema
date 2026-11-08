@@ -38,9 +38,24 @@ en la computadora del despacho.
 
 ## Dejarlo corriendo solo, todos los días
 
-- **Windows**: usa el "Programador de tareas" (Task Scheduler) — crea
-  una tarea que ejecute `node` con este archivo (`federal.js`) como
-  argumento, con "Iniciar en" apuntando a esta carpeta.
+- **Windows**: ya incluye `run_diario.bat` (entra a esta carpeta y corre
+  `node federal.js`, guardando la salida en `robot.log`). Para programarlo
+  sin tener que navegar el Programador de tareas a mano, abre PowerShell
+  **como administrador** y pega este comando (ajusta la ruta si tu carpeta
+  no es exactamente esta):
+  ```
+  schtasks /create /tn "Federal Expertos Laborales" /tr "C:\Users\Ruben\Desktop\ROBOTS\FEDERAL\run_diario.bat" /sc daily /st 06:00 /rl LIMITED
+  ```
+  Esto crea una tarea que corre todos los días a las 6:00 am, aunque no
+  hayas iniciado sesión con la ventana abierta (mientras la computadora
+  esté prendida). Para comprobar que quedó programada:
+  ```
+  schtasks /query /tn "Federal Expertos Laborales"
+  ```
+  Y para quitarla si algún día ya no la quieres:
+  ```
+  schtasks /delete /tn "Federal Expertos Laborales" /f
+  ```
 - **Mac/Linux/VPS**: agrega una línea a tu crontab (`crontab -e`), por
   ejemplo para las 6:00 am:
   ```
