@@ -276,7 +276,14 @@ async function clickTextoVisible(page, texto, exact = true, timeoutMs = 30000) {
   const n = await candidatos.count();
   for (let i = 0; i < n; i++) {
     const el = candidatos.nth(i);
-    if (await el.isVisible().catch(() => false)) {
+    // OJO: el.isVisible() NO espera de verdad, es una revisión instantánea
+    // (mismo defecto real ya encontrado con el modal del documento: a
+    // veces el elemento SÍ se vuelve visible un instante después de que
+    // isVisible() ya había dicho que no -- confirmado con una corrida
+    // real donde este clic tronaba con 0 modales/fondos bloqueando nada).
+    // waitFor({state:'visible'}) sí reintenta hasta que aparezca.
+    const visible = await el.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+    if (visible) {
       await el.click({ timeout: timeoutMs });
       return true;
     }
