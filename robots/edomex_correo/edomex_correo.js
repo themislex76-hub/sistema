@@ -196,14 +196,30 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     const n = await filas.count();
     console.log(`  ${n} correo(s) de "Notificacion Electronica Laboral" visibles en la bandeja.`);
     let maxVistoEstaCorrida = ultimoVisto;
+    let yaAvisoDiagnostico = false;
     for (let i = 0; i < n; i++) {
+      // Pausa chica entre fila y fila -- confirmado real: la página se
+      // cayó ("Page crashed") después de varios clics seguidos sin
+      // esperar, probablemente por abrir correos muy rápido uno tras
+      // otro dentro de la misma app (Carbonio).
+      await page.waitForTimeout(800);
       const fila = filas.nth(i);
+      await fila.scrollIntoViewIfNeeded().catch(() => {});
       await fila.click({ timeout: 10000 }).catch(() => {});
-      await page.waitForTimeout(1500);
+      // El texto que matchea puede no ser el elemento clickeable real
+      // (puede ser un <span> suelto adentro de la fila, no la fila
+      // entera) -- se espera de verdad a que la URL cambie a
+      // ".../conversation/-<id>", no solo un timeout fijo.
+      await page.waitForURL(/conversation\/-?\d+/, { timeout: 8000 }).catch(() => {});
       const url = page.url();
       const idConversacion = (/conversation\/(-?\d+)/.exec(url) || [])[1];
       if (!idConversacion) {
         console.log(`    (fila ${i}: no se pudo leer el id de conversación de la URL "${url}" -- se omite)`);
+        if (!yaAvisoDiagnostico) {
+          yaAvisoDiagnostico = true;
+          await page.screenshot({ path: path.join(__dirname, `debug_fila_${i}.png`), fullPage: true }).catch(() => {});
+          console.log(`    Captura guardada: debug_fila_${i}.png (para ver qué pasó al darle clic a esta fila)`);
+        }
         continue;
       }
       if (ultimoVisto !== null && Number(idConversacion) <= Number(ultimoVisto)) {
