@@ -218,7 +218,7 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
     return pdfTemprano;
   }
   if (!hayModal) {
-    await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+    await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true, timeout: 90000 }).catch(() => {});
     // La captura ya mostró que SÍ aparece un fondo oscuro (el backdrop) pero
     // nunca el cuadro del modal -- en vez de seguir adivinando por CSS, se
     // vuelca el estado real del DOM del modal (clases, estilo, si existe)
@@ -309,7 +309,7 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   }
 
   if (!pdf) {
-    await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+    await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true, timeout: 90000 }).catch(() => {});
     const htmlModal = await modal.innerHTML().catch((e) => `(no se pudo leer: ${e.message})`);
     console.log(`    AVISO: no se pudo descargar el PDF desde el modal del documento -- revisa debug_pdf_${etiquetaDebug}.png.`);
     console.log(`    HTML real adentro del modal (primeros 1000 caracteres): ${htmlModal.replace(/\s+/g, ' ').trim().slice(0, 1000)}`);
@@ -525,7 +525,7 @@ async function cerrarModalSiAparece(page, etiquetaDebug) {
 
   const texto = await modal.innerText().catch(() => '(no se pudo leer el texto)');
   console.log(`  Apareció una ventana emergente al entrar -- texto: "${texto.replace(/\s+/g, ' ').trim().slice(0, 300)}"`);
-  await page.screenshot({ path: path.join(__dirname, `debug_modal_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+  await page.screenshot({ path: path.join(__dirname, `debug_modal_${etiquetaDebug}.png`), fullPage: true, timeout: 90000 }).catch(() => {});
 
   // "Persona Física" es una tarjeta (ícono + texto) -- se intenta con el
   // texto, con su tarjeta contenedora (el padre) y, si nada cierra el
@@ -747,6 +747,14 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
     // acaba de cerrar (confirmado real: pasó en las 2 cuentas de la misma
     // corrida, justo después del clic forzado) -- nunca está de más.
     await cerrarCualquierModalAbierto(page);
+    // Confirmado real: justo después de cerrar el modal con clic forzado,
+    // el primer intento de clic al menú puede tronar con "no encontrado"
+    // aunque el texto SÍ esté en el DOM -- probablemente la página sigue
+    // reacomodándose (AJAX pendiente) justo en ese instante. Un respiro
+    // corto aquí reduce ese intermitente sin perder tiempo cuando no hace
+    // falta (networkidle ya resuelve rápido si no hay nada pendiente).
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(1000);
     // "Consulta de Expediente Electrónico" es un menú con submenú (se
     // confirmó con una corrida real: el texto de la página mostraba
     // "...Consulta de Expediente Electrónico Vista Global Vista por Órgano
@@ -772,7 +780,7 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
     }
     if (!entroMenu) {
       console.log('  AVISO: no se encontró el menú "Consulta de Expediente Electrónico" -- el portal pudo cambiar otra vez.');
-      await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true })
+      await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true, timeout: 90000 })
         .then(() => console.log(`  Captura guardada: debug_error_${etiquetaDebug}.png`))
         .catch((e) => console.log(`  (no se pudo guardar la captura: ${e.message})`));
       const diagnostico = await page.evaluate(() => ({
@@ -813,7 +821,7 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
     const entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false);
     if (!entroVistaGlobal) {
       console.log('  AVISO: no se encontró "Vista Global" dentro del submenú -- el portal pudo cambiar otra vez.');
-      await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+      await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true, timeout: 90000 }).catch(() => {});
       return 0;
     }
 
@@ -824,7 +832,7 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
       filas = await leerFilasVistaGlobal(page);
     } catch (e) {
       console.log('  AVISO: no apareció la tabla de expedientes después de entrar al menú -- se deja evidencia para diagnosticar.');
-      await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+      await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true, timeout: 90000 }).catch(() => {});
       const url = page.url();
       const textoPagina = await page.locator('body').innerText().catch(() => '(no se pudo leer)');
       console.log(`  URL en ese momento: ${url}`);
@@ -846,7 +854,7 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
         reportados += await procesarExpediente(context, page, numExp, match, estado);
       } catch (e) {
         console.log(`    Error revisando el expediente ${numExp}: ${e.message}`);
-        await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}_${sanitizarParaArchivo(normalizeExp(numExp))}.png`), fullPage: true }).catch(() => {});
+        await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}_${sanitizarParaArchivo(normalizeExp(numExp))}.png`), fullPage: true, timeout: 90000 }).catch(() => {});
       }
 
       // Regresa a la vista global para poder abrir el siguiente expediente.
