@@ -125,13 +125,20 @@ async function clickTextoVisible(page, texto, exact = false, timeoutMs = 15000) 
 // (el cuerpo del correo suele venir sandboxeado en un <iframe>, igual que
 // el modal del robot Federal). Regresa el texto completo de dondequiera
 // que se encontró, o null si no se encontró en ningún lado.
-async function leerTextoCompleto(page, pistaTexto) {
-  const delMainFrame = await page.locator('body').innerText().catch(() => '');
-  if (delMainFrame.includes(pistaTexto)) return delMainFrame;
-  for (const frame of page.frames()) {
-    if (frame === page.mainFrame()) continue;
-    const texto = await frame.locator('body').innerText({ timeout: 3000 }).catch(() => null);
-    if (texto && texto.includes(pistaTexto)) return texto;
+// Confirmado real: justo después de darle clic a la fila, el contenido del
+// correo (el iframe) a veces todavía no termina de cargar -- se reintenta
+// unas cuantas veces con pausas chicas antes de darse por vencido, en vez
+// de checar una sola vez.
+async function leerTextoCompleto(page, pistaTexto, intentos = 8, esperaMs = 700) {
+  for (let i = 0; i < intentos; i++) {
+    const delMainFrame = await page.locator('body').innerText().catch(() => '');
+    if (delMainFrame.includes(pistaTexto)) return delMainFrame;
+    for (const frame of page.frames()) {
+      if (frame === page.mainFrame()) continue;
+      const texto = await frame.locator('body').innerText({ timeout: 3000 }).catch(() => null);
+      if (texto && texto.includes(pistaTexto)) return texto;
+    }
+    if (i < intentos - 1) await page.waitForTimeout(esperaMs);
   }
   return null;
 }
@@ -277,7 +284,13 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
                 `Acuerdo_Exp_${sanitizarParaArchivo(expedienteTexto)}_${idConversacion}.pdf`
               );
             } else {
+              // Diagnóstico: sin esto no se puede saber si la liga vino
+              // incompleta (cortada por un salto de línea en el correo),
+              // si el servidor regresó una página de error/login, o si de
+              // plano el token ya expiró.
               console.log(`    AVISO: la liga del documento no regresó un PDF real (correo ${idConversacion}).`);
+              console.log(`      Liga extraída (${ligaDocumento.length} caracteres): ${ligaDocumento.slice(0, 120)}...`);
+              console.log(`      Respuesta HTTP: status ${r.status()}, content-type "${r.headers()['content-type'] || '(sin dato)'}", ${buf ? buf.length : 0} bytes, primeros bytes: ${buf ? buf.slice(0, 40).toString('latin1').replace(/[^\x20-\x7e]/g, '.') : '(sin cuerpo)'}`);
             }
           } catch (e) {
             console.log(`    (no se pudo bajar el PDF del correo ${idConversacion}: ${e.message})`);
