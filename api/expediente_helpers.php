@@ -35,6 +35,15 @@ const EDITABLE_CAMPOS = [
     'prima_vacacional_pct_pactada',
     // Jornada y horas extra (para la demanda) -- ver mergeTags()/calcularJornada() en app.js.
     'hora_entrada','hora_salida','comida_inicio','comida_fin','dias_laborados','dias_laborados_num','tipo_jornada',
+    // Rescisión Art. 51 y Prima de antigüedad (ver "Otras plantillas de escritos").
+    'rescision_fraccion','rescision_motivo_breve','fecha_rescision','hecho_causa_narrativa',
+    'periodo_vacaciones_anterior','periodo_vacaciones_actual',
+    'banco1_nombre','banco1_cuenta','banco2_nombre','banco2_cuenta','banco3_nombre','banco3_cuenta',
+    'inspeccion_extremos_texto',
+    'monto_prima_antiguedad','fecha_solicitud_interna','hora_solicitud_interna','folio_solicitud_interna',
+    'funcionario_rh_nombre','funcionario_rh_puesto','numero_oficio_respuesta','fecha_oficio_respuesta',
+    'director_firma_nombre','coordinador_archivo_nombre','gerente_gestion_nombre','folio_fiscal_cfdi',
+    'periodo_recibo_desde','periodo_recibo_hasta','salario_quincenal_num','rfc_emisor_demandado',
 ];
 
 const ETAPA_KEYS = [
@@ -67,7 +76,7 @@ const CAMPOS_NUMERICOS_EXPEDIENTE = [
     'indemnizacion_90','indemnizacion_60','prima_antiguedad','vacaciones_dias','vacaciones_monto',
     'prima_vacacional','aguinaldo_dias','aguinaldo_monto','total_90','total_60','honorario_90','honorario_60',
     'convenio_monto','aguinaldo_dias_pactados','dias_salarios_devengados','dias_vacaciones_anteriores_reclamados',
-    'prima_vacacional_pct_pactada',
+    'prima_vacacional_pct_pactada','monto_prima_antiguedad','salario_quincenal_num',
 ];
 
 function cast_numeric_fields(array $row): array

@@ -286,6 +286,37 @@ const EDITABLE_FIELDS = [
   {key:'dias_laborados', label:'Horario — días que laboraba, en texto (ej. "lunes a sábado")'},
   {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number'},
   {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta']},
+  // Rescisión Art. 51 (ver "Otras plantillas de escritos" → Rescisión Art. 51).
+  {key:'rescision_fraccion', label:'Rescisión — fracción del art. 51 LFT (ej. "V")'},
+  {key:'rescision_motivo_breve', label:'Rescisión — motivo breve (ej. "pagar el salario correspondiente a los servicios que preste")'},
+  {key:'fecha_rescision', label:'Rescisión — fecha en que el actor decidió rescindir', type:'date'},
+  {key:'hecho_causa_narrativa', label:'Rescisión — narrativa del hecho (salario/causa), texto libre para el hecho correspondiente', type:'textarea'},
+  {key:'periodo_vacaciones_anterior', label:'Rescisión — periodo de vacaciones adeudadas anterior (ej. "2025-2026")'},
+  {key:'periodo_vacaciones_actual', label:'Rescisión — periodo de vacaciones proporcionales actual (ej. "2026-2027")'},
+  {key:'banco1_nombre', label:'Rescisión — banco 1, institución'},
+  {key:'banco1_cuenta', label:'Rescisión — banco 1, número de cuenta'},
+  {key:'banco2_nombre', label:'Rescisión — banco 2, institución'},
+  {key:'banco2_cuenta', label:'Rescisión — banco 2, número de cuenta'},
+  {key:'banco3_nombre', label:'Rescisión — banco 3, institución'},
+  {key:'banco3_cuenta', label:'Rescisión — banco 3, número de cuenta'},
+  {key:'inspeccion_extremos_texto', label:'Rescisión — extremos a probar en la inspección judicial (texto libre, uno por línea)', type:'textarea'},
+  // Prima de antigüedad (estilo jubilación / apartado B) -- ver "Otras plantillas de escritos".
+  {key:'monto_prima_antiguedad', label:'Prima antigüedad — monto reclamado', type:'number'},
+  {key:'fecha_solicitud_interna', label:'Prima antigüedad — fecha de la solicitud interna de pago', type:'date'},
+  {key:'hora_solicitud_interna', label:'Prima antigüedad — hora de la solicitud interna', type:'time'},
+  {key:'folio_solicitud_interna', label:'Prima antigüedad — folio asignado a la solicitud'},
+  {key:'funcionario_rh_nombre', label:'Prima antigüedad — nombre del funcionario de RH que recibió la solicitud'},
+  {key:'funcionario_rh_puesto', label:'Prima antigüedad — puesto de ese funcionario'},
+  {key:'numero_oficio_respuesta', label:'Prima antigüedad — número de oficio de respuesta (negativa)'},
+  {key:'fecha_oficio_respuesta', label:'Prima antigüedad — fecha del oficio de respuesta', type:'date'},
+  {key:'director_firma_nombre', label:'Prima antigüedad — nombre de quien firma el oficio de negativa'},
+  {key:'coordinador_archivo_nombre', label:'Prima antigüedad — nombre del Coordinador de Archivo (verificó)'},
+  {key:'gerente_gestion_nombre', label:'Prima antigüedad — nombre del Gerente de Gestión y Servicios al Personal (autorizó)'},
+  {key:'folio_fiscal_cfdi', label:'Prima antigüedad — folio fiscal del CFDI/recibo de nómina ofrecido'},
+  {key:'periodo_recibo_desde', label:'Prima antigüedad — periodo del recibo CFDI, desde', type:'date'},
+  {key:'periodo_recibo_hasta', label:'Prima antigüedad — periodo del recibo CFDI, hasta', type:'date'},
+  {key:'salario_quincenal_num', label:'Prima antigüedad — salario quincenal', type:'number'},
+  {key:'rfc_emisor_demandado', label:'Prima antigüedad — RFC de la demandada (emisor del CFDI)'},
   {key:'testigos', label:'Nombre de los testigos'},
   {key:'dom_testigos', label:'Domicilios de los testigos'},
   {key:'ultima_nota', label:'Última actuación / nota'},
@@ -1327,6 +1358,15 @@ function xmlEscape(s){
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
 }
 
+// Igual que xmlEscape, pero además convierte los saltos de línea del valor
+// en <w:br/> reales de Word -- así un tag puede traer varios párrafos (p.ej.
+// una lista de prestaciones armada dinámicamente) y se ven como líneas
+// separadas en vez de perderse dentro de un solo <w:t>. Mantiene el mismo
+// <w:r> (misma fuente/negritas del lugar donde se puso el tag).
+function xmlEscapeMultiline(s){
+  return xmlEscape(s).split('\n').join('</w:t></w:r><w:r><w:br/><w:t xml:space="preserve"></w:t></w:r><w:r><w:t xml:space="preserve">');
+}
+
 // Siempre se resta 1 hora de comida al calcular la jornada, se hayan
 // capturado horarios específicos de comida o no (así lo pidió el
 // despacho) -- comida_inicio/comida_fin solo deciden si el TEXTO generado
@@ -1385,7 +1425,7 @@ function mergeTags(k){
     ? `de ${k.comida_inicio.slice(0,5)} a ${k.comida_fin.slice(0,5)} horas fuera del centro de trabajo`
     : `fuera del centro de trabajo`;
   const diasTexto = k.dias_laborados || '________________';
-  return {
+  const tags = {
     actor: k.actor || '________________',
     demandado: k.demandado || '________________',
     giro_empresa: k.giro_empresa || '________________',
@@ -1417,7 +1457,66 @@ function mergeTags(k){
     texto_comida: textoComida,
     horas_extra_diarias: jornada ? fmtHoras(jornada.horasExtraDiarias) : '____',
     horas_extra_semanales: jornada ? fmtHoras(jornada.horasExtraSemanales) : '____',
+    // Rescisión Art. 51 -- ver "Otras plantillas de escritos". Las
+    // prestaciones opcionales (letras b en adelante) NO se arman aquí: se
+    // construyen en el momento de generar el escrito, a partir de la
+    // selección de casillas del abogado (ver generarEscritoConOpciones()),
+    // para poder incluir/excluir cada una y renumerar las letras.
+    rescision_fraccion: k.rescision_fraccion || '____',
+    rescision_motivo_breve: k.rescision_motivo_breve || '________________',
+    fecha_rescision_letra: fechaLetras(k.fecha_rescision),
+    hecho_causa_narrativa: k.hecho_causa_narrativa || '________________',
+    inspeccion_extremos_texto: k.inspeccion_extremos_texto || '________________',
+    // Prima de antigüedad (estilo jubilación / apartado B).
+    monto_prima_antiguedad_num: k.monto_prima_antiguedad!=null ? Number(k.monto_prima_antiguedad).toFixed(2) : '____________',
+    monto_prima_antiguedad_letra: k.monto_prima_antiguedad!=null ? pesosEnLetras(k.monto_prima_antiguedad) : '____________',
+    fecha_solicitud_interna_letra: fechaLetras(k.fecha_solicitud_interna),
+    hora_solicitud_interna: k.hora_solicitud_interna ? k.hora_solicitud_interna.slice(0,5) : '____',
+    folio_solicitud_interna: k.folio_solicitud_interna || '____',
+    funcionario_rh_nombre: k.funcionario_rh_nombre || '________________',
+    funcionario_rh_puesto: k.funcionario_rh_puesto || '________________',
+    numero_oficio_respuesta: k.numero_oficio_respuesta || '____',
+    fecha_oficio_respuesta_letra: fechaLetras(k.fecha_oficio_respuesta),
+    director_firma_nombre: k.director_firma_nombre || '________________',
+    coordinador_archivo_nombre: k.coordinador_archivo_nombre || '________________',
+    gerente_gestion_nombre: k.gerente_gestion_nombre || '________________',
+    folio_fiscal_cfdi: k.folio_fiscal_cfdi || '____',
+    periodo_recibo_desde_letra: fechaLetras(k.periodo_recibo_desde),
+    periodo_recibo_hasta_letra: fechaLetras(k.periodo_recibo_hasta),
+    periodo_recibo_desde_iso: k.periodo_recibo_desde || '____',
+    periodo_recibo_hasta_iso: k.periodo_recibo_hasta || '____',
+    salario_quincenal_num: k.salario_quincenal_num!=null ? Number(k.salario_quincenal_num).toFixed(2) : '________',
+    rfc_emisor_demandado: (k.rfc_emisor_demandado || '____').toUpperCase(),
   };
+  tags.pruebas_adicionales = construirPruebasAdicionalesTexto(k, tags);
+  return tags;
+}
+
+// Bloque único (con saltos de línea) que junta TODAS las pruebas desde el
+// punto 5 en adelante -- así no importa cuántos bancos se capturaron (0 a
+// 3), la Inspección Judicial y la Testimonial que siguen quedan siempre
+// numeradas correctamente. Los puntos 1 a 4 (instrumental, presuncional,
+// confesional de la empresa e informe del IMSS) van fijos en la plantilla
+// de Rescisión Art. 51.
+// Recibe `tags` ya calculado por mergeTags() (nunca llama a mergeTags() él
+// mismo, para no crear un ciclo infinito: mergeTags() es quien invoca esta
+// función al armar el tag {{pruebas_adicionales}}).
+function construirPruebasAdicionalesTexto(k, tags){
+  const bloques = [];
+  const bancos = [
+    {nombre: k.banco1_nombre, cuenta: k.banco1_cuenta},
+    {nombre: k.banco2_nombre, cuenta: k.banco2_cuenta},
+    {nombre: k.banco3_nombre, cuenta: k.banco3_cuenta},
+  ].filter(b => b.nombre && b.cuenta);
+  let n = 5;
+  bancos.forEach(b=>{
+    bloques.push(`${n}.- EL INFORME que se sirva rendir la institución bancaria ${b.nombre}, con relación a la moral demandada, por el periodo comprendido entre la fecha de ingreso y la fecha de baja de la parte actora, para lo cual solicito a esta H. Autoridad se sirva girar oficio correspondiente a efecto de que informe si la cuenta número ${b.cuenta} pertenece a la parte actora, los estados de cuenta mensuales de dicho periodo, y si dicha cuenta recibió depósitos y/o transferencias por parte de la moral demandada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada, así como el incumplimiento por parte de la demandada respecto a sus obligaciones.`);
+    n++;
+  });
+  bloques.push(`${n}.- LA INSPECCIÓN JUDICIAL, que se realice por conducto del C. Actuario en el local de este H. Tribunal en los siguientes documentos que se encuentran en la empresa demandada ${tags.demandado} en el domicilio ubicado en calle ${tags.dom_demandado}: 1) Contrato individual y/o colectivo de trabajo; 2) Listas de raya; 3) Recibos de pago de salarios, de vacaciones, de prima vacacional y de aguinaldo; 4) Tarjetas o controles de asistencia. Documentos que el demandado tiene obligación de conservar y exhibir en juicio de conformidad con lo establecido en los artículos 784 y 804 de la Ley Federal del Trabajo y que se ofrecen para acreditar los siguientes extremos:\n\n${tags.inspeccion_extremos_texto}\n\nPara el desahogo de esta prueba de INSPECCIÓN deberá apercibirse a la demandada que para el caso de no exhibir la totalidad de la documentación base para tal efecto se tendrán por presuntivamente ciertos los extremos a acreditar con fundamento en lo dispuesto por los artículos 805, 827 y 828 de la Ley Federal del Trabajo en relación con el artículo 804 y demás relativos y aplicables de la ley citada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.`);
+  n++;
+  bloques.push(`${n}.- LA TESTIMONIAL a cargo de los CC. ${tags.testigos}, quienes tienen sus domicilios en ${tags.dom_testigos} respectivamente y a quienes me comprometo a presentar el día y hora que esta H. Autoridad determine la audiencia para su celebración, testigos que declararan sobre los hechos del escrito inicial de demanda como de sus aclaraciones y modificaciones a la misma.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.\n\nTestigos que declararan sobre los hechos ocurridos el día ${tags.fecha_rescision_letra}.`);
+  return bloques.join('\n\n');
 }
 
 // ---------------------------------------------------------------
@@ -1472,15 +1571,15 @@ async function resetPlantillaDocx(){
 // Genera y descarga un .docx a partir de cualquier plantilla (en base64) con
 // los mismos {{tags}} que usa la demanda — motor compartido por
 // generarDemandaDocx() y por la biblioteca de plantillas de escritos.
-function generarDocxDesdePlantilla(k, plantillaB64, nombreBase, onDone, onError){
+function generarDocxDesdePlantilla(k, plantillaB64, nombreBase, onDone, onError, extraTags){
   ensureJSZip(async ()=>{
     try{
-      const tags = mergeTags(k);
+      const tags = Object.assign({}, mergeTags(k), extraTags||{});
       const bytes = base64ToUint8Array(plantillaB64);
       const zip = await JSZip.loadAsync(bytes);
       let xml = await zip.file('word/document.xml').async('string');
       Object.keys(tags).forEach(key=>{
-        xml = xml.split('{{'+key+'}}').join(xmlEscape(tags[key]));
+        xml = xml.split('{{'+key+'}}').join(xmlEscapeMultiline(tags[key]));
       });
       zip.file('word/document.xml', xml);
       const out = await zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document'});
@@ -2665,6 +2764,59 @@ let SALARIO_MINIMO_DIARIO = 315.04; // valor de respaldo (zona general, 2026) si
 // en "Equipo" — así cuando cambie la ley (reducción de jornada prevista a
 // partir de 2027) solo hay que actualizar el número aquí, sin tocar código.
 let JORNADA_MAXIMA = {diurna: 8, nocturna: 7, mixta: 7.5}; // valores de respaldo (vigentes 2026) si aún no se ha guardado ninguno
+
+// Nombre EXACTO con el que debe subirse la plantilla de Rescisión Art. 51 en
+// "Otras plantillas de escritos" -- así el sistema sabe cuándo mostrar la
+// selección de prestaciones opcionales antes de generar el documento.
+const NOMBRE_PLANTILLA_RESCISION_51 = 'Rescisión Art. 51';
+
+// Prestaciones opcionales de la demanda de Rescisión Art. 51 (letras B en
+// adelante -- la "A" es la rescisión misma, siempre presente, fija en la
+// plantilla). El abogado marca cuáles aplican a cada caso; las letras se
+// recalculan solas según cuáles queden seleccionadas.
+const PRESTACIONES_RESCISION_OPCIONES = [
+  {key:'indemnizacion', label:'Indemnización constitucional (arts. 50, 51, 52)', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE LA INDEMNIZACIÓN, que legalmente corresponda con motivo de la rescisión justificada de la relación laboral, en términos de los artículos 50, 51 y 52 de la Ley Federal del Trabajo.`},
+  {key:'veinte_dias', label:'20 días de salario por año laborado (art. 50)', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE 20 DÍAS DE SALARIO POR CADA AÑO LABORADO, que legalmente corresponda con motivo de la rescisión justificada de la relación laboral, en términos del artículo 50 de la Ley Federal del Trabajo, tomando como base para ello, el salario integrado con las totalidades de las prestaciones que el demandado se comprometió a pagar a la actora, tal como se expresa en el capítulo de hechos.`},
+  {key:'prima_antiguedad', label:'Prima de antigüedad (art. 162, 12 días por año)', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE PRIMA DE ANTIGÜEDAD, en términos del artículo 162 de la Ley Federal del Trabajo, consistente en 12 días de salario por cada año de servicios prestados al patrón.`},
+  {key:'salarios_devengados', label:'Salarios devengados no cubiertos', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE LOS SALARIOS DEVENGADOS, y no cubiertos durante la relación laboral, tomando como base el salario mínimo legal aplicable a cada periodo reclamado, o el salario que resulte acreditado si fuera superior, con la cuantificación correspondiente.`},
+  {key:'aguinaldo_completo', label:'Aguinaldo del año anterior (omitido por completo)', checkedPorDefecto:false,
+    texto:(tags,k)=>{
+      const baj = parseDate(k.fecha_baja);
+      const anio = baj ? baj.getFullYear()-1 : '________';
+      const dias = k.aguinaldo_dias_pactados > 0 ? k.aguinaldo_dias_pactados : 15;
+      return `EL PAGO DE AGUINALDO POR EL AÑO ${anio}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos, lo anterior debido a que la demandada omitió hacer el pago, señalando que se pactaron ${dias} días anuales por dicho concepto.`;
+    }},
+  {key:'aguinaldo_proporcional', label:'Aguinaldo proporcional del año de la baja', checkedPorDefecto:true,
+    texto:(tags,k)=>{
+      const baj = parseDate(k.fecha_baja);
+      const anio = baj ? baj.getFullYear() : '________';
+      return `EL PAGO DE AGUINALDO PROPORCIONAL AL AÑO ${anio}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos, lo anterior en términos del artículo 87 de la Ley Federal del Trabajo.`;
+    }},
+  {key:'vacaciones_periodo1', label:'Vacaciones adeudadas, periodo anterior', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE VACACIONES ADEUDADAS correspondiente al periodo ${k.periodo_vacaciones_anterior || '________'}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'prima_vacacional_periodo1', label:'Prima vacacional, periodo anterior', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE PRIMA VACACIONAL correspondiente al periodo ${k.periodo_vacaciones_anterior || '________'}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'vacaciones_periodo2', label:'Vacaciones adeudadas, periodo actual', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE VACACIONES ADEUDADAS correspondiente al periodo ${k.periodo_vacaciones_actual || '________'}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'prima_vacacional_periodo2', label:'Prima vacacional, periodo actual', checkedPorDefecto:true,
+    texto:(tags,k)=> `EL PAGO DE PRIMA VACACIONAL correspondiente al periodo ${k.periodo_vacaciones_actual || '________'}, en los términos y condiciones que se precisaran en el correspondiente capítulo de hechos.`},
+  {key:'horas_extras', label:'Horas extras (reutiliza el horario capturado en Editar datos)', checkedPorDefecto:false,
+    texto:(tags,k)=> `EL PAGO DE HORAS EXTRAS, por todo el tiempo laborado en virtud de que, por necesidades del Servicio, mi jefe inmediato de manera habitual, continua y reiterada, me solicitaba que me quedara a laborar tiempo extraordinario por lo que diariamente laboraba de las ${tags.hora_entrada} a las ${tags.hora_salida}, con una hora para tomar alimentos ${tags.texto_comida}, en tal virtud el suscrito laboraba materialmente ${tags.horas_extra_diarias} horas extras por día, ${tags.dias_laborados} de cada semana, lo que da un total de ${tags.horas_extra_semanales} horas extras semanales.`},
+];
+
+const LETRAS_B_EN_ADELANTE = 'BCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+// Arma el texto final (con letras B, C, D... recalculadas) a partir de las
+// claves de PRESTACIONES_RESCISION_OPCIONES que el abogado dejó marcadas.
+function construirPrestacionesOpcionalesTexto(k, selKeys){
+  const tags = mergeTags(k);
+  const seleccionadas = PRESTACIONES_RESCISION_OPCIONES.filter(o => selKeys.includes(o.key));
+  return seleccionadas.map((o,i)=> `${LETRAS_B_EN_ADELANTE[i]}) ${o.texto(tags,k)}`).join('\n\n');
+}
 async function loadConfiguracion(){
   try{
     const d = await api('GET', 'configuracion_get.php');
@@ -6087,7 +6239,7 @@ function formatoDemandaHTML(){
   </div>
 
   <div class="legal-box" style="margin-bottom:16px;">
-    <strong>Campos disponibles para usar en el Word:</strong> <code>{{actor}}, {{demandado}}, {{giro_empresa}}, {{dom_demandado}}, {{dom_testigos}}, {{puesto}}, {{puesto_despidio}}, {{fecha_ingreso_letra}}, {{fecha_baja_letra}}, {{salario_mensual_num}}, {{salario_diario_num}}, {{salario_mensual_letra}}, {{curp}}, {{instancia}}, {{quien_despidio}}, {{hora_despido}}, {{testigos}}, {{fecha_hoy_letra}}, {{ciudad_firma}}, {{hora_entrada}}, {{hora_salida}}, {{hora_salida_normal}}, {{hora_inicio_extra}}, {{texto_comida}}, {{dias_laborados}}, {{tipo_jornada_texto}}, {{horas_extra_diarias}}, {{horas_extra_semanales}}</code>
+    <strong>Campos disponibles para usar en el Word:</strong> <code>{{actor}}, {{demandado}}, {{giro_empresa}}, {{dom_demandado}}, {{dom_testigos}}, {{puesto}}, {{puesto_despidio}}, {{fecha_ingreso_letra}}, {{fecha_baja_letra}}, {{salario_mensual_num}}, {{salario_diario_num}}, {{salario_mensual_letra}}, {{curp}}, {{instancia}}, {{quien_despidio}}, {{hora_despido}}, {{testigos}}, {{fecha_hoy_letra}}, {{ciudad_firma}}, {{hora_entrada}}, {{hora_salida}}, {{hora_salida_normal}}, {{hora_inicio_extra}}, {{texto_comida}}, {{dias_laborados}}, {{tipo_jornada_texto}}, {{horas_extra_diarias}}, {{horas_extra_semanales}}, {{rescision_fraccion}}, {{rescision_motivo_breve}}, {{fecha_rescision_letra}}, {{hecho_causa_narrativa}}, {{pruebas_adicionales}}, {{inspeccion_extremos_texto}}, {{prestaciones_opcionales}} (solo en la plantilla "Rescisión Art. 51"), {{monto_prima_antiguedad_num}}, {{monto_prima_antiguedad_letra}}, {{fecha_solicitud_interna_letra}}, {{hora_solicitud_interna}}, {{folio_solicitud_interna}}, {{funcionario_rh_nombre}}, {{funcionario_rh_puesto}}, {{numero_oficio_respuesta}}, {{fecha_oficio_respuesta_letra}}, {{director_firma_nombre}}, {{coordinador_archivo_nombre}}, {{gerente_gestion_nombre}}, {{folio_fiscal_cfdi}}, {{periodo_recibo_desde_letra}}, {{periodo_recibo_hasta_letra}}, {{salario_quincenal_num}}, {{rfc_emisor_demandado}}</code>
   </div>
   <div id="plantillaStatus" style="font-size:12px; color:var(--gray);">${esOriginal ? 'Estado actual: usando la plantilla original del despacho.' : 'Estado actual: usando una plantilla personalizada, subida por el Administrador.'}</div>
   ${!esOriginal ? `<button class="btn secondary" id="resetPlantillaBtn" style="margin-top:10px;">Restaurar plantilla original del despacho</button>` : ''}
@@ -7523,7 +7675,7 @@ function modalTabContent(k,p,meta){
             })() :
             f.type==='tribunal' ?
             tribunalFieldHTML(f, k[f.key]!=null ? String(k[f.key]) : '') :
-            f.key==='ultima_nota' ?
+            (f.key==='ultima_nota' || f.type==='textarea') ?
             `<textarea class="edit-field" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
           }
@@ -7597,6 +7749,14 @@ function modalTabContent(k,p,meta){
         <option value="demanda">Demanda (plantilla del despacho)</option>
         ${PLANTILLAS_LIB.map(p=>`<option value="${p.id}">${escapeHTML(p.nombre)}</option>`).join("")}
       </select>
+    </div>
+    <div id="prestacionesRescisionPanel" style="display:none; margin-bottom:16px; border:1px solid var(--border); border-radius:10px; padding:14px 16px; background:var(--paper);">
+      <div style="font-family:var(--serif); font-weight:700; font-size:14px; color:var(--ink); margin-bottom:8px;">Prestaciones a incluir (además de la rescisión, que siempre va)</div>
+      <div class="notice" style="margin-bottom:10px;">Desmarca las que no apliquen a este caso. Las letras (B, C, D...) se acomodan solas según lo que dejes marcado.</div>
+      ${PRESTACIONES_RESCISION_OPCIONES.map(o=>`
+        <label style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:12.5px; color:var(--ink);">
+          <input type="checkbox" class="prestacion-rescision-check" data-key="${o.key}" ${o.checkedPorDefecto?'checked':''}> ${escapeHTML(o.label)}
+        </label>`).join("")}
     </div>
     <button class="btn" id="genDemandaBtn">Generar documento en Word (.docx)</button>
     <span id="genDemandaStatus" style="margin-left:10px; font-size:12px; color:var(--gray);"></span>
@@ -7938,12 +8098,30 @@ function bindModalTabEvents(){
   if(exportarCalculoBtn){
     exportarCalculoBtn.addEventListener('click', ()=> abrirCalculoPDF(ACTIVE_CASE));
   }
+  const escritoPlantillaSelect = document.getElementById('escritoPlantillaSelect');
+  const prestacionesRescisionPanel = document.getElementById('prestacionesRescisionPanel');
+  if(escritoPlantillaSelect && prestacionesRescisionPanel){
+    const togglePanel = ()=>{
+      const opt = escritoPlantillaSelect.options[escritoPlantillaSelect.selectedIndex];
+      const esRescision = opt && opt.textContent === NOMBRE_PLANTILLA_RESCISION_51;
+      prestacionesRescisionPanel.style.display = esRescision ? 'block' : 'none';
+    };
+    escritoPlantillaSelect.addEventListener('change', togglePanel);
+    togglePanel();
+  }
   const genDemandaBtn = document.getElementById('genDemandaBtn');
   if(genDemandaBtn){
     genDemandaBtn.addEventListener('click', async ()=>{
       const status = document.getElementById('genDemandaStatus');
       const select = document.getElementById('escritoPlantillaSelect');
       const elegido = select ? select.value : 'demanda';
+      const opt = select ? select.options[select.selectedIndex] : null;
+      const esRescision51 = opt && opt.textContent === NOMBRE_PLANTILLA_RESCISION_51;
+      const extraTags = {};
+      if(esRescision51){
+        const selKeys = Array.from(document.querySelectorAll('.prestacion-rescision-check:checked')).map(c=>c.dataset.key);
+        extraTags.prestaciones_opcionales = construirPrestacionesOpcionalesTexto(ACTIVE_CASE, selKeys);
+      }
       genDemandaBtn.disabled = true;
       if(status) status.textContent = 'Generando...';
       const onDone = ()=>{ genDemandaBtn.disabled = false; if(status) status.textContent = 'Listo ✓ revisa tus descargas.'; };
@@ -7953,7 +8131,7 @@ function bindModalTabEvents(){
       } else {
         try{
           const p = await api('GET', 'plantillas_get.php?id=' + elegido);
-          generarDocxDesdePlantilla(ACTIVE_CASE, p.base64, p.nombre, onDone, onError);
+          generarDocxDesdePlantilla(ACTIVE_CASE, p.base64, p.nombre, onDone, onError, extraTags);
         }catch(err){ onError(err); }
       }
     });
