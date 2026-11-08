@@ -306,7 +306,20 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
       return 0;
     }
 
-    const filas = await leerFilasVistaGlobal(page);
+    await page.waitForLoadState('networkidle').catch(() => {});
+    await page.waitForTimeout(1000);
+    let filas;
+    try {
+      filas = await leerFilasVistaGlobal(page);
+    } catch (e) {
+      console.log('  AVISO: no apareció la tabla de expedientes después de entrar al menú -- se deja evidencia para diagnosticar.');
+      await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}.png`), fullPage: true }).catch(() => {});
+      const url = page.url();
+      const textoPagina = await page.locator('body').innerText().catch(() => '(no se pudo leer)');
+      console.log(`  URL en ese momento: ${url}`);
+      console.log(`  Texto visible en ese momento (primeros 500 caracteres): "${textoPagina.replace(/\s+/g, ' ').trim().slice(0, 500)}"`);
+      return 0;
+    }
     console.log(`  ${filas.length} expediente(s) visibles en el portal para esta cuenta.`);
 
     for (const fila of filas) {
