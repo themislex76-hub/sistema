@@ -233,6 +233,7 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   // para no seguir subiendo basura al sistema.
   if (pdf && pdf.slice(0, 4).toString('latin1') !== '%PDF') {
     console.log(`    AVISO: lo descargado no es un PDF real (no empieza con "%PDF", pesa ${pdf.length} bytes) -- se descarta.`);
+    console.log(`    Contenido real de esos bytes (primeros 500 caracteres): ${pdf.toString('utf8').replace(/\s+/g, ' ').trim().slice(0, 500)}`);
     pdf = null;
   }
 
