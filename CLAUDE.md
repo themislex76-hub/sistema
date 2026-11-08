@@ -337,6 +337,27 @@ completo"):
   WhatsApp → Herramientas → Estadísticas → pestaña "Precio de los
   mensajes".
 
+## Avisos de boletín: notificación push al Administrador y abogado(s) (9 nov 2026)
+- Pedido del usuario: que al encontrar algo un robot, se avise al celular
+  del Administrador y del/los abogado(s) asignados al expediente.
+- Se usó push (no WhatsApp) -- ya existía infraestructura madura
+  (`api/push_helpers.php`, usada para la agenda diaria de abogados y otras
+  alertas internas) y funciona igual que WhatsApp en el celular (si tienen
+  el botón "Activar notificaciones" de "Mi cuenta" prendido), sin tener
+  que esperar la aprobación de una plantilla nueva en Meta ni agregar una
+  columna de celular (no existe hoy en `usuarios`).
+- `api/avisos_ingest.php`: después de insertar el aviso (y solo si no era
+  duplicado), junta en un solo set para no repetir: todos los
+  `usuarios.rol='administrador' AND activo=1`, más `abogado_id` y
+  `abogado_id_2` del expediente si están asignados, y les manda push a
+  cada uno (`push_enviar_a_usuario()`). Cubre los 3 robots (Federal, CDMX,
+  edomex_correo) automáticamente porque todos pasan por este mismo
+  endpoint -- no hizo falta tocar ningún robot.
+- Sin probar en vivo todavía (nadie ha recibido un push real de un aviso
+  nuevo) -- la próxima vez que un robot reporte algo real debería llegar
+  solo. Si no llega, lo primero a revisar es que el usuario de verdad le
+  haya dado "Activar notificaciones" en "Mi cuenta" desde ese celular.
+
 ## Costos de IA
 - Bitácora de gasto (créditos, gasto del mes, costo por resultado del
   embudo de WhatsApp): https://claude.ai/code/artifact/fdbe25d4-5fba-41f8-a0d3-f389dfb8cb61
