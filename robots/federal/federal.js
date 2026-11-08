@@ -299,9 +299,21 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
   try {
     await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' });
     await cerrarModalSiAparece(page, cuenta.pjf_usuario);
+    // "Consulta de Expediente Electrónico" es un menú con submenú (se
+    // confirmó con una corrida real: el texto de la página mostraba
+    // "...Consulta de Expediente Electrónico Vista Global Vista por Órgano
+    // Jurisdiccional..." justo después de darle clic) -- hace falta un
+    // segundo clic en "Vista Global" para que de verdad aparezca la tabla.
     const entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false);
     if (!entroMenu) {
       console.log('  AVISO: no se encontró el menú "Consulta de Expediente Electrónico" -- el portal pudo cambiar otra vez.');
+      await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}.png`), fullPage: true }).catch(() => {});
+      return 0;
+    }
+    await page.waitForTimeout(500);
+    const entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false);
+    if (!entroVistaGlobal) {
+      console.log('  AVISO: no se encontró "Vista Global" dentro del submenú -- el portal pudo cambiar otra vez.');
       await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}.png`), fullPage: true }).catch(() => {});
       return 0;
     }
@@ -345,6 +357,8 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
         // al menú desde cero.
         await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' });
         await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false);
+        await page.waitForTimeout(500);
+        await clickTextoVisible(page, 'Vista Global', false);
       }
       await leerFilasVistaGlobal(page).catch(() => {});
     }
