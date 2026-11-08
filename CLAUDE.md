@@ -73,6 +73,18 @@ completo"):
 - Primera corrida de cada robot: recordar `npm install` +
   `npx playwright install chromium` en su carpeta antes de correrlo.
 
+## Robot de boletín CDMX (`robots/cdmx/cdmx.js`)
+- Bug real detectado y corregido (8 nov 2026): cuando el número de
+  expediente del boletín llevaba un sufijo corto antes del punto final
+  ("Incompetencia.", "Amparo Directo Demandado.", "-IV.", "-VI." -- se
+  confirmó con boletines reales), el separador de casos no reconocía el
+  final de ese caso y pegaba su texto con el/los siguiente(s), reportando
+  avisos con el resumen de 2-3 casos distintos mezclados. Corregido en
+  `extraerCasosDeTramo()` con `SUFIJO_EXP_RE`. Si vuelve a pasar algo
+  similar (resumen de un aviso que no corresponde al expediente), pide el
+  boletín real (captura de pantalla con zoom basta) para ver el patrón
+  exacto antes de tocar el regex -- no se puede adivinar el formato.
+
 ## Robot de jurisprudencia (`robots/jurisprudencia/`)
 - Scrapea sjf2.scjn.gob.mx (Semanario Judicial de la Federación), materia
   laboral, y manda tesis nuevas a `api/jurisprudencia_ingest.php`.
