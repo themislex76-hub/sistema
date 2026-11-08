@@ -7,6 +7,15 @@
   `SendUserFile` solo de los archivos modificados → el usuario los sube por
   cPanel → Administrador de archivos.
 - Cambios de base de datos: dar el SQL, el usuario lo corre por phpMyAdmin.
+- Si tocaste `mergeTags()`, `calcularJornada()`, las prestaciones opcionales
+  de Rescisión Art. 51, o cualquier cosa relacionada con las {{tags}} de
+  los formatos de demanda: corre `node scripts/verificar_tags.js` antes de
+  mandar los archivos. Revisa en segundos que ninguna tag quede
+  "undefined"/"NaN", que las letras/numeración de los bloques dinámicos
+  salgan bien, y avisa si agregaste una tag nueva sin documentarla en la
+  leyenda de "Campos disponibles" de Formato de demanda. No sustituye
+  generar un documento de prueba real, pero atrapa errores de lógica antes
+  de que lleguen ahí.
 
 ## Varias sesiones trabajando sobre el mismo repo (IMPORTANTE)
 El usuario tiene 3 conversaciones de Claude activas sobre este proyecto
