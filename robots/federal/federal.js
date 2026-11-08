@@ -277,7 +277,22 @@ async function clickTextoVisible(page, texto, exact = true) {
 async function cerrarCualquierModalAbierto(page) {
   const modal = page.locator('.modal.in, .modal.show').first();
   const hayModal = await modal.isVisible({ timeout: 1500 }).catch(() => false);
-  if (!hayModal) return;
+  if (!hayModal) {
+    // Aunque el modal YA no esté (su clase "in"/"show" se quitó), puede
+    // quedar huérfano el fondo oscuro (".modal-backdrop") sin que nada lo
+    // detecte -- confirmado como sospechoso real: ambas cuentas, en la
+    // misma corrida, tronaron justo después de cerrar la ventana de
+    // "Seleccione un perfil" con clic forzado, y ese fondo no coincide con
+    // ".modal.in"/".modal.show" una vez el modal ya se ocultó. Se limpia
+    // de todos modos, por si acaso, sin importar si hacía falta.
+    await page.evaluate(() => {
+      document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+      document.body.classList.remove('modal-open');
+      document.body.style.removeProperty('padding-right');
+      document.body.style.removeProperty('overflow');
+    }).catch(() => {});
+    return;
+  }
   await page.keyboard.press('Escape').catch(() => {});
   await page.waitForTimeout(400);
   if (!(await modal.isVisible().catch(() => false))) return;
@@ -540,6 +555,10 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
   try {
     await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' });
     await cerrarModalSiAparece(page, cuenta.pjf_usuario);
+    // De respaldo, por si quedó huérfano el fondo oscuro del modal que se
+    // acaba de cerrar (confirmado real: pasó en las 2 cuentas de la misma
+    // corrida, justo después del clic forzado) -- nunca está de más.
+    await cerrarCualquierModalAbierto(page);
     // "Consulta de Expediente Electrónico" es un menú con submenú (se
     // confirmó con una corrida real: el texto de la página mostraba
     // "...Consulta de Expediente Electrónico Vista Global Vista por Órgano
