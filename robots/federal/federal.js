@@ -234,23 +234,27 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   const hayIframe = await iframe.waitFor({ state: 'attached', timeout: 8000 }).then(() => true).catch(() => false);
   let pdf = null;
   if (hayIframe) {
-    // La corrida anterior (con este mismo enfoque) no detectó NI descarga
-    // NI respuesta PDF/octet-stream en 15s -- en vez de seguir adivinando
-    // qué content-type o evento usa la mini app, se registran TODAS las
-    // peticiones que disparen (de cualquier tipo) durante la espera, para
-    // ver qué está haciendo de verdad si esto vuelve a fallar.
-    const peticiones = [];
-    const verPeticion = (req) => peticiones.push(`${req.method()} ${req.url()}`);
-    page.on('request', verPeticion);
-    pdf = await intentarCapturarPdf(context, page, async () => {
-      // No hace falta clic -- solo darle tiempo a la mini app de adentro
-      // del iframe para que cargue y pida el archivo por su cuenta.
-      await page.waitForTimeout(6000);
-    });
-    page.off('request', verPeticion);
-    if (!pdf) {
-      console.log(`    Peticiones de red durante la espera del iframe (${peticiones.length}):`);
-      peticiones.slice(0, 30).forEach(p => console.log(`      ${p}`));
+    // Confirmado real con el HTML de adentro del iframe: es una mini app
+    // Angular ("cjf-lista-archivos") con una tabla igual a la que se vio
+    // en las capturas manuales -- el ícono de descarga es
+    // <i class="fas fa-download iconDescarga"></i> (el de ver es
+    // "fa-eye"). Viven DENTRO del documento propio del iframe, no en la
+    // página que lo contiene -- hay que entrar con contentFrame() para
+    // poder verlos/clickearlos; buscarlos en "modal"/"page" directo nunca
+    // iba a encontrar nada (confirmado: siempre fallaba antes de este
+    // cambio).
+    const manija = await iframe.elementHandle({ timeout: 3000 }).catch(() => null);
+    const frame = manija ? await manija.contentFrame().catch(() => null) : null;
+    if (frame) {
+      const botonDescarga = frame.locator('i.fa-download, i.iconDescarga').first();
+      const hayBoton = await botonDescarga.waitFor({ state: 'visible', timeout: 10000 }).then(() => true).catch(() => false);
+      if (hayBoton) {
+        pdf = await intentarCapturarPdf(context, page, () => botonDescarga.click({ timeout: 5000 }).catch(() => {}));
+      } else {
+        console.log('    AVISO: no se encontró el ícono de descarga (i.fa-download) dentro del iframe.');
+      }
+    } else {
+      console.log('    AVISO: no se pudo entrar al documento real del iframe (contentFrame devolvió null).');
     }
   } else {
     // Respaldo, por si algún acuerdo SÍ muestra una tabla con varios
