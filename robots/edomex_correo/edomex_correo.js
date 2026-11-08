@@ -354,9 +354,15 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
 
       if (maxVistoEstaCorrida === null || Number(idConversacion) > Number(maxVistoEstaCorrida)) {
         maxVistoEstaCorrida = idConversacion;
+        // Se guarda en CADA correo procesado, no solo al final del ciclo
+        // -- confirmado real: si la página truena a medio lote (ej. "Target
+        // page, context or browser has been closed"), el error salta a este
+        // catch y el ciclo nunca llega a la línea de después del `for`, así
+        // que sin esto los avisos ya reportados en ese lote se repetirían
+        // (duplicados) en la siguiente corrida.
+        if (maxVistoEstaCorrida !== null) estado[cuenta.edomex_correo_usuario] = maxVistoEstaCorrida;
       }
     }
-    if (maxVistoEstaCorrida !== null) estado[cuenta.edomex_correo_usuario] = maxVistoEstaCorrida;
   } catch (e) {
     console.log(`  Error con la cuenta de ${cuenta.nombre}: ${e.message}`);
     await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.edomex_correo_usuario}.png`), fullPage: true }).catch(() => {});
