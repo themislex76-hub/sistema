@@ -220,26 +220,56 @@ completo"):
 - El robot (`edomex_correo.js`) reutiliza TODA la infraestructura de
   documentos construida hoy para Federal: `documentos_subir_robot.php`,
   categoría `'acuerdo'`, `documento_id` en el aviso.
-- **Sin probar en vivo todavía** -- construido viendo 3 capturas de
-  pantalla (login, bandeja de entrada, contenido de un correo real), nunca
-  ejecutado de verdad. Supuestos que pueden fallar y necesitar ajuste con
-  la primera corrida real:
-  - Selectores del login (se intenta por `input[type=text]`/`[type=password]`
-    genéricos + el texto "INICIAR SESIÓN", no se conocen los ids/names reales).
-  - Que el contenido del correo (con "EXPEDIENTE:", "Actor:", etc.) se
-    pueda leer del `innerText()` de la página o de alguno de sus frames
-    (`leerTextoCompleto()`) -- puede venir en un iframe con otra estructura.
-  - Que la lista de correos esté ordenada del más nuevo al más viejo (se
-    usa el id numérico de `.../conversation/-<id>` de la URL para no
-    reprocesar, comparando contra el último visto en
-    `procesados_edomex_correo.json`).
-  - Que la liga `frmGetDocument.php?token=...` funcione con un
-    `context.request.get()` simple (sin sesión) -- se valida con
-    `pdfEsValido()` (debe empezar con "%PDF") antes de subirlo, igual que
-    Federal.
-  - Si algo truena, pedir el error completo de la terminal + la captura
-    `debug_*.png` que se guarda junto al robot -- no adivinar el selector
-    sin eso (mismo patrón de todo este día con Federal).
+- **Confirmado funcionando de punta a punta (8 nov 2026)**: corrida real
+  con la cuenta 4455282@pjedomex.gob.mx -- login, lectura de la bandeja,
+  apertura de un correo real, extracción de EXPEDIENTE/Actor/Demandado/
+  Juzgado, match contra el expediente 479/2025 monitoreado, descarga y
+  subida del PDF real (238.7 KB, verificado visualmente: "ACUERDO",
+  Segundo Tribunal Laboral de Tlalnepantla, 3 páginas, abre bien desde
+  "Ver" en la pestaña Documentos). Bugs reales encontrados y corregidos
+  ese mismo día (si algo similar vuelve a fallar, empezar por ahí, no
+  adivinar sin pedir el error completo de la terminal):
+  - **La bandeja de Carbonio tarda en cargar la lista de correos** de
+    forma intermitente (el resto de la página -- carpetas, "Inbox 100" --
+    ya está listo, pero la lista de filas tarda más). Hasta 2 reloads
+    fallaron seguidos con 45s de espera cada uno. Ahora
+    `procesarCuenta()` reintenta hasta 3 veces (45s/60s/90s, con un
+    `page.reload()` entre cada intento) antes de darse por vencido.
+  - **Clic en la fila**: el texto del asunto es un `<span>` suelto, el
+    clic real que abre el correo es en el contenedor de la fila completa
+    -- se prueba el elemento y hasta 4 niveles de padres (`locator('..')`)
+    hasta que uno sí cambia la URL a `.../conversation/-<id>`.
+  - **Carrera al leer el contenido**: justo después del clic, el iframe
+    del correo a veces no ha terminado de cargar -- `leerTextoCompleto()`
+    ahora reintenta hasta 8 veces (700ms entre cada una) antes de darse
+    por vencido, en vez de checar una sola vez (antes esto causaba que el
+    primer correo, el más importante, se reportara como "no se encontró
+    EXPEDIENTE" y se omitiera).
+  - **El token de la liga del PDF venía envuelto entre comillas simples**
+    en el texto del correo (`frmGetDocument.php?token='eyJ...A'`) -- el
+    regex las incluía como si fueran parte del token, invalidándolo
+    siempre (el servidor nunca regresaba el PDF). `extraerLigaDocumento()`
+    ahora las quita.
+  - **La liga no entrega el PDF directo -- entrega un `.zip`** (cabecera
+    "PK", confirmado real con el expediente 479/2025: 253 KB,
+    `content-type: application/zip`) con el/los documento(s) del acuerdo
+    adentro. Se agregó la dependencia `adm-zip` (`npm install adm-zip`
+    necesario en las instalaciones ya hechas del robot) y
+    `extraerPdfDeZip()` abre el zip y sube el primer PDF real que
+    encuentra adentro (valida la cabecera "%PDF" de cada entrada, no solo
+    el nombre).
+  - **El progreso se guarda por cada correo procesado**, no solo al final
+    del lote -- si la página truena a medio lote (pasó varias veces:
+    "Page crashed" / "Target page, context or browser has been closed"
+    después de procesar varios correos seguidos), los avisos ya
+    reportados en ese lote ya no se repiten/duplican en la siguiente
+    corrida.
+  - Pendiente: falta programarlo para correr solo todos los días (Task
+    Scheduler en la máquina del usuario, igual que Federal) -- por ahora
+    solo se ha corrido a mano. El robot viejo `robots/edomex/edomex.js`
+    (boletín con captcha) sigue en el repo sin tocarse; con esto ya
+    confirmado, puede retirarse cuando el usuario lo decida, pero no se
+    ha quitado nada todavía.
 
 ## Robot de jurisprudencia (`robots/jurisprudencia/`)
 - Scrapea sjf2.scjn.gob.mx (Semanario Judicial de la Federación), materia
