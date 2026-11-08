@@ -279,6 +279,17 @@ async function cookiesParaPlaywright(jar) {
   })).filter(c => c.domain && c.name);
 }
 
+// Confirmado real: buscar "Consulta de Expediente Electrónico" como
+// cadena exacta no encontraba NADA (0 coincidencias) aunque el texto se
+// viera perfecto en pantalla -- muy probable que el portal use un espacio
+// especial (NBSP u otro) entre alguna palabra, invisible pero distinto a
+// un espacio normal. Esta función arma un regex que acepta cualquier tipo
+// de espacio entre palabras, para no depender de que coincida byte por
+// byte.
+function textoFlexible(frase) {
+  return new RegExp(frase.trim().split(/\s+/).map(p => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+'), 'i');
+}
+
 // Mismo problema ya documentado en el robot de jurisprudencia: un texto
 // puede existir duplicado en el DOM (version de escritorio/movil, un menu
 // colapsado que sigue en el HTML aunque este oculto, etc.) -- se busca
@@ -608,10 +619,10 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
     // arregla en menos de un segundo, no hace falta esperar tanto) --
     // confirmado real: este clic ha tronado más de una vez justo después
     // de cerrar la ventana de "Seleccione un perfil".
-    let entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false, 8000).catch(() => false);
+    let entroMenu = await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false, 8000).catch(() => false);
     if (!entroMenu) {
       await cerrarCualquierModalAbierto(page);
-      entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false, 8000).catch(() => false);
+      entroMenu = await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false, 8000).catch(() => false);
     }
     if (!entroMenu) {
       // Último recurso: recargar desde cero por si quedó algo atorado que
@@ -619,7 +630,7 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
       await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
       await cerrarModalSiAparece(page, cuenta.pjf_usuario);
       await cerrarCualquierModalAbierto(page);
-      entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false).catch(() => false);
+      entroMenu = await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false).catch(() => false);
     }
     if (!entroMenu) {
       console.log('  AVISO: no se encontró el menú "Consulta de Expediente Electrónico" -- el portal pudo cambiar otra vez.');
@@ -631,11 +642,12 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
         modalesAbiertos: document.querySelectorAll('.modal.in, .modal.show').length,
         backdrops: document.querySelectorAll('.modal-backdrop').length,
         url: location.href,
-        // Cuenta cuántas veces aparece el texto del menú en TODO el body,
-        // sin filtrar por visibilidad -- si da 0, el texto de plano no
-        // está ahí (portal cambió / sesión expiró); si da >0, el texto SÍ
-        // está pero Playwright nunca lo consideró "visible" a tiempo.
-        textoMenuEnBody: (document.body.innerText || '').split('Consulta de Expediente Electrónico').length - 1,
+        // Confirmado real: la búsqueda EXACTA daba 0 aunque el texto se
+        // viera perfecto en pantalla (probable espacio especial entre
+        // palabras) -- se usa el mismo regex flexible que ya usa el clic,
+        // para que este número sea consistente con lo que de verdad busca
+        // clickTextoVisible().
+        textoMenuEnBody: ((document.body.innerText || '').match(/Consulta\s+de\s+Expediente\s+Electr[oó]nico/gi) || []).length,
       })).catch((e) => `(no se pudo leer: ${e.message})`);
       console.log(`  Diagnóstico de la página en ese momento: ${JSON.stringify(diagnostico)}`);
       const textoBody = await page.locator('body').innerText().catch((e) => `(no se pudo leer: ${e.message})`);
@@ -692,7 +704,7 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
         // Respaldo: si no hay botón "Regresar" visible, se vuelve a entrar
         // al menú desde cero.
         await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
-        await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false).catch(() => false);
+        await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false).catch(() => false);
         await page.waitForTimeout(500);
         await clickTextoVisible(page, 'Vista Global', false).catch(() => false);
       }
