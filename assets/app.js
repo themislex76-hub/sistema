@@ -2216,18 +2216,6 @@ async function loadAvisosBoletin(){
   }catch(e){ AVISOS_BOLETIN = []; }
 }
 
-// Captcha pendiente de Edomex — el robot que corre en la computadora del
-// despacho publica aquí la imagen cuando necesita que alguien lo resuelva.
-// Se revisa junto con el resto del bootstrap para que aparezca en Agenda
-// sin tener que entrar a buscarlo.
-let EDOMEX_CAPTCHA_PENDIENTE = null;
-async function loadEdomexCaptchaPendiente(){
-  try{
-    const d = await api('GET', 'edomex_captcha_pendiente.php');
-    EDOMEX_CAPTCHA_PENDIENTE = d.pendiente;
-  }catch(e){ EDOMEX_CAPTCHA_PENDIENTE = null; }
-}
-
 const AMBITO_INHABIL_LABEL = {
   federal: 'Federal (Art. 74 LFT)',
   cdmx: 'Tribunales locales — CDMX',
@@ -2641,7 +2629,6 @@ async function refreshBootstrap(){
   await loadGoogleStatus();
   await loadTribunalesCustom();
   await loadAvisosBoletin();
-  await loadEdomexCaptchaPendiente();
   await loadPjfCredenciales();
   await loadEdomexCorreoCredenciales();
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
@@ -2844,18 +2831,6 @@ async function pollActualizaciones(){
       }
     }
 
-    // El robot de Edomex va publicando un captcha nuevo cada vez que
-    // termina uno (uno por juzgado) -- sin este poll, quien lo está
-    // resolviendo tenía que recargar la página (F5) a mano para ver el
-    // siguiente.
-    const captchaIdAntes = EDOMEX_CAPTCHA_PENDIENTE ? EDOMEX_CAPTCHA_PENDIENTE.id : null;
-    await loadEdomexCaptchaPendiente();
-    const captchaIdDespues = EDOMEX_CAPTCHA_PENDIENTE ? EDOMEX_CAPTCHA_PENDIENTE.id : null;
-    if(captchaIdDespues !== captchaIdAntes){
-      const y = window.scrollY;
-      render();
-      window.scrollTo(0, y);
-    }
   }catch(e){ /* silencioso: un hipo de red no debe interrumpir cada 8s */ }
 }
 
@@ -3207,7 +3182,7 @@ function shellHTML(){
         ${isAdmin ? `<button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>` : ""}
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
-        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
+        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${avisosNuevosCount()>0?`<span class="nav-badge">${avisosNuevosCount()}</span>`:""}</button>
         ${isAdmin ? `<button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge" id="navBadgeProspectos">${prospectosNuevosCount()}</span>`:""}</button>` : ""}
         ${isAdmin ? `<button data-v="conversaciones" class="${VIEW==='conversaciones'?'active':''}"><span class="ico">&#128269;</span> Conversaciones (WhatsApp)</button>` : ""}
         ${isAdmin ? `<button data-v="resumen_ejecutivo" class="${VIEW==='resumen_ejecutivo'?'active':''}"><span class="ico">&#128202;</span> Resumen ejecutivo (bot)</button>` : ""}
@@ -6309,18 +6284,6 @@ function agendaHTML(){
     </div>
   </div>` : ""}
   ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
-  ${EDOMEX_CAPTCHA_PENDIENTE? `
-  <div class="panel">
-    <div class="panel-head"><h3>&#128274; Captcha de Edomex pendiente de resolver</h3></div>
-    <div class="panel-body" style="padding:16px 20px;">
-      <div class="notice" style="margin-bottom:12px;">El robot que revisa el boletín de Edomex${EDOMEX_CAPTCHA_PENDIENTE.expediente_exp?` está consultando el expediente <strong>${escapeHTML(EDOMEX_CAPTCHA_PENDIENTE.expediente_exp)}</strong> y`:''} necesita que alguien escriba el código de la imagen para continuar.</div>
-      <img src="data:image/png;base64,${EDOMEX_CAPTCHA_PENDIENTE.imagen_base64}" alt="Captcha de Edomex" style="display:block; margin-bottom:10px; border:1px solid var(--border); border-radius:6px; max-width:260px;">
-      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <input type="text" id="edomexCaptchaInput" placeholder="Código de la imagen" style="padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px; max-width:200px;">
-        <button class="btn" id="edomexCaptchaBtn">Enviar</button>
-      </div>
-    </div>
-  </div>` : ""}
   ${avisosNuevosCount()>0? `
   <div class="panel">
     <div class="panel-head"><h3>&#128276; Avisos de boletines por revisar</h3><span class="count">${avisosNuevosCount()}</span></div>
@@ -7121,21 +7084,6 @@ function bindViewBody(){
       }
     });
   }
-  const edomexCaptchaBtn = document.getElementById('edomexCaptchaBtn');
-  if(edomexCaptchaBtn){
-    edomexCaptchaBtn.addEventListener('click', async ()=>{
-      const input = document.getElementById('edomexCaptchaInput');
-      const respuesta = input.value.trim();
-      if(!respuesta){ alert('Escribe el código que ves en la imagen.'); return; }
-      edomexCaptchaBtn.disabled = true;
-      try{
-        await api('POST', 'edomex_captcha_resolver.php', {id: EDOMEX_CAPTCHA_PENDIENTE.id, respuesta});
-        await loadEdomexCaptchaPendiente();
-        renderViewBody();
-      }catch(err){ alert('No se pudo enviar: ' + err.message); }
-      finally{ edomexCaptchaBtn.disabled = false; }
-    });
-  }
   document.querySelectorAll('[data-rename-btn]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const id = parseInt(btn.dataset.renameBtn);
@@ -7817,7 +7765,7 @@ function modalTabContent(k,p,meta){
   if(MODAL_TAB==='boletin'){
     const avisos = avisosDeExpediente(k.id);
     return `
-    <div class="notice" style="margin-bottom:16px;">Los robots de monitoreo revisan solos el boletín Federal y el de CDMX todos los días; Edomex necesita que alguien resuelva un captcha cuando el robot lo pida (aparece en Agenda). También puedes registrar aquí a mano cualquier revisión que hagas tú mismo.</div>
+    <div class="notice" style="margin-bottom:16px;">Los robots de monitoreo (Federal, CDMX y el correo de notificaciones de Edomex) revisan solos el boletín todos los días, sin necesitar que nadie resuelva nada a mano. También puedes registrar aquí a mano cualquier revisión que hagas tú mismo.</div>
     <div class="grid2" style="margin-bottom:6px;">
       <div class="field"><label>Fuente revisada</label>
         <select id="avisoFuente" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">

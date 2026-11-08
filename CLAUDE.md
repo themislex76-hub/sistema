@@ -233,6 +233,22 @@ completo"):
     `control-de-expedientes/robots/federal-multidespacho/federal.js` --
     el usuario ya pidió que se haga en cuanto esto quedara confirmado
     aquí.
+- **Panel viejo de "Captcha de Edomex pendiente" retirado del todo (9 nov
+  2026)**: era de `robots/edomex/edomex.js`, el robot viejo con captcha
+  ya reemplazado por `edomex_correo.js` el 8 nov -- el usuario lo vio
+  aparecer en Agenda general con un captcha huérfano (de antes de que se
+  retirara el robot) y preguntó si ya tocaba quitarlo. Se quitó de
+  `app.js` (variable `EDOMEX_CAPTCHA_PENDIENTE`, el panel en Agenda
+  general, el botón "Enviar" y su manejador, el +1 del badge de Agenda) y
+  se borraron del repo los 4 endpoints que ya no llamaba nadie:
+  `api/edomex_captcha_{pendiente,publicar,resolver,resultado}.php`.
+  **Pendiente**: esos 4 archivos .php siguen en el servidor en vivo
+  (subida manual por cPanel, no se borran solos) -- no hace daño
+  dejarlos huérfanos ahí (nada les manda tráfico), pero si el usuario
+  quiere limpiarlos del todo hay que decirle que los borre a mano desde
+  el Administrador de archivos. La tabla `edomex_captcha_pendientes` en
+  la base de datos tampoco se tocó (mismo razonamiento, inofensiva sin
+  uso) -- no se le ofreció un DROP TABLE porque no se pidió. `app.js?v=116`.
 
 ## Avisos de boletín con documento adjunto (8 nov 2026)
 - Pedido del usuario: que al reportarse un acuerdo/aviso nuevo, se pueda
