@@ -210,11 +210,24 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   const hayIframe = await iframe.waitFor({ state: 'attached', timeout: 8000 }).then(() => true).catch(() => false);
   let pdf = null;
   if (hayIframe) {
+    // La corrida anterior (con este mismo enfoque) no detectó NI descarga
+    // NI respuesta PDF/octet-stream en 15s -- en vez de seguir adivinando
+    // qué content-type o evento usa la mini app, se registran TODAS las
+    // peticiones que disparen (de cualquier tipo) durante la espera, para
+    // ver qué está haciendo de verdad si esto vuelve a fallar.
+    const peticiones = [];
+    const verPeticion = (req) => peticiones.push(`${req.method()} ${req.url()}`);
+    page.on('request', verPeticion);
     pdf = await intentarCapturarPdf(context, page, async () => {
       // No hace falta clic -- solo darle tiempo a la mini app de adentro
       // del iframe para que cargue y pida el archivo por su cuenta.
       await page.waitForTimeout(6000);
     });
+    page.off('request', verPeticion);
+    if (!pdf) {
+      console.log(`    Peticiones de red durante la espera del iframe (${peticiones.length}):`);
+      peticiones.slice(0, 30).forEach(p => console.log(`      ${p}`));
+    }
   } else {
     // Respaldo, por si algún acuerdo SÍ muestra una tabla con varios
     // archivos en vez del iframe directo (no confirmado todavía con una
