@@ -117,10 +117,19 @@ async function subirPdfAlSistema(buffer, expedienteIdSistema, nombreArchivo) {
 // se manda igual, solo sin documento) y se deja evidencia para ajustar
 // sin adivinar.
 async function intentarCapturarPdf(context, page, disparador) {
-  const esPdf = (resp) => (resp.headers()['content-type'] || '').toLowerCase().includes('pdf');
-  const esperaDescarga = page.waitForEvent('download', { timeout: 10000 }).catch(() => null);
-  const esperaPaginaNueva = context.waitForEvent('page', { timeout: 10000 }).catch(() => null);
-  const esperaRespuesta = page.waitForResponse(esPdf, { timeout: 10000 }).catch(() => null);
+  // No solo "pdf" en el content-type -- la mini app Angular de adentro del
+  // iframe puede pedir el archivo con otro content-type (ej.
+  // "octet-stream" es común para descargas binarias genéricas).
+  const esPdf = (resp) => {
+    const ct = (resp.headers()['content-type'] || '').toLowerCase();
+    return ct.includes('pdf') || ct.includes('octet-stream');
+  };
+  // 15s, no 10s -- cuando el disparador es "esperar a que el iframe cargue
+  // su propia mini app", esta necesita tiempo real para bootstrapear
+  // (bundles de Angular) antes de pedir el archivo por su cuenta.
+  const esperaDescarga = page.waitForEvent('download', { timeout: 15000 }).catch(() => null);
+  const esperaPaginaNueva = context.waitForEvent('page', { timeout: 15000 }).catch(() => null);
+  const esperaRespuesta = page.waitForResponse(esPdf, { timeout: 15000 }).catch(() => null);
 
   await disparador();
 
@@ -183,26 +192,29 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
     return null;
   }
 
-  // Confirmado con el HTML real del modal (volcado en una corrida real):
-  // cuando el acuerdo tiene un solo archivo, el modal NO muestra una tabla
-  // con botones -- mete directo un <iframe src="...cjf-downloadfileweb/
-  // files?param1=...&param2=...&param3=..."> con la URL real del PDF. No
-  // hace falta clickear nada adentro: se lee esa URL y se pide directo con
-  // las mismas cookies de la sesión (context.request comparte el login).
+  // Confirmado real (8 nov 2026): el <iframe src="...cjf-downloadfileweb/
+  // files?param1=...&param2=...&param3=..."> NO es la URL directa del PDF
+  // -- es el cascarón HTML de una mini app Angular ("cjf-downloadfileweb",
+  // confirmado viendo su contenido real: <title>Cjfdownloadfileweb</title>,
+  // <cjf-root>, bundles "runtime-es2015...js") que necesita ejecutar su
+  // propio JavaScript, ya adentro de un navegador real, para ir a pedir el
+  // PDF de verdad -- por eso pedir esa URL directo con context.request
+  // siempre regresaba el mismo cascarón de ~1000 bytes, nunca el archivo.
+  // Playwright SÍ ejecuta ese JS (Chromium es un navegador real), así que
+  // basta con dejar que el iframe cargue solo y escuchar la respuesta/
+  // descarga real que su propio código dispare -- igual que ya hace
+  // intentarCapturarPdf() para el camino de respaldo, pero sin necesidad
+  // de darle clic a nada (el iframe ya se puso en marcha solo al abrirse
+  // el modal).
   const iframe = modal.locator('iframe').first();
   const hayIframe = await iframe.waitFor({ state: 'attached', timeout: 8000 }).then(() => true).catch(() => false);
   let pdf = null;
   if (hayIframe) {
-    const src = await iframe.getAttribute('src').catch(() => null);
-    if (src) {
-      const url = src.startsWith('http') ? src : new URL(src, page.url()).toString();
-      // Algunos de estos endpoints de descarga rechazan (o regresan una
-      // página de error distinta) una petición sin "Referer" -- se manda
-      // la URL de la página actual, como haría el navegador real al
-      // cargar el <iframe>.
-      const r = await context.request.get(url, { headers: { Referer: page.url() } }).catch(() => null);
-      if (r && r.ok()) pdf = await r.body().catch(() => null);
-    }
+    pdf = await intentarCapturarPdf(context, page, async () => {
+      // No hace falta clic -- solo darle tiempo a la mini app de adentro
+      // del iframe para que cargue y pida el archivo por su cuenta.
+      await page.waitForTimeout(6000);
+    });
   } else {
     // Respaldo, por si algún acuerdo SÍ muestra una tabla con varios
     // archivos en vez del iframe directo (no confirmado todavía con una
