@@ -30,7 +30,7 @@ commit/push + agrega aquí un resumen breve de qué cambiaste y qué
 migración SQL es la más reciente que el usuario ya corrió (para que la
 siguiente sesión sepa desde dónde continuar sin repetir ni pisar nada).
 
-**Última migración aplicada por el usuario: `056_avisos_documento_robot.sql`.**
+**Última migración aplicada por el usuario: `057_edomex_correo_credenciales.sql`.**
 
 Resumen de lo agregado en la sesión del 6-8 nov 2026 ("sistema y bot
 completo"):
@@ -197,6 +197,49 @@ completo"):
   (`subirTextoBoletinAlSistema()`). **Todavía sin confirmar en una corrida
   real** -- más simple y de menor riesgo que lo de Federal, pero nadie lo
   ha corrido en vivo todavía; confirmar antes de asumir que funciona.
+
+## Robot nuevo: correo de notificaciones Edomex (`robots/edomex_correo/`, 8 nov 2026)
+- Descubrimiento del usuario: el Poder Judicial del Estado de México
+  (Tlalnepantla) notifica los acuerdos por un correo institucional
+  (mail.pjedomex.gob.mx, webmail Carbonio -- **sin acceso IMAP**, solo por
+  la página con usuario y contraseña) con un correo "Notificacion
+  Electronica Laboral" por cada acuerdo, YA estructurado: Destinatario/
+  EXPEDIENTE/Juicio/Juzgado/Actor/Demandado + el texto de la notificación +
+  una liga directa (con token JWT) a `frmGetDocument.php` para bajar el PDF
+  -- sin necesitar sesión, el token es la autenticación.
+- Esto reemplaza al robot viejo de boletín con captcha
+  (`robots/edomex/edomex.js`, que sigue ahí sin tocarse por ahora) --
+  mucho más confiable: sin captcha, sin el filtro de seguridad por nombres
+  (la notificación ya viene dirigida personalmente y con sello digital).
+- Nueva infraestructura de credenciales (mismo patrón que PJF): columnas
+  `edomex_correo_usuario`/`edomex_correo_password_enc`/
+  `edomex_correo_actualizado_en` en `usuarios` (migración 057, ya
+  aplicada), endpoints `api/edomex_correo_credenciales_{set,get,listar}.php`,
+  sección nueva en "Mi cuenta" (`app.js?v=113`) para que cada abogado
+  guarde su propio usuario/contraseña de ese correo.
+- El robot (`edomex_correo.js`) reutiliza TODA la infraestructura de
+  documentos construida hoy para Federal: `documentos_subir_robot.php`,
+  categoría `'acuerdo'`, `documento_id` en el aviso.
+- **Sin probar en vivo todavía** -- construido viendo 3 capturas de
+  pantalla (login, bandeja de entrada, contenido de un correo real), nunca
+  ejecutado de verdad. Supuestos que pueden fallar y necesitar ajuste con
+  la primera corrida real:
+  - Selectores del login (se intenta por `input[type=text]`/`[type=password]`
+    genéricos + el texto "INICIAR SESIÓN", no se conocen los ids/names reales).
+  - Que el contenido del correo (con "EXPEDIENTE:", "Actor:", etc.) se
+    pueda leer del `innerText()` de la página o de alguno de sus frames
+    (`leerTextoCompleto()`) -- puede venir en un iframe con otra estructura.
+  - Que la lista de correos esté ordenada del más nuevo al más viejo (se
+    usa el id numérico de `.../conversation/-<id>` de la URL para no
+    reprocesar, comparando contra el último visto en
+    `procesados_edomex_correo.json`).
+  - Que la liga `frmGetDocument.php?token=...` funcione con un
+    `context.request.get()` simple (sin sesión) -- se valida con
+    `pdfEsValido()` (debe empezar con "%PDF") antes de subirlo, igual que
+    Federal.
+  - Si algo truena, pedir el error completo de la terminal + la captura
+    `debug_*.png` que se guarda junto al robot -- no adivinar el selector
+    sin eso (mismo patrón de todo este día con Federal).
 
 ## Robot de jurisprudencia (`robots/jurisprudencia/`)
 - Scrapea sjf2.scjn.gob.mx (Semanario Judicial de la Federación), materia
