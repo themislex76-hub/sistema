@@ -89,14 +89,40 @@ completo"):
 - Reescrito por completo (8 nov 2026): el Portal del PJF quitó la pantalla
   vieja de "Acuerdos Recientes/Pendientes" que usaba (confirmado con una
   corrida real: login exitoso, 0 filas siempre). Ahora usa Playwright para
-  entrar a "Consulta de Expediente Electrónico" y abrir cada expediente
-  (pantalla moderna, carga por JavaScript). El login contra la API sigue
-  funcionando igual que antes -- solo se reescribió la parte de leer
-  acuerdos. Seguimiento por número de acuerdo ("No.") en
-  `procesados_federal.json`. Construido a partir de capturas de pantalla
-  del portal, sin poder probarse en vivo desde esta sesión -- si algo
-  truena en una corrida real, pide el error completo + la captura
-  debug_error_*.png que se guarda junto al robot.
+  entrar a "Consulta de Expediente Electrónico" → "Vista Global" y abrir
+  cada expediente (pantalla moderna, carga por JavaScript). El login
+  contra la API sigue funcionando igual que antes -- solo se reescribió
+  la parte de leer acuerdos. Seguimiento por número de acuerdo ("No.") en
+  `procesados_federal.json`.
+- Construido a partir de capturas de pantalla del portal e iterado en vivo
+  con el usuario (sin internet desde esta sesión) durante varias corridas
+  reales el 8 nov 2026. Bugs reales ya corregidos en ese proceso:
+  - Modal "Seleccione un perfil" (Persona Física / representante...) al
+    entrar: se cierra dándole clic a "Persona Física"; había una condición
+    de carrera con la animación "fade" de Bootstrap (a veces cerraba, a
+    veces no, con el mismo código) -- se espera a que termine antes de
+    hacer clic, y si el clic normal no cierra el modal se reintenta con
+    clic forzado + se limpia a mano el `.modal-backdrop` que a veces queda
+    vivo y bloquea el siguiente clic en la página aunque el modal ya no se
+    vea.
+  - El filtro de seguridad `pareceElMismoCaso()` (copiado de CDMX, exigía
+    que el resumen mencionara a las partes) rechazaba TODOS los acuerdos
+    siempre -- el resumen que arma este robot (No./fecha de acuerdo/fecha
+    de publicación) nunca trae nombres de partes. Se quitó: aquí no hace
+    falta, ya se entra al detalle exacto del expediente desde la cuenta
+    autorizada y el número ya viene cotejado contra los expedientes
+    monitoreados del sistema.
+  - `maximizarEntradasPorPagina()` buscaba el select "Mostrar X entradas"
+    por texto sin acotar a la tabla correcta y a veces agarraba el de otra
+    tabla oculta de la página (ej. "tableOficialia"), quedándose 30s
+    esperando en vano. Ahora se acota por `aria-controls` contra el id de
+    la tabla que de verdad se está leyendo.
+  - Pendiente de confirmar con el usuario: que con estos 3 fixes juntos
+    (commit `92a58e7`) una corrida completa reporte bien los acuerdos
+    nuevos de las 2 cuentas guardadas sin que truene en ningún punto. Si
+    algo más truena, pedir el error completo de la terminal + la captura
+    `debug_error_*.png` o `debug_modal_*.png` que se guarda junto al
+    robot -- no adivinar el selector sin eso.
 
 ## Robot de jurisprudencia (`robots/jurisprudencia/`)
 - Scrapea sjf2.scjn.gob.mx (Semanario Judicial de la Federación), materia
