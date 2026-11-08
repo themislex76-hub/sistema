@@ -346,6 +346,13 @@ function textoFlexible(frase) {
 async function clickTextoVisible(page, texto, exact = true, timeoutMs = 30000) {
   const candidatos = page.getByText(texto, { exact });
   const n = await candidatos.count();
+  // OJO: la espera de visibilidad por candidato estaba fija en 3000ms SIN
+  // IMPORTAR el "timeoutMs" que mandara quien llama -- confirmado real: el
+  // 3er intento (recarga completa, pensado para dar hasta 30s) en realidad
+  // solo esperaba 3s antes de rendirse, y el diagnóstico mostró el mismo
+  // candidato perfectamente visible (rect 122x29, visibility=visible)
+  // apenas un instante después. Ahora la espera escala con "timeoutMs".
+  const esperaVisibilidad = Math.max(3000, timeoutMs - 2000);
   for (let i = 0; i < n; i++) {
     const el = candidatos.nth(i);
     // OJO: el.isVisible() NO espera de verdad, es una revisión instantánea
@@ -354,7 +361,7 @@ async function clickTextoVisible(page, texto, exact = true, timeoutMs = 30000) {
     // isVisible() ya había dicho que no -- confirmado con una corrida
     // real donde este clic tronaba con 0 modales/fondos bloqueando nada).
     // waitFor({state:'visible'}) sí reintenta hasta que aparezca.
-    const visible = await el.waitFor({ state: 'visible', timeout: 3000 }).then(() => true).catch(() => false);
+    const visible = await el.waitFor({ state: 'visible', timeout: esperaVisibilidad }).then(() => true).catch(() => false);
     if (visible) {
       await el.click({ timeout: timeoutMs });
       return true;
