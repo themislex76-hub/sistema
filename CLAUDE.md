@@ -85,6 +85,19 @@ completo"):
   boletín real (captura de pantalla con zoom basta) para ver el patrón
   exacto antes de tocar el regex -- no se puede adivinar el formato.
 
+## Robot Federal (`robots/federal/federal.js`)
+- Reescrito por completo (8 nov 2026): el Portal del PJF quitó la pantalla
+  vieja de "Acuerdos Recientes/Pendientes" que usaba (confirmado con una
+  corrida real: login exitoso, 0 filas siempre). Ahora usa Playwright para
+  entrar a "Consulta de Expediente Electrónico" y abrir cada expediente
+  (pantalla moderna, carga por JavaScript). El login contra la API sigue
+  funcionando igual que antes -- solo se reescribió la parte de leer
+  acuerdos. Seguimiento por número de acuerdo ("No.") en
+  `procesados_federal.json`. Construido a partir de capturas de pantalla
+  del portal, sin poder probarse en vivo desde esta sesión -- si algo
+  truena en una corrida real, pide el error completo + la captura
+  debug_error_*.png que se guarda junto al robot.
+
 ## Robot de jurisprudencia (`robots/jurisprudencia/`)
 - Scrapea sjf2.scjn.gob.mx (Semanario Judicial de la Federación), materia
   laboral, y manda tesis nuevas a `api/jurisprudencia_ingest.php`.
