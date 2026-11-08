@@ -481,7 +481,16 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
     // "...Consulta de Expediente Electrónico Vista Global Vista por Órgano
     // Jurisdiccional..." justo después de darle clic) -- hace falta un
     // segundo clic en "Vista Global" para que de verdad aparezca la tabla.
-    const entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false);
+    let entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false).catch(() => false);
+    if (!entroMenu) {
+      // Pudo haber quedado un modal/fondo oscuro bloqueando el clic sin
+      // avisar -- confirmado con una corrida real: timeout de 30s en este
+      // mismo clic justo después de cerrar la ventana de "Seleccione un
+      // perfil" con clic forzado. Se limpia y se reintenta una vez antes
+      // de darse por vencido.
+      await cerrarCualquierModalAbierto(page);
+      entroMenu = await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false).catch(() => false);
+    }
     if (!entroMenu) {
       console.log('  AVISO: no se encontró el menú "Consulta de Expediente Electrónico" -- el portal pudo cambiar otra vez.');
       await page.screenshot({ path: path.join(__dirname, `debug_error_${cuenta.pjf_usuario}.png`), fullPage: true }).catch(() => {});
@@ -528,14 +537,18 @@ async function revisarCuenta(cuenta, porNumero, estado, browser) {
       }
 
       // Regresa a la vista global para poder abrir el siguiente expediente.
-      const regreso = await clickTextoVisible(page, 'Regresar', false);
+      // Si algo (ej. un modal que quedó atorado) truena aquí, no debe
+      // tirar TODO el resto de los expedientes de esta cuenta -- se limpia
+      // y se cae al respaldo de volver a entrar desde cero.
+      const regreso = await clickTextoVisible(page, 'Regresar', false).catch(() => false);
       if (!regreso) {
+        await cerrarCualquierModalAbierto(page);
         // Respaldo: si no hay botón "Regresar" visible, se vuelve a entrar
         // al menú desde cero.
-        await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' });
-        await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false);
+        await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
+        await clickTextoVisible(page, 'Consulta de Expediente Electrónico', false).catch(() => false);
         await page.waitForTimeout(500);
-        await clickTextoVisible(page, 'Vista Global', false);
+        await clickTextoVisible(page, 'Vista Global', false).catch(() => false);
       }
       await leerFilasVistaGlobal(page).catch(() => {});
     }
