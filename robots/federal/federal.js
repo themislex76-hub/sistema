@@ -106,30 +106,25 @@ async function subirPdfAlSistema(buffer, expedienteIdSistema, nombreArchivo) {
   }
 }
 
-// Intenta conseguir los bytes del PDF de un acuerdo dándole clic al botón
-// de "ver documento" de su fila. NO se sabe de antemano qué pasa después
-// del clic (no se pudo ver en vivo desde aquí) -- según lo que describió el
-// usuario de los pasos manuales ("si le das al ojito abre atrás un visor y
-// si das la flechita baja el pdf"), puede ser: (a) el PDF se sirve directo
-// como respuesta a esta misma página, (b) se abre una pestaña nueva con un
-// visor que dispara su propia descarga o responde el PDF directo, o (c) la
-// pestaña nueva YA ES la URL del PDF. Se cubren las 3 a la vez con
-// listeners en paralelo; si ninguna atina, se regresa null (el aviso se
-// manda igual, solo sin documento) y se deja evidencia para ajustar sin
-// adivinar.
-async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
-  const objetivo = celda.locator('button, a, [role="button"]').first();
-  const esBoton = (await objetivo.count()) > 0;
-  if (!esBoton) return null;
-
+// Intenta conseguir los bytes del PDF de un acuerdo. Confirmado con una
+// captura real del modal: el primer clic (botón de la celda "Documento
+// Acuerdo") NO descarga nada -- abre un modal "Acuerdo" (data-keyboard
+// "false", backdrop "static", así que Escape/clic afuera no lo cierran)
+// con una tabla de archivos, cada uno con un ícono de descarga (flechita,
+// primero) y uno de ver (ojito, después) -- hace falta un SEGUNDO clic
+// adentro de ese modal, en el ícono de descarga, para que de verdad se
+// dispare la descarga del PDF. Si no se puede, se regresa null (el aviso
+// se manda igual, solo sin documento) y se deja evidencia para ajustar
+// sin adivinar.
+async function intentarCapturarPdf(context, page, disparador) {
   const esPdf = (resp) => (resp.headers()['content-type'] || '').toLowerCase().includes('pdf');
-  const esperaRespuesta = page.waitForResponse(esPdf, { timeout: 12000 }).catch(() => null);
-  const esperaDescarga = page.waitForEvent('download', { timeout: 12000 }).catch(() => null);
-  const esperaPaginaNueva = context.waitForEvent('page', { timeout: 12000 }).catch(() => null);
+  const esperaDescarga = page.waitForEvent('download', { timeout: 10000 }).catch(() => null);
+  const esperaPaginaNueva = context.waitForEvent('page', { timeout: 10000 }).catch(() => null);
+  const esperaRespuesta = page.waitForResponse(esPdf, { timeout: 10000 }).catch(() => null);
 
-  await objetivo.click({ timeout: 8000 }).catch(() => {});
+  await disparador();
 
-  const [respuesta, descarga, paginaNueva] = await Promise.all([esperaRespuesta, esperaDescarga, esperaPaginaNueva]);
+  const [descarga, paginaNueva, respuesta] = await Promise.all([esperaDescarga, esperaPaginaNueva, esperaRespuesta]);
 
   if (descarga) {
     const ruta = await descarga.path().catch(() => null);
@@ -137,36 +132,70 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   }
   if (paginaNueva) {
     await paginaNueva.waitForLoadState('load', { timeout: 8000 }).catch(() => {});
-    const descargaEnNueva = await paginaNueva.waitForEvent('download', { timeout: 8000 }).catch(() => null);
+    const descargaEnNueva = await paginaNueva.waitForEvent('download', { timeout: 5000 }).catch(() => null);
     if (descargaEnNueva) {
       const ruta = await descargaEnNueva.path().catch(() => null);
       await paginaNueva.close().catch(() => {});
       if (ruta) return fs.readFileSync(ruta);
       return null;
     }
-    const respuestaEnNueva = await paginaNueva.waitForResponse(esPdf, { timeout: 8000 }).catch(() => null);
-    if (respuestaEnNueva) {
-      const cuerpo = await respuestaEnNueva.body().catch(() => null);
-      await paginaNueva.close().catch(() => {});
-      return cuerpo;
-    }
-    // Último recurso: la pestaña nueva ya navegó directo a la URL del PDF.
     const urlNueva = paginaNueva.url();
-    await paginaNueva.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
     await paginaNueva.close().catch(() => {});
     if (/\.pdf(\?|$)/i.test(urlNueva)) {
       const r = await context.request.get(urlNueva).catch(() => null);
       if (r && r.ok()) return await r.body();
     }
-    console.log(`    AVISO: se abrió una pestaña nueva (${urlNueva}) pero no se pudo obtener el PDF -- revisa debug_pdf_${etiquetaDebug}.png.`);
     return null;
   }
   if (respuesta) {
     return await respuesta.body().catch(() => null);
   }
-  await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
-  console.log(`    AVISO: no se detectó ni descarga ni pestaña nueva ni respuesta PDF al darle clic -- revisa debug_pdf_${etiquetaDebug}.png.`);
   return null;
+}
+
+async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
+  const abrirModal = celda.locator('button, a, [role="button"]').first();
+  if ((await abrirModal.count().catch(() => 0)) === 0) return null;
+  await abrirModal.click({ timeout: 8000 }).catch(() => {});
+
+  const modal = page.locator('.modal.in, .modal.show').first();
+  const hayModal = await modal.isVisible({ timeout: 8000 }).catch(() => false);
+  if (!hayModal) {
+    await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+    console.log(`    AVISO: no apareció el modal del documento al darle clic -- revisa debug_pdf_${etiquetaDebug}.png.`);
+    return null;
+  }
+
+  const filaArchivo = modal.locator('tbody tr').first();
+  const hayArchivo = await filaArchivo.isVisible({ timeout: 5000 }).catch(() => false);
+  if (!hayArchivo) {
+    await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+    console.log(`    AVISO: el modal del documento no mostró ningún archivo -- revisa debug_pdf_${etiquetaDebug}.png.`);
+    await cerrarCualquierModalAbierto(page);
+    return null;
+  }
+
+  // El ícono de descarga (flechita) va primero que el de ver (ojito) en la
+  // captura real -- se intenta por título/aria-label primero (más
+  // confiable si cambia el orden) y, de respaldo, por posición.
+  const candidatosDescarga = [
+    filaArchivo.locator('[title*="escargar" i], [aria-label*="escargar" i]').first(),
+    filaArchivo.locator('a, button, [role="button"]').first(),
+  ];
+
+  let pdf = null;
+  for (const candidato of candidatosDescarga) {
+    if ((await candidato.count().catch(() => 0)) === 0) continue;
+    pdf = await intentarCapturarPdf(context, page, () => candidato.click({ timeout: 5000 }).catch(() => {}));
+    if (pdf) break;
+  }
+
+  if (!pdf) {
+    await page.screenshot({ path: path.join(__dirname, `debug_pdf_${etiquetaDebug}.png`), fullPage: true }).catch(() => {});
+    console.log(`    AVISO: no se pudo descargar el PDF desde el modal del documento -- revisa debug_pdf_${etiquetaDebug}.png.`);
+  }
+  await cerrarCualquierModalAbierto(page);
+  return pdf;
 }
 
 // Login confirmado que SÍ funciona (corrida real: "Login PJF OK") -- se
@@ -235,12 +264,21 @@ async function cerrarCualquierModalAbierto(page) {
   await page.keyboard.press('Escape').catch(() => {});
   await page.waitForTimeout(400);
   if (!(await modal.isVisible().catch(() => false))) return;
-  const cerrar = modal.locator('button[data-dismiss="modal"], button.close, [aria-label="Close"], .close').first();
-  if (await cerrar.count().catch(() => 0)) {
-    await cerrar.click({ force: true, timeout: 3000 }).catch(() => {});
-    await page.waitForTimeout(400);
+  // El modal "Acuerdo" visto en una captura real tiene data-keyboard
+  // "false" (Escape no lo cierra) y su botón de cierre es un "Cerrar" de
+  // texto plano, sin data-dismiss/aria-label -- se intenta primero por
+  // texto y de respaldo con los atributos genéricos de siempre.
+  const candidatosCerrar = [
+    modal.getByText('Cerrar', { exact: false }),
+    modal.locator('button[data-dismiss="modal"], button.close, [aria-label="Close"], .close'),
+  ];
+  for (const candidato of candidatosCerrar) {
+    if (await candidato.count().catch(() => 0)) {
+      await candidato.first().click({ force: true, timeout: 3000 }).catch(() => {});
+      await page.waitForTimeout(400);
+      if (!(await modal.isVisible().catch(() => false))) return;
+    }
   }
-  if (!(await modal.isVisible().catch(() => false))) return;
   // Último recurso: se quita a la fuerza por JS para no dejar bloqueado el
   // resto de la corrida (otros expedientes de la misma cuenta siguen
   // después de este).
