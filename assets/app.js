@@ -2209,6 +2209,21 @@ function amparoTribunalOptionsHTML(circuito, tribunalActual){
 
 function avisosNuevosCount(){ return AVISOS_BOLETIN.filter(a=>a.estado==='nuevo').length; }
 function avisosDeExpediente(id){ return AVISOS_BOLETIN.filter(a=>a.expediente_id===id); }
+
+// Lo que la IA leyó del acuerdo real (ver ia_analizar_acuerdo_boletin() en
+// el servidor, cron_analizar_acuerdos_ia.php) -- aparece debajo del
+// resumen genérico del robot cuando ya se analizó. Si además la IA llenó
+// sola una etapa (ia_aplicado), lo marca con una insignia aparte para que
+// quede claro que fue automático y el abogado pueda corregirlo desde
+// "Etapas del juicio" si hiciera falta.
+function etapaLabelPorKey(key){
+  const def = ETAPAS_DEF.find(e=>e.key===key);
+  return def ? def.label : key;
+}
+function avisoIaHTML(a){
+  if(!a.ia_resumen) return '';
+  return `<div class="aviso-ia">🤖 ${escapeHTML(a.ia_resumen)}${a.ia_aplicado && a.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(a.ia_etapa_sugerida))}</span>` : ''}</div>`;
+}
 async function loadAvisosBoletin(){
   try{
     const d = await api('GET', 'avisos_list.php');
@@ -6316,6 +6331,7 @@ function agendaHTML(){
           <span class="badge warn" style="flex-shrink:0;">nuevo</span>
         </div>
         <div class="aviso-resumen">${escapeHTML(a.resumen)}</div>
+        ${avisoIaHTML(a)}
         <div class="aviso-meta">${a.fecha_publicacion? 'Fecha del boletín: '+fmtDate(a.fecha_publicacion)+' &middot; ':''}${a.origen==='manual'?'Registrado por '+escapeHTML(a.creado_por_nombre||'—')+' el ':'Encontrado el '}${new Date(a.creado_en).toLocaleDateString('es-MX')}${a.url_verificacion? ` &middot; <a href="${escapeHTML(a.url_verificacion)}" target="_blank" rel="noopener">ver fuente</a>`:''}</div>
         <div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
@@ -7807,6 +7823,7 @@ function modalTabContent(k,p,meta){
           <span class="badge ${a.estado==='nuevo'?'warn':a.estado==='descartado'?'closed':'ok'}">${a.estado}</span>
         </div>
         <div class="aviso-resumen">${escapeHTML(a.resumen)}</div>
+        ${avisoIaHTML(a)}
         <div class="aviso-meta">${a.fecha_publicacion? 'Fecha del boletín: '+fmtDate(a.fecha_publicacion)+' &middot; ':''}${a.origen==='manual'?'Registrado por '+escapeHTML(a.creado_por_nombre||'—')+' el ':'Encontrado el '}${new Date(a.creado_en).toLocaleDateString('es-MX')}${a.url_verificacion? ` &middot; <a href="${escapeHTML(a.url_verificacion)}" target="_blank" rel="noopener">ver fuente</a>`:''}</div>
         ${a.estado==='nuevo' ? `<div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>

@@ -2924,6 +2924,158 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
     return ['resumen' => $resumen, 'accion' => $accion, 'urgencia' => $urgencia];
 }
 
+// Lee el PDF/texto real de un acuerdo de boletín (Federal/CDMX/Edomex) y
+// dice qué pasó de verdad -- hasta ahora el resumen que guardaba el robot
+// era genérico ("Acuerdo No. X del expediente Y, de fecha Z"), sin que
+// nadie supiera el contenido sin abrir el documento a mano.
+//
+// $rutaArchivo: ruta absoluta en disco (ver documentos_dir()).
+// $tipoMime: el guardado en expediente_documentos.tipo_mime (o se infiere
+// de la extensión si viene vacío).
+// $expediente/$etapas: mismo formato que ia_generar_resumen_expediente(),
+// para que la IA sepa en qué etapa va el trámite y no proponga algo que
+// ya pasó o que contradice la bitácora.
+//
+// Devuelve null si falló, o ['resumen'=>string, 'etapa_sugerida'=>?string
+// (una de ETAPA_KEYS), 'fecha_mencionada'=>?string (YYYY-MM-DD, SOLO si el
+// documento la menciona tal cual -- nunca calculada)].
+const IA_MODELO_ANALIZAR_ACUERDO = 'claude-sonnet-5'; // necesita leer PDF con buen criterio legal, Haiku no basta aquí
+function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, array $expediente, array $etapas = []): ?array
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    if (!is_file($rutaArchivo)) return null;
+    $ext = strtolower(pathinfo($rutaArchivo, PATHINFO_EXTENSION));
+    $esPdf = $tipoMime === 'application/pdf' || $ext === 'pdf';
+
+    $lineas = [];
+    $agregar = function (string $etiqueta, $valor) use (&$lineas) {
+        if ($valor === null || $valor === '') return;
+        $lineas[] = $etiqueta . ': ' . $valor;
+    };
+    $agregar('Actor', $expediente['actor'] ?? null);
+    $agregar('Demandado', $expediente['demandado'] ?? null);
+    $agregar('Expediente', $expediente['exp'] ?? null);
+    $agregar('Número de amparo (si aplica)', $expediente['amparo_expediente'] ?? null);
+
+    // Misma bitácora (y mismo orden/etiquetas) que ya usa
+    // ia_generar_resumen_expediente() -- para que la etapa sugerida use el
+    // vocabulario exacto que el resto del sistema ya entiende.
+    $ordenEtapas = defined('ETAPA_KEYS') ? ETAPA_KEYS : [];
+    $porKey = [];
+    foreach ($etapas as $e) {
+        if (!empty($e['etapa_key'])) $porKey[$e['etapa_key']] = $e;
+    }
+    $registradas = [];
+    $siguienteKey = null;
+    $ultimaEtapaIdx = null;
+    foreach ($ordenEtapas as $idx => $key) {
+        $fecha = $porKey[$key]['fecha'] ?? null;
+        if ($fecha && $fecha !== '0000-00-00') {
+            $registradas[] = (ETAPA_LABELS[$key] ?? $key) . ': ' . $fecha;
+            $ultimaEtapaIdx = $idx;
+        }
+    }
+    if ($registradas) $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
+    if ($ultimaEtapaIdx !== null && $ultimaEtapaIdx < count($ordenEtapas) - 1) {
+        $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
+        $lineas[] = 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey);
+    }
+
+    $vocabularioEtapas = implode(', ', array_map(fn($k) => "$k (" . (ETAPA_LABELS[$k] ?? $k) . ')', $ordenEtapas));
+
+    $instrucciones = 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Te doy el '
+        . 'acuerdo real (documento adjunto, o texto del boletín) de un expediente, más el contexto de en qué va '
+        . 'el trámite. Tu tarea tiene tres partes.'
+        . "\n\n"
+        . 'PARTE 1 -- resumen (1-2 líneas, español, directo): qué dice este acuerdo en concreto -- qué resolvió '
+        . 'el Tribunal/Juzgado, qué ordenó, o qué pide. No repitas datos genéricos (número de acuerdo, fecha de '
+        . 'publicación) que ya se conocen aparte -- concéntrate en el CONTENIDO real.'
+        . "\n\n"
+        . 'PARTE 2 -- etapa sugerida: si este acuerdo corresponde CLARAMENTE a una de estas etapas del '
+        . "vocabulario del sistema y esa etapa coincide con la \"Siguiente etapa esperada\" que te di (o es "
+        . "razonable que sea la que sigue), responde su clave exacta. Vocabulario completo: $vocabularioEtapas. "
+        . 'Si el acuerdo es un trámite intermedio que no corresponde a ninguna de esas etapas (ej. solo admite '
+        . 'una prueba, da vista a la contraparte, notifica algo menor), o si no estás seguro, responde '
+        . '(ninguna) -- NUNCA adivines ni fuerces una etapa que no calza con claridad.'
+        . "\n\n"
+        . 'PARTE 3 -- fecha mencionada: SOLO si el documento menciona LITERALMENTE una fecha asociada a la etapa '
+        . 'que sugeriste (ej. "se señala la audiencia para el día..."), dámela en formato YYYY-MM-DD. Si no hay '
+        . 'una fecha así de explícita, o tendrías que calcularla/inferirla, responde (ninguna) -- NUNCA calcules '
+        . 'ni inventes una fecha.'
+        . "\n\n"
+        . "Responde EXACTAMENTE en este formato (las líneas en mayúsculas son literales):\n\n"
+        . "RESUMEN: [tu resumen aquí]\nETAPA: [clave exacta, o (ninguna)]\nFECHA: [YYYY-MM-DD, o (ninguna)]";
+
+    $contentBlocks = [];
+    if ($esPdf) {
+        $contentBlocks[] = [
+            'type' => 'document',
+            'source' => ['type' => 'base64', 'media_type' => 'application/pdf', 'data' => base64_encode(file_get_contents($rutaArchivo))],
+        ];
+        $contentBlocks[] = ['type' => 'text', 'text' => $instrucciones . "\n\nContexto del expediente:\n" . implode("\n", $lineas)];
+    } else {
+        // .txt (CDMX, que no tiene PDF -- sube el texto ya recortado del
+        // boletín) -- se manda como texto plano dentro del mensaje.
+        $textoBoletin = (string)file_get_contents($rutaArchivo);
+        $contentBlocks[] = ['type' => 'text', 'text' => $instrucciones . "\n\nContexto del expediente:\n" . implode("\n", $lineas)
+            . "\n\nTexto del aviso de boletín:\n" . $textoBoletin];
+    }
+
+    $payload = [
+        'model' => IA_MODELO_ANALIZAR_ACUERDO,
+        'max_tokens' => 500,
+        'thinking' => ['type' => 'disabled'],
+        'messages' => [['role' => 'user', 'content' => $contentBlocks]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 45, // leer un PDF tarda más que un mensaje de texto normal
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [analizar_acuerdo] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+    if ($texto === '') return null;
+
+    $resumen = null;
+    $etapaSugerida = null;
+    $fechaMencionada = null;
+    if (preg_match('/RESUMEN:\s*(.+?)(?:\n[A-Z]+:|$)/s', $texto, $m)) $resumen = trim($m[1]);
+    if (preg_match('/ETAPA:\s*([a-z_]+)/i', $texto, $m) && in_array($m[1], $ordenEtapas, true)) $etapaSugerida = $m[1];
+    if (preg_match('/FECHA:\s*(\d{4}-\d{2}-\d{2})/', $texto, $m)) $fechaMencionada = $m[1];
+
+    if ($resumen === null) return null;
+    return ['resumen' => $resumen, 'etapa_sugerida' => $etapaSugerida, 'fecha_mencionada' => $fechaMencionada];
+}
+
 // Usa el mismo modelo que el bot de WhatsApp (Sonnet, no Haiku como el resto
 // de estos helpers) -- se detectó en pruebas reales que Haiku seguía
 // confundiendo "convenio con cobro pendiente" (no pagado) con "pagado" a

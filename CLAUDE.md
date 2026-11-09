@@ -56,7 +56,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**Última migración aplicada por el usuario: `059_escalar_avisos_atrasados.sql` (pendiente de que la corra).**
+**Última migración aplicada por el usuario: `060_ia_analiza_acuerdos_boletin.sql` (pendiente de que la corra).**
 
 ## Visión grande: sistema lo más autónomo posible, "supervisor" de los
 ## abogados (9 nov 2026) -- EN CURSO, leer antes de tocar nada de agenda/IA
@@ -93,13 +93,53 @@ falta seguimiento):
    vivo todavía** (nadie ha visto llegar el push de un atraso real ni la
    escalación al admin) -- confirmar en cuanto el cron corra de nuevo
    con asuntos atorados reales.
-2. **IA lee el contenido real de los acuerdos de boletín** (pendiente) --
-   hoy el resumen que se guarda es genérico ("Acuerdo No. X del
-   expediente Y, de fecha Z"), sin que nadie (ni la IA) sepa qué dice el
-   acuerdo de verdad. La idea: que la IA lea el PDF/texto y proponga la
-   actualización de etapa/fecha correspondiente (ej. detecta "se señala
-   nueva fecha de audiencia: 15 de marzo" o "se admite la prueba
-   pericial").
+2. **IA lee el contenido real de los acuerdos de boletín -- HECHO (9 nov
+   2026), migración 060 pendiente de correr, y FALTA DAR DE ALTA EL CRON
+   NUEVO.** Antes el resumen guardado era genérico ("Acuerdo No. X del
+   expediente Y, de fecha Z"), sin que nadie (ni la IA) supiera qué decía
+   el acuerdo de verdad. Ahora `ia_analizar_acuerdo_boletin()`
+   (`api/ia_helpers.php`) le manda a Claude el PDF real (como documento
+   adjunto nativo de la API, no solo texto -- o el `.txt` tal cual para
+   los avisos de CDMX, que no traen PDF) junto con el contexto del
+   expediente y su bitácora de etapas, y pide: (1) un resumen de 1-2
+   líneas de qué dice el acuerdo en concreto, (2) una etapa sugerida SOLO
+   si calza con claridad con el vocabulario de `ETAPA_KEYS` (nunca
+   forzada), (3) una fecha SOLO si el documento la menciona literalmente
+   (nunca calculada -- mismo principio que ya regía en
+   `ia_generar_resumen_expediente()`).
+   - Nuevo cron **`api/cron_analizar_acuerdos_ia.php`** (correr cada
+     15-30 min, NO en tiempo real junto con `avisos_ingest.php` -- leer
+     un PDF tarda varios segundos y no debía arriesgar ni hacer más
+     lenta la corrida de los robots). Busca avisos con documento adjunto
+     sin analizar todavía (`ia_analizado_en IS NULL`), hasta 15 por
+     corrida. **Pedido explícito del usuario: que la IA USE lo que lee
+     para llenar el sistema sola, no solo mostrarlo pasivo** (si solo se
+     mostraba, se repetía el mismo problema que ya resolvimos con el
+     punto 1 -- información correcta que nadie actúa). Por eso, si la
+     etapa sugerida TODAVÍA no tiene fecha capturada en
+     `expediente_etapas` (nunca sobrescribe una que el abogado ya
+     registró a mano), la llena sola con la fecha mencionada en el
+     documento o, si no hay, la fecha de publicación del boletín -- y
+     queda registrado en `log_historial` como "llenado automático por
+     IA" para que se pueda auditar/corregir si se equivocó.
+   - El resumen de la IA (`ia_resumen`) se muestra debajo del resumen
+     genérico en la tarjeta de cada aviso (Agenda general y pestaña
+     Boletín del expediente), y si llenó una etapa sola aparece una
+     insignia "✓ etapa actualizada sola: [nombre de la etapa]" --
+     `app.js?v=118`.
+   - **Sin probar en vivo todavía** (nunca se ha corrido contra un PDF
+     real desde que se escribió esto -- ni el formato exacto de
+     respuesta de la IA, ni el `document` content block de la API de
+     Anthropic con PDF real, se han confirmado funcionando aquí). Probar
+     primero con uno de los 8 acuerdos de amparo reales ya subidos
+     (expediente de prueba Emmanuel Rodriguez Ojeda, Exp. 269-2025) antes
+     de asumir que funciona con cualquier PDF.
+   - **Falta dar de alta el Cron Job en cPanel**: comando
+     `php /ruta/completa/a/api/cron_analizar_acuerdos_ia.php`, frecuencia
+     cada 15-30 minutos (igual patrón que los demás `cron_*.php`, ver
+     sección "Robots locales" más abajo para cómo se programan estas
+     tareas, aunque esta corre en el servidor, no en la máquina del
+     usuario).
 3. **Supervisor por WhatsApp para expedientes sin movimiento**
    (pendiente) -- para lo que NINGÚN boletín ni documento puede detectar
    solo (convenios de pago, pláticas con el cliente, notificaciones
