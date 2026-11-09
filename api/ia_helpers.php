@@ -3084,7 +3084,7 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
 // de un pendiente. $labelAtraso es el texto que ya arma estancadoInfo()
 // (ej. 'Se esperaba "Contestación de demanda recibida" y no se ha
 // registrado (18 día(s) de atraso)').
-function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso): ?string
+function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso, array $documentosRecientes = [], array $avisosRecientes = []): ?string
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3115,19 +3115,39 @@ function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string
     }
     if ($registradas) $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
 
+    // Contexto adicional -- documentos ya guardados y últimos resúmenes de
+    // boletín de este expediente, para que la pregunta sea específica (ej.
+    // referir un documento que ya existe) y no se repita algo que el
+    // expediente ya trae documentado.
+    if ($documentosRecientes) {
+        $lineas[] = "Documentos ya guardados en el expediente (más recientes primero):\n" . implode("\n", array_map(
+            fn($d) => '- ' . ($d['categoria'] ?? '?') . ': ' . ($d['nombre_archivo'] ?? '?') . ' (' . ($d['creado_en'] ?? '?') . ')',
+            $documentosRecientes
+        ));
+    }
+    if ($avisosRecientes) {
+        $lineas[] = "Lo que ya leyó la IA en los últimos avisos de boletín de este expediente:\n" . implode("\n", array_map(
+            fn($a) => '- ' . ($a['ia_resumen'] ?? ''),
+            $avisosRecientes
+        ));
+    }
+
     $payload = [
         'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
         'max_tokens' => 200,
         'thinking' => ['type' => 'disabled'],
         'system' => 'Eres el supervisor interno de un despacho de derecho laboral en México, dando seguimiento a '
-            . 'un expediente que un abogado del despacho tiene atorado. Te doy el expediente y qué detectó el '
-            . 'sistema como atrasado. Redacta UNA pregunta corta (1-2 oraciones, tono directo y profesional, como '
-            . 'un supervisor real -- nunca condescendiente ni con explicaciones de derecho) para el abogado a '
-            . 'cargo, buscando conseguir el dato concreto que falta (normalmente una fecha de algo que ya pasó en '
-            . 'la realidad, como una notificación) para poder seguir el plazo legal. No expliques el fundamento '
-            . 'legal ni des contexto que el abogado ya conoce -- ve directo a la pregunta. Si lo que falta no es '
-            . 'una fecha sino una acción pendiente de verdad (ej. nunca se presentó algo), pregunta directamente '
-            . 'si ya se hizo y si no, por qué. Responde ÚNICAMENTE con la pregunta, sin saludos ni firma.',
+            . 'un expediente que un abogado del despacho tiene atorado. Te doy el expediente, qué detectó el '
+            . 'sistema como atrasado, y lo demás que el sistema ya sabe de este expediente (documentos guardados, '
+            . 'resúmenes de boletín ya leídos por la IA). Redacta UNA pregunta corta (1-2 oraciones, tono directo y '
+            . 'profesional, como un supervisor real -- nunca condescendiente ni con explicaciones de derecho) para '
+            . 'el abogado a cargo, buscando conseguir el dato concreto que falta (normalmente una fecha de algo '
+            . 'que ya pasó en la realidad, como una notificación) para poder seguir el plazo legal. Usa el '
+            . 'contexto que te doy para ser específico si ayuda (ej. referir un documento que ya existe), pero '
+            . 'nunca des por hecho algo que no esté confirmado ahí. No expliques el fundamento legal ni des '
+            . 'contexto que el abogado ya conoce -- ve directo a la pregunta. Si lo que falta no es una fecha '
+            . 'sino una acción pendiente de verdad (ej. nunca se presentó algo), pregunta directamente si ya se '
+            . 'hizo y si no, por qué. Responde ÚNICAMENTE con la pregunta, sin saludos ni firma.',
         'messages' => [['role' => 'user', 'content' => implode("\n", $lineas)]],
     ];
 
@@ -3170,7 +3190,7 @@ function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string
 // una fecha futura calculada). $hoy en formato YYYY-MM-DD, para que la
 // IA pueda resolver fechas relativas simples mencionadas tal cual ("ayer",
 // "el lunes pasado") sin tener que calcular plazos legales.
-function ia_interpretar_respuesta_supervisor(string $pregunta, string $respuesta, string $hoy): ?array
+function ia_interpretar_respuesta_supervisor(string $pregunta, string $respuesta, string $hoy, ?string $rutaDocumento = null, ?string $mimeDocumento = null): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3179,20 +3199,42 @@ function ia_interpretar_respuesta_supervisor(string $pregunta, string $respuesta
     }
     require_once $credentialsFile;
 
+    $tieneDocumento = $rutaDocumento !== null && is_file($rutaDocumento);
+
+    $contentBlocks = [];
+    if ($tieneDocumento) {
+        $ext = strtolower(pathinfo($rutaDocumento, PATHINFO_EXTENSION));
+        $esPdf = $mimeDocumento === 'application/pdf' || $ext === 'pdf';
+        $esImagen = !$esPdf && (in_array($ext, ['jpg', 'jpeg', 'png'], true) || str_starts_with((string)$mimeDocumento, 'image/'));
+        $datos = base64_encode((string)file_get_contents($rutaDocumento));
+        if ($esPdf) {
+            $contentBlocks[] = ['type' => 'document', 'source' => ['type' => 'base64', 'media_type' => 'application/pdf', 'data' => $datos]];
+        } elseif ($esImagen) {
+            $mediaType = (is_string($mimeDocumento) && str_starts_with($mimeDocumento, 'image/')) ? $mimeDocumento : ($ext === 'png' ? 'image/png' : 'image/jpeg');
+            $contentBlocks[] = ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mediaType, 'data' => $datos]];
+        } else {
+            $tieneDocumento = false; // tipo no reconocido -- se ignora, se interpreta solo el texto
+        }
+    }
+    $contentBlocks[] = ['type' => 'text', 'text' => "Pregunta del supervisor: $pregunta\n\nRespuesta del abogado: $respuesta"];
+
     $payload = [
-        'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
-        'max_tokens' => 200,
+        'model' => $tieneDocumento ? IA_MODELO_ANALIZAR_ACUERDO : IA_MODELO_RESUMEN_EXPEDIENTE,
+        'max_tokens' => 300,
         'thinking' => ['type' => 'disabled'],
         'system' => "Hoy es $hoy. El supervisor de un despacho de derecho laboral le preguntó algo a un abogado "
-            . 'sobre un expediente; te doy la pregunta y su respuesta. Tu tarea: (1) un resumen de 1 línea de lo '
-            . 'que contestó, en tercera persona (ej. "El abogado confirma que se notificó el emplazamiento"). (2) '
-            . 'si menciona LITERALMENTE una fecha concreta de cuándo pasó algo (puede estar en lenguaje natural, '
-            . 'ej. "el jueves pasado", "ayer", "el 12 de noviembre" -- conviértela a YYYY-MM-DD usando la fecha de '
-            . 'hoy como referencia), dámela; si no menciona ninguna fecha, o la respuesta es vaga ("todavía no", '
-            . '"no sé", "voy a checar"), responde (ninguna) -- NUNCA inventes ni calcules una fecha que no esté '
-            . 'dicha de alguna forma en el texto.'
+            . 'sobre un expediente; te doy la pregunta y su respuesta'
+            . ($tieneDocumento ? ', junto con una foto o documento que el abogado adjuntó como prueba de lo que contesta -- revísalo, es la fuente más confiable.' : '.')
+            . ' Tu tarea: (1) un resumen de 1 línea de lo '
+            . 'que contestó (y lo que muestra el documento adjunto, si lo hay), en tercera persona (ej. "El abogado '
+            . 'confirma, con cédula de notificación adjunta, que se notificó el emplazamiento"). (2) si el texto o '
+            . 'el documento mencionan LITERALMENTE una fecha concreta de cuándo pasó algo (puede estar en lenguaje '
+            . 'natural, ej. "el jueves pasado", "ayer", "el 12 de noviembre" -- conviértela a YYYY-MM-DD usando la '
+            . 'fecha de hoy como referencia), dámela; si no hay ninguna fecha así de clara, o la respuesta es vaga '
+            . '("todavía no", "no sé", "voy a checar"), responde (ninguna) -- NUNCA inventes ni calcules una fecha '
+            . 'que no esté dicha o mostrada de alguna forma.'
             . "\n\nResponde EXACTAMENTE en este formato:\n\nRESUMEN: [resumen aquí]\nFECHA: [YYYY-MM-DD, o (ninguna)]",
-        'messages' => [['role' => 'user', 'content' => "Pregunta del supervisor: $pregunta\n\nRespuesta del abogado: $respuesta"]],
+        'messages' => [['role' => 'user', 'content' => $contentBlocks]],
     ];
 
     $ch = curl_init('https://api.anthropic.com/v1/messages');
@@ -3205,7 +3247,7 @@ function ia_interpretar_respuesta_supervisor(string $pregunta, string $respuesta
             'content-type: application/json',
         ],
         CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
-        CURLOPT_TIMEOUT => 30,
+        CURLOPT_TIMEOUT => $tieneDocumento ? 45 : 30,
     ]);
     $raw = curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);

@@ -61,7 +61,18 @@ foreach ($atrasos as $atraso) {
     $etapasStmt->execute([':id' => $atraso['expediente_id']]);
     $etapas = $etapasStmt->fetchAll();
 
-    $pregunta = ia_generar_pregunta_supervisor($expediente, $etapas, $atraso['label']);
+    // Contexto adicional pedido por el usuario: que la IA revise lo que ya
+    // hay en el sistema (documentos subidos, boletines ya leídos) antes de
+    // redactar la pregunta, no solo la bitácora de etapas.
+    $docsStmt = $pdo->prepare('SELECT categoria, nombre_archivo, creado_en FROM expediente_documentos WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 8');
+    $docsStmt->execute([':id' => $atraso['expediente_id']]);
+    $documentosRecientes = $docsStmt->fetchAll();
+
+    $avisosStmt = $pdo->prepare("SELECT ia_resumen FROM avisos_boletin WHERE expediente_id = :id AND ia_resumen IS NOT NULL AND ia_resumen <> '' ORDER BY creado_en DESC LIMIT 5");
+    $avisosStmt->execute([':id' => $atraso['expediente_id']]);
+    $avisosRecientes = $avisosStmt->fetchAll();
+
+    $pregunta = ia_generar_pregunta_supervisor($expediente, $etapas, $atraso['label'], $documentosRecientes, $avisosRecientes);
     if (!$pregunta) {
         $fallidas++;
         continue; // se reintenta en la siguiente corrida (no se inserta nada)

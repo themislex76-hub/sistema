@@ -8,11 +8,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Método no permitido.', 405);
 $user = require_login();
 require_csrf();
 
-$in = json_input();
-$id = (int)($in['id'] ?? 0);
-$respuesta = trim((string)($in['respuesta'] ?? ''));
+const TAMANO_MAXIMO_BYTES_SUPERVISOR = 20 * 1024 * 1024; // 20 MB, igual que documentos_upload.php
+const EXTENSION_PERMITIDA_SUPERVISOR = ['pdf', 'jpg', 'jpeg', 'png'];
+
+// Envío como multipart/form-data (no JSON) porque puede traer un archivo
+// adjunto (foto/documento que el abogado sube como prueba de su respuesta,
+// ej. una cédula de notificación).
+$id = (int)($_POST['id'] ?? 0);
+$respuesta = trim((string)($_POST['respuesta'] ?? ''));
 if ($id <= 0) fail('Falta el id de la pregunta.', 400);
-if ($respuesta === '') fail('Escribe una respuesta.', 400);
+
+$archivoSubido = isset($_FILES['archivo']) && $_FILES['archivo']['error'] !== UPLOAD_ERR_NO_FILE;
+if ($respuesta === '' && !$archivoSubido) fail('Escribe una respuesta o adjunta un documento.', 400);
 
 $pdo = db();
 $stmt = $pdo->prepare('SELECT * FROM supervisor_preguntas WHERE id = :id');
@@ -24,7 +31,41 @@ if (!$pregunta) fail('Pregunta no encontrada.', 404);
 // un expediente -- administrador ve/edita todos, un abogado solo lo suyo.
 guard_expediente_access($pdo, $user, (int)$pregunta['expediente_id']);
 
-$resultado = ia_interpretar_respuesta_supervisor($pregunta['pregunta'], $respuesta, date('Y-m-d'));
+$rutaDocumento = null;
+$mimeDocumento = null;
+if ($archivoSubido) {
+    $archivo = $_FILES['archivo'];
+    if ($archivo['error'] !== UPLOAD_ERR_OK) fail('Error al subir el archivo (código ' . $archivo['error'] . ').', 400);
+    if ($archivo['size'] <= 0 || $archivo['size'] > TAMANO_MAXIMO_BYTES_SUPERVISOR) fail('El archivo debe pesar entre 1 byte y 20 MB.', 400);
+    $ext = strtolower(pathinfo((string)$archivo['name'], PATHINFO_EXTENSION));
+    if (!in_array($ext, EXTENSION_PERMITIDA_SUPERVISOR, true)) fail('Solo se aceptan PDF, JPG o PNG.', 400);
+
+    $nombreDisco = bin2hex(random_bytes(16)) . '.' . $ext;
+    $destino = documentos_dir((int)$pregunta['expediente_id']) . '/' . $nombreDisco;
+    if (!move_uploaded_file($archivo['tmp_name'], $destino)) fail('No se pudo guardar el archivo en el servidor.', 500);
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeDocumento = $finfo ? (finfo_file($finfo, $destino) ?: null) : null;
+    if ($finfo) finfo_close($finfo);
+    $rutaDocumento = $destino;
+
+    $insDoc = $pdo->prepare(
+        'INSERT INTO expediente_documentos (expediente_id, nombre_archivo, nombre_disco, tipo_mime, tamano_bytes, categoria, subido_por)
+         VALUES (:eid, :nombre, :disco, :mime, :tamano, :categoria, :uid)'
+    );
+    $insDoc->execute([
+        ':eid' => $pregunta['expediente_id'],
+        ':nombre' => $archivo['name'],
+        ':disco' => $nombreDisco,
+        ':mime' => $mimeDocumento,
+        ':tamano' => $archivo['size'],
+        ':categoria' => 'otro',
+        ':uid' => $user['id'],
+    ]);
+    if ($respuesta === '') $respuesta = '(el abogado adjuntó un documento/foto sin comentario de texto)';
+}
+
+$resultado = ia_interpretar_respuesta_supervisor($pregunta['pregunta'], $respuesta, date('Y-m-d'), $rutaDocumento, $mimeDocumento);
 $fechaMencionada = $resultado['fecha_mencionada'] ?? null;
 
 $aplicado = false;

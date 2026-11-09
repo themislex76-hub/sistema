@@ -2248,6 +2248,26 @@ async function loadSupervisorPreguntas(){
   }catch(e){ SUPERVISOR_PREGUNTAS = []; }
 }
 function supervisorPreguntasPendientesCount(){ return SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente').length; }
+function supervisorPreguntaCardHTML(p){
+  return `
+      <div class="aviso-card" data-supervisor-pregunta-id="${p.id}">
+        <div class="aviso-head">
+          <div data-id="${p.expediente_id}" data-tab="etapas" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(p.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(p.expediente_demandado||'—',30))} ${p.expediente_exp? `&middot; Exp. ${escapeHTML(p.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">Sobre: ${escapeHTML(etapaLabelPorKey(p.etapa_key))}</div>
+          </div>
+        </div>
+        <div class="aviso-resumen">${escapeHTML(p.pregunta)}</div>
+        <div class="field" style="margin-top:10px;"><textarea class="supervisor-respuesta-input" placeholder="Escribe tu respuesta aquí..." style="min-height:50px;"></textarea></div>
+        <div class="field" style="margin-top:6px;">
+          <label style="font-size:11.5px; color:var(--gray); display:block; margin-bottom:4px;">Adjuntar foto o documento (opcional — ej. cédula de notificación, constancia):</label>
+          <input type="file" class="supervisor-respuesta-archivo" accept=".pdf,.jpg,.jpeg,.png">
+        </div>
+        <div class="aviso-actions">
+          <button class="btn" data-supervisor-responder="${p.id}" style="padding:6px 12px; font-size:11.5px;">Responder</button>
+        </div>
+      </div>`;
+}
 
 const AMBITO_INHABIL_LABEL = {
   federal: 'Federal (Art. 74 LFT)',
@@ -6245,10 +6265,11 @@ function agendaHTML(){
   const row = agendaRowHTML;
 
   const tabsHTML = `
-  <div style="display:flex; gap:8px; margin-bottom:16px;">
+  <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
     <button class="btn ${AGENDA_TAB==='general'?'':'secondary'}" data-agenda-tab="general" style="padding:8px 16px;">General</button>
     <button class="btn ${AGENDA_TAB==='asesorias'?'':'secondary'}" data-agenda-tab="asesorias" style="padding:8px 16px;">Asesorías</button>
     <button class="btn ${AGENDA_TAB==='ia'?'':'secondary'}" data-agenda-tab="ia" style="padding:8px 16px;">Seguimiento IA</button>
+    <button class="btn ${AGENDA_TAB==='preguntas'?'':'secondary'}" data-agenda-tab="preguntas" style="padding:8px 16px;">Preguntas al abogado${supervisorPreguntasPendientesCount()>0?` <span class="nav-badge">${supervisorPreguntasPendientesCount()}</span>`:''}</button>
   </div>`;
 
   if(AGENDA_TAB === 'asesorias'){
@@ -6298,6 +6319,30 @@ function agendaHTML(){
       <div class="panel-body">${proximasIA.length? proximasIA.map(row).join("") : '<div class="empty">Sin acciones sugeridas por ahora. Se llenan solas conforme se genera o actualiza el informe ejecutivo de cada expediente.</div>'}</div>
     </div>
     `;
+  }
+
+  if(AGENDA_TAB === 'preguntas'){
+    const pendientes = SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente');
+    const historial = SUPERVISOR_PREGUNTAS.filter(p=>p.estado!=='pendiente');
+    return tabsHTML + `
+    <div class="notice" style="margin-bottom:16px; max-width:100%;">Preguntas que el supervisor de IA le hace al abogado a cargo cuando detecta un posible atraso, buscando el dato concreto que falta para seguir el plazo legal — normalmente una fecha. Puedes contestar con texto, o adjuntar una foto/documento (ej. una cédula de notificación) para que la IA lo lea y, si confirma una fecha, llene sola la etapa correspondiente.</div>
+    ${pendientes.length ? `
+    <div class="panel">
+      <div class="panel-head"><h3>Pendientes</h3><span class="count">${pendientes.length}</span></div>
+      <div class="panel-body" style="padding:16px 20px;">${pendientes.map(supervisorPreguntaCardHTML).join("")}</div>
+    </div>` : `<div class="panel"><div class="panel-body"><div class="empty">Sin preguntas pendientes por ahora.</div></div></div>`}
+    ${historial.length ? `
+    <div class="panel">
+      <div class="panel-head"><h3>Historial</h3><span class="count">${historial.length}</span></div>
+      <div class="panel-body" style="padding:0;">${historial.map(p=>`
+        <div style="padding:12px 20px; border-bottom:1px solid var(--border);">
+          <div class="aviso-caso">${escapeHTML(p.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(p.expediente_demandado||'—',30))} ${p.expediente_exp? `&middot; Exp. ${escapeHTML(p.expediente_exp)}`:''}</div>
+          <div class="aviso-fuente">Sobre: ${escapeHTML(etapaLabelPorKey(p.etapa_key))}</div>
+          <div class="aviso-resumen" style="margin-top:6px;">❓ ${escapeHTML(p.pregunta)}</div>
+          <div class="aviso-resumen">💬 ${escapeHTML(p.respuesta||'—')}</div>
+          <div class="aviso-meta">${p.estado==='aplicada'?`<span class="badge ok">✓ etapa actualizada sola${p.fecha_aplicada?': '+fmtDate(p.fecha_aplicada):''}</span>`:'Registrada, sin datos para actualizar nada solo'}${p.respondido_por_nombre?' &middot; Contestó '+escapeHTML(p.respondido_por_nombre):''}${p.respondido_en?' el '+new Date(p.respondido_en).toLocaleDateString('es-MX'):''}</div>
+        </div>`).join("")}</div>
+    </div>` : ''}`;
   }
 
   return tabsHTML + `
@@ -6356,24 +6401,6 @@ function agendaHTML(){
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="descartado" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
           ${a.documento_id? `<button class="btn secondary" data-aviso-borrar-doc="${a.id}" data-documento-id="${a.documento_id}" style="padding:6px 12px; font-size:11.5px; color:var(--red);">Borrar documento</button>`:''}
-        </div>
-      </div>`).join("")}</div>
-  </div>` : ""}
-  ${supervisorPreguntasPendientesCount()>0? `
-  <div class="panel">
-    <div class="panel-head"><h3>🧑‍⚖️ Preguntas del supervisor</h3><span class="count">${supervisorPreguntasPendientesCount()}</span></div>
-    <div class="panel-body" style="padding:16px 20px;">${SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente').map(p=>`
-      <div class="aviso-card" data-supervisor-pregunta-id="${p.id}">
-        <div class="aviso-head">
-          <div data-id="${p.expediente_id}" data-tab="etapas" style="cursor:pointer;">
-            <div class="aviso-caso">${escapeHTML(p.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(p.expediente_demandado||'—',30))} ${p.expediente_exp? `&middot; Exp. ${escapeHTML(p.expediente_exp)}`:''}</div>
-            <div class="aviso-fuente">Sobre: ${escapeHTML(etapaLabelPorKey(p.etapa_key))}</div>
-          </div>
-        </div>
-        <div class="aviso-resumen">${escapeHTML(p.pregunta)}</div>
-        <div class="field" style="margin-top:10px;"><textarea class="supervisor-respuesta-input" placeholder="Escribe tu respuesta aquí..." style="min-height:50px;"></textarea></div>
-        <div class="aviso-actions">
-          <button class="btn" data-supervisor-responder="${p.id}" style="padding:6px 12px; font-size:11.5px;">Responder</button>
         </div>
       </div>`).join("")}</div>
   </div>` : ""}
@@ -7010,15 +7037,26 @@ function bindViewBody(){
       ev.stopPropagation();
       const card = btn.closest('[data-supervisor-pregunta-id]');
       const textarea = card ? card.querySelector('.supervisor-respuesta-input') : null;
+      const archivoInput = card ? card.querySelector('.supervisor-respuesta-archivo') : null;
       const respuesta = textarea ? textarea.value.trim() : '';
-      if(!respuesta){ alert('Escribe una respuesta primero.'); return; }
+      const archivo = archivoInput && archivoInput.files[0] ? archivoInput.files[0] : null;
+      if(!respuesta && !archivo){ alert('Escribe una respuesta o adjunta un documento primero.'); return; }
       btn.disabled = true;
       btn.textContent = 'Enviando...';
       try{
-        await api('POST', 'supervisor_pregunta_responder.php', {id: parseInt(btn.dataset.supervisorResponder), respuesta});
+        const fd = new FormData();
+        fd.append('id', String(parseInt(btn.dataset.supervisorResponder)));
+        fd.append('respuesta', respuesta);
+        if(archivo) fd.append('archivo', archivo);
+        const opts = {method:'POST', body: fd, credentials:'same-origin', headers:{}};
+        if(CSRF_TOKEN) opts.headers['X-CSRF-Token'] = CSRF_TOKEN;
+        const res = await fetch(API_BASE + 'supervisor_pregunta_responder.php', opts);
+        const json = await res.json();
+        if(!json || json.ok !== true) throw new Error((json && json.error) || ('Error del servidor ('+res.status+').'));
         await loadSupervisorPreguntas();
         if(ACTIVE_CASE){
           ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+          await loadDocumentos(ACTIVE_CASE.id);
           renderModal();
         }
         renderViewBody();

@@ -56,7 +56,62 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**Última migración aplicada por el usuario: `061_supervisor_preguntas.sql` (pendiente de que la corra).**
+**Última migración aplicada por el usuario: `061_supervisor_preguntas.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 9 nov 2026.**
+
+## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
+Confirmado en vivo el mismo día que se corrió la migración 061: el cron
+`cron_generar_preguntas_supervisor.php` corrió limpio (15 atrasos
+revisados, 15 preguntas nuevas generadas, 0 fallidas). Después de verlo
+funcionando, el usuario pidió 3 ajustes sobre la pieza 3 del plan grande
+de autonomía (ver sección de arriba):
+- **Renombrado** de "🧑‍⚖️ Preguntas del supervisor" a **"Preguntas al
+  abogado"** en la UI (solo el texto visible -- nombres internos de
+  variables/tabla/endpoints se dejaron igual, `supervisor_preguntas` etc.,
+  para no arriesgar nada).
+- **Pestaña propia** dentro de Agenda general (antes era solo un panel
+  dentro de "General", mezclado con lo demás). Se agregó una 4ª pestaña
+  `AGENDA_TAB='preguntas'` junto a General/Asesorías/Seguimiento IA, con
+  su propio badge de pendientes. Muestra las pendientes arriba (con el
+  formulario de respuesta) y un historial abajo (respondidas/aplicadas,
+  de solo lectura). El panel viejo dentro de "General" se quitó.
+- **Adjuntar foto/documento al responder**: `supervisor_pregunta_responder.php`
+  pasó de recibir JSON a `multipart/form-data` (como `documentos_upload.php`)
+  -- acepta un archivo opcional (`pdf`/`jpg`/`jpeg`/`png`, máx. 20 MB) además
+  del texto. Si llega archivo, se guarda igual que cualquier otro documento
+  del expediente (`expediente_documentos`, categoría `otro`) y
+  `ia_interpretar_respuesta_supervisor()` ahora puede recibir esa
+  foto/PDF como bloque `document`/`image` nativo de la API de Anthropic
+  (mismo patrón que `ia_analizar_acuerdo_boletin()`) -- si el documento
+  confirma una fecha, llena la etapa sola igual que antes (nunca
+  sobrescribe una que ya tenga fecha). Usa el modelo grande
+  (`IA_MODELO_ANALIZAR_ACUERDO`) solo cuando hay archivo adjunto; si es
+  solo texto sigue usando Haiku como antes, para no encarecer el caso
+  común.
+- **Más contexto al redactar la pregunta**: pedido explícito del usuario
+  ("la ia tiene que revisar toda la info y documentos que hay en sistema
+  para generar estas preguntas"). `ia_generar_pregunta_supervisor()` ahora
+  también recibe los últimos documentos guardados del expediente (nombre +
+  categoría + fecha) y los últimos resúmenes de IA de boletín
+  (`ia_resumen` de `avisos_boletin`) para que la pregunta sea más
+  específica y no repita algo que el expediente ya trae documentado. El
+  cron (`cron_generar_preguntas_supervisor.php`) hace 2 SELECTs nuevos por
+  expediente para juntar ese contexto antes de llamar a la IA.
+- Pendiente explícito (NO se tocó todavía, es un alcance más grande): "la
+  IA debe actualizar el sistema procesal... para hacerlo lo más autónomo
+  que se pueda" en un sentido más amplio -- hoy la actualización automática
+  de `expediente_etapas` solo pasa en 2 lugares puntuales (acuerdos de
+  boletín leídos por IA, y esta respuesta del abogado al supervisor con o
+  sin adjunto). La pieza 4 del plan grande (que la IA lea CUALQUIER
+  documento/foto que el abogado suba desde la pestaña "Documentos", no
+  solo cuando contesta una pregunta del supervisor) sigue sin construirse
+  -- ver tarea pendiente en la sesión.
+- **Sin probar en vivo todavía** esta ronda de cambios (ni la pestaña
+  nueva, ni subir un adjunto al responder, ni el contexto ampliado de la
+  pregunta) -- recién subido. Confirmar con el usuario: que la pestaña
+  "Preguntas al abogado" se vea bien, que subir una foto al responder
+  funcione y llene la etapa si la foto trae una fecha clara, y que las
+  preguntas nuevas que genere el cron se noten más específicas con el
+  contexto de documentos/boletín.
 
 ## Simplificación: un solo campo de Tribunal + Amparo recortado (9 nov 2026)
 El usuario notó que el sistema pedía ciudad/tribunal/expediente en 3
