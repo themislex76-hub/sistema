@@ -1345,7 +1345,7 @@ function estancadoInfo(kase){
   if(!expected) return null;
   const today = new Date(); today.setHours(0,0,0,0);
   if(today > expected){
-    return {ultima: ETAPAS_DEF[lastIdx].label, siguiente: next.label, expected, diasAtraso: daysBetween(expected, today)};
+    return {ultima: ETAPAS_DEF[lastIdx].label, siguiente: next.label, siguienteKey: next.key, expected, diasAtraso: daysBetween(expected, today)};
   }
   return null;
 }
@@ -2236,6 +2236,19 @@ async function loadAvisosBoletin(){
   }catch(e){ AVISOS_BOLETIN = []; }
 }
 
+// Preguntas del supervisor de IA (ver cron_generar_preguntas_supervisor.php):
+// por cada "posible atraso" (buildAgendaEntries(), tipo 'atraso') sin
+// resolver, la IA ya redactó una pregunta concreta -- aparecen aquí sin
+// mandar ningún push (pedido del usuario), solo al entrar al sistema.
+let SUPERVISOR_PREGUNTAS = [];
+async function loadSupervisorPreguntas(){
+  try{
+    const d = await api('GET', 'supervisor_preguntas_list.php');
+    SUPERVISOR_PREGUNTAS = d.preguntas;
+  }catch(e){ SUPERVISOR_PREGUNTAS = []; }
+}
+function supervisorPreguntasPendientesCount(){ return SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente').length; }
+
 const AMBITO_INHABIL_LABEL = {
   federal: 'Federal (Art. 74 LFT)',
   cdmx: 'Tribunales locales — CDMX',
@@ -2649,6 +2662,7 @@ async function refreshBootstrap(){
   await loadGoogleStatus();
   await loadTribunalesCustom();
   await loadAvisosBoletin();
+  await loadSupervisorPreguntas();
   await loadPjfCredenciales();
   await loadEdomexCorreoCredenciales();
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
@@ -3202,7 +3216,7 @@ function shellHTML(){
         ${isAdmin ? `<button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>` : ""}
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
-        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${avisosNuevosCount()>0?`<span class="nav-badge">${avisosNuevosCount()}</span>`:""}</button>
+        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+supervisorPreguntasPendientesCount())>0?`<span class="nav-badge">${avisosNuevosCount()+supervisorPreguntasPendientesCount()}</span>`:""}</button>
         ${isAdmin ? `<button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge" id="navBadgeProspectos">${prospectosNuevosCount()}</span>`:""}</button>` : ""}
         ${isAdmin ? `<button data-v="conversaciones" class="${VIEW==='conversaciones'?'active':''}"><span class="ico">&#128269;</span> Conversaciones (WhatsApp)</button>` : ""}
         ${isAdmin ? `<button data-v="resumen_ejecutivo" class="${VIEW==='resumen_ejecutivo'?'active':''}"><span class="ico">&#128202;</span> Resumen ejecutivo (bot)</button>` : ""}
@@ -4712,7 +4726,7 @@ function buildAgendaEntries(){
   // Asuntos estancados (sin la siguiente etapa dentro del plazo legal esperado)
   cases.forEach(k=>{
     const est = estancadoInfo(k);
-    if(est) entries.push({tipo:'atraso', fecha: dateToISO(est.expected), k, label:`Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`, action:'abrir_etapas'});
+    if(est) entries.push({tipo:'atraso', fecha: dateToISO(est.expected), k, label:`Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`, action:'abrir_etapas', actionIdx: est.siguienteKey});
   });
 
   // Próxima acción sugerida por el informe ejecutivo con IA (ver
@@ -6345,6 +6359,24 @@ function agendaHTML(){
         </div>
       </div>`).join("")}</div>
   </div>` : ""}
+  ${supervisorPreguntasPendientesCount()>0? `
+  <div class="panel">
+    <div class="panel-head"><h3>🧑‍⚖️ Preguntas del supervisor</h3><span class="count">${supervisorPreguntasPendientesCount()}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente').map(p=>`
+      <div class="aviso-card" data-supervisor-pregunta-id="${p.id}">
+        <div class="aviso-head">
+          <div data-id="${p.expediente_id}" data-tab="etapas" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(p.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(p.expediente_demandado||'—',30))} ${p.expediente_exp? `&middot; Exp. ${escapeHTML(p.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">Sobre: ${escapeHTML(etapaLabelPorKey(p.etapa_key))}</div>
+          </div>
+        </div>
+        <div class="aviso-resumen">${escapeHTML(p.pregunta)}</div>
+        <div class="field" style="margin-top:10px;"><textarea class="supervisor-respuesta-input" placeholder="Escribe tu respuesta aquí..." style="min-height:50px;"></textarea></div>
+        <div class="aviso-actions">
+          <button class="btn" data-supervisor-responder="${p.id}" style="padding:6px 12px; font-size:11.5px;">Responder</button>
+        </div>
+      </div>`).join("")}</div>
+  </div>` : ""}
   ${vencidas.length? `
   <div class="panel">
     <div class="panel-head"><h3>&#9888; Vencidas / requieren atención inmediata</h3><span class="count">${vencidas.length}</span></div>
@@ -6971,6 +7003,30 @@ function bindViewBody(){
         }
         renderViewBody();
       }catch(err){ alert('No se pudo borrar: ' + err.message); }
+    });
+  });
+  document.querySelectorAll('[data-supervisor-responder]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const card = btn.closest('[data-supervisor-pregunta-id]');
+      const textarea = card ? card.querySelector('.supervisor-respuesta-input') : null;
+      const respuesta = textarea ? textarea.value.trim() : '';
+      if(!respuesta){ alert('Escribe una respuesta primero.'); return; }
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+      try{
+        await api('POST', 'supervisor_pregunta_responder.php', {id: parseInt(btn.dataset.supervisorResponder), respuesta});
+        await loadSupervisorPreguntas();
+        if(ACTIVE_CASE){
+          ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+          renderModal();
+        }
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo enviar: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Responder';
+      }
     });
   });
   document.querySelectorAll('[data-prospecto-abrir]').forEach(el=>{

@@ -3076,6 +3076,164 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
     return ['resumen' => $resumen, 'etapa_sugerida' => $etapaSugerida, 'fecha_mencionada' => $fechaMencionada];
 }
 
+// Supervisor por IA: dado un asunto ESTANCADO (ya detectado por
+// estancadoInfo() en el navegador, ver agenda_avisos_cache tipo='atraso'
+// y cron_generar_preguntas_supervisor.php), redacta UNA pregunta corta y
+// concreta para el abogado a cargo -- nunca da clases de derecho, va
+// directo al grano como lo haría un supervisor real pidiendo seguimiento
+// de un pendiente. $labelAtraso es el texto que ya arma estancadoInfo()
+// (ej. 'Se esperaba "Contestación de demanda recibida" y no se ha
+// registrado (18 día(s) de atraso)').
+function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso): ?string
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $lineas = [];
+    $agregar = function (string $etiqueta, $valor) use (&$lineas) {
+        if ($valor === null || $valor === '') return;
+        $lineas[] = $etiqueta . ': ' . $valor;
+    };
+    $agregar('Actor', $expediente['actor'] ?? null);
+    $agregar('Demandado', $expediente['demandado'] ?? null);
+    $agregar('Expediente', $expediente['exp'] ?? null);
+    $agregar('Lo que detectó el sistema', $labelAtraso);
+
+    $ordenEtapas = defined('ETAPA_KEYS') ? ETAPA_KEYS : [];
+    $porKey = [];
+    foreach ($etapas as $e) {
+        if (!empty($e['etapa_key'])) $porKey[$e['etapa_key']] = $e;
+    }
+    $registradas = [];
+    foreach ($ordenEtapas as $key) {
+        $fecha = $porKey[$key]['fecha'] ?? null;
+        if ($fecha && $fecha !== '0000-00-00') $registradas[] = (ETAPA_LABELS[$key] ?? $key) . ': ' . $fecha;
+    }
+    if ($registradas) $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
+
+    $payload = [
+        'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
+        'max_tokens' => 200,
+        'thinking' => ['type' => 'disabled'],
+        'system' => 'Eres el supervisor interno de un despacho de derecho laboral en México, dando seguimiento a '
+            . 'un expediente que un abogado del despacho tiene atorado. Te doy el expediente y qué detectó el '
+            . 'sistema como atrasado. Redacta UNA pregunta corta (1-2 oraciones, tono directo y profesional, como '
+            . 'un supervisor real -- nunca condescendiente ni con explicaciones de derecho) para el abogado a '
+            . 'cargo, buscando conseguir el dato concreto que falta (normalmente una fecha de algo que ya pasó en '
+            . 'la realidad, como una notificación) para poder seguir el plazo legal. No expliques el fundamento '
+            . 'legal ni des contexto que el abogado ya conoce -- ve directo a la pregunta. Si lo que falta no es '
+            . 'una fecha sino una acción pendiente de verdad (ej. nunca se presentó algo), pregunta directamente '
+            . 'si ya se hizo y si no, por qué. Responde ÚNICAMENTE con la pregunta, sin saludos ni firma.',
+        'messages' => [['role' => 'user', 'content' => implode("\n", $lineas)]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [pregunta_supervisor] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+    return $texto !== '' ? $texto : null;
+}
+
+// Interpreta la respuesta en texto libre que el abogado le da al
+// supervisor. Nunca calcula una fecha límite -- solo lee/convierte a
+// ISO una fecha que el abogado haya mencionado tal cual (ej. "se notificó
+// el 12 de noviembre" -> fecha_mencionada, nunca "en 3 días" convertido a
+// una fecha futura calculada). $hoy en formato YYYY-MM-DD, para que la
+// IA pueda resolver fechas relativas simples mencionadas tal cual ("ayer",
+// "el lunes pasado") sin tener que calcular plazos legales.
+function ia_interpretar_respuesta_supervisor(string $pregunta, string $respuesta, string $hoy): ?array
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $payload = [
+        'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
+        'max_tokens' => 200,
+        'thinking' => ['type' => 'disabled'],
+        'system' => "Hoy es $hoy. El supervisor de un despacho de derecho laboral le preguntó algo a un abogado "
+            . 'sobre un expediente; te doy la pregunta y su respuesta. Tu tarea: (1) un resumen de 1 línea de lo '
+            . 'que contestó, en tercera persona (ej. "El abogado confirma que se notificó el emplazamiento"). (2) '
+            . 'si menciona LITERALMENTE una fecha concreta de cuándo pasó algo (puede estar en lenguaje natural, '
+            . 'ej. "el jueves pasado", "ayer", "el 12 de noviembre" -- conviértela a YYYY-MM-DD usando la fecha de '
+            . 'hoy como referencia), dámela; si no menciona ninguna fecha, o la respuesta es vaga ("todavía no", '
+            . '"no sé", "voy a checar"), responde (ninguna) -- NUNCA inventes ni calcules una fecha que no esté '
+            . 'dicha de alguna forma en el texto.'
+            . "\n\nResponde EXACTAMENTE en este formato:\n\nRESUMEN: [resumen aquí]\nFECHA: [YYYY-MM-DD, o (ninguna)]",
+        'messages' => [['role' => 'user', 'content' => "Pregunta del supervisor: $pregunta\n\nRespuesta del abogado: $respuesta"]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [interpretar_respuesta_supervisor] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+    if ($texto === '') return null;
+
+    $resumen = null;
+    $fechaMencionada = null;
+    if (preg_match('/RESUMEN:\s*(.+?)(?:\nFECHA:|$)/s', $texto, $m)) $resumen = trim($m[1]);
+    if (preg_match('/FECHA:\s*(\d{4}-\d{2}-\d{2})/', $texto, $m)) $fechaMencionada = $m[1];
+    if ($resumen === null) return null;
+    return ['resumen' => $resumen, 'fecha_mencionada' => $fechaMencionada];
+}
+
 // Usa el mismo modelo que el bot de WhatsApp (Sonnet, no Haiku como el resto
 // de estos helpers) -- se detectó en pruebas reales que Haiku seguía
 // confundiendo "convenio con cobro pendiente" (no pagado) con "pagado" a

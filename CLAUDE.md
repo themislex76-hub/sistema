@@ -56,7 +56,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**Última migración aplicada por el usuario: `060_ia_analiza_acuerdos_boletin.sql` (pendiente de que la corra).**
+**Última migración aplicada por el usuario: `061_supervisor_preguntas.sql` (pendiente de que la corra).**
 
 ## Simplificación: un solo campo de Tribunal + Amparo recortado (9 nov 2026)
 El usuario notó que el sistema pedía ciudad/tribunal/expediente en 3
@@ -181,17 +181,73 @@ falta seguimiento):
      sección "Robots locales" más abajo para cómo se programan estas
      tareas, aunque esta corre en el servidor, no en la máquina del
      usuario).
-3. **Supervisor por WhatsApp para expedientes sin movimiento**
-   (pendiente) -- para lo que NINGÚN boletín ni documento puede detectar
-   solo (convenios de pago, pláticas con el cliente, notificaciones
-   físicas como el emplazamiento). El sistema le pregunta al abogado con
-   el contexto completo del expediente, como lo haría un supervisor real
-   ("te admitieron la pericial, faltan 5 días para ofrecer perito,
-   ¿ya tienes uno?"), nunca da clases de derecho -- solo da seguimiento
-   con criterio. Ejemplo real que dio el usuario: demanda admitida y se
-   ordena emplazar → el sistema pregunta cuándo se notificó → calcula
-   los 15 días de la LFT para contestar → si se vence sin contestación
-   registrada, avisa solo que toca promover acusando rebeldía.
+3. **Supervisor que pregunta al abogado por asuntos atorados -- HECHO (9
+   nov 2026), migración 061 pendiente de correr, y FALTA DAR DE ALTA EL
+   CRON NUEVO.** Pensado originalmente como "por WhatsApp" (ver el
+   ejemplo real del usuario abajo), pero se construyó como push + tarjeta
+   DENTRO del sistema -- el usuario lo pidió así explícitamente ("haber
+   hazlo sin el pussh" más tarde se aclaró en "sin push" del todo, ni
+   siquiera push de aviso de que hay pregunta nueva, solo aparece al
+   entrar al sistema) una vez que se le explicó que WhatsApp de verdad
+   habría necesitado agregar un campo de celular a `usuarios` (no existe
+   hoy) + una plantilla nueva aprobada por Meta (días de espera) + enseñar
+   al bot de WhatsApp (hoy solo sabe hablar con prospectos/clientes) a
+   reconocer que un mensaje entrante es de un abogado contestándole al
+   supervisor -- mucho más trabajo que reutilizar lo ya construido.
+   - **Pieza clave de diseño**: en vez de reimplementar "qué está
+     atorado" (eso ya lo resuelve `estancadoInfo()` en el navegador,
+     sincronizado a `agenda_avisos_cache` desde la pieza 1 de este mismo
+     plan), este supervisor PARTE de esos mismos "atraso" ya detectados.
+     Se le agregó a `estancadoInfo()` el campo `siguienteKey` (la CLAVE
+     de la etapa esperada, ej. `contestacion_recibida`, no solo su
+     nombre humano) y `buildAgendaEntries()` ahora manda `actionIdx:
+     est.siguienteKey` en la entrada tipo 'atraso' -- eso hace que
+     `syncAvisosAbogado()` guarde la clave como `atraso:<etapa_key>` en
+     vez de solo `atraso` (antes un expediente solo podía tener un
+     atraso a la vez, así que la clave genérica bastaba para
+     deduplicar, pero no servía para saber DESPUÉS a qué etapa
+     corresponde).
+   - Nuevo cron **`api/cron_generar_preguntas_supervisor.php`** (correr
+     una vez al día): por cada fila `agenda_avisos_cache` tipo='atraso'
+     sin pregunta generada todavía (`supervisor_preguntas`, tabla nueva),
+     le pide a `ia_generar_pregunta_supervisor()` una pregunta corta y
+     concreta (nunca clases de derecho, va directo al grano como un
+     supervisor real) y la guarda. SIN push -- solo aparece en un panel
+     nuevo "🧑‍⚖️ Preguntas del supervisor" en Agenda general (mismo
+     estilo que el de avisos de boletín) cuando el abogado entra.
+   - El abogado contesta en texto libre ahí mismo (textarea + botón
+     "Responder", `api/supervisor_pregunta_responder.php`) --
+     `ia_interpretar_respuesta_supervisor()` lee la respuesta y SOLO si
+     menciona una fecha de forma literal (puede ser lenguaje natural,
+     "el jueves pasado" -- la IA la convierte a ISO usando la fecha de
+     hoy como referencia, pero NUNCA calcula un plazo ni inventa una
+     fecha que no esté dicha) la usa para llenar sola la etapa
+     correspondiente en `expediente_etapas` (mismo principio de nunca
+     sobrescribir una etapa que ya tiene fecha, y queda en
+     `log_historial`). Si la respuesta es vaga o no da fecha, se guarda
+     igual (queda registrada, útil como bitácora) pero no llena nada
+     solo.
+   - El ejemplo real del usuario (demanda admitida → se ordena emplazar
+     → el sistema pregunta cuándo se notificó → el abogado contesta la
+     fecha → el sistema llena sola la etapa `emplazamiento` → en cuanto
+     pasen los 15 días hábiles sin que se registre
+     `contestacion_recibida`, `estancadoInfo()` lo vuelve a detectar como
+     atraso automáticamente, sin tener que programar nada especial para
+     "avisar que toca promover rebeldía" -- eso ya sale solo del ciclo
+     normal: nuevo atraso → nueva pregunta del supervisor) queda cubierto
+     de punta a punta con este diseño, reutilizando toda la maquinaria de
+     plazos que ya existía.
+   - **Sin probar en vivo todavía** -- nunca se ha corrido el cron
+     nuevo, ni se ha confirmado que la IA redacte preguntas útiles con un
+     caso real, ni que `ia_interpretar_respuesta_supervisor()` extraiga
+     bien una fecha de una respuesta real en lenguaje natural. Probar
+     primero con un expediente real que ya tenga un "posible atraso"
+     visible en el Tablero.
+   - **Falta dar de alta el Cron Job en cPanel**: comando
+     `php /ruta/completa/a/api/cron_generar_preguntas_supervisor.php`,
+     frecuencia una vez al día (puede ir junto con
+     `cron_recordatorio_abogado.php`).
+   - `app.js?v=121`.
 4. **IA lee documentos/fotos que sube el abogado** (pendiente) -- mismo
    principio que el punto 2 pero con lo que el abogado sube a mano
    (conciliación, constancia de no conciliación, cédulas de
