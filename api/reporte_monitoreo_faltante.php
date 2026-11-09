@@ -20,12 +20,22 @@ require_once __DIR__ . '/expediente_helpers.php';
 require_admin();
 $pdo = db();
 
+// Mismo criterio de "activo" que usa el frontend (estaConcluido()/caseStage()
+// en app.js) -- concluido_manual=0 NO basta solo: un asunto con convenio ya
+// pagado o que el cliente "ya no quiso" sigue activo para concluido_manual
+// pero el sistema ya lo trata como concluido en todos lados. Si el reporte
+// solo filtrara por concluido_manual, inflaría las categorías con asuntos
+// que a nadie le urge ya revisar.
 $rows = $pdo->query(
-    "SELECT id, exp, actor, demandado, junta, tribunal, amparo_activo, amparo_expediente, abogado_id, abogado_id_2
+    "SELECT id, exp, actor, demandado, junta, tribunal, amparo_activo, amparo_expediente, abogado_id, abogado_id_2, status
      FROM expedientes
      WHERE concluido_manual = 0
      ORDER BY actor"
 )->fetchAll();
+$rows = array_values(array_filter($rows, function ($r) {
+    $s = strtolower((string)($r['status'] ?? ''));
+    return strpos($s, 'pagado') === false && strpos($s, 'ya no quiso') === false;
+}));
 
 $abogadosStmt = $pdo->query("SELECT id, nombre FROM usuarios");
 $nombresPorId = [];
