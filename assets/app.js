@@ -326,10 +326,9 @@ const EDITABLE_FIELDS = [
   {key:'salario_mensual', label:'Salario mensual', type:'number'},
   {key:'salario_diario', label:'Salario diario', type:'number'},
   {key:'sdi', label:'Salario diario integrado', type:'number'},
-  {key:'instancia', label:'Centro de Conciliación / Instancia'},
-  {key:'junta', label:'Tribunal / Junta competente', type:'tribunal'},
-  {key:'tribunal', label:'Tribunal (si ya está radicado)', type:'tribunal'},
-  {key:'exp', label:'Número de expediente o registro'},
+  {key:'instancia', label:'Centro de Conciliación (mientras el asunto no pase a Tribunal)'},
+  {key:'tribunal', label:'Tribunal', type:'tribunal'},
+  {key:'exp', label:'Número de expediente'},
   {key:'status', label:'Estatus', type:'select', options:STATUS_OPCIONES},
   {key:'quien_despidio', label:'Nombre de quien despidió'},
   {key:'puesto_despidio', label:'Puesto de quien despidió'},
@@ -774,11 +773,17 @@ const TRIBUNALES_FEDERALES_MX = {
 };
 // ---------------------------------------------------------------
 // Selector de Tribunal (estado -> tribunal, con "Otro (especificar)") — ver
-// EDITABLE_FIELDS ('junta' y 'tribunal', type:'tribunal'), TRIBUNALES_MX y
+// EDITABLE_FIELDS ('tribunal', type:'tribunal'), TRIBUNALES_MX y
 // TRIBUNALES_CUSTOM. El valor final sigue siendo un solo string plano (igual
 // que antes, para no romper los datos ya capturados) — el widget de dos
 // selects + texto libre es solo una ayuda para construirlo, guardado en un
 // <input type="hidden" class="edit-field"> que el save genérico ya lee.
+// (9 nov 2026: se quitó el campo 'junta' por separado -- las Juntas de
+// Conciliación y Arbitraje ya no reciben asuntos nuevos desde la reforma
+// laboral, así que un solo campo "Tribunal" basta. El campo 'junta' de la
+// base de datos NO se borró -- expedientes viejos capturados ahí lo siguen
+// usando de respaldo en todos los lugares que leen el tribunal (ver
+// "k.tribunal || k.junta || ...").
 // ---------------------------------------------------------------
 function findTribunalEstado(nombre){
   if(!nombre) return '';
@@ -1472,7 +1477,7 @@ function calcularJornada(k){
 }
 
 function mergeTags(k){
-  const junta = k.junta || k.instancia || '';
+  const junta = k.tribunal || k.instancia || '';
   const ciudad = /tlalnepantla/i.test(junta) ? 'Tlalnepantla de Baz, Estado de México' :
                  /ciudad de méxico|cdmx/i.test(junta) ? 'Ciudad de México' :
                  /naucalpan/i.test(junta) ? 'Naucalpan de Juárez, Estado de México' : 'Estado de México';
@@ -1498,7 +1503,7 @@ function mergeTags(k){
     salario_diario_num: k.salario_diario!=null ? Number(k.salario_diario).toFixed(2) : '________',
     salario_mensual_letra: k.salario_mensual!=null ? pesosEnLetras(k.salario_mensual) : '____________',
     curp: (k.curp || '________________').toLowerCase(),
-    instancia: k.instancia || k.junta || '________________',
+    instancia: k.instancia || k.tribunal || '________________',
     quien_despidio: k.quien_despidio || 'una persona que dijo representar a la empresa demandada',
     hora_despido: k.hora_despido || '____',
     testigos: k.testigos || '________________',
@@ -3652,7 +3657,7 @@ function resumenBusquedaCaso(k){
   // preguntas de "pagado"/"convenio pendiente de cobro"/"demanda
   // presentada", y adivinaba mal.
   add('Estatus del asunto (calculado, es el que se ve en la lista)', estatusCalculadoTexto(k));
-  const instanciaTexto = k.junta || k.tribunal || k.instancia || '';
+  const instanciaTexto = k.tribunal || k.junta || k.instancia || '';
   add('Instancia/Tribunal', instanciaTexto);
   // La IA no siempre distingue bien "local" vs "federal" leyendo el
   // nombre completo de la instancia (ej. "Séptimo Tribunal Laboral
@@ -3751,7 +3756,7 @@ function expedientesHTML(){
               <td><strong>${escapeHTML(k.actor)}</strong><div style="font-size:11px; color:${razonPorId[k.id]?'var(--brass)':'var(--gray)'}; font-style:${razonPorId[k.id]?'italic':'normal'};">${escapeHTML(razonPorId[k.id] || k.puesto||'')}</div></td>
               <td>${escapeHTML(truncate(k.demandado,32))}</td>
               <td class="exp-code">${escapeHTML(k.exp||'—')}</td>
-              <td>${escapeHTML(truncate(k.junta || k.instancia || '', 26))}</td>
+              <td>${escapeHTML(truncate(k.tribunal || k.junta || k.instancia || '', 26))}</td>
               <td class="abogado-tag">${escapeHTML(truncate(assignedLawyer(k),18))}</td>
               <td>${statusBadge(k)}</td>
               <td>${estaConcluido(k) ? '<span class="badge closed">Concluido</span>' : '<span class="badge ok">Activo</span>'}</td>
@@ -7622,7 +7627,7 @@ function modalTabContent(k,p,meta){
       <div class="field"><label>Puesto</label><div class="v">${escapeHTML(k.puesto||'—')}</div></div>
       <div class="field"><label>Socio asignado</label><div class="v">${escapeHTML(assignedLawyer(k))}</div></div>
       <div class="field"><label>Estatus (importado)</label><div class="v">${escapeHTML(k.status||'—')}</div></div>
-      <div class="field"><label>Instancia</label><div class="v">${escapeHTML(k.junta || k.instancia || '—')}</div></div>
+      <div class="field"><label>Tribunal</label><div class="v">${escapeHTML(k.tribunal || k.junta || k.instancia || '—')}</div></div>
       <div class="field"><label>Fecha de ingreso</label><div class="v">${fmtDate(k.fecha_ingreso)}</div></div>
       <div class="field"><label>Fecha de baja</label><div class="v">${fmtDate(k.fecha_baja)}</div></div>
       <div class="field"><label>Antigüedad</label><div class="v">${liqResumen? liqResumen.aniosDec.toFixed(2)+' años':'—'}</div></div>
@@ -7764,7 +7769,6 @@ function modalTabContent(k,p,meta){
   }
   if(MODAL_TAB==='amparo'){
     const a = computeAmparoDeadline(meta);
-    const circuitoActual = amparoCircuitoDeTribunal(meta.amparo_tribunal);
     return `
     <label style="display:flex; align-items:center; gap:8px; margin-bottom:14px; font-size:13px; color:var(--ink);">
       <input type="checkbox" id="amparoActivo" ${meta.amparo_activo?'checked':''}> Este asunto tiene o podría requerir amparo directo
@@ -7775,24 +7779,7 @@ function modalTabContent(k,p,meta){
         <div class="v" style="font-weight:700; color:${a && a.daysLeft<=5? 'var(--red)': a? 'var(--ink)':'var(--gray)'}">${a? fmtDate(dateToISO(a.deadline)) + ' ('+a.daysLeft+' d.)' : '—'}</div>
       </div>
     </div>
-    <div class="grid2" style="margin-top:14px;">
-      <div class="field"><label>Circuito del amparo</label>
-        <select id="amparoCircuito">
-          <option value="">Selecciona...</option>
-          <option value="primero" ${circuitoActual==='primero'?'selected':''}>Primer Circuito (Ciudad de México)</option>
-          <option value="segundo" ${circuitoActual==='segundo'?'selected':''}>Segundo Circuito (Estado de México)</option>
-        </select>
-      </div>
-      <div class="field"><label>Tribunal Colegiado</label>
-        <select id="amparoTribunalSelect">${amparoTribunalOptionsHTML(circuitoActual, meta.amparo_tribunal||'')}</select>
-      </div>
-    </div>
-    <div class="field" id="amparoTribunalOtroWrap" style="margin-top:10px; ${circuitoActual===''&&meta.amparo_tribunal?'':'display:none;'}">
-      <label>Especifica el tribunal (o juzgado)</label>
-      <input type="text" id="amparoTribunalOtro" placeholder="Nombre completo del tribunal o juzgado" value="${circuitoActual===''?escapeHTML(meta.amparo_tribunal||''):''}">
-    </div>
-    <div class="field" style="margin-top:10px;"><label>Número de expediente del amparo</label><input type="text" id="amparoExpediente" placeholder="Ej. AD 123/2026 (distinto al expediente del juicio laboral)" value="${escapeHTML(meta.amparo_expediente||'')}"></div>
-    <div class="field" style="margin-top:14px;"><label>Notas sobre el amparo</label><textarea id="amparoNotas" placeholder="Acto reclamado, observaciones...">${escapeHTML(meta.amparo_notas||'')}</textarea></div>
+    <div class="field" style="margin-top:14px;"><label>Número de expediente del amparo</label><input type="text" id="amparoExpediente" placeholder="Ej. AD 123/2026 (distinto al expediente del juicio laboral)" value="${escapeHTML(meta.amparo_expediente||'')}"></div>
     <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo descarta sábados, domingos y los días inhábiles capturados en "Días inhábiles"; aun así, verifica el calendario oficial del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales. El número de expediente del amparo (una vez que el Tribunal lo asigne) es lo que permite que el robot Federal también avise cuando haya movimientos ahí -- captúralo en cuanto lo tengas.</div>
     <div style="margin-top:14px;"><button class="btn" id="saveAmparoBtn">Guardar datos de amparo</button></div>
     `;
@@ -7865,7 +7852,11 @@ function modalTabContent(k,p,meta){
               </select>`;
             })() :
             f.type==='tribunal' ?
-            tribunalFieldHTML(f, k[f.key]!=null ? String(k[f.key]) : '') :
+            // Expedientes viejos capturados cuando todavía existía el campo
+            // 'junta' por separado: si 'tribunal' está vacío, se usa 'junta'
+            // como punto de partida para que no se vea en blanco un dato
+            // que sí existe, solo que bajo el nombre de columna anterior.
+            tribunalFieldHTML(f, (k[f.key] || (f.key==='tribunal' ? k.junta : '') || '') + '') :
             (f.key==='ultima_nota' || f.type==='textarea') ?
             `<textarea class="edit-field" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
@@ -8573,33 +8564,25 @@ function bindModalTabEvents(){
       }
     });
   }
-  const amparoCircuitoSel = document.getElementById('amparoCircuito');
-  const amparoTribunalSel = document.getElementById('amparoTribunalSelect');
-  const amparoTribunalOtroWrap = document.getElementById('amparoTribunalOtroWrap');
-  if(amparoCircuitoSel && amparoTribunalSel && amparoTribunalOtroWrap){
-    amparoCircuitoSel.addEventListener('change', ()=>{
-      amparoTribunalSel.innerHTML = amparoTribunalOptionsHTML(amparoCircuitoSel.value, '');
-      amparoTribunalOtroWrap.style.display = 'none';
-    });
-    amparoTribunalSel.addEventListener('change', ()=>{
-      amparoTribunalOtroWrap.style.display = amparoTribunalSel.value === AMPARO_TRIBUNAL_OTRO ? '' : 'none';
-    });
-  }
   const saveAmparoBtn = document.getElementById('saveAmparoBtn');
   if(saveAmparoBtn){
     saveAmparoBtn.addEventListener('click', async ()=>{
-      const tribunalSelVal = amparoTribunalSel ? amparoTribunalSel.value : '';
-      const amparoTribunalFinal = tribunalSelVal === AMPARO_TRIBUNAL_OTRO
-        ? (document.getElementById('amparoTribunalOtro') ? document.getElementById('amparoTribunalOtro').value.trim() : '')
-        : tribunalSelVal;
+      // El selector de Tribunal Colegiado y las notas ya no se capturan aquí
+      // (pedido del usuario: la pestaña Amparo solo debe tener lo que el
+      // robot Federal necesita -- el número de expediente del amparo -- más
+      // el plazo de 15 días, que ya alimenta Agenda/push). Si un expediente
+      // viejo ya tenía tribunal/notas capturados, se mandan tal cual para
+      // no perderlos al guardar -- nadie puede editarlos desde aquí, pero
+      // tampoco deben borrarse solos.
+      const metaActual = getMeta(ACTIVE_CASE.id);
       try{
         await api('POST', 'expedientes_update_amparo.php', {
           id: ACTIVE_CASE.id,
           amparo_activo: document.getElementById('amparoActivo').checked,
           amparo_fecha_notif: document.getElementById('amparoFecha').value,
-          amparo_tribunal: amparoTribunalFinal,
+          amparo_tribunal: metaActual.amparo_tribunal || '',
           amparo_expediente: document.getElementById('amparoExpediente').value.trim(),
-          amparo_notas: document.getElementById('amparoNotas').value
+          amparo_notas: metaActual.amparo_notas || ''
         });
         saveAmparoBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(saveAmparoBtn) saveAmparoBtn.textContent = "Guardar datos de amparo"; }, 1600);

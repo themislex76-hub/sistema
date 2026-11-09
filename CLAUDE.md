@@ -58,6 +58,40 @@ semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
 **Última migración aplicada por el usuario: `060_ia_analiza_acuerdos_boletin.sql` (pendiente de que la corra).**
 
+## Simplificación: un solo campo de Tribunal + Amparo recortado (9 nov 2026)
+El usuario notó que el sistema pedía ciudad/tribunal/expediente en 3
+lugares distintos (campos `junta` y `tribunal` en "Editar datos", más el
+selector de Tribunal Colegiado en la pestaña "Amparo") y pidió
+consolidar.
+- **Se quitó el campo `junta`** de "Editar datos" -- las Juntas de
+  Conciliación y Arbitraje ya no reciben asuntos nuevos desde la reforma
+  laboral, así que ya no hace falta capturarlo por separado. Ahora solo
+  queda: "Centro de Conciliación" (`instancia`, SE QUEDA -- sigue
+  haciendo falta para los asuntos que aún no pasan a Tribunal, pedido
+  explícito del usuario), "Tribunal" (`tribunal`, el único selector
+  pesado de ciudad+catálogo que queda) y "Número de expediente" (`exp`).
+  La columna `junta` de la base de datos **NO se borró** (datos viejos
+  siguen ahí) -- todos los lugares que leen el tribunal (`mergeTags()`,
+  la tabla de expedientes, "Informe del juicio", etc.) ahora priorizan
+  `tribunal` y caen a `junta` solo como respaldo para expedientes
+  capturados antes de este cambio; el formulario de "Editar datos"
+  también usa `junta` como valor de arranque si `tribunal` todavía está
+  vacío, para que un dato viejo no se vea en blanco.
+- **Pestaña "Amparo" recortada** al mínimo que de verdad hace falta:
+  checkbox de activo + fecha de notificación del laudo/plazo de 15 días
+  calculado (Art. 17 Ley de Amparo -- SE QUEDA, ya alimenta Agenda/push,
+  el usuario confirmó que no quería perder esto) + número de expediente
+  del amparo (lo único que usa el robot Federal para el match, ver
+  `federal.js`). Se quitó el selector pesado de Tribunal Colegiado
+  (circuito + catálogo + "otro") y el campo de notas -- ninguno de los
+  dos lo usa nada automatizado. Si un expediente viejo ya tenía
+  `amparo_tribunal`/`amparo_notas` capturados, el botón "Guardar datos de
+  amparo" los manda tal cual sin cambios (ya no hay forma de editarlos
+  desde la UI, pero tampoco se borran solos al guardar).
+- `app.js?v=119`. Sin cambios de base de datos. `verificar_tags.js`
+  corrido y pasó limpio (se tocó `mergeTags()` -- el fallback de
+  `instancia`/`ciudad_firma` ahora usa `tribunal` en vez de `junta`).
+
 ## Visión grande: sistema lo más autónomo posible, "supervisor" de los
 ## abogados (9 nov 2026) -- EN CURSO, leer antes de tocar nada de agenda/IA
 El usuario quiere que el sistema se alimente solo lo más posible (de los
