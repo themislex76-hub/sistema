@@ -3232,11 +3232,12 @@ function shellHTML(){
         <button data-v="tablero" class="${VIEW==='tablero'?'active':''}"><span class="ico">${ICONS.tablero}</span> Tablero</button>
         <button data-v="expedientes" class="${VIEW==='expedientes'?'active':''}"><span class="ico">${ICONS.expedientes}</span> Expedientes</button>
         <button data-v="alertas" class="${VIEW==='alertas'?'active':''}"><span class="ico">${ICONS.alertas}</span> Alertas de prescripción</button>
+        <button data-v="preguntas_abogado" class="${VIEW==='preguntas_abogado'?'active':''}"><span class="ico">🧑‍⚖️</span> Preguntas al abogado ${supervisorPreguntasPendientesCount()>0?`<span class="nav-badge">${supervisorPreguntasPendientesCount()}</span>`:""}</button>
         <button data-v="cobros" class="${VIEW==='cobros'?'active':''}"><span class="ico">&#128176;</span> Cobros de convenios</button>
         ${isAdmin ? `<button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>` : ""}
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
-        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+supervisorPreguntasPendientesCount())>0?`<span class="nav-badge">${avisosNuevosCount()+supervisorPreguntasPendientesCount()}</span>`:""}</button>
+        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${avisosNuevosCount()>0?`<span class="nav-badge">${avisosNuevosCount()}</span>`:""}</button>
         ${isAdmin ? `<button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge" id="navBadgeProspectos">${prospectosNuevosCount()}</span>`:""}</button>` : ""}
         ${isAdmin ? `<button data-v="conversaciones" class="${VIEW==='conversaciones'?'active':''}"><span class="ico">&#128269;</span> Conversaciones (WhatsApp)</button>` : ""}
         ${isAdmin ? `<button data-v="resumen_ejecutivo" class="${VIEW==='resumen_ejecutivo'?'active':''}"><span class="ico">&#128202;</span> Resumen ejecutivo (bot)</button>` : ""}
@@ -3288,7 +3289,8 @@ const VIEW_TITLES = {
   cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
   equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
   dias_inhabiles:["Días inhábiles", "Calendario usado para calcular automáticamente los vencimientos de términos en todo el sistema"],
-  mi_cuenta:["Mi cuenta", "Datos personales para el funcionamiento del sistema"]
+  mi_cuenta:["Mi cuenta", "Datos personales para el funcionamiento del sistema"],
+  preguntas_abogado:["Preguntas al abogado", "El supervisor de IA pregunta lo justo y necesario cuando detecta un posible atraso — contesta con texto o adjuntando una foto/documento para que la IA llene sola la etapa si confirma una fecha"]
 };
 
 function topBarHTML(){
@@ -3417,6 +3419,7 @@ function renderViewBody(){
   else if(VIEW==='equipo') el.innerHTML = equipoHTML();
   else if(VIEW==='dias_inhabiles') el.innerHTML = diasInhabilesHTML();
   else if(VIEW==='mi_cuenta') el.innerHTML = miCuentaHTML();
+  else if(VIEW==='preguntas_abogado') el.innerHTML = preguntasAbogadoHTML();
   bindViewBody();
 }
 
@@ -6223,6 +6226,30 @@ function disponibilidadPanelHTML(){
   </div>`;
 }
 
+function preguntasAbogadoHTML(){
+  const pendientes = SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente');
+  const historial = SUPERVISOR_PREGUNTAS.filter(p=>p.estado!=='pendiente');
+  return `
+  <div class="notice" style="margin-bottom:16px; max-width:100%;">Preguntas que el supervisor de IA le hace al abogado a cargo cuando detecta un posible atraso, buscando el dato concreto que falta para seguir el plazo legal — normalmente una fecha. Puedes contestar con texto, o adjuntar una foto/documento (ej. una cédula de notificación) para que la IA lo lea y, si confirma una fecha, llene sola la etapa correspondiente.</div>
+  ${pendientes.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>Pendientes</h3><span class="count">${pendientes.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${pendientes.map(supervisorPreguntaCardHTML).join("")}</div>
+  </div>` : `<div class="panel"><div class="panel-body"><div class="empty">Sin preguntas pendientes por ahora.</div></div></div>`}
+  ${historial.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>Historial</h3><span class="count">${historial.length}</span></div>
+    <div class="panel-body" style="padding:0;">${historial.map(p=>`
+      <div style="padding:12px 20px; border-bottom:1px solid var(--border);">
+        <div class="aviso-caso">${escapeHTML(p.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(p.expediente_demandado||'—',30))} ${p.expediente_exp? `&middot; Exp. ${escapeHTML(p.expediente_exp)}`:''}</div>
+        <div class="aviso-fuente">Sobre: ${escapeHTML(etapaLabelPorKey(p.etapa_key))}</div>
+        <div class="aviso-resumen" style="margin-top:6px;">❓ ${escapeHTML(p.pregunta)}</div>
+        <div class="aviso-resumen">💬 ${escapeHTML(p.respuesta||'—')}</div>
+        <div class="aviso-meta">${p.estado==='aplicada'?`<span class="badge ok">✓ etapa actualizada sola${p.fecha_aplicada?': '+fmtDate(p.fecha_aplicada):''}</span>`:'Registrada, sin datos para actualizar nada solo'}${p.respondido_por_nombre?' &middot; Contestó '+escapeHTML(p.respondido_por_nombre):''}${p.respondido_en?' el '+new Date(p.respondido_en).toLocaleDateString('es-MX'):''}</div>
+      </div>`).join("")}</div>
+  </div>` : ''}`;
+}
+
 function agendaHTML(){
   const isAdmin = CURRENT_USER.role === 'Administrador';
   let all = marcarChoquesDeAgenda(buildAgendaEntries());
@@ -6269,7 +6296,6 @@ function agendaHTML(){
     <button class="btn ${AGENDA_TAB==='general'?'':'secondary'}" data-agenda-tab="general" style="padding:8px 16px;">General</button>
     <button class="btn ${AGENDA_TAB==='asesorias'?'':'secondary'}" data-agenda-tab="asesorias" style="padding:8px 16px;">Asesorías</button>
     <button class="btn ${AGENDA_TAB==='ia'?'':'secondary'}" data-agenda-tab="ia" style="padding:8px 16px;">Seguimiento IA</button>
-    <button class="btn ${AGENDA_TAB==='preguntas'?'':'secondary'}" data-agenda-tab="preguntas" style="padding:8px 16px;">Preguntas al abogado${supervisorPreguntasPendientesCount()>0?` <span class="nav-badge">${supervisorPreguntasPendientesCount()}</span>`:''}</button>
   </div>`;
 
   if(AGENDA_TAB === 'asesorias'){
@@ -6319,30 +6345,6 @@ function agendaHTML(){
       <div class="panel-body">${proximasIA.length? proximasIA.map(row).join("") : '<div class="empty">Sin acciones sugeridas por ahora. Se llenan solas conforme se genera o actualiza el informe ejecutivo de cada expediente.</div>'}</div>
     </div>
     `;
-  }
-
-  if(AGENDA_TAB === 'preguntas'){
-    const pendientes = SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente');
-    const historial = SUPERVISOR_PREGUNTAS.filter(p=>p.estado!=='pendiente');
-    return tabsHTML + `
-    <div class="notice" style="margin-bottom:16px; max-width:100%;">Preguntas que el supervisor de IA le hace al abogado a cargo cuando detecta un posible atraso, buscando el dato concreto que falta para seguir el plazo legal — normalmente una fecha. Puedes contestar con texto, o adjuntar una foto/documento (ej. una cédula de notificación) para que la IA lo lea y, si confirma una fecha, llene sola la etapa correspondiente.</div>
-    ${pendientes.length ? `
-    <div class="panel">
-      <div class="panel-head"><h3>Pendientes</h3><span class="count">${pendientes.length}</span></div>
-      <div class="panel-body" style="padding:16px 20px;">${pendientes.map(supervisorPreguntaCardHTML).join("")}</div>
-    </div>` : `<div class="panel"><div class="panel-body"><div class="empty">Sin preguntas pendientes por ahora.</div></div></div>`}
-    ${historial.length ? `
-    <div class="panel">
-      <div class="panel-head"><h3>Historial</h3><span class="count">${historial.length}</span></div>
-      <div class="panel-body" style="padding:0;">${historial.map(p=>`
-        <div style="padding:12px 20px; border-bottom:1px solid var(--border);">
-          <div class="aviso-caso">${escapeHTML(p.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(p.expediente_demandado||'—',30))} ${p.expediente_exp? `&middot; Exp. ${escapeHTML(p.expediente_exp)}`:''}</div>
-          <div class="aviso-fuente">Sobre: ${escapeHTML(etapaLabelPorKey(p.etapa_key))}</div>
-          <div class="aviso-resumen" style="margin-top:6px;">❓ ${escapeHTML(p.pregunta)}</div>
-          <div class="aviso-resumen">💬 ${escapeHTML(p.respuesta||'—')}</div>
-          <div class="aviso-meta">${p.estado==='aplicada'?`<span class="badge ok">✓ etapa actualizada sola${p.fecha_aplicada?': '+fmtDate(p.fecha_aplicada):''}</span>`:'Registrada, sin datos para actualizar nada solo'}${p.respondido_por_nombre?' &middot; Contestó '+escapeHTML(p.respondido_por_nombre):''}${p.respondido_en?' el '+new Date(p.respondido_en).toLocaleDateString('es-MX'):''}</div>
-        </div>`).join("")}</div>
-    </div>` : ''}`;
   }
 
   return tabsHTML + `
