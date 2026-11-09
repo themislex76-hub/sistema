@@ -105,10 +105,30 @@ de autonomía (ver sección de arriba):
   documento/foto que el abogado suba desde la pestaña "Documentos", no
   solo cuando contesta una pregunta del supervisor) sigue sin construirse
   -- ver tarea pendiente en la sesión.
-- **Sin probar en vivo todavía** esta ronda de cambios (ni la pestaña
-  nueva, ni subir un adjunto al responder, ni el contexto ampliado de la
-  pregunta) -- recién subido. Confirmar con el usuario: que la pestaña
-  "Preguntas al abogado" se vea bien, que subir una foto al responder
+- **Corrección sobre lo anterior, mismo día**: el usuario primero pidió
+  esto como pestaña dentro de Agenda general (como General/Asesorías/
+  Seguimiento IA) -- se construyó así en el primer intento (`app.js?v=122`),
+  pero luego pidió explícitamente "protagonismo" y que no quedara
+  "revuelta". Se promovió a **su propia sección en el menú lateral**
+  (`VIEW='preguntas_abogado'`), junto a "Alertas de prescripción", con su
+  propio contador de pendientes -- ya NO vive dentro de Agenda general ni
+  como sub-pestaña. `app.js?v=123`.
+- Mientras se diagnosticaba por qué el usuario seguía viendo la versión
+  vieja después de subir archivos, se detectó que `sw.js` (Service
+  Worker, app instalable) traía hardcodeado `app.js?v=106` /
+  `style.css?v=5` en su lista de precache (`SHELL_FILES`) -- quedó
+  desactualizado desde hace varias entregas. La estrategia de fetch ya es
+  "red primero, caché solo de respaldo sin conexión" así que esto no
+  debería causar que se sirva una versión vieja mientras haya internet,
+  pero de todos modos se actualizó (`CACHE_NAME` a `v42`, referencias a
+  `v=123`/`v=6`) -- si en el futuro algo similar vuelve a pasar (usuario
+  sube archivos nuevos y sigue viendo lo viejo), revisar primero si de
+  verdad subió TODOS los archivos (`index.html` incluido, para que el
+  cache-bust cambie) antes de sospechar del Service Worker.
+- **Sin probar en vivo todavía** esta versión (`v=123`, la de sección
+  propia en el menú) -- recién subido. Confirmar con el usuario: que
+  aparezca "Preguntas al abogado" como botón propio del menú lateral
+  (junto a Alertas de prescripción), que subir una foto al responder
   funcione y llene la etapa si la foto trae una fecha clara, y que las
   preguntas nuevas que genere el cron se noten más específicas con el
   contexto de documentos/boletín.
