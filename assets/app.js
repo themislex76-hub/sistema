@@ -4726,7 +4726,19 @@ function buildAgendaEntries(){
 // en silencio, cada vez que alguien abre el sistema -- si nadie lo abre en
 // varios días el caché se queda desactualizado, pero es la misma
 // limitación que ya tiene la sincronización con Google Calendar.
-const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso'];
+const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','accion_ia'];
+// 'atraso' y 'accion_ia' son asuntos ESTANCADOS -- su fecha es cuándo
+// debió pasar algo (o cuándo venció el seguimiento que propuso la IA), no
+// una cita futura. Una vez que de verdad se atrasan, esa fecha se queda
+// en el pasado para siempre -- a diferencia de los demás tipos (que solo
+// tiene sentido avisar en una ventana de "próximos días"), estos se
+// siguen mandando mientras sigan sin resolverse, sin importar cuántos
+// días lleven atrás. Bug real confirmado (9 nov 2026): con el filtro
+// viejo (fecha >= hoy) estos NUNCA volvían a entrar a la ventana una vez
+// atrasados -- se calculaban bien y se veían en el Tablero, pero el push
+// diario (cron_recordatorio_abogado.php) jamás los mandaba. 40 asuntos
+// atorados que el sistema "sabía" pero nunca avisó a nadie.
+const AVISOS_ABOGADO_TIPOS_ABIERTOS = ['atraso', 'accion_ia'];
 async function syncAvisosAbogado(){
   if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
   const hoy = new Date(); hoy.setHours(0,0,0,0);
@@ -4734,15 +4746,22 @@ async function syncAvisosAbogado(){
   const limiteISO = dateToISO(addDaysDate(hoy, 3));
   try{
     const entries = buildAgendaEntries()
-      .filter(e => AVISOS_ABOGADO_TIPOS.includes(e.tipo) && e.fecha >= hoyISO && e.fecha <= limiteISO)
-      .map(e => ({
-        expediente_id: e.k.id,
-        clave: e.tipo + (e.actionIdx!=null ? ':'+e.actionIdx : ''),
-        tipo: e.tipo,
-        fecha: e.fecha,
-        hora: e.hora || null,
-        label: e.label,
-      }));
+      .filter(e => AVISOS_ABOGADO_TIPOS.includes(e.tipo)
+        && e.fecha <= limiteISO
+        && (AVISOS_ABOGADO_TIPOS_ABIERTOS.includes(e.tipo) || e.fecha >= hoyISO))
+      .map(e => {
+        const f = parseDate(e.fecha);
+        const diasAtraso = (AVISOS_ABOGADO_TIPOS_ABIERTOS.includes(e.tipo) && f && f < hoy) ? daysBetween(f, hoy) : 0;
+        return {
+          expediente_id: e.k.id,
+          clave: e.tipo + (e.actionIdx!=null ? ':'+e.actionIdx : ''),
+          tipo: e.tipo,
+          fecha: e.fecha,
+          hora: e.hora || null,
+          label: e.label,
+          dias_atraso: diasAtraso,
+        };
+      });
     await api('POST', 'agenda_sync_avisos.php', {entries, todos: CURRENT_USER.role === 'Administrador'});
   }catch(err){}
 }

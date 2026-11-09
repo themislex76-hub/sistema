@@ -56,7 +56,79 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**Última migración aplicada por el usuario: `058_categoria_documento_acuerdo_amparo.sql`.**
+**Última migración aplicada por el usuario: `059_escalar_avisos_atrasados.sql` (pendiente de que la corra).**
+
+## Visión grande: sistema lo más autónomo posible, "supervisor" de los
+## abogados (9 nov 2026) -- EN CURSO, leer antes de tocar nada de agenda/IA
+El usuario quiere que el sistema se alimente solo lo más posible (de los
+boletines, de fotos/documentos que suba el abogado, de preguntas que le
+haga el sistema) y actúe como un supervisor con criterio legal -- no un
+simple extractor de fechas -- que no deje que un asunto se atore, y que
+le pregunte al abogado lo justo y necesario (lo que de verdad no se puede
+sacar solo) en vez de hacerle llenar el sistema a mano. Se definieron 4
+piezas (ver tareas en la sesión que esto escribió, o recréalas si hace
+falta seguimiento):
+1. **Arreglar el hueco del push diario de atrasos -- HECHO (9 nov 2026),
+   migración 059 pendiente de correr.** Causa raíz real encontrada: el
+   sistema YA calculaba bien los "posibles atrasos" (`estancadoInfo()`)
+   y la IA YA generaba una acción sugerida por expediente
+   (`ia_generar_resumen_expediente()`, campo `accion_sugerida_ia`) --
+   pero `syncAvisosAbogado()` en app.js solo mandaba al caché
+   (`agenda_avisos_cache`) lo que tuviera fecha entre hoy y los próximos
+   3 días, y la fecha de un atraso es la fecha en que YA DEBIÓ pasar
+   algo -- una vez atrasado de verdad esa fecha queda en el pasado para
+   siempre y nunca vuelve a caer en esa ventana. Tampoco lo hubiera
+   agarrado el cron (`cron_recordatorio_abogado.php`) aunque llegara al
+   caché: exigía `fecha = CURDATE() + 1`. Confirmado en vivo con el
+   usuario: 40 asuntos atorados que el sistema "sabía" pero nunca avisó
+   a nadie. Arreglado: `atraso`/`accion_ia` ahora se mandan al caché
+   sin importar qué tan atrás quedó su fecha (mientras sigan sin
+   resolverse) y el cron los agarra con `fecha <= hoy` en vez de
+   `fecha = mañana`. Además, nuevo campo `dias_atraso` en
+   `agenda_avisos_cache` (migración 059) -- si un abogado lleva 7+ días
+   ignorando uno de estos, TAMBIÉN se le avisa al Administrador (tabla
+   nueva `agenda_escalaciones_enviadas`, dedupe aparte de
+   `agenda_avisos_enviados` para que no choque si el admin también es
+   abogado con sus propios pendientes). `app.js?v=117`. **Sin probar en
+   vivo todavía** (nadie ha visto llegar el push de un atraso real ni la
+   escalación al admin) -- confirmar en cuanto el cron corra de nuevo
+   con asuntos atorados reales.
+2. **IA lee el contenido real de los acuerdos de boletín** (pendiente) --
+   hoy el resumen que se guarda es genérico ("Acuerdo No. X del
+   expediente Y, de fecha Z"), sin que nadie (ni la IA) sepa qué dice el
+   acuerdo de verdad. La idea: que la IA lea el PDF/texto y proponga la
+   actualización de etapa/fecha correspondiente (ej. detecta "se señala
+   nueva fecha de audiencia: 15 de marzo" o "se admite la prueba
+   pericial").
+3. **Supervisor por WhatsApp para expedientes sin movimiento**
+   (pendiente) -- para lo que NINGÚN boletín ni documento puede detectar
+   solo (convenios de pago, pláticas con el cliente, notificaciones
+   físicas como el emplazamiento). El sistema le pregunta al abogado con
+   el contexto completo del expediente, como lo haría un supervisor real
+   ("te admitieron la pericial, faltan 5 días para ofrecer perito,
+   ¿ya tienes uno?"), nunca da clases de derecho -- solo da seguimiento
+   con criterio. Ejemplo real que dio el usuario: demanda admitida y se
+   ordena emplazar → el sistema pregunta cuándo se notificó → calcula
+   los 15 días de la LFT para contestar → si se vence sin contestación
+   registrada, avisa solo que toca promover acusando rebeldía.
+4. **IA lee documentos/fotos que sube el abogado** (pendiente) -- mismo
+   principio que el punto 2 pero con lo que el abogado sube a mano
+   (conciliación, constancia de no conciliación, cédulas de
+   notificación). Automática si es un documento oficial inequívoco (ej.
+   constancia con fecha clara → dispara el cálculo de prescripción ya
+   existente); con confirmación de un tap si es más ambiguo (ej. una
+   fecha reagendada).
+
+Principio de diseño acordado con el usuario para las piezas 2-4: los
+DATOS DUROS (fechas, etapas) siguen siendo estructurados -- de ahí sale
+el cálculo automático de plazos que ya existe y funciona (prescripción,
+amparo). Lo que se vuelve IA es el CRITERIO de qué preguntar/proponer y
+cuándo alertar, no el cálculo legal en sí. Para que un abogado pueda
+confiar en una propuesta de la IA sin revisarla a ciegas, siempre debe
+explicar en una línea por qué está preguntando/alertando. Documentos
+oficiales inequívocos → automático; algo ambiguo o texto libre (una
+respuesta de WhatsApp) → confirmación de un tap antes de escribir nada
+al expediente.
 
 Resumen de lo agregado en la sesión del 6-8 nov 2026 ("sistema y bot
 completo"):
