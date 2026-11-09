@@ -56,7 +56,329 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**Última migración aplicada por el usuario: `057_edomex_correo_credenciales.sql`.**
+**Última migración aplicada por el usuario: `061_supervisor_preguntas.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 9 nov 2026.**
+
+## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
+Confirmado en vivo el mismo día que se corrió la migración 061: el cron
+`cron_generar_preguntas_supervisor.php` corrió limpio (15 atrasos
+revisados, 15 preguntas nuevas generadas, 0 fallidas). Después de verlo
+funcionando, el usuario pidió 3 ajustes sobre la pieza 3 del plan grande
+de autonomía (ver sección de arriba):
+- **Renombrado** de "🧑‍⚖️ Preguntas del supervisor" a **"Preguntas al
+  abogado"** en la UI (solo el texto visible -- nombres internos de
+  variables/tabla/endpoints se dejaron igual, `supervisor_preguntas` etc.,
+  para no arriesgar nada).
+- **Pestaña propia** dentro de Agenda general (antes era solo un panel
+  dentro de "General", mezclado con lo demás). Se agregó una 4ª pestaña
+  `AGENDA_TAB='preguntas'` junto a General/Asesorías/Seguimiento IA, con
+  su propio badge de pendientes. Muestra las pendientes arriba (con el
+  formulario de respuesta) y un historial abajo (respondidas/aplicadas,
+  de solo lectura). El panel viejo dentro de "General" se quitó.
+- **Adjuntar foto/documento al responder**: `supervisor_pregunta_responder.php`
+  pasó de recibir JSON a `multipart/form-data` (como `documentos_upload.php`)
+  -- acepta un archivo opcional (`pdf`/`jpg`/`jpeg`/`png`, máx. 20 MB) además
+  del texto. Si llega archivo, se guarda igual que cualquier otro documento
+  del expediente (`expediente_documentos`, categoría `otro`) y
+  `ia_interpretar_respuesta_supervisor()` ahora puede recibir esa
+  foto/PDF como bloque `document`/`image` nativo de la API de Anthropic
+  (mismo patrón que `ia_analizar_acuerdo_boletin()`) -- si el documento
+  confirma una fecha, llena la etapa sola igual que antes (nunca
+  sobrescribe una que ya tenga fecha). Usa el modelo grande
+  (`IA_MODELO_ANALIZAR_ACUERDO`) solo cuando hay archivo adjunto; si es
+  solo texto sigue usando Haiku como antes, para no encarecer el caso
+  común.
+- **Más contexto al redactar la pregunta**: pedido explícito del usuario
+  ("la ia tiene que revisar toda la info y documentos que hay en sistema
+  para generar estas preguntas"). `ia_generar_pregunta_supervisor()` ahora
+  también recibe los últimos documentos guardados del expediente (nombre +
+  categoría + fecha) y los últimos resúmenes de IA de boletín
+  (`ia_resumen` de `avisos_boletin`) para que la pregunta sea más
+  específica y no repita algo que el expediente ya trae documentado. El
+  cron (`cron_generar_preguntas_supervisor.php`) hace 2 SELECTs nuevos por
+  expediente para juntar ese contexto antes de llamar a la IA.
+- Pendiente explícito (NO se tocó todavía, es un alcance más grande): "la
+  IA debe actualizar el sistema procesal... para hacerlo lo más autónomo
+  que se pueda" en un sentido más amplio -- hoy la actualización automática
+  de `expediente_etapas` solo pasa en 2 lugares puntuales (acuerdos de
+  boletín leídos por IA, y esta respuesta del abogado al supervisor con o
+  sin adjunto). La pieza 4 del plan grande (que la IA lea CUALQUIER
+  documento/foto que el abogado suba desde la pestaña "Documentos", no
+  solo cuando contesta una pregunta del supervisor) sigue sin construirse
+  -- ver tarea pendiente en la sesión.
+- **Corrección sobre lo anterior, mismo día**: el usuario primero pidió
+  esto como pestaña dentro de Agenda general (como General/Asesorías/
+  Seguimiento IA) -- se construyó así en el primer intento (`app.js?v=122`),
+  pero luego pidió explícitamente "protagonismo" y que no quedara
+  "revuelta". Se promovió a **su propia sección en el menú lateral**
+  (`VIEW='preguntas_abogado'`), junto a "Alertas de prescripción", con su
+  propio contador de pendientes -- ya NO vive dentro de Agenda general ni
+  como sub-pestaña. `app.js?v=123`.
+- Mientras se diagnosticaba por qué el usuario seguía viendo la versión
+  vieja después de subir archivos, se detectó que `sw.js` (Service
+  Worker, app instalable) traía hardcodeado `app.js?v=106` /
+  `style.css?v=5` en su lista de precache (`SHELL_FILES`) -- quedó
+  desactualizado desde hace varias entregas. La estrategia de fetch ya es
+  "red primero, caché solo de respaldo sin conexión" así que esto no
+  debería causar que se sirva una versión vieja mientras haya internet,
+  pero de todos modos se actualizó (`CACHE_NAME` a `v42`, referencias a
+  `v=123`/`v=6`) -- si en el futuro algo similar vuelve a pasar (usuario
+  sube archivos nuevos y sigue viendo lo viejo), revisar primero si de
+  verdad subió TODOS los archivos (`index.html` incluido, para que el
+  cache-bust cambie) antes de sospechar del Service Worker.
+- **Sin probar en vivo todavía** esta versión (`v=123`, la de sección
+  propia en el menú) -- recién subido. Confirmar con el usuario: que
+  aparezca "Preguntas al abogado" como botón propio del menú lateral
+  (junto a Alertas de prescripción), que subir una foto al responder
+  funcione y llene la etapa si la foto trae una fecha clara, y que las
+  preguntas nuevas que genere el cron se noten más específicas con el
+  contexto de documentos/boletín.
+
+## Simplificación: un solo campo de Tribunal + Amparo recortado (9 nov 2026)
+El usuario notó que el sistema pedía ciudad/tribunal/expediente en 3
+lugares distintos (campos `junta` y `tribunal` en "Editar datos", más el
+selector de Tribunal Colegiado en la pestaña "Amparo") y pidió
+consolidar.
+- **Se quitó el campo `junta`** de "Editar datos" -- las Juntas de
+  Conciliación y Arbitraje ya no reciben asuntos nuevos desde la reforma
+  laboral, así que ya no hace falta capturarlo por separado. Ahora solo
+  queda: "Centro de Conciliación" (`instancia`, SE QUEDA -- sigue
+  haciendo falta para los asuntos que aún no pasan a Tribunal, pedido
+  explícito del usuario), "Tribunal" (`tribunal`, el único selector
+  pesado de ciudad+catálogo que queda) y "Número de expediente" (`exp`).
+  La columna `junta` de la base de datos **NO se borró** (datos viejos
+  siguen ahí) -- todos los lugares que leen el tribunal (`mergeTags()`,
+  la tabla de expedientes, "Informe del juicio", etc.) ahora priorizan
+  `tribunal` y caen a `junta` solo como respaldo para expedientes
+  capturados antes de este cambio; el formulario de "Editar datos"
+  también usa `junta` como valor de arranque si `tribunal` todavía está
+  vacío, para que un dato viejo no se vea en blanco.
+- **Pestaña "Amparo" recortada, pero el selector de Tribunal Colegiado SE
+  QUEDA** (corrección sobre el primer intento de este mismo día: al
+  principio se había quitado el selector de Tribunal Colegiado también,
+  pero el usuario aclaró "en el amparo se usa numero de expediente y
+  tribunal" + "tiene que ser con selector" -- se restauró igual que
+  estaba). Queda: checkbox de activo + fecha de notificación del laudo/
+  plazo de 15 días calculado (Art. 17 Ley de Amparo) + selector de
+  Tribunal Colegiado (circuito + catálogo + "otro", `amparoCircuitoSel`/
+  `amparoTribunalSel`/`amparoTribunalOtroWrap`) + número de expediente
+  del amparo. Lo ÚNICO que sí se quitó de verdad fue el campo de **notas**
+  (`amparo_notas`) -- no lo usa nada automatizado. Si un expediente viejo
+  ya tenía notas capturadas, el botón "Guardar datos de amparo" las manda
+  tal cual sin cambios (ya no hay forma de editarlas desde la UI, pero
+  tampoco se borran solas al guardar). Confirmado con el usuario: aunque
+  el robot Federal solo usa `amparo_expediente` para el match (nunca lee
+  `amparo_tribunal`, ver `federal.js`), el tribunal SÍ es un dato que el
+  despacho necesita capturar y consultar, así que se queda con su propio
+  selector aunque no lo use ningún robot.
+- `app.js?v=119`. Sin cambios de base de datos. `verificar_tags.js`
+  corrido y pasó limpio (se tocó `mergeTags()` -- el fallback de
+  `instancia`/`ciudad_firma` ahora usa `tribunal` en vez de `junta`).
+
+## Visión grande: sistema lo más autónomo posible, "supervisor" de los
+## abogados (9 nov 2026) -- EN CURSO, leer antes de tocar nada de agenda/IA
+El usuario quiere que el sistema se alimente solo lo más posible (de los
+boletines, de fotos/documentos que suba el abogado, de preguntas que le
+haga el sistema) y actúe como un supervisor con criterio legal -- no un
+simple extractor de fechas -- que no deje que un asunto se atore, y que
+le pregunte al abogado lo justo y necesario (lo que de verdad no se puede
+sacar solo) en vez de hacerle llenar el sistema a mano. Se definieron 4
+piezas (ver tareas en la sesión que esto escribió, o recréalas si hace
+falta seguimiento):
+1. **Arreglar el hueco del push diario de atrasos -- HECHO (9 nov 2026),
+   migración 059 pendiente de correr.** Causa raíz real encontrada: el
+   sistema YA calculaba bien los "posibles atrasos" (`estancadoInfo()`)
+   y la IA YA generaba una acción sugerida por expediente
+   (`ia_generar_resumen_expediente()`, campo `accion_sugerida_ia`) --
+   pero `syncAvisosAbogado()` en app.js solo mandaba al caché
+   (`agenda_avisos_cache`) lo que tuviera fecha entre hoy y los próximos
+   3 días, y la fecha de un atraso es la fecha en que YA DEBIÓ pasar
+   algo -- una vez atrasado de verdad esa fecha queda en el pasado para
+   siempre y nunca vuelve a caer en esa ventana. Tampoco lo hubiera
+   agarrado el cron (`cron_recordatorio_abogado.php`) aunque llegara al
+   caché: exigía `fecha = CURDATE() + 1`. Confirmado en vivo con el
+   usuario: 40 asuntos atorados que el sistema "sabía" pero nunca avisó
+   a nadie. Arreglado: `atraso`/`accion_ia` ahora se mandan al caché
+   sin importar qué tan atrás quedó su fecha (mientras sigan sin
+   resolverse) y el cron los agarra con `fecha <= hoy` en vez de
+   `fecha = mañana`. Además, nuevo campo `dias_atraso` en
+   `agenda_avisos_cache` (migración 059) -- si un abogado lleva 7+ días
+   ignorando uno de estos, TAMBIÉN se le avisa al Administrador (tabla
+   nueva `agenda_escalaciones_enviadas`, dedupe aparte de
+   `agenda_avisos_enviados` para que no choque si el admin también es
+   abogado con sus propios pendientes). `app.js?v=117`. **Sin probar en
+   vivo todavía** (nadie ha visto llegar el push de un atraso real ni la
+   escalación al admin) -- confirmar en cuanto el cron corra de nuevo
+   con asuntos atorados reales.
+2. **IA lee el contenido real de los acuerdos de boletín -- HECHO (9 nov
+   2026), migración 060 pendiente de correr, y FALTA DAR DE ALTA EL CRON
+   NUEVO.** Antes el resumen guardado era genérico ("Acuerdo No. X del
+   expediente Y, de fecha Z"), sin que nadie (ni la IA) supiera qué decía
+   el acuerdo de verdad. Ahora `ia_analizar_acuerdo_boletin()`
+   (`api/ia_helpers.php`) le manda a Claude el PDF real (como documento
+   adjunto nativo de la API, no solo texto -- o el `.txt` tal cual para
+   los avisos de CDMX, que no traen PDF) junto con el contexto del
+   expediente y su bitácora de etapas, y pide: (1) un resumen de 1-2
+   líneas de qué dice el acuerdo en concreto, (2) una etapa sugerida SOLO
+   si calza con claridad con el vocabulario de `ETAPA_KEYS` (nunca
+   forzada), (3) una fecha SOLO si el documento la menciona literalmente
+   (nunca calculada -- mismo principio que ya regía en
+   `ia_generar_resumen_expediente()`).
+   - Nuevo cron **`api/cron_analizar_acuerdos_ia.php`** (correr cada
+     15-30 min, NO en tiempo real junto con `avisos_ingest.php` -- leer
+     un PDF tarda varios segundos y no debía arriesgar ni hacer más
+     lenta la corrida de los robots). Busca avisos con documento adjunto
+     sin analizar todavía (`ia_analizado_en IS NULL`), hasta 15 por
+     corrida. **Pedido explícito del usuario: que la IA USE lo que lee
+     para llenar el sistema sola, no solo mostrarlo pasivo** (si solo se
+     mostraba, se repetía el mismo problema que ya resolvimos con el
+     punto 1 -- información correcta que nadie actúa). Por eso, si la
+     etapa sugerida TODAVÍA no tiene fecha capturada en
+     `expediente_etapas` (nunca sobrescribe una que el abogado ya
+     registró a mano), la llena sola con la fecha mencionada en el
+     documento o, si no hay, la fecha de publicación del boletín -- y
+     queda registrado en `log_historial` como "llenado automático por
+     IA" para que se pueda auditar/corregir si se equivocó.
+   - El resumen de la IA (`ia_resumen`) se muestra debajo del resumen
+     genérico en la tarjeta de cada aviso (Agenda general y pestaña
+     Boletín del expediente), y si llenó una etapa sola aparece una
+     insignia "✓ etapa actualizada sola: [nombre de la etapa]" --
+     `app.js?v=118`.
+   - **Sin probar en vivo todavía** (nunca se ha corrido contra un PDF
+     real desde que se escribió esto -- ni el formato exacto de
+     respuesta de la IA, ni el `document` content block de la API de
+     Anthropic con PDF real, se han confirmado funcionando aquí). Probar
+     primero con uno de los 8 acuerdos de amparo reales ya subidos
+     (expediente de prueba Emmanuel Rodriguez Ojeda, Exp. 269-2025) antes
+     de asumir que funciona con cualquier PDF.
+   - **Falta dar de alta el Cron Job en cPanel**: comando
+     `php /ruta/completa/a/api/cron_analizar_acuerdos_ia.php`, frecuencia
+     cada 15-30 minutos (igual patrón que los demás `cron_*.php`, ver
+     sección "Robots locales" más abajo para cómo se programan estas
+     tareas, aunque esta corre en el servidor, no en la máquina del
+     usuario).
+3. **Supervisor que pregunta al abogado por asuntos atorados -- HECHO (9
+   nov 2026), migración 061 pendiente de correr, y FALTA DAR DE ALTA EL
+   CRON NUEVO.** Pensado originalmente como "por WhatsApp" (ver el
+   ejemplo real del usuario abajo), pero se construyó como push + tarjeta
+   DENTRO del sistema -- el usuario lo pidió así explícitamente ("haber
+   hazlo sin el pussh" más tarde se aclaró en "sin push" del todo, ni
+   siquiera push de aviso de que hay pregunta nueva, solo aparece al
+   entrar al sistema) una vez que se le explicó que WhatsApp de verdad
+   habría necesitado agregar un campo de celular a `usuarios` (no existe
+   hoy) + una plantilla nueva aprobada por Meta (días de espera) + enseñar
+   al bot de WhatsApp (hoy solo sabe hablar con prospectos/clientes) a
+   reconocer que un mensaje entrante es de un abogado contestándole al
+   supervisor -- mucho más trabajo que reutilizar lo ya construido.
+   - **Pieza clave de diseño**: en vez de reimplementar "qué está
+     atorado" (eso ya lo resuelve `estancadoInfo()` en el navegador,
+     sincronizado a `agenda_avisos_cache` desde la pieza 1 de este mismo
+     plan), este supervisor PARTE de esos mismos "atraso" ya detectados.
+     Se le agregó a `estancadoInfo()` el campo `siguienteKey` (la CLAVE
+     de la etapa esperada, ej. `contestacion_recibida`, no solo su
+     nombre humano) y `buildAgendaEntries()` ahora manda `actionIdx:
+     est.siguienteKey` en la entrada tipo 'atraso' -- eso hace que
+     `syncAvisosAbogado()` guarde la clave como `atraso:<etapa_key>` en
+     vez de solo `atraso` (antes un expediente solo podía tener un
+     atraso a la vez, así que la clave genérica bastaba para
+     deduplicar, pero no servía para saber DESPUÉS a qué etapa
+     corresponde).
+   - Nuevo cron **`api/cron_generar_preguntas_supervisor.php`** (correr
+     una vez al día): por cada fila `agenda_avisos_cache` tipo='atraso'
+     sin pregunta generada todavía (`supervisor_preguntas`, tabla nueva),
+     le pide a `ia_generar_pregunta_supervisor()` una pregunta corta y
+     concreta (nunca clases de derecho, va directo al grano como un
+     supervisor real) y la guarda. SIN push -- solo aparece en un panel
+     nuevo "🧑‍⚖️ Preguntas del supervisor" en Agenda general (mismo
+     estilo que el de avisos de boletín) cuando el abogado entra.
+   - El abogado contesta en texto libre ahí mismo (textarea + botón
+     "Responder", `api/supervisor_pregunta_responder.php`) --
+     `ia_interpretar_respuesta_supervisor()` lee la respuesta y SOLO si
+     menciona una fecha de forma literal (puede ser lenguaje natural,
+     "el jueves pasado" -- la IA la convierte a ISO usando la fecha de
+     hoy como referencia, pero NUNCA calcula un plazo ni inventa una
+     fecha que no esté dicha) la usa para llenar sola la etapa
+     correspondiente en `expediente_etapas` (mismo principio de nunca
+     sobrescribir una etapa que ya tiene fecha, y queda en
+     `log_historial`). Si la respuesta es vaga o no da fecha, se guarda
+     igual (queda registrada, útil como bitácora) pero no llena nada
+     solo.
+   - El ejemplo real del usuario (demanda admitida → se ordena emplazar
+     → el sistema pregunta cuándo se notificó → el abogado contesta la
+     fecha → el sistema llena sola la etapa `emplazamiento` → en cuanto
+     pasen los 15 días hábiles sin que se registre
+     `contestacion_recibida`, `estancadoInfo()` lo vuelve a detectar como
+     atraso automáticamente, sin tener que programar nada especial para
+     "avisar que toca promover rebeldía" -- eso ya sale solo del ciclo
+     normal: nuevo atraso → nueva pregunta del supervisor) queda cubierto
+     de punta a punta con este diseño, reutilizando toda la maquinaria de
+     plazos que ya existía.
+   - **Sin probar en vivo todavía** -- nunca se ha corrido el cron
+     nuevo, ni se ha confirmado que la IA redacte preguntas útiles con un
+     caso real, ni que `ia_interpretar_respuesta_supervisor()` extraiga
+     bien una fecha de una respuesta real en lenguaje natural. Probar
+     primero con un expediente real que ya tenga un "posible atraso"
+     visible en el Tablero.
+   - **Falta dar de alta el Cron Job en cPanel**: comando
+     `php /ruta/completa/a/api/cron_generar_preguntas_supervisor.php`,
+     frecuencia una vez al día (puede ir junto con
+     `cron_recordatorio_abogado.php`).
+   - `app.js?v=121`.
+4. **IA lee documentos/fotos que sube el abogado -- HECHO (9 nov 2026),
+   migración 062 pendiente de correr, y FALTA DAR DE ALTA EL CRON NUEVO.**
+   Pedido explícito del usuario: "sería excelente que en documentos se
+   agregue un resumen del documento a un lado para ver de qué se trata".
+   Mismo principio que el punto 2, pero para CUALQUIER documento que el
+   abogado suba a mano en la pestaña "Documentos" (constancias, convenios,
+   pruebas, cédulas de notificación, fotos...), no solo los acuerdos de
+   boletín que suben los robots.
+   - `ia_analizar_acuerdo_boletin()` (`api/ia_helpers.php`) se generalizó
+     para esto: ahora acepta también imágenes (JPG/PNG, bloque `image`
+     nativo de la API, igual que ya hacía con `document` para PDF) y dos
+     parámetros nuevos opcionales (`$nombreArchivo`, `$categoria`) para
+     dar más contexto; el texto de las instrucciones se generalizó de
+     "acuerdo" a "documento" (sigue sirviendo igual para los acuerdos de
+     boletín, que es como ya se usaba). El nombre de la función se dejó
+     igual a propósito (ya la llama `cron_analizar_acuerdos_ia.php`) para
+     no arriesgar nada ahí.
+   - Nuevo cron **`api/cron_analizar_documentos_ia.php`** (correr cada
+     15-30 min, junto con `cron_analizar_acuerdos_ia.php`): busca en
+     `expediente_documentos` (migración 062: mismas 5 columnas `ia_*` que
+     ya tiene `avisos_boletin` desde la 060) los que no se han analizado.
+     Para no pagar dos veces por el mismo archivo, si el documento ya
+     viene de un robot de boletín (tiene un aviso ligado en
+     `avisos_boletin` que YA se analizó ahí), simplemente COPIA ese
+     resultado en vez de volver a mandarlo a la IA. Solo lee PDF/JPG/PNG
+     -- Word/Excel/txt se marcan como analizados sin resumen (no se
+     puede leer ese tipo de archivo con este mecanismo). Mismo
+     llenado-solo de etapa que el punto 2, con una diferencia a propósito:
+     aquí NUNCA se usa la fecha de SUBIDA como respaldo si el documento no
+     menciona una fecha literal (a diferencia del boletín, un documento se
+     puede subir mucho después de lo que acredita) -- sin fecha explícita
+     en el documento, el resumen se muestra pero no se aplica nada solo.
+   - El resumen (`documentoIaHTML()`) se muestra debajo del nombre del
+     archivo en la tabla de la pestaña "Documentos" (mismo estilo que ya
+     usan los avisos de boletín), con la misma insignia "✓ etapa
+     actualizada sola" cuando aplica. `app.js?v=124`.
+   - **Sin probar en vivo todavía** -- recién construido, nunca se ha
+     corrido el cron nuevo ni confirmado que lea bien una foto/PDF real
+     subido a mano (el mecanismo de PDF ya está confirmado por el punto 2,
+     pero el de imagen/foto es nuevo, sin probar). Probar primero con un
+     documento real ya subido a algún expediente (ideal: uno con una
+     fecha clara, para confirmar también el llenado automático de etapa).
+   - **Falta dar de alta el Cron Job en cPanel**: comando
+     `php /ruta/completa/a/api/cron_analizar_documentos_ia.php`,
+     frecuencia cada 15-30 minutos.
+
+Principio de diseño acordado con el usuario para las piezas 2-4: los
+DATOS DUROS (fechas, etapas) siguen siendo estructurados -- de ahí sale
+el cálculo automático de plazos que ya existe y funciona (prescripción,
+amparo). Lo que se vuelve IA es el CRITERIO de qué preguntar/proponer y
+cuándo alertar, no el cálculo legal en sí. Para que un abogado pueda
+confiar en una propuesta de la IA sin revisarla a ciegas, siempre debe
+explicar en una línea por qué está preguntando/alertando. Documentos
+oficiales inequívocos → automático; algo ambiguo o texto libre (una
+respuesta de WhatsApp) → confirmación de un tap antes de escribir nada
+al expediente.
 
 Resumen de lo agregado en la sesión del 6-8 nov 2026 ("sistema y bot
 completo"):
@@ -183,6 +505,72 @@ completo"):
     programarlo para correr solo todos los días (Task Scheduler en la
     máquina del usuario, ver README.md de esta carpeta) -- por ahora solo
     se ha corrido a mano.
+- **Amparos directos (8 nov 2026)**: el robot ahora también vigila los
+  amparos directos/indirectos contra la sentencia laboral -- el Portal de
+  Servicios en Línea tiene DOS entidades separadas detrás de la misma
+  pantalla de login ("Tribunales Laborales" de siempre, y "Juzgados de
+  Distrito y Tribunales de Circuito", donde se resuelven los amparos),
+  cada una una sesión/cookie distinta que solo ve su propia "Vista
+  Global" -- confirmado capturando la petición real de login del
+  navegador con las herramientas de desarrollador: cambia
+  `EntidadExterna` ("Laboral" vs "SinEntidad") y `tipo` ("3" vs "1"). Cada
+  cuenta ahora se revisa dos veces (array `SESIONES`), reutilizando toda
+  la lógica de Vista Global / tabla de acuerdos que ya existía (mismas
+  columnas). **Confirmado funcionando de punta a punta (8 nov 2026)**:
+  corrida real con el amparo 269/2025 de Claudia Ruiz (expediente
+  242/2024, capturado en la pestaña "Amparo" del expediente) -- reportó 8
+  acuerdos reales con sus PDF. El intermitente ya conocido del clic a
+  "Consulta de Expediente Electrónico" (ver abajo) también se portó aquí
+  (antes solo estaba en la versión de `control-de-expedientes`).
+  - Los documentos de amparo se suben con categoría nueva
+    `acuerdo_amparo` (antes cualquier acuerdo, de juicio o de amparo,
+    caía en la misma categoría genérica `acuerdo` y los abogados se
+    confundían viéndolos revueltos en la pestaña "Documentos"). Migración
+    `sql/migraciones/058_categoria_documento_acuerdo_amparo.sql` --
+    **confirmada corrida por el usuario**. OJO con un bug real que esto
+    destapó: el usuario corrió esta migración primero en la base de
+    Control de Expedientes por error (cuenta equivocada, confusión ya
+    documentada varias veces en este archivo) y luego, al intentar el
+    `UPDATE` de recategorización en la base correcta ANTES de correr el
+    ALTER TABLE ahí, MySQL aceptó el UPDATE pero con warnings "Datos
+    truncados para columna 'categoria'" -- guardó un valor de ENUM
+    inválido en vez de fallar limpio, dejando esas filas con una
+    categoría corrupta (ya no 'acuerdo', tampoco 'acuerdo_amparo'). Se
+    corrigió repitiendo el UPDATE filtrando por `nombre_archivo LIKE
+    '...'` en vez de por `categoria = 'acuerdo'` (que ya no las
+    encontraba). Lección: si un UPDATE a una columna ENUM sale con ese
+    warning, el ALTER TABLE que agrega el valor nuevo no se aplicó de
+    verdad en esa base -- correrlo primero y confirmar sin warnings antes
+    de repetir el UPDATE.
+  - **Pestaña "Documentos" dividida en dos subpestañas (9 nov 2026)**:
+    "Juicio principal" y "Amparo" (`DOCUMENTOS_SUBTAB`, botones
+    `data-docsubtab`, clase CSS `doc-subtabs` -- a propósito NO
+    `modal-tabs`, para que el click global que mueve `MODAL_TAB` no las
+    agarre también sin querer). Pedido explícito del usuario pensando en
+    que con el tiempo cada expediente va a acumular bastantes documentos
+    de cada lado. El desplegable de categoría al subir un documento
+    también se filtra según la subpestaña activa (en Amparo solo ofrece
+    "Acuerdo (amparo)"). `app.js?v=115`.
+  - Pendiente: portar lo mismo (dos sesiones por cuenta, amparos) a
+    `control-de-expedientes/robots/federal-multidespacho/federal.js` --
+    el usuario ya pidió que se haga en cuanto esto quedara confirmado
+    aquí.
+- **Panel viejo de "Captcha de Edomex pendiente" retirado del todo (9 nov
+  2026)**: era de `robots/edomex/edomex.js`, el robot viejo con captcha
+  ya reemplazado por `edomex_correo.js` el 8 nov -- el usuario lo vio
+  aparecer en Agenda general con un captcha huérfano (de antes de que se
+  retirara el robot) y preguntó si ya tocaba quitarlo. Se quitó de
+  `app.js` (variable `EDOMEX_CAPTCHA_PENDIENTE`, el panel en Agenda
+  general, el botón "Enviar" y su manejador, el +1 del badge de Agenda) y
+  se borraron del repo los 4 endpoints que ya no llamaba nadie:
+  `api/edomex_captcha_{pendiente,publicar,resolver,resultado}.php`.
+  **Pendiente**: esos 4 archivos .php siguen en el servidor en vivo
+  (subida manual por cPanel, no se borran solos) -- no hace daño
+  dejarlos huérfanos ahí (nada les manda tráfico), pero si el usuario
+  quiere limpiarlos del todo hay que decirle que los borre a mano desde
+  el Administrador de archivos. La tabla `edomex_captcha_pendientes` en
+  la base de datos tampoco se tocó (mismo razonamiento, inofensiva sin
+  uso) -- no se le ofreció un DROP TABLE porque no se pidió. `app.js?v=116`.
 
 ## Avisos de boletín con documento adjunto (8 nov 2026)
 - Pedido del usuario: que al reportarse un acuerdo/aviso nuevo, se pueda

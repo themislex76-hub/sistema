@@ -326,10 +326,9 @@ const EDITABLE_FIELDS = [
   {key:'salario_mensual', label:'Salario mensual', type:'number'},
   {key:'salario_diario', label:'Salario diario', type:'number'},
   {key:'sdi', label:'Salario diario integrado', type:'number'},
-  {key:'instancia', label:'Centro de Conciliación / Instancia'},
-  {key:'junta', label:'Tribunal / Junta competente', type:'tribunal'},
-  {key:'tribunal', label:'Tribunal (si ya está radicado)', type:'tribunal'},
-  {key:'exp', label:'Número de expediente o registro'},
+  {key:'instancia', label:'Centro de Conciliación (mientras el asunto no pase a Tribunal)'},
+  {key:'tribunal', label:'Tribunal', type:'tribunal'},
+  {key:'exp', label:'Número de expediente'},
   {key:'status', label:'Estatus', type:'select', options:STATUS_OPCIONES},
   {key:'quien_despidio', label:'Nombre de quien despidió'},
   {key:'puesto_despidio', label:'Puesto de quien despidió'},
@@ -774,11 +773,17 @@ const TRIBUNALES_FEDERALES_MX = {
 };
 // ---------------------------------------------------------------
 // Selector de Tribunal (estado -> tribunal, con "Otro (especificar)") — ver
-// EDITABLE_FIELDS ('junta' y 'tribunal', type:'tribunal'), TRIBUNALES_MX y
+// EDITABLE_FIELDS ('tribunal', type:'tribunal'), TRIBUNALES_MX y
 // TRIBUNALES_CUSTOM. El valor final sigue siendo un solo string plano (igual
 // que antes, para no romper los datos ya capturados) — el widget de dos
 // selects + texto libre es solo una ayuda para construirlo, guardado en un
 // <input type="hidden" class="edit-field"> que el save genérico ya lee.
+// (9 nov 2026: se quitó el campo 'junta' por separado -- las Juntas de
+// Conciliación y Arbitraje ya no reciben asuntos nuevos desde la reforma
+// laboral, así que un solo campo "Tribunal" basta. El campo 'junta' de la
+// base de datos NO se borró -- expedientes viejos capturados ahí lo siguen
+// usando de respaldo en todos los lugares que leen el tribunal (ver
+// "k.tribunal || k.junta || ...").
 // ---------------------------------------------------------------
 function findTribunalEstado(nombre){
   if(!nombre) return '';
@@ -1340,7 +1345,7 @@ function estancadoInfo(kase){
   if(!expected) return null;
   const today = new Date(); today.setHours(0,0,0,0);
   if(today > expected){
-    return {ultima: ETAPAS_DEF[lastIdx].label, siguiente: next.label, expected, diasAtraso: daysBetween(expected, today)};
+    return {ultima: ETAPAS_DEF[lastIdx].label, siguiente: next.label, siguienteKey: next.key, expected, diasAtraso: daysBetween(expected, today)};
   }
   return null;
 }
@@ -1472,7 +1477,7 @@ function calcularJornada(k){
 }
 
 function mergeTags(k){
-  const junta = k.junta || k.instancia || '';
+  const junta = k.tribunal || k.instancia || '';
   const ciudad = /tlalnepantla/i.test(junta) ? 'Tlalnepantla de Baz, Estado de México' :
                  /ciudad de méxico|cdmx/i.test(junta) ? 'Ciudad de México' :
                  /naucalpan/i.test(junta) ? 'Naucalpan de Juárez, Estado de México' : 'Estado de México';
@@ -1498,7 +1503,7 @@ function mergeTags(k){
     salario_diario_num: k.salario_diario!=null ? Number(k.salario_diario).toFixed(2) : '________',
     salario_mensual_letra: k.salario_mensual!=null ? pesosEnLetras(k.salario_mensual) : '____________',
     curp: (k.curp || '________________').toLowerCase(),
-    instancia: k.instancia || k.junta || '________________',
+    instancia: k.instancia || k.tribunal || '________________',
     quien_despidio: k.quien_despidio || 'una persona que dijo representar a la empresa demandada',
     hora_despido: k.hora_despido || '____',
     testigos: k.testigos || '________________',
@@ -2209,6 +2214,25 @@ function amparoTribunalOptionsHTML(circuito, tribunalActual){
 
 function avisosNuevosCount(){ return AVISOS_BOLETIN.filter(a=>a.estado==='nuevo').length; }
 function avisosDeExpediente(id){ return AVISOS_BOLETIN.filter(a=>a.expediente_id===id); }
+
+// Lo que la IA leyó del acuerdo real (ver ia_analizar_acuerdo_boletin() en
+// el servidor, cron_analizar_acuerdos_ia.php) -- aparece debajo del
+// resumen genérico del robot cuando ya se analizó. Si además la IA llenó
+// sola una etapa (ia_aplicado), lo marca con una insignia aparte para que
+// quede claro que fue automático y el abogado pueda corregirlo desde
+// "Etapas del juicio" si hiciera falta.
+function etapaLabelPorKey(key){
+  const def = ETAPAS_DEF.find(e=>e.key===key);
+  return def ? def.label : key;
+}
+function avisoIaHTML(a){
+  if(!a.ia_resumen) return '';
+  return `<div class="aviso-ia">🤖 ${escapeHTML(a.ia_resumen)}${a.ia_aplicado && a.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(a.ia_etapa_sugerida))}</span>` : ''}</div>`;
+}
+function documentoIaHTML(d){
+  if(!d.ia_resumen) return '';
+  return `<div class="aviso-ia" style="margin-top:4px;">🤖 ${escapeHTML(d.ia_resumen)}${d.ia_aplicado && d.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(d.ia_etapa_sugerida))}</span>` : ''}</div>`;
+}
 async function loadAvisosBoletin(){
   try{
     const d = await api('GET', 'avisos_list.php');
@@ -2216,16 +2240,37 @@ async function loadAvisosBoletin(){
   }catch(e){ AVISOS_BOLETIN = []; }
 }
 
-// Captcha pendiente de Edomex — el robot que corre en la computadora del
-// despacho publica aquí la imagen cuando necesita que alguien lo resuelva.
-// Se revisa junto con el resto del bootstrap para que aparezca en Agenda
-// sin tener que entrar a buscarlo.
-let EDOMEX_CAPTCHA_PENDIENTE = null;
-async function loadEdomexCaptchaPendiente(){
+// Preguntas del supervisor de IA (ver cron_generar_preguntas_supervisor.php):
+// por cada "posible atraso" (buildAgendaEntries(), tipo 'atraso') sin
+// resolver, la IA ya redactó una pregunta concreta -- aparecen aquí sin
+// mandar ningún push (pedido del usuario), solo al entrar al sistema.
+let SUPERVISOR_PREGUNTAS = [];
+async function loadSupervisorPreguntas(){
   try{
-    const d = await api('GET', 'edomex_captcha_pendiente.php');
-    EDOMEX_CAPTCHA_PENDIENTE = d.pendiente;
-  }catch(e){ EDOMEX_CAPTCHA_PENDIENTE = null; }
+    const d = await api('GET', 'supervisor_preguntas_list.php');
+    SUPERVISOR_PREGUNTAS = d.preguntas;
+  }catch(e){ SUPERVISOR_PREGUNTAS = []; }
+}
+function supervisorPreguntasPendientesCount(){ return SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente').length; }
+function supervisorPreguntaCardHTML(p){
+  return `
+      <div class="aviso-card" data-supervisor-pregunta-id="${p.id}">
+        <div class="aviso-head">
+          <div data-id="${p.expediente_id}" data-tab="etapas" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(p.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(p.expediente_demandado||'—',30))} ${p.expediente_exp? `&middot; Exp. ${escapeHTML(p.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">Sobre: ${escapeHTML(etapaLabelPorKey(p.etapa_key))}</div>
+          </div>
+        </div>
+        <div class="aviso-resumen">${escapeHTML(p.pregunta)}</div>
+        <div class="field" style="margin-top:10px;"><textarea class="supervisor-respuesta-input" placeholder="Escribe tu respuesta aquí..." style="min-height:50px;"></textarea></div>
+        <div class="field" style="margin-top:6px;">
+          <label style="font-size:11.5px; color:var(--gray); display:block; margin-bottom:4px;">Adjuntar foto o documento (opcional — ej. cédula de notificación, constancia):</label>
+          <input type="file" class="supervisor-respuesta-archivo" accept=".pdf,.jpg,.jpeg,.png">
+        </div>
+        <div class="aviso-actions">
+          <button class="btn" data-supervisor-responder="${p.id}" style="padding:6px 12px; font-size:11.5px;">Responder</button>
+        </div>
+      </div>`;
 }
 
 const AMBITO_INHABIL_LABEL = {
@@ -2236,6 +2281,7 @@ const AMBITO_INHABIL_LABEL = {
 };
 
 let DOCUMENTOS_ACTIVOS = []; // documentos del expediente actualmente abierto en el modal
+let DOCUMENTOS_SUBTAB = 'juicio'; // 'juicio' | 'amparo' -- separa la tabla de Documentos en dos, ver documentosDelSubtab()
 let CAMARA_STREAM = null; // MediaStream activo del visor de cámara (pestaña Documentos), o null si está cerrado
 let FOTOS_CAPTURADAS = []; // {blob, url, width, height} tomadas con la cámara, pendientes de armar el PDF
 // Foto recién tomada, en pantalla de recorte antes de agregarse a FOTOS_CAPTURADAS:
@@ -2366,6 +2412,10 @@ function syncGoogleIfConnected(){
   sincronizarGoogleCalendar().catch(()=>{});
 }
 
+// El ORDEN de las llaves aquí también define el orden de agrupación de la
+// tabla "Documentos subidos" (ver MODAL_TAB==='documentos') -- separar
+// 'acuerdo' (juicio laboral) de 'acuerdo_amparo' evita que ambos tipos de
+// acuerdo queden revueltos y los abogados se confundan de cuál es cuál.
 const CATEGORIA_DOCUMENTO_LABEL = {
   constancia_no_conciliacion: 'Constancia de no conciliación',
   demanda: 'Demanda',
@@ -2374,10 +2424,34 @@ const CATEGORIA_DOCUMENTO_LABEL = {
   actas: 'Actas de audiencia',
   convenio: 'Convenio',
   acuerdo: 'Acuerdo (boletín)',
+  acuerdo_amparo: 'Acuerdo (amparo)',
   otro: 'Otro',
 };
+const CATEGORIA_DOCUMENTO_ORDEN = Object.keys(CATEGORIA_DOCUMENTO_LABEL);
+
+// Agrupa por categoría (orden de CATEGORIA_DOCUMENTO_ORDEN) y, dentro de
+// cada grupo, lo más reciente primero -- sin esto la tabla de Documentos
+// solo venía en orden de subida y los acuerdos del juicio quedaban
+// revueltos con los del amparo (o con cualquier otra categoría).
+function documentosAgrupadosPorCategoria(documentos){
+  return [...documentos].sort((a,b)=>{
+    const oa = CATEGORIA_DOCUMENTO_ORDEN.indexOf(a.categoria);
+    const ob = CATEGORIA_DOCUMENTO_ORDEN.indexOf(b.categoria);
+    if(oa !== ob) return oa - ob;
+    return new Date(b.creado_en) - new Date(a.creado_en);
+  });
+}
+
+// Separa los documentos del juicio principal de los del amparo en dos
+// pestañas aparte dentro de "Documentos" -- pedido del usuario pensando en
+// que con el tiempo cada lado va a acumular bastantes documentos y, sin
+// esta separación, iban a quedar revueltos en una sola tabla larga.
+function documentosDelSubtab(documentos, subtab){
+  return documentos.filter(d => (d.categoria === 'acuerdo_amparo') === (subtab === 'amparo'));
+}
 
 async function loadDocumentos(expedienteId){
+  DOCUMENTOS_SUBTAB = 'juicio';
   try{
     const d = await api('GET', 'documentos_list.php?expediente_id=' + expedienteId);
     DOCUMENTOS_ACTIVOS = d.documentos;
@@ -2612,7 +2686,7 @@ async function refreshBootstrap(){
   await loadGoogleStatus();
   await loadTribunalesCustom();
   await loadAvisosBoletin();
-  await loadEdomexCaptchaPendiente();
+  await loadSupervisorPreguntas();
   await loadPjfCredenciales();
   await loadEdomexCorreoCredenciales();
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
@@ -2815,18 +2889,6 @@ async function pollActualizaciones(){
       }
     }
 
-    // El robot de Edomex va publicando un captcha nuevo cada vez que
-    // termina uno (uno por juzgado) -- sin este poll, quien lo está
-    // resolviendo tenía que recargar la página (F5) a mano para ver el
-    // siguiente.
-    const captchaIdAntes = EDOMEX_CAPTCHA_PENDIENTE ? EDOMEX_CAPTCHA_PENDIENTE.id : null;
-    await loadEdomexCaptchaPendiente();
-    const captchaIdDespues = EDOMEX_CAPTCHA_PENDIENTE ? EDOMEX_CAPTCHA_PENDIENTE.id : null;
-    if(captchaIdDespues !== captchaIdAntes){
-      const y = window.scrollY;
-      render();
-      window.scrollTo(0, y);
-    }
   }catch(e){ /* silencioso: un hipo de red no debe interrumpir cada 8s */ }
 }
 
@@ -3174,11 +3236,12 @@ function shellHTML(){
         <button data-v="tablero" class="${VIEW==='tablero'?'active':''}"><span class="ico">${ICONS.tablero}</span> Tablero</button>
         <button data-v="expedientes" class="${VIEW==='expedientes'?'active':''}"><span class="ico">${ICONS.expedientes}</span> Expedientes</button>
         <button data-v="alertas" class="${VIEW==='alertas'?'active':''}"><span class="ico">${ICONS.alertas}</span> Alertas de prescripción</button>
+        <button data-v="preguntas_abogado" class="${VIEW==='preguntas_abogado'?'active':''}"><span class="ico">🧑‍⚖️</span> Preguntas al abogado ${supervisorPreguntasPendientesCount()>0?`<span class="nav-badge">${supervisorPreguntasPendientesCount()}</span>`:""}</button>
         <button data-v="cobros" class="${VIEW==='cobros'?'active':''}"><span class="ico">&#128176;</span> Cobros de convenios</button>
         ${isAdmin ? `<button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>` : ""}
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
-        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
+        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${avisosNuevosCount()>0?`<span class="nav-badge">${avisosNuevosCount()}</span>`:""}</button>
         ${isAdmin ? `<button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge" id="navBadgeProspectos">${prospectosNuevosCount()}</span>`:""}</button>` : ""}
         ${isAdmin ? `<button data-v="conversaciones" class="${VIEW==='conversaciones'?'active':''}"><span class="ico">&#128269;</span> Conversaciones (WhatsApp)</button>` : ""}
         ${isAdmin ? `<button data-v="resumen_ejecutivo" class="${VIEW==='resumen_ejecutivo'?'active':''}"><span class="ico">&#128202;</span> Resumen ejecutivo (bot)</button>` : ""}
@@ -3230,7 +3293,8 @@ const VIEW_TITLES = {
   cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
   equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
   dias_inhabiles:["Días inhábiles", "Calendario usado para calcular automáticamente los vencimientos de términos en todo el sistema"],
-  mi_cuenta:["Mi cuenta", "Datos personales para el funcionamiento del sistema"]
+  mi_cuenta:["Mi cuenta", "Datos personales para el funcionamiento del sistema"],
+  preguntas_abogado:["Preguntas al abogado", "El supervisor de IA pregunta lo justo y necesario cuando detecta un posible atraso — contesta con texto o adjuntando una foto/documento para que la IA llene sola la etapa si confirma una fecha"]
 };
 
 function topBarHTML(){
@@ -3359,6 +3423,7 @@ function renderViewBody(){
   else if(VIEW==='equipo') el.innerHTML = equipoHTML();
   else if(VIEW==='dias_inhabiles') el.innerHTML = diasInhabilesHTML();
   else if(VIEW==='mi_cuenta') el.innerHTML = miCuentaHTML();
+  else if(VIEW==='preguntas_abogado') el.innerHTML = preguntasAbogadoHTML();
   bindViewBody();
 }
 
@@ -3633,7 +3698,7 @@ function resumenBusquedaCaso(k){
   // preguntas de "pagado"/"convenio pendiente de cobro"/"demanda
   // presentada", y adivinaba mal.
   add('Estatus del asunto (calculado, es el que se ve en la lista)', estatusCalculadoTexto(k));
-  const instanciaTexto = k.junta || k.tribunal || k.instancia || '';
+  const instanciaTexto = k.tribunal || k.junta || k.instancia || '';
   add('Instancia/Tribunal', instanciaTexto);
   // La IA no siempre distingue bien "local" vs "federal" leyendo el
   // nombre completo de la instancia (ej. "Séptimo Tribunal Laboral
@@ -3732,7 +3797,7 @@ function expedientesHTML(){
               <td><strong>${escapeHTML(k.actor)}</strong><div style="font-size:11px; color:${razonPorId[k.id]?'var(--brass)':'var(--gray)'}; font-style:${razonPorId[k.id]?'italic':'normal'};">${escapeHTML(razonPorId[k.id] || k.puesto||'')}</div></td>
               <td>${escapeHTML(truncate(k.demandado,32))}</td>
               <td class="exp-code">${escapeHTML(k.exp||'—')}</td>
-              <td>${escapeHTML(truncate(k.junta || k.instancia || '', 26))}</td>
+              <td>${escapeHTML(truncate(k.tribunal || k.junta || k.instancia || '', 26))}</td>
               <td class="abogado-tag">${escapeHTML(truncate(assignedLawyer(k),18))}</td>
               <td>${statusBadge(k)}</td>
               <td>${estaConcluido(k) ? '<span class="badge closed">Concluido</span>' : '<span class="badge ok">Activo</span>'}</td>
@@ -4688,7 +4753,7 @@ function buildAgendaEntries(){
   // Asuntos estancados (sin la siguiente etapa dentro del plazo legal esperado)
   cases.forEach(k=>{
     const est = estancadoInfo(k);
-    if(est) entries.push({tipo:'atraso', fecha: dateToISO(est.expected), k, label:`Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`, action:'abrir_etapas'});
+    if(est) entries.push({tipo:'atraso', fecha: dateToISO(est.expected), k, label:`Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`, action:'abrir_etapas', actionIdx: est.siguienteKey});
   });
 
   // Próxima acción sugerida por el informe ejecutivo con IA (ver
@@ -4722,7 +4787,19 @@ function buildAgendaEntries(){
 // en silencio, cada vez que alguien abre el sistema -- si nadie lo abre en
 // varios días el caché se queda desactualizado, pero es la misma
 // limitación que ya tiene la sincronización con Google Calendar.
-const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso'];
+const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','accion_ia'];
+// 'atraso' y 'accion_ia' son asuntos ESTANCADOS -- su fecha es cuándo
+// debió pasar algo (o cuándo venció el seguimiento que propuso la IA), no
+// una cita futura. Una vez que de verdad se atrasan, esa fecha se queda
+// en el pasado para siempre -- a diferencia de los demás tipos (que solo
+// tiene sentido avisar en una ventana de "próximos días"), estos se
+// siguen mandando mientras sigan sin resolverse, sin importar cuántos
+// días lleven atrás. Bug real confirmado (9 nov 2026): con el filtro
+// viejo (fecha >= hoy) estos NUNCA volvían a entrar a la ventana una vez
+// atrasados -- se calculaban bien y se veían en el Tablero, pero el push
+// diario (cron_recordatorio_abogado.php) jamás los mandaba. 40 asuntos
+// atorados que el sistema "sabía" pero nunca avisó a nadie.
+const AVISOS_ABOGADO_TIPOS_ABIERTOS = ['atraso', 'accion_ia'];
 async function syncAvisosAbogado(){
   if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
   const hoy = new Date(); hoy.setHours(0,0,0,0);
@@ -4730,15 +4807,22 @@ async function syncAvisosAbogado(){
   const limiteISO = dateToISO(addDaysDate(hoy, 3));
   try{
     const entries = buildAgendaEntries()
-      .filter(e => AVISOS_ABOGADO_TIPOS.includes(e.tipo) && e.fecha >= hoyISO && e.fecha <= limiteISO)
-      .map(e => ({
-        expediente_id: e.k.id,
-        clave: e.tipo + (e.actionIdx!=null ? ':'+e.actionIdx : ''),
-        tipo: e.tipo,
-        fecha: e.fecha,
-        hora: e.hora || null,
-        label: e.label,
-      }));
+      .filter(e => AVISOS_ABOGADO_TIPOS.includes(e.tipo)
+        && e.fecha <= limiteISO
+        && (AVISOS_ABOGADO_TIPOS_ABIERTOS.includes(e.tipo) || e.fecha >= hoyISO))
+      .map(e => {
+        const f = parseDate(e.fecha);
+        const diasAtraso = (AVISOS_ABOGADO_TIPOS_ABIERTOS.includes(e.tipo) && f && f < hoy) ? daysBetween(f, hoy) : 0;
+        return {
+          expediente_id: e.k.id,
+          clave: e.tipo + (e.actionIdx!=null ? ':'+e.actionIdx : ''),
+          tipo: e.tipo,
+          fecha: e.fecha,
+          hora: e.hora || null,
+          label: e.label,
+          dias_atraso: diasAtraso,
+        };
+      });
     await api('POST', 'agenda_sync_avisos.php', {entries, todos: CURRENT_USER.role === 'Administrador'});
   }catch(err){}
 }
@@ -6146,6 +6230,30 @@ function disponibilidadPanelHTML(){
   </div>`;
 }
 
+function preguntasAbogadoHTML(){
+  const pendientes = SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente');
+  const historial = SUPERVISOR_PREGUNTAS.filter(p=>p.estado!=='pendiente');
+  return `
+  <div class="notice" style="margin-bottom:16px; max-width:100%;">Preguntas que el supervisor de IA le hace al abogado a cargo cuando detecta un posible atraso, buscando el dato concreto que falta para seguir el plazo legal — normalmente una fecha. Puedes contestar con texto, o adjuntar una foto/documento (ej. una cédula de notificación) para que la IA lo lea y, si confirma una fecha, llene sola la etapa correspondiente.</div>
+  ${pendientes.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>Pendientes</h3><span class="count">${pendientes.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${pendientes.map(supervisorPreguntaCardHTML).join("")}</div>
+  </div>` : `<div class="panel"><div class="panel-body"><div class="empty">Sin preguntas pendientes por ahora.</div></div></div>`}
+  ${historial.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>Historial</h3><span class="count">${historial.length}</span></div>
+    <div class="panel-body" style="padding:0;">${historial.map(p=>`
+      <div style="padding:12px 20px; border-bottom:1px solid var(--border);">
+        <div class="aviso-caso">${escapeHTML(p.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(p.expediente_demandado||'—',30))} ${p.expediente_exp? `&middot; Exp. ${escapeHTML(p.expediente_exp)}`:''}</div>
+        <div class="aviso-fuente">Sobre: ${escapeHTML(etapaLabelPorKey(p.etapa_key))}</div>
+        <div class="aviso-resumen" style="margin-top:6px;">❓ ${escapeHTML(p.pregunta)}</div>
+        <div class="aviso-resumen">💬 ${escapeHTML(p.respuesta||'—')}</div>
+        <div class="aviso-meta">${p.estado==='aplicada'?`<span class="badge ok">✓ etapa actualizada sola${p.fecha_aplicada?': '+fmtDate(p.fecha_aplicada):''}</span>`:'Registrada, sin datos para actualizar nada solo'}${p.respondido_por_nombre?' &middot; Contestó '+escapeHTML(p.respondido_por_nombre):''}${p.respondido_en?' el '+new Date(p.respondido_en).toLocaleDateString('es-MX'):''}</div>
+      </div>`).join("")}</div>
+  </div>` : ''}`;
+}
+
 function agendaHTML(){
   const isAdmin = CURRENT_USER.role === 'Administrador';
   let all = marcarChoquesDeAgenda(buildAgendaEntries());
@@ -6188,7 +6296,7 @@ function agendaHTML(){
   const row = agendaRowHTML;
 
   const tabsHTML = `
-  <div style="display:flex; gap:8px; margin-bottom:16px;">
+  <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
     <button class="btn ${AGENDA_TAB==='general'?'':'secondary'}" data-agenda-tab="general" style="padding:8px 16px;">General</button>
     <button class="btn ${AGENDA_TAB==='asesorias'?'':'secondary'}" data-agenda-tab="asesorias" style="padding:8px 16px;">Asesorías</button>
     <button class="btn ${AGENDA_TAB==='ia'?'':'secondary'}" data-agenda-tab="ia" style="padding:8px 16px;">Seguimiento IA</button>
@@ -6280,18 +6388,6 @@ function agendaHTML(){
     </div>
   </div>` : ""}
   ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
-  ${EDOMEX_CAPTCHA_PENDIENTE? `
-  <div class="panel">
-    <div class="panel-head"><h3>&#128274; Captcha de Edomex pendiente de resolver</h3></div>
-    <div class="panel-body" style="padding:16px 20px;">
-      <div class="notice" style="margin-bottom:12px;">El robot que revisa el boletín de Edomex${EDOMEX_CAPTCHA_PENDIENTE.expediente_exp?` está consultando el expediente <strong>${escapeHTML(EDOMEX_CAPTCHA_PENDIENTE.expediente_exp)}</strong> y`:''} necesita que alguien escriba el código de la imagen para continuar.</div>
-      <img src="data:image/png;base64,${EDOMEX_CAPTCHA_PENDIENTE.imagen_base64}" alt="Captcha de Edomex" style="display:block; margin-bottom:10px; border:1px solid var(--border); border-radius:6px; max-width:260px;">
-      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <input type="text" id="edomexCaptchaInput" placeholder="Código de la imagen" style="padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px; max-width:200px;">
-        <button class="btn" id="edomexCaptchaBtn">Enviar</button>
-      </div>
-    </div>
-  </div>` : ""}
   ${avisosNuevosCount()>0? `
   <div class="panel">
     <div class="panel-head"><h3>&#128276; Avisos de boletines por revisar</h3><span class="count">${avisosNuevosCount()}</span></div>
@@ -6305,6 +6401,7 @@ function agendaHTML(){
           <span class="badge warn" style="flex-shrink:0;">nuevo</span>
         </div>
         <div class="aviso-resumen">${escapeHTML(a.resumen)}</div>
+        ${avisoIaHTML(a)}
         <div class="aviso-meta">${a.fecha_publicacion? 'Fecha del boletín: '+fmtDate(a.fecha_publicacion)+' &middot; ':''}${a.origen==='manual'?'Registrado por '+escapeHTML(a.creado_por_nombre||'—')+' el ':'Encontrado el '}${new Date(a.creado_en).toLocaleDateString('es-MX')}${a.url_verificacion? ` &middot; <a href="${escapeHTML(a.url_verificacion)}" target="_blank" rel="noopener">ver fuente</a>`:''}</div>
         <div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
@@ -6941,6 +7038,41 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo borrar: ' + err.message); }
     });
   });
+  document.querySelectorAll('[data-supervisor-responder]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const card = btn.closest('[data-supervisor-pregunta-id]');
+      const textarea = card ? card.querySelector('.supervisor-respuesta-input') : null;
+      const archivoInput = card ? card.querySelector('.supervisor-respuesta-archivo') : null;
+      const respuesta = textarea ? textarea.value.trim() : '';
+      const archivo = archivoInput && archivoInput.files[0] ? archivoInput.files[0] : null;
+      if(!respuesta && !archivo){ alert('Escribe una respuesta o adjunta un documento primero.'); return; }
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+      try{
+        const fd = new FormData();
+        fd.append('id', String(parseInt(btn.dataset.supervisorResponder)));
+        fd.append('respuesta', respuesta);
+        if(archivo) fd.append('archivo', archivo);
+        const opts = {method:'POST', body: fd, credentials:'same-origin', headers:{}};
+        if(CSRF_TOKEN) opts.headers['X-CSRF-Token'] = CSRF_TOKEN;
+        const res = await fetch(API_BASE + 'supervisor_pregunta_responder.php', opts);
+        const json = await res.json();
+        if(!json || json.ok !== true) throw new Error((json && json.error) || ('Error del servidor ('+res.status+').'));
+        await loadSupervisorPreguntas();
+        if(ACTIVE_CASE){
+          ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+          await loadDocumentos(ACTIVE_CASE.id);
+          renderModal();
+        }
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo enviar: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Responder';
+      }
+    });
+  });
   document.querySelectorAll('[data-prospecto-abrir]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const id = parseInt(el.dataset.prospectoAbrir);
@@ -7090,21 +7222,6 @@ function bindViewBody(){
         REINTENTO_PROGRESO_TXT = "";
         renderViewBody();
       }
-    });
-  }
-  const edomexCaptchaBtn = document.getElementById('edomexCaptchaBtn');
-  if(edomexCaptchaBtn){
-    edomexCaptchaBtn.addEventListener('click', async ()=>{
-      const input = document.getElementById('edomexCaptchaInput');
-      const respuesta = input.value.trim();
-      if(!respuesta){ alert('Escribe el código que ves en la imagen.'); return; }
-      edomexCaptchaBtn.disabled = true;
-      try{
-        await api('POST', 'edomex_captcha_resolver.php', {id: EDOMEX_CAPTCHA_PENDIENTE.id, respuesta});
-        await loadEdomexCaptchaPendiente();
-        renderViewBody();
-      }catch(err){ alert('No se pudo enviar: ' + err.message); }
-      finally{ edomexCaptchaBtn.disabled = false; }
     });
   }
   document.querySelectorAll('[data-rename-btn]').forEach(btn=>{
@@ -7610,7 +7727,7 @@ function modalTabContent(k,p,meta){
       <div class="field"><label>Puesto</label><div class="v">${escapeHTML(k.puesto||'—')}</div></div>
       <div class="field"><label>Socio asignado</label><div class="v">${escapeHTML(assignedLawyer(k))}</div></div>
       <div class="field"><label>Estatus (importado)</label><div class="v">${escapeHTML(k.status||'—')}</div></div>
-      <div class="field"><label>Instancia</label><div class="v">${escapeHTML(k.junta || k.instancia || '—')}</div></div>
+      <div class="field"><label>Tribunal</label><div class="v">${escapeHTML(k.tribunal || k.junta || k.instancia || '—')}</div></div>
       <div class="field"><label>Fecha de ingreso</label><div class="v">${fmtDate(k.fecha_ingreso)}</div></div>
       <div class="field"><label>Fecha de baja</label><div class="v">${fmtDate(k.fecha_baja)}</div></div>
       <div class="field"><label>Antigüedad</label><div class="v">${liqResumen? liqResumen.aniosDec.toFixed(2)+' años':'—'}</div></div>
@@ -7780,7 +7897,6 @@ function modalTabContent(k,p,meta){
       <input type="text" id="amparoTribunalOtro" placeholder="Nombre completo del tribunal o juzgado" value="${circuitoActual===''?escapeHTML(meta.amparo_tribunal||''):''}">
     </div>
     <div class="field" style="margin-top:10px;"><label>Número de expediente del amparo</label><input type="text" id="amparoExpediente" placeholder="Ej. AD 123/2026 (distinto al expediente del juicio laboral)" value="${escapeHTML(meta.amparo_expediente||'')}"></div>
-    <div class="field" style="margin-top:14px;"><label>Notas sobre el amparo</label><textarea id="amparoNotas" placeholder="Acto reclamado, observaciones...">${escapeHTML(meta.amparo_notas||'')}</textarea></div>
     <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo descarta sábados, domingos y los días inhábiles capturados en "Días inhábiles"; aun así, verifica el calendario oficial del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales. El número de expediente del amparo (una vez que el Tribunal lo asigne) es lo que permite que el robot Federal también avise cuando haya movimientos ahí -- captúralo en cuanto lo tengas.</div>
     <div style="margin-top:14px;"><button class="btn" id="saveAmparoBtn">Guardar datos de amparo</button></div>
     `;
@@ -7788,7 +7904,7 @@ function modalTabContent(k,p,meta){
   if(MODAL_TAB==='boletin'){
     const avisos = avisosDeExpediente(k.id);
     return `
-    <div class="notice" style="margin-bottom:16px;">Los robots de monitoreo revisan solos el boletín Federal y el de CDMX todos los días; Edomex necesita que alguien resuelva un captcha cuando el robot lo pida (aparece en Agenda). También puedes registrar aquí a mano cualquier revisión que hagas tú mismo.</div>
+    <div class="notice" style="margin-bottom:16px;">Los robots de monitoreo (Federal, CDMX y el correo de notificaciones de Edomex) revisan solos el boletín todos los días, sin necesitar que nadie resuelva nada a mano. También puedes registrar aquí a mano cualquier revisión que hagas tú mismo.</div>
     <div class="grid2" style="margin-bottom:6px;">
       <div class="field"><label>Fuente revisada</label>
         <select id="avisoFuente" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
@@ -7811,6 +7927,7 @@ function modalTabContent(k,p,meta){
           <span class="badge ${a.estado==='nuevo'?'warn':a.estado==='descartado'?'closed':'ok'}">${a.estado}</span>
         </div>
         <div class="aviso-resumen">${escapeHTML(a.resumen)}</div>
+        ${avisoIaHTML(a)}
         <div class="aviso-meta">${a.fecha_publicacion? 'Fecha del boletín: '+fmtDate(a.fecha_publicacion)+' &middot; ':''}${a.origen==='manual'?'Registrado por '+escapeHTML(a.creado_por_nombre||'—')+' el ':'Encontrado el '}${new Date(a.creado_en).toLocaleDateString('es-MX')}${a.url_verificacion? ` &middot; <a href="${escapeHTML(a.url_verificacion)}" target="_blank" rel="noopener">ver fuente</a>`:''}</div>
         ${a.estado==='nuevo' ? `<div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
@@ -7852,7 +7969,11 @@ function modalTabContent(k,p,meta){
               </select>`;
             })() :
             f.type==='tribunal' ?
-            tribunalFieldHTML(f, k[f.key]!=null ? String(k[f.key]) : '') :
+            // Expedientes viejos capturados cuando todavía existía el campo
+            // 'junta' por separado: si 'tribunal' está vacío, se usa 'junta'
+            // como punto de partida para que no se vea en blanco un dato
+            // que sí existe, solo que bajo el nombre de columna anterior.
+            tribunalFieldHTML(f, (k[f.key] || (f.key==='tribunal' ? k.junta : '') || '') + '') :
             (f.key==='ultima_nota' || f.type==='textarea') ?
             `<textarea class="edit-field" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
@@ -7863,12 +7984,25 @@ function modalTabContent(k,p,meta){
     `;
   }
   if(MODAL_TAB==='documentos'){
+    const docsJuicio = documentosDelSubtab(DOCUMENTOS_ACTIVOS, 'juicio');
+    const docsAmparo = documentosDelSubtab(DOCUMENTOS_ACTIVOS, 'amparo');
+    const docsSubtabActual = DOCUMENTOS_SUBTAB === 'amparo' ? docsAmparo : docsJuicio;
+    // En la subpestaña Amparo el desplegable de categoría solo ofrece
+    // 'acuerdo_amparo' (no tendría sentido subir ahí una "Demanda" o
+    // "Pruebas" del juicio principal); en Juicio se ofrecen todas las
+    // demás, igual que antes.
+    const categoriasDisponibles = Object.keys(CATEGORIA_DOCUMENTO_LABEL)
+      .filter(c => DOCUMENTOS_SUBTAB === 'amparo' ? c === 'acuerdo_amparo' : c !== 'acuerdo_amparo');
     return `
+    <div class="doc-subtabs" style="margin-bottom:16px;">
+      <button data-docsubtab="juicio" class="${DOCUMENTOS_SUBTAB==='juicio'?'active':''}">Juicio principal ${docsJuicio.length ? `<span class="nav-badge">${docsJuicio.length}</span>` : ""}</button>
+      <button data-docsubtab="amparo" class="${DOCUMENTOS_SUBTAB==='amparo'?'active':''}">Amparo ${docsAmparo.length ? `<span class="nav-badge">${docsAmparo.length}</span>` : ""}</button>
+    </div>
     <div class="notice" style="margin-bottom:16px;">Sube aquí los documentos de este asunto (demanda, contestación, pruebas, actas de audiencia...). Formatos permitidos: PDF, Word, Excel e imágenes (JPG/PNG), hasta 20 MB por archivo. Si eliges una o varias imágenes, cada una se abre primero en un visor donde puedes ajustar el recuadro a las orillas del documento y girarla si salió de lado o al revés; si eliges varias juntas, al terminar se arman en un solo PDF, ya recortadas y acomodadas en orden.</div>
     <div class="grid2" style="margin-bottom:6px;">
       <div class="field"><label>Categoría</label>
         <select id="documentoCategoria" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
-          ${Object.keys(CATEGORIA_DOCUMENTO_LABEL).map(c=>`<option value="${c}">${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[c])}</option>`).join("")}
+          ${categoriasDisponibles.map(c=>`<option value="${c}">${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[c])}</option>`).join("")}
         </select>
       </div>
       <div class="field"><label>Archivo (puedes elegir varias imágenes a la vez)</label><input type="file" id="documentoArchivo" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" multiple></div>
@@ -7889,11 +8023,11 @@ function modalTabContent(k,p,meta){
     `}
     <div id="fotosPanel">${fotosPanelHTML()}</div>
     <div class="divider"></div>
-    <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Documentos subidos (${DOCUMENTOS_ACTIVOS.length})</div>
-    ${DOCUMENTOS_ACTIVOS.length ? `<table><thead><tr><th>Archivo</th><th>Categoría</th><th>Tamaño</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead><tbody>
-      ${DOCUMENTOS_ACTIVOS.map(d=>`
+    <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Documentos subidos (${docsSubtabActual.length})</div>
+    ${docsSubtabActual.length ? `<table><thead><tr><th>Archivo</th><th>Categoría</th><th>Tamaño</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead><tbody>
+      ${documentosAgrupadosPorCategoria(docsSubtabActual).map(d=>`
         <tr>
-          <td>${escapeHTML(d.nombre_archivo)}</td>
+          <td>${escapeHTML(d.nombre_archivo)}${documentoIaHTML(d)}</td>
           <td>${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[d.categoria] || d.categoria)}</td>
           <td>${fmtBytes(d.tamano_bytes)}</td>
           <td>${escapeHTML(d.subido_por_nombre || '—')}</td>
@@ -7904,7 +8038,7 @@ function modalTabContent(k,p,meta){
             <button class="btn secondary" data-delete-documento="${d.id}" style="padding:5px 10px; font-size:11px;">Eliminar</button>
           </td>
         </tr>`).join("")}
-    </tbody></table>` : '<div class="empty">Sin documentos subidos todavía.</div>'}
+    </tbody></table>` : `<div class="empty">Sin documentos ${DOCUMENTOS_SUBTAB==='amparo' ? 'de amparo' : 'del juicio'} subidos todavía.</div>`}
     `;
   }
   if(MODAL_TAB==='historial'){
@@ -8163,6 +8297,12 @@ async function iniciarCropArchivo(file, esMulti){
 function bindModalTabEvents(){
   bindTribunalFieldEvents();
   bindTipoAsuntoField();
+  document.querySelectorAll('[data-docsubtab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      DOCUMENTOS_SUBTAB = btn.dataset.docsubtab;
+      renderModal();
+    });
+  });
   const subirDocumentoBtn = document.getElementById('subirDocumentoBtn');
   if(subirDocumentoBtn){
     subirDocumentoBtn.addEventListener('click', async ()=>{
@@ -8560,6 +8700,11 @@ function bindModalTabEvents(){
       const amparoTribunalFinal = tribunalSelVal === AMPARO_TRIBUNAL_OTRO
         ? (document.getElementById('amparoTribunalOtro') ? document.getElementById('amparoTribunalOtro').value.trim() : '')
         : tribunalSelVal;
+      // Las notas ya no se capturan aquí (pedido del usuario: menos campos
+      // en Amparo) -- si un expediente viejo ya tenía notas, se mandan tal
+      // cual para no perderlas al guardar, aunque ya no se puedan editar
+      // desde esta pestaña.
+      const metaActual = getMeta(ACTIVE_CASE.id);
       try{
         await api('POST', 'expedientes_update_amparo.php', {
           id: ACTIVE_CASE.id,
@@ -8567,7 +8712,7 @@ function bindModalTabEvents(){
           amparo_fecha_notif: document.getElementById('amparoFecha').value,
           amparo_tribunal: amparoTribunalFinal,
           amparo_expediente: document.getElementById('amparoExpediente').value.trim(),
-          amparo_notas: document.getElementById('amparoNotas').value
+          amparo_notas: metaActual.amparo_notas || ''
         });
         saveAmparoBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(saveAmparoBtn) saveAmparoBtn.textContent = "Guardar datos de amparo"; }, 1600);
