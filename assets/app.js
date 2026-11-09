@@ -7769,6 +7769,7 @@ function modalTabContent(k,p,meta){
   }
   if(MODAL_TAB==='amparo'){
     const a = computeAmparoDeadline(meta);
+    const circuitoActual = amparoCircuitoDeTribunal(meta.amparo_tribunal);
     return `
     <label style="display:flex; align-items:center; gap:8px; margin-bottom:14px; font-size:13px; color:var(--ink);">
       <input type="checkbox" id="amparoActivo" ${meta.amparo_activo?'checked':''}> Este asunto tiene o podría requerir amparo directo
@@ -7779,7 +7780,23 @@ function modalTabContent(k,p,meta){
         <div class="v" style="font-weight:700; color:${a && a.daysLeft<=5? 'var(--red)': a? 'var(--ink)':'var(--gray)'}">${a? fmtDate(dateToISO(a.deadline)) + ' ('+a.daysLeft+' d.)' : '—'}</div>
       </div>
     </div>
-    <div class="field" style="margin-top:14px;"><label>Número de expediente del amparo</label><input type="text" id="amparoExpediente" placeholder="Ej. AD 123/2026 (distinto al expediente del juicio laboral)" value="${escapeHTML(meta.amparo_expediente||'')}"></div>
+    <div class="grid2" style="margin-top:14px;">
+      <div class="field"><label>Circuito del amparo</label>
+        <select id="amparoCircuito">
+          <option value="">Selecciona...</option>
+          <option value="primero" ${circuitoActual==='primero'?'selected':''}>Primer Circuito (Ciudad de México)</option>
+          <option value="segundo" ${circuitoActual==='segundo'?'selected':''}>Segundo Circuito (Estado de México)</option>
+        </select>
+      </div>
+      <div class="field"><label>Tribunal Colegiado</label>
+        <select id="amparoTribunalSelect">${amparoTribunalOptionsHTML(circuitoActual, meta.amparo_tribunal||'')}</select>
+      </div>
+    </div>
+    <div class="field" id="amparoTribunalOtroWrap" style="margin-top:10px; ${circuitoActual===''&&meta.amparo_tribunal?'':'display:none;'}">
+      <label>Especifica el tribunal (o juzgado)</label>
+      <input type="text" id="amparoTribunalOtro" placeholder="Nombre completo del tribunal o juzgado" value="${circuitoActual===''?escapeHTML(meta.amparo_tribunal||''):''}">
+    </div>
+    <div class="field" style="margin-top:10px;"><label>Número de expediente del amparo</label><input type="text" id="amparoExpediente" placeholder="Ej. AD 123/2026 (distinto al expediente del juicio laboral)" value="${escapeHTML(meta.amparo_expediente||'')}"></div>
     <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo descarta sábados, domingos y los días inhábiles capturados en "Días inhábiles"; aun así, verifica el calendario oficial del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales. El número de expediente del amparo (una vez que el Tribunal lo asigne) es lo que permite que el robot Federal también avise cuando haya movimientos ahí -- captúralo en cuanto lo tengas.</div>
     <div style="margin-top:14px;"><button class="btn" id="saveAmparoBtn">Guardar datos de amparo</button></div>
     `;
@@ -8564,23 +8581,36 @@ function bindModalTabEvents(){
       }
     });
   }
+  const amparoCircuitoSel = document.getElementById('amparoCircuito');
+  const amparoTribunalSel = document.getElementById('amparoTribunalSelect');
+  const amparoTribunalOtroWrap = document.getElementById('amparoTribunalOtroWrap');
+  if(amparoCircuitoSel && amparoTribunalSel && amparoTribunalOtroWrap){
+    amparoCircuitoSel.addEventListener('change', ()=>{
+      amparoTribunalSel.innerHTML = amparoTribunalOptionsHTML(amparoCircuitoSel.value, '');
+      amparoTribunalOtroWrap.style.display = 'none';
+    });
+    amparoTribunalSel.addEventListener('change', ()=>{
+      amparoTribunalOtroWrap.style.display = amparoTribunalSel.value === AMPARO_TRIBUNAL_OTRO ? '' : 'none';
+    });
+  }
   const saveAmparoBtn = document.getElementById('saveAmparoBtn');
   if(saveAmparoBtn){
     saveAmparoBtn.addEventListener('click', async ()=>{
-      // El selector de Tribunal Colegiado y las notas ya no se capturan aquí
-      // (pedido del usuario: la pestaña Amparo solo debe tener lo que el
-      // robot Federal necesita -- el número de expediente del amparo -- más
-      // el plazo de 15 días, que ya alimenta Agenda/push). Si un expediente
-      // viejo ya tenía tribunal/notas capturados, se mandan tal cual para
-      // no perderlos al guardar -- nadie puede editarlos desde aquí, pero
-      // tampoco deben borrarse solos.
+      const tribunalSelVal = amparoTribunalSel ? amparoTribunalSel.value : '';
+      const amparoTribunalFinal = tribunalSelVal === AMPARO_TRIBUNAL_OTRO
+        ? (document.getElementById('amparoTribunalOtro') ? document.getElementById('amparoTribunalOtro').value.trim() : '')
+        : tribunalSelVal;
+      // Las notas ya no se capturan aquí (pedido del usuario: menos campos
+      // en Amparo) -- si un expediente viejo ya tenía notas, se mandan tal
+      // cual para no perderlas al guardar, aunque ya no se puedan editar
+      // desde esta pestaña.
       const metaActual = getMeta(ACTIVE_CASE.id);
       try{
         await api('POST', 'expedientes_update_amparo.php', {
           id: ACTIVE_CASE.id,
           amparo_activo: document.getElementById('amparoActivo').checked,
           amparo_fecha_notif: document.getElementById('amparoFecha').value,
-          amparo_tribunal: metaActual.amparo_tribunal || '',
+          amparo_tribunal: amparoTribunalFinal,
           amparo_expediente: document.getElementById('amparoExpediente').value.trim(),
           amparo_notas: metaActual.amparo_notas || ''
         });

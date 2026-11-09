@@ -77,17 +77,24 @@ consolidar.
   capturados antes de este cambio; el formulario de "Editar datos"
   también usa `junta` como valor de arranque si `tribunal` todavía está
   vacío, para que un dato viejo no se vea en blanco.
-- **Pestaña "Amparo" recortada** al mínimo que de verdad hace falta:
-  checkbox de activo + fecha de notificación del laudo/plazo de 15 días
-  calculado (Art. 17 Ley de Amparo -- SE QUEDA, ya alimenta Agenda/push,
-  el usuario confirmó que no quería perder esto) + número de expediente
-  del amparo (lo único que usa el robot Federal para el match, ver
-  `federal.js`). Se quitó el selector pesado de Tribunal Colegiado
-  (circuito + catálogo + "otro") y el campo de notas -- ninguno de los
-  dos lo usa nada automatizado. Si un expediente viejo ya tenía
-  `amparo_tribunal`/`amparo_notas` capturados, el botón "Guardar datos de
-  amparo" los manda tal cual sin cambios (ya no hay forma de editarlos
-  desde la UI, pero tampoco se borran solos al guardar).
+- **Pestaña "Amparo" recortada, pero el selector de Tribunal Colegiado SE
+  QUEDA** (corrección sobre el primer intento de este mismo día: al
+  principio se había quitado el selector de Tribunal Colegiado también,
+  pero el usuario aclaró "en el amparo se usa numero de expediente y
+  tribunal" + "tiene que ser con selector" -- se restauró igual que
+  estaba). Queda: checkbox de activo + fecha de notificación del laudo/
+  plazo de 15 días calculado (Art. 17 Ley de Amparo) + selector de
+  Tribunal Colegiado (circuito + catálogo + "otro", `amparoCircuitoSel`/
+  `amparoTribunalSel`/`amparoTribunalOtroWrap`) + número de expediente
+  del amparo. Lo ÚNICO que sí se quitó de verdad fue el campo de **notas**
+  (`amparo_notas`) -- no lo usa nada automatizado. Si un expediente viejo
+  ya tenía notas capturadas, el botón "Guardar datos de amparo" las manda
+  tal cual sin cambios (ya no hay forma de editarlas desde la UI, pero
+  tampoco se borran solas al guardar). Confirmado con el usuario: aunque
+  el robot Federal solo usa `amparo_expediente` para el match (nunca lee
+  `amparo_tribunal`, ver `federal.js`), el tribunal SÍ es un dato que el
+  despacho necesita capturar y consultar, así que se queda con su propio
+  selector aunque no lo use ningún robot.
 - `app.js?v=119`. Sin cambios de base de datos. `verificar_tags.js`
   corrido y pasó limpio (se tocó `mergeTags()` -- el fallback de
   `instancia`/`ciudad_firma` ahora usa `tribunal` en vez de `junta`).
