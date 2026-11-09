@@ -2229,6 +2229,10 @@ function avisoIaHTML(a){
   if(!a.ia_resumen) return '';
   return `<div class="aviso-ia">🤖 ${escapeHTML(a.ia_resumen)}${a.ia_aplicado && a.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(a.ia_etapa_sugerida))}</span>` : ''}</div>`;
 }
+function documentoIaHTML(d){
+  if(!d.ia_resumen) return '';
+  return `<div class="aviso-ia" style="margin-top:4px;">🤖 ${escapeHTML(d.ia_resumen)}${d.ia_aplicado && d.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(d.ia_etapa_sugerida))}</span>` : ''}</div>`;
+}
 async function loadAvisosBoletin(){
   try{
     const d = await api('GET', 'avisos_list.php');
@@ -8023,7 +8027,7 @@ function modalTabContent(k,p,meta){
     ${docsSubtabActual.length ? `<table><thead><tr><th>Archivo</th><th>Categoría</th><th>Tamaño</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead><tbody>
       ${documentosAgrupadosPorCategoria(docsSubtabActual).map(d=>`
         <tr>
-          <td>${escapeHTML(d.nombre_archivo)}</td>
+          <td>${escapeHTML(d.nombre_archivo)}${documentoIaHTML(d)}</td>
           <td>${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[d.categoria] || d.categoria)}</td>
           <td>${fmtBytes(d.tamano_bytes)}</td>
           <td>${escapeHTML(d.subido_por_nombre || '—')}</td>

@@ -2940,7 +2940,7 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
 // (una de ETAPA_KEYS), 'fecha_mencionada'=>?string (YYYY-MM-DD, SOLO si el
 // documento la menciona tal cual -- nunca calculada)].
 const IA_MODELO_ANALIZAR_ACUERDO = 'claude-sonnet-5'; // necesita leer PDF con buen criterio legal, Haiku no basta aquí
-function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, array $expediente, array $etapas = []): ?array
+function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, array $expediente, array $etapas = [], string $nombreArchivo = '', string $categoria = ''): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -2952,6 +2952,7 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
     if (!is_file($rutaArchivo)) return null;
     $ext = strtolower(pathinfo($rutaArchivo, PATHINFO_EXTENSION));
     $esPdf = $tipoMime === 'application/pdf' || $ext === 'pdf';
+    $esImagen = !$esPdf && (in_array($ext, ['jpg', 'jpeg', 'png'], true) || str_starts_with((string)$tipoMime, 'image/'));
 
     $lineas = [];
     $agregar = function (string $etiqueta, $valor) use (&$lineas) {
@@ -2962,6 +2963,8 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
     $agregar('Demandado', $expediente['demandado'] ?? null);
     $agregar('Expediente', $expediente['exp'] ?? null);
     $agregar('Número de amparo (si aplica)', $expediente['amparo_expediente'] ?? null);
+    $agregar('Nombre del archivo', $nombreArchivo ?: null);
+    $agregar('Categoría con la que se guardó', $categoria ?: null);
 
     // Misma bitácora (y mismo orden/etiquetas) que ya usa
     // ia_generar_resumen_expediente() -- para que la etapa sugerida use el
@@ -2989,20 +2992,22 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
 
     $vocabularioEtapas = implode(', ', array_map(fn($k) => "$k (" . (ETAPA_LABELS[$k] ?? $k) . ')', $ordenEtapas));
 
-    $instrucciones = 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Te doy el '
-        . 'acuerdo real (documento adjunto, o texto del boletín) de un expediente, más el contexto de en qué va '
-        . 'el trámite. Tu tarea tiene tres partes.'
+    $instrucciones = 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Te doy un '
+        . 'documento real de un expediente (puede ser un acuerdo judicial/texto de boletín, pero también una '
+        . 'constancia, un convenio, pruebas, una cédula de notificación, o cualquier otro documento que el '
+        . 'abogado haya subido), más el contexto de en qué va el trámite. Tu tarea tiene tres partes.'
         . "\n\n"
-        . 'PARTE 1 -- resumen (1-2 líneas, español, directo): qué dice este acuerdo en concreto -- qué resolvió '
-        . 'el Tribunal/Juzgado, qué ordenó, o qué pide. No repitas datos genéricos (número de acuerdo, fecha de '
-        . 'publicación) que ya se conocen aparte -- concéntrate en el CONTENIDO real.'
+        . 'PARTE 1 -- resumen (1-2 líneas, español, directo): qué contiene este documento en concreto -- qué '
+        . 'resolvió el Tribunal/Juzgado, qué ordenó, qué acredita, o qué pide. No repitas datos genéricos (nombre '
+        . 'de archivo, categoría) que ya se conocen aparte -- concéntrate en el CONTENIDO real.'
         . "\n\n"
-        . 'PARTE 2 -- etapa sugerida: si este acuerdo corresponde CLARAMENTE a una de estas etapas del '
+        . 'PARTE 2 -- etapa sugerida: si este documento corresponde CLARAMENTE a una de estas etapas del '
         . "vocabulario del sistema y esa etapa coincide con la \"Siguiente etapa esperada\" que te di (o es "
         . "razonable que sea la que sigue), responde su clave exacta. Vocabulario completo: $vocabularioEtapas. "
-        . 'Si el acuerdo es un trámite intermedio que no corresponde a ninguna de esas etapas (ej. solo admite '
-        . 'una prueba, da vista a la contraparte, notifica algo menor), o si no estás seguro, responde '
-        . '(ninguna) -- NUNCA adivines ni fuerces una etapa que no calza con claridad.'
+        . 'Si el documento es un trámite intermedio que no corresponde a ninguna de esas etapas (ej. solo admite '
+        . 'una prueba, da vista a la contraparte, notifica algo menor, es solo evidencia/pruebas sin relación con '
+        . 'el trámite), o si no estás seguro, responde (ninguna) -- NUNCA adivines ni fuerces una etapa que no '
+        . 'calza con claridad.'
         . "\n\n"
         . 'PARTE 3 -- fecha mencionada: SOLO si el documento menciona LITERALMENTE una fecha asociada a la etapa '
         . 'que sugeriste (ej. "se señala la audiencia para el día..."), dámela en formato YYYY-MM-DD. Si no hay '
@@ -3017,6 +3022,14 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
         $contentBlocks[] = [
             'type' => 'document',
             'source' => ['type' => 'base64', 'media_type' => 'application/pdf', 'data' => base64_encode(file_get_contents($rutaArchivo))],
+        ];
+        $contentBlocks[] = ['type' => 'text', 'text' => $instrucciones . "\n\nContexto del expediente:\n" . implode("\n", $lineas)];
+    } elseif ($esImagen) {
+        // Foto que subió el abogado (ej. cédula de notificación, acta).
+        $mediaType = (is_string($tipoMime) && str_starts_with($tipoMime, 'image/')) ? $tipoMime : ($ext === 'png' ? 'image/png' : 'image/jpeg');
+        $contentBlocks[] = [
+            'type' => 'image',
+            'source' => ['type' => 'base64', 'media_type' => $mediaType, 'data' => base64_encode(file_get_contents($rutaArchivo))],
         ];
         $contentBlocks[] = ['type' => 'text', 'text' => $instrucciones . "\n\nContexto del expediente:\n" . implode("\n", $lineas)];
     } else {

@@ -323,13 +323,51 @@ falta seguimiento):
      frecuencia una vez al día (puede ir junto con
      `cron_recordatorio_abogado.php`).
    - `app.js?v=121`.
-4. **IA lee documentos/fotos que sube el abogado** (pendiente) -- mismo
-   principio que el punto 2 pero con lo que el abogado sube a mano
-   (conciliación, constancia de no conciliación, cédulas de
-   notificación). Automática si es un documento oficial inequívoco (ej.
-   constancia con fecha clara → dispara el cálculo de prescripción ya
-   existente); con confirmación de un tap si es más ambiguo (ej. una
-   fecha reagendada).
+4. **IA lee documentos/fotos que sube el abogado -- HECHO (9 nov 2026),
+   migración 062 pendiente de correr, y FALTA DAR DE ALTA EL CRON NUEVO.**
+   Pedido explícito del usuario: "sería excelente que en documentos se
+   agregue un resumen del documento a un lado para ver de qué se trata".
+   Mismo principio que el punto 2, pero para CUALQUIER documento que el
+   abogado suba a mano en la pestaña "Documentos" (constancias, convenios,
+   pruebas, cédulas de notificación, fotos...), no solo los acuerdos de
+   boletín que suben los robots.
+   - `ia_analizar_acuerdo_boletin()` (`api/ia_helpers.php`) se generalizó
+     para esto: ahora acepta también imágenes (JPG/PNG, bloque `image`
+     nativo de la API, igual que ya hacía con `document` para PDF) y dos
+     parámetros nuevos opcionales (`$nombreArchivo`, `$categoria`) para
+     dar más contexto; el texto de las instrucciones se generalizó de
+     "acuerdo" a "documento" (sigue sirviendo igual para los acuerdos de
+     boletín, que es como ya se usaba). El nombre de la función se dejó
+     igual a propósito (ya la llama `cron_analizar_acuerdos_ia.php`) para
+     no arriesgar nada ahí.
+   - Nuevo cron **`api/cron_analizar_documentos_ia.php`** (correr cada
+     15-30 min, junto con `cron_analizar_acuerdos_ia.php`): busca en
+     `expediente_documentos` (migración 062: mismas 5 columnas `ia_*` que
+     ya tiene `avisos_boletin` desde la 060) los que no se han analizado.
+     Para no pagar dos veces por el mismo archivo, si el documento ya
+     viene de un robot de boletín (tiene un aviso ligado en
+     `avisos_boletin` que YA se analizó ahí), simplemente COPIA ese
+     resultado en vez de volver a mandarlo a la IA. Solo lee PDF/JPG/PNG
+     -- Word/Excel/txt se marcan como analizados sin resumen (no se
+     puede leer ese tipo de archivo con este mecanismo). Mismo
+     llenado-solo de etapa que el punto 2, con una diferencia a propósito:
+     aquí NUNCA se usa la fecha de SUBIDA como respaldo si el documento no
+     menciona una fecha literal (a diferencia del boletín, un documento se
+     puede subir mucho después de lo que acredita) -- sin fecha explícita
+     en el documento, el resumen se muestra pero no se aplica nada solo.
+   - El resumen (`documentoIaHTML()`) se muestra debajo del nombre del
+     archivo en la tabla de la pestaña "Documentos" (mismo estilo que ya
+     usan los avisos de boletín), con la misma insignia "✓ etapa
+     actualizada sola" cuando aplica. `app.js?v=124`.
+   - **Sin probar en vivo todavía** -- recién construido, nunca se ha
+     corrido el cron nuevo ni confirmado que lea bien una foto/PDF real
+     subido a mano (el mecanismo de PDF ya está confirmado por el punto 2,
+     pero el de imagen/foto es nuevo, sin probar). Probar primero con un
+     documento real ya subido a algún expediente (ideal: uno con una
+     fecha clara, para confirmar también el llenado automático de etapa).
+   - **Falta dar de alta el Cron Job en cPanel**: comando
+     `php /ruta/completa/a/api/cron_analizar_documentos_ia.php`,
+     frecuencia cada 15-30 minutos.
 
 Principio de diseño acordado con el usuario para las piezas 2-4: los
 DATOS DUROS (fechas, etapas) siguen siendo estructurados -- de ahí sale
