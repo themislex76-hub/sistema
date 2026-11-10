@@ -292,6 +292,25 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     if (!entroPorBoton) await campoPassword.press('Enter').catch(() => {});
     await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
 
+    // Confirmado real con captura (10 nov 2026): si la cuenta ya tiene una
+    // sesión activa (de una corrida anterior que no cerró sesión de
+    // verdad -- cerrar el navegador no basta, el portal la sigue viendo
+    // activa del lado del servidor), el portal bloquea el login con un
+    // aviso rojo "No puede ingresar por que cuenta con una sesion
+    // activa..." y un link "Romper sesión" para forzar la entrada. Se
+    // detecta y se le da clic solo, y se reintenta el login (el
+    // formulario reaparece después de romper la sesión).
+    const rompioSesion = await clickTextoVisible(page, 'Romper sesión', false, 4000);
+    if (rompioSesion) {
+      console.log('  [login] había una sesión activa de una corrida anterior -- se rompió, reintentando.');
+      await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+      await campoUsuario.fill(cuenta.cdmx_buzon_usuario).catch(() => {});
+      await campoPassword.fill(cuenta.cdmx_buzon_password).catch(() => {});
+      const entroPorBoton2 = await clickTextoVisible(page, 'ENTRAR', false, 10000);
+      if (!entroPorBoton2) await campoPassword.press('Enter').catch(() => {});
+      await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+    }
+
     // Confirmado real (10 nov 2026): saltar directo con page.goto() a la URL
     // de "Consulta de expedientes" a veces pierde la sesión recién iniciada
     // (el portal regresa "Error 102 Por favor inicie sesión", típico de una
