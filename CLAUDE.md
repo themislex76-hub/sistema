@@ -354,7 +354,9 @@ falta seguimiento):
      analizado(s) con IA... 1 etapa(s) llenada(s) sola(s)") -- confirma
      tanto el mecanismo de PDF como el de imagen/foto.
 5. **Auditoría integral del expediente -- HECHO (10 nov 2026), migración
-   064 pendiente de correr, y FALTA DAR DE ALTA EL CRON NUEVO.** Pedido
+   064 y cron ya corridos/dados de alta (confirmado por el usuario el 10
+   nov 2026, cron a las 8:00 am diario, una hora después del de
+   "Preguntas al abogado").** Pedido
    explícito del usuario tras ver un caso real (informe ejecutivo de
    Margarita Reyna Ramírez Mercado desactualizado -- ver pieza aparte más
    abajo sobre ese bug puntual, ya corregido): "la ia tiene que leer toda
@@ -396,15 +398,18 @@ falta seguimiento):
      ya lee las fechas de `expediente_etapas` directo, así que una etapa
      con fecha nueva aparece en la agenda sin tener que "agendar" nada
      aparte.
-   - **Sin probar en vivo todavía** -- recién construido, nunca se ha
-     corrido el cron nuevo. Probar primero con un expediente real que
-     tenga etapas sin fecha Y documentos/avisos/preguntas con info
-     suficiente para cruzar, y confirmar que la etapa se llene con el
-     motivo correcto (o que, si no hay evidencia clara, de verdad no
-     invente nada).
-   - **Falta dar de alta el Cron Job en cPanel**: comando
-     `php /ruta/completa/a/api/cron_auditoria_expediente_ia.php`,
-     frecuencia una vez al día.
+   - **Confirmado funcionando en vivo (10 nov 2026)**: el usuario corrió
+     el cron a mano abriendo la URL directo en el navegador (mismo patrón
+     que `reporte_monitoreo_faltante.php` -- el script no exige sesión).
+     Primera corrida real: "20 expediente(s) candidato(s), 20
+     auditado(s) con IA, 2 etapa(s) llenada(s) sola(s), 0 fallido(s)" --
+     ambas llenadas en el mismo expediente (id 13):
+     `conciliacion_prejudicial` (2026-05-18) y `objeciones_replica`
+     (2026-06-12). **Pendiente de confirmar con el usuario**: que esas 2
+     fechas sean correctas de verdad (cruzarlas contra los documentos/
+     avisos reales de ese expediente) -- quedó pendiente de revisar el
+     motivo completo en `expediente_historial` (la vista en grilla de
+     phpMyAdmin corta el texto, hay que abrir la celda o exportar).
 
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
