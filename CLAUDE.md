@@ -336,6 +336,17 @@ falta seguimiento):
      lenguaje natural cuando un abogado conteste una de esas preguntas.
    - `app.js?v=121` (ver más abajo: promovido a sección propia del menú
      en `app.js?v=123`).
+   - **Cambio de opinión del usuario (10 nov 2026)**: revirtió la
+     decisión original de "sin push del todo" -- ahora cada pregunta
+     nueva manda un push al abogado a cargo con link directo a
+     contestarla (`?pregunta=<id>` -> `abrirPreguntaDesdeNotificacion()`
+     en assets/app.js, mismo patrón ya usado para abrir una conversación
+     de WhatsApp desde notificación). También se agregó un botón
+     "🎤 Dictar" junto al textarea de respuesta (Web Speech API nativa del
+     navegador, gratis, sin mandar audio a ningún servidor -- se omite
+     solo si el navegador no lo soporta, ej. Safari/iPhone). `app.js?v=128`.
+     **Sin probar en vivo todavía** -- ni el push con link ni el dictado
+     por voz se han confirmado funcionando con un caso real.
 4. **IA lee documentos/fotos que sube el abogado -- HECHO (9 nov 2026),
    migración 062 y cron ya corridos/dados de alta (confirmado por el
    usuario el 10 nov 2026).** Pedido explícito del usuario: "sería excelente que en documentos se
