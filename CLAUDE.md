@@ -261,6 +261,16 @@ falta seguimiento):
      se ve un aviso con documento adjunto sin `ia_resumen` después de
      20-30 min, revisar primero que el Cron Job siga activo en cPanel
      antes de asumir que el código falló.
+   - **Confirmado funcionando con casos reales (10 nov 2026)**: revisando
+     `avisos_boletin` se encontraron 10 acuerdos ya analizados con
+     resúmenes específicos de verdad (no genéricos) -- los 9 acuerdos de
+     amparo de Emmanuel Rodríguez Ojeda (Federal, ej. "El Tribunal
+     Colegiado negó el amparo...", "El Tribunal Colegiado admitió la
+     demanda de amparo...") y el acuerdo de Zeltzin Monserrat Flores Cruz
+     (robot del Buzón CDMX nuevo de hoy, "El Tribunal admite a trámite la
+     demanda laboral en..."). Confirma que `ia_analizar_acuerdo_boletin()`
+     lee el PDF real y lo resume bien, sin necesidad de forzar una
+     corrida de prueba.
 3. **Supervisor que pregunta al abogado por asuntos atorados -- HECHO (9
    nov 2026), migración 061 y cron ya corridos/dados de alta (confirmado
    el mismo 9 nov 2026 -- ver nota al principio del archivo, el cron
