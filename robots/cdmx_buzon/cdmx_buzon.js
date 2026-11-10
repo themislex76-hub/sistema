@@ -227,11 +227,22 @@ async function avanzarPagina(page) {
     return false;
   }
 
-  const contenedor = page.getByText(/Página \d+ de \d+/i).first().locator('xpath=..');
-  const botones = contenedor.locator('button');
-  const nBotones = await botones.count();
-  console.log(`      [paginación] "${textoPagina}" -- ${nBotones} botón(es) encontrado(s) junto al texto.`);
-  if (nBotones < 2) {
+  // Confirmado real (10 nov 2026): los botones NO viven en el contenedor
+  // inmediato del texto "Página X de Y" (0 encontrados ahí) -- deben estar
+  // más arriba en la estructura (ej. hermanos de un contenedor padre
+  // común, no hijos directos de donde está el texto). Se sube nivel por
+  // nivel hasta encontrar al menos 2 botones.
+  let botones = null;
+  let nBotones = 0;
+  let nivelEncontrado = 0;
+  for (let nivel = 1; nivel <= 5; nivel++) {
+    const contenedor = page.getByText(/Página \d+ de \d+/i).first().locator('xpath=' + Array(nivel).fill('..').join('/'));
+    const candidato = contenedor.locator('button');
+    const n = await candidato.count();
+    if (n >= 2) { botones = candidato; nBotones = n; nivelEncontrado = nivel; break; }
+  }
+  console.log(`      [paginación] "${textoPagina}" -- ${nBotones} botón(es) encontrado(s) (subiendo ${nivelEncontrado} nivel(es) desde el texto).`);
+  if (!botones || nBotones < 2) {
     console.log('      [paginación] menos de 2 botones -- no se puede identificar cuál es "siguiente".');
     return false;
   }
