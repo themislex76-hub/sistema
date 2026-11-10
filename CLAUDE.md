@@ -56,7 +56,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**Última migración aplicada por el usuario: `061_supervisor_preguntas.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 9 nov 2026.**
+**Última migración aplicada por el usuario: `063_cdmx_buzon_credenciales.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 10 nov 2026** (la 062 y la 063 también están corridas -- confirmado por el usuario el 10 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
@@ -210,8 +210,8 @@ falta seguimiento):
    escalación al admin) -- confirmar en cuanto el cron corra de nuevo
    con asuntos atorados reales.
 2. **IA lee el contenido real de los acuerdos de boletín -- HECHO (9 nov
-   2026), migración 060 pendiente de correr, y FALTA DAR DE ALTA EL CRON
-   NUEVO.** Antes el resumen guardado era genérico ("Acuerdo No. X del
+   2026), migración 060 y cron ya corridos/dados de alta (confirmado por
+   el usuario el 10 nov 2026).** Antes el resumen guardado era genérico ("Acuerdo No. X del
    expediente Y, de fecha Z"), sin que nadie (ni la IA) supiera qué decía
    el acuerdo de verdad. Ahora `ia_analizar_acuerdo_boletin()`
    (`api/ia_helpers.php`) le manda a Claude el PDF real (como documento
@@ -243,22 +243,16 @@ falta seguimiento):
      Boletín del expediente), y si llenó una etapa sola aparece una
      insignia "✓ etapa actualizada sola: [nombre de la etapa]" --
      `app.js?v=118`.
-   - **Sin probar en vivo todavía** (nunca se ha corrido contra un PDF
-     real desde que se escribió esto -- ni el formato exacto de
-     respuesta de la IA, ni el `document` content block de la API de
-     Anthropic con PDF real, se han confirmado funcionando aquí). Probar
-     primero con uno de los 8 acuerdos de amparo reales ya subidos
-     (expediente de prueba Emmanuel Rodriguez Ojeda, Exp. 269-2025) antes
-     de asumir que funciona con cualquier PDF.
-   - **Falta dar de alta el Cron Job en cPanel**: comando
-     `php /ruta/completa/a/api/cron_analizar_acuerdos_ia.php`, frecuencia
-     cada 15-30 minutos (igual patrón que los demás `cron_*.php`, ver
-     sección "Robots locales" más abajo para cómo se programan estas
-     tareas, aunque esta corre en el servidor, no en la máquina del
-     usuario).
+   - Migración y cron confirmados corridos/dados de alta por el usuario
+     el 10 nov 2026, junto con los de las piezas 3 y 4 -- si alguna vez
+     se ve un aviso con documento adjunto sin `ia_resumen` después de
+     20-30 min, revisar primero que el Cron Job siga activo en cPanel
+     antes de asumir que el código falló.
 3. **Supervisor que pregunta al abogado por asuntos atorados -- HECHO (9
-   nov 2026), migración 061 pendiente de correr, y FALTA DAR DE ALTA EL
-   CRON NUEVO.** Pensado originalmente como "por WhatsApp" (ver el
+   nov 2026), migración 061 y cron ya corridos/dados de alta (confirmado
+   el mismo 9 nov 2026 -- ver nota al principio del archivo, el cron
+   corrió limpio: 15 atrasos revisados, 15 preguntas generadas, 0
+   fallidas).** Pensado originalmente como "por WhatsApp" (ver el
    ejemplo real del usuario abajo), pero se construyó como push + tarjeta
    DENTRO del sistema -- el usuario lo pidió así explícitamente ("haber
    hazlo sin el pussh" más tarde se aclaró en "sin push" del todo, ni
@@ -312,20 +306,16 @@ falta seguimiento):
      normal: nuevo atraso → nueva pregunta del supervisor) queda cubierto
      de punta a punta con este diseño, reutilizando toda la maquinaria de
      plazos que ya existía.
-   - **Sin probar en vivo todavía** -- nunca se ha corrido el cron
-     nuevo, ni se ha confirmado que la IA redacte preguntas útiles con un
-     caso real, ni que `ia_interpretar_respuesta_supervisor()` extraiga
-     bien una fecha de una respuesta real en lenguaje natural. Probar
-     primero con un expediente real que ya tenga un "posible atraso"
-     visible en el Tablero.
-   - **Falta dar de alta el Cron Job en cPanel**: comando
-     `php /ruta/completa/a/api/cron_generar_preguntas_supervisor.php`,
-     frecuencia una vez al día (puede ir junto con
-     `cron_recordatorio_abogado.php`).
-   - `app.js?v=121`.
+   - **Confirmado funcionando en vivo (9 nov 2026)**: el cron generó 15
+     preguntas reales sin fallar. Pendiente real todavía (no se ha
+     verificado por separado): confirmar que `ia_interpretar_respuesta_
+     supervisor()` extraiga bien una fecha de una respuesta real en
+     lenguaje natural cuando un abogado conteste una de esas preguntas.
+   - `app.js?v=121` (ver más abajo: promovido a sección propia del menú
+     en `app.js?v=123`).
 4. **IA lee documentos/fotos que sube el abogado -- HECHO (9 nov 2026),
-   migración 062 pendiente de correr, y FALTA DAR DE ALTA EL CRON NUEVO.**
-   Pedido explícito del usuario: "sería excelente que en documentos se
+   migración 062 y cron ya corridos/dados de alta (confirmado por el
+   usuario el 10 nov 2026).** Pedido explícito del usuario: "sería excelente que en documentos se
    agregue un resumen del documento a un lado para ver de qué se trata".
    Mismo principio que el punto 2, pero para CUALQUIER documento que el
    abogado suba a mano en la pestaña "Documentos" (constancias, convenios,
@@ -359,15 +349,10 @@ falta seguimiento):
      archivo en la tabla de la pestaña "Documentos" (mismo estilo que ya
      usan los avisos de boletín), con la misma insignia "✓ etapa
      actualizada sola" cuando aplica. `app.js?v=124`.
-   - **Sin probar en vivo todavía** -- recién construido, nunca se ha
-     corrido el cron nuevo ni confirmado que lea bien una foto/PDF real
-     subido a mano (el mecanismo de PDF ya está confirmado por el punto 2,
-     pero el de imagen/foto es nuevo, sin probar). Probar primero con un
-     documento real ya subido a algún expediente (ideal: uno con una
-     fecha clara, para confirmar también el llenado automático de etapa).
-   - **Falta dar de alta el Cron Job en cPanel**: comando
-     `php /ruta/completa/a/api/cron_analizar_documentos_ia.php`,
-     frecuencia cada 15-30 minutos.
+   - **Confirmado funcionando en vivo (10 nov 2026)**: el cron corrió
+     limpio sobre un lote real ("15 documento(s) en el lote, 15
+     analizado(s) con IA... 1 etapa(s) llenada(s) sola(s)") -- confirma
+     tanto el mecanismo de PDF como el de imagen/foto.
 
 Principio de diseño acordado con el usuario para las piezas 2-4: los
 DATOS DUROS (fechas, etapas) siguen siendo estructurados -- de ahí sale
