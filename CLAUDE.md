@@ -545,9 +545,10 @@ por expediente que abre la lista completa (fecha, número de acuerdo tipo
 que el boletín público viejo, mismo nivel que el correo de Edomex o el
 portal del PJF. Se construyó TODA la infraestructura, mismo patrón
 exacto que ya existía para Edomex:
-- Migración **`sql/migraciones/063_cdmx_buzon_credenciales.sql`** (NUEVA,
-  sin correr todavía) -- agrega `cdmx_buzon_usuario`/
-  `cdmx_buzon_password_enc`/`cdmx_buzon_actualizado_en` a `usuarios`.
+- Migración **`sql/migraciones/063_cdmx_buzon_credenciales.sql`**
+  (confirmada corrida por el usuario el 10 nov 2026) -- agrega
+  `cdmx_buzon_usuario`/`cdmx_buzon_password_enc`/
+  `cdmx_buzon_actualizado_en` a `usuarios`.
 - Endpoints `api/cdmx_buzon_credenciales_{set,get,listar}.php` (copia
   exacta del patrón de `edomex_correo_credenciales_*.php`, contraseña
   cifrada con `pjf_encrypt()`/`pjf_decrypt()`).
@@ -555,14 +556,15 @@ exacto que ya existía para Edomex:
   `app.js?v=125`) para que cada abogado guarde su correo/contraseña del
   Buzón.
 - Robot nuevo **`robots/cdmx_buzon/cdmx_buzon.js`** -- login por cuenta,
-  pagina "LISTA DE BUZONES" (paginación por iconos, lo más frágil del
-  archivo, sin confirmar en vivo), por cada expediente que haga match
-  (comparando solo el último tramo `NNN/AAAA` del número de expediente --
-  NO hace falta que el Tribunal esté capturado, a diferencia de los otros
-  2 robots de CDMX/Edomex) abre "Ver Acuerdos" y descarga el PDF de cada
-  acuerdo nuevo (`descargarPdfDesdeLink()`, escucha pestaña nueva O
-  descarga directa, no se sabe cuál usa el portal de verdad todavía).
-  Sube todo por la MISMA infraestructura ya existente
+  pagina "LISTA DE BUZONES" (paginación por iconos -- ver más abajo cómo
+  se resolvió de verdad, costó varias vueltas), por cada expediente que
+  haga match (comparando solo el último tramo `NNN/AAAA` del número de
+  expediente -- NO hace falta que el Tribunal esté capturado, a
+  diferencia de los otros 2 robots de CDMX/Edomex) abre "Ver Acuerdos" y
+  descarga el PDF de cada acuerdo nuevo (`descargarPdfDesdeLink()`,
+  escucha pestaña nueva O descarga directa -- confirmado real que
+  funciona de punta a punta, sin apuntar cuál de las 2 rutas fue la que
+  disparó en la corrida real). Sube todo por la MISMA infraestructura ya existente
   (`documentos_subir_robot.php`, `avisos_ingest.php` con
   `fuente:'cdmx_local'`) -- así que automáticamente hereda el resumen de
   IA (`cron_analizar_acuerdos_ia.php`), el push al abogado/Administrador,
