@@ -2153,6 +2153,18 @@ async function loadEdomexCorreoCredenciales(){
   }catch(e){ EDOMEX_CORREO_CREDENCIALES = null; }
 }
 
+// Igual que EDOMEX_CORREO_CREDENCIALES pero para el Buzón Electrónico
+// Laboral del PJCDMX (buzonelectronicolaboral.poderjudicialcdmx.gob.mx) --
+// el robot nuevo (robots/cdmx_buzon) usa las cuentas guardadas por cada
+// abogado.
+let CDMX_BUZON_CREDENCIALES = null;
+async function loadCdmxBuzonCredenciales(){
+  try{
+    const d = await api('GET', 'cdmx_buzon_credenciales_get.php');
+    CDMX_BUZON_CREDENCIALES = d;
+  }catch(e){ CDMX_BUZON_CREDENCIALES = null; }
+}
+
 // Avisos de boletín/lista de acuerdos por expediente — registrados a mano
 // o encontrados por los robots de monitoreo automático (Federal, CDMX,
 // Edomex). Ver api/avisos_*.php.
@@ -2689,6 +2701,7 @@ async function refreshBootstrap(){
   await loadSupervisorPreguntas();
   await loadPjfCredenciales();
   await loadEdomexCorreoCredenciales();
+  await loadCdmxBuzonCredenciales();
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
     await loadProspectos();
     await loadDisponibilidad();
@@ -6591,7 +6604,8 @@ function miCuentaHTML(){
       ${configurado ? `<button class="btn secondary" id="borrarPjfCredencialesBtn">Quitar cuenta guardada</button>` : ''}
     </div>
   </div></div>
-  ${edomexCorreoCredencialesHTML()}`;
+  ${edomexCorreoCredencialesHTML()}
+  ${cdmxBuzonCredencialesHTML()}`;
 }
 
 function edomexCorreoCredencialesHTML(){
@@ -6609,6 +6623,25 @@ function edomexCorreoCredencialesHTML(){
     <div style="margin-top:12px; display:flex; gap:10px;">
       <button class="btn" id="saveEdomexCorreoCredencialesBtn">Guardar</button>
       ${configurado ? `<button class="btn secondary" id="borrarEdomexCorreoCredencialesBtn">Quitar cuenta guardada</button>` : ''}
+    </div>
+  </div></div>`;
+}
+
+function cdmxBuzonCredencialesHTML(){
+  const c = CDMX_BUZON_CREDENCIALES;
+  const configurado = c && c.configurado;
+  return `
+  <div class="notice" style="margin:18px 0;">El Poder Judicial de la Ciudad de México notifica los acuerdos de tus juicios laborales por el Buzón Electrónico Laboral (buzonelectronicolaboral.poderjudicialcdmx.gob.mx) -- se consulta entrando a esa página con tu correo y contraseña. Guárdalos aquí para que el robot revise tu buzón por ti y reporte los acuerdos solo. Tu contraseña se guarda cifrada — nadie del despacho puede verla, ni siquiera un administrador.</div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:10px;">Buzón Electrónico Laboral (CDMX)</div>
+    ${configurado ? `<div class="notice" style="margin-bottom:14px; background:var(--amber-bg,#fdf6e3);">Ya tienes guardado el usuario <strong>${escapeHTML(c.cdmx_buzon_usuario)}</strong>${c.actualizado_en ? ' (actualizado el '+new Date(c.actualizado_en).toLocaleDateString('es-MX')+')' : ''}. Para cambiarlo, captura los datos de nuevo abajo.</div>` : ''}
+    <form id="cdmxBuzonCredencialesForm" class="grid2">
+      <div class="field"><label>Correo del Buzón</label><input type="text" id="cdmxBuzonUsuarioInput" placeholder="Tu correo de buzonelectronicolaboral.poderjudicialcdmx.gob.mx" value="${configurado ? escapeHTML(c.cdmx_buzon_usuario) : ''}"></div>
+      <div class="field"><label>Contraseña del Buzón</label><input type="password" id="cdmxBuzonPasswordInput" placeholder="Tu contraseña (siempre hay que volver a escribirla para guardar)"></div>
+    </form>
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button class="btn" id="saveCdmxBuzonCredencialesBtn">Guardar</button>
+      ${configurado ? `<button class="btn secondary" id="borrarCdmxBuzonCredencialesBtn">Quitar cuenta guardada</button>` : ''}
     </div>
   </div></div>`;
 }
@@ -7389,6 +7422,32 @@ function bindViewBody(){
       try{
         await api('POST', 'edomex_correo_credenciales_set.php', {borrar: true});
         await loadEdomexCorreoCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); }
+    });
+  }
+  const saveCdmxBuzonCredencialesBtn = document.getElementById('saveCdmxBuzonCredencialesBtn');
+  if(saveCdmxBuzonCredencialesBtn){
+    saveCdmxBuzonCredencialesBtn.addEventListener('click', async ()=>{
+      const cdmx_buzon_usuario = document.getElementById('cdmxBuzonUsuarioInput').value.trim();
+      const cdmx_buzon_password = document.getElementById('cdmxBuzonPasswordInput').value;
+      if(!cdmx_buzon_usuario || !cdmx_buzon_password){ alert('Escribe tu correo y tu contraseña del Buzón Electrónico Laboral.'); return; }
+      saveCdmxBuzonCredencialesBtn.disabled = true;
+      try{
+        await api('POST', 'cdmx_buzon_credenciales_set.php', {cdmx_buzon_usuario, cdmx_buzon_password});
+        await loadCdmxBuzonCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+      finally{ saveCdmxBuzonCredencialesBtn.disabled = false; }
+    });
+  }
+  const borrarCdmxBuzonCredencialesBtn = document.getElementById('borrarCdmxBuzonCredencialesBtn');
+  if(borrarCdmxBuzonCredencialesBtn){
+    borrarCdmxBuzonCredencialesBtn.addEventListener('click', async ()=>{
+      if(!confirm('¿Quitar tu cuenta guardada del Buzón Electrónico Laboral? El robot dejará de revisar tu buzón hasta que la vuelvas a capturar.')) return;
+      try{
+        await api('POST', 'cdmx_buzon_credenciales_set.php', {borrar: true});
+        await loadCdmxBuzonCredenciales();
         renderViewBody();
       }catch(err){ alert('No se pudo quitar: ' + err.message); }
     });

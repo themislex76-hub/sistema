@@ -450,6 +450,75 @@ completo"):
 - Primera corrida de cada robot: recordar `npm install` +
   `npx playwright install chromium` en su carpeta antes de correrlo.
 
+## Robot nuevo: Buzón Electrónico Laboral CDMX (`robots/cdmx_buzon/`, 9-10 nov 2026)
+Pedido del usuario después de notar "muchos asuntos... que evidentemente
+tienen acuerdos en los tribunales federales y en el estado de méxico" que
+el sistema no reportaba -- se construyó `api/reporte_monitoreo_faltante.php`
+(script de diagnóstico, abrir directo en el navegador logueado como
+Administrador) que reusa la MISMA lógica de reconocimiento de los robots
+(`/FEDERAL/i`, `/ciudad de méxico|cdmx/i`, `/tlalnepantla/i`) para listar,
+por categoría, qué expedientes activos quedan fuera y por qué. Confirmado
+con datos reales del despacho: la causa dominante (35 de 37 casos) es
+simplemente **Tribunal sin capturar** -- no un bug de reconocimiento. Sí se
+encontraron 2 casos reales con el Tribunal capturado SIN la palabra
+"Federal" (ej. "Noveno Tribunal Laboral de Asuntos Individuales con sede en
+la Ciudad de México" en vez de "...Laboral **Federal** de Asuntos
+Individuales..."), causando que el sistema los trate como CDMX local en vez
+de Federal -- hay que volver a capturar su Tribunal desde el catálogo
+(nunca a mano) para que diga "Federal". **Pendiente**: armar algo que
+sugiera el Tribunal a partir del prefijo del número de expediente (`CDMX`,
+`ECA`, `Tlalne1`, `MEXOAE`...) para los 35 casos sin nada capturado, una vez
+que el usuario confirme si esos prefijos sí indican la jurisdicción de
+forma consistente.
+
+Mientras se investigaba esto, el usuario mandó la liga de un portal que no
+se conocía antes: **Buzón Electrónico Laboral del PJCDMX**
+(`buzonelectronicolaboral.poderjudicialcdmx.gob.mx:2083`) -- confirmado
+real con capturas de pantalla en vivo: cada cuenta (correo + contraseña,
+**una por abogado**, confirmado explícitamente por el usuario) ve en
+"Consulta de expedientes" → "LISTA DE BUZONES" TODOS los expedientes donde
+ese abogado está dado de alta como apoderado, con un botón "Ver Acuerdos"
+por expediente que abre la lista completa (fecha, número de acuerdo tipo
+"774/2025-3", liga "Ver acuerdo" con el PDF real) -- mucho más confiable
+que el boletín público viejo, mismo nivel que el correo de Edomex o el
+portal del PJF. Se construyó TODA la infraestructura, mismo patrón
+exacto que ya existía para Edomex:
+- Migración **`sql/migraciones/063_cdmx_buzon_credenciales.sql`** (NUEVA,
+  sin correr todavía) -- agrega `cdmx_buzon_usuario`/
+  `cdmx_buzon_password_enc`/`cdmx_buzon_actualizado_en` a `usuarios`.
+- Endpoints `api/cdmx_buzon_credenciales_{set,get,listar}.php` (copia
+  exacta del patrón de `edomex_correo_credenciales_*.php`, contraseña
+  cifrada con `pjf_encrypt()`/`pjf_decrypt()`).
+- Sección nueva en "Mi cuenta" (`cdmxBuzonCredencialesHTML()`,
+  `app.js?v=125`) para que cada abogado guarde su correo/contraseña del
+  Buzón.
+- Robot nuevo **`robots/cdmx_buzon/cdmx_buzon.js`** -- login por cuenta,
+  pagina "LISTA DE BUZONES" (paginación por iconos, lo más frágil del
+  archivo, sin confirmar en vivo), por cada expediente que haga match
+  (comparando solo el último tramo `NNN/AAAA` del número de expediente --
+  NO hace falta que el Tribunal esté capturado, a diferencia de los otros
+  2 robots de CDMX/Edomex) abre "Ver Acuerdos" y descarga el PDF de cada
+  acuerdo nuevo (`descargarPdfDesdeLink()`, escucha pestaña nueva O
+  descarga directa, no se sabe cuál usa el portal de verdad todavía).
+  Sube todo por la MISMA infraestructura ya existente
+  (`documentos_subir_robot.php`, `avisos_ingest.php` con
+  `fuente:'cdmx_local'`) -- así que automáticamente hereda el resumen de
+  IA (`cron_analizar_acuerdos_ia.php`), el push al abogado/Administrador,
+  y el llenado automático de etapas, sin tocar nada de eso.
+- **Complementa, NO reemplaza** al robot de boletín viejo
+  (`robots/cdmx/cdmx.js`) -- pedido explícito del usuario ("el que ya
+  tenemos se queda"), corren los dos en paralelo.
+- **Sin probar en vivo todavía** -- recién construido a partir de
+  capturas de pantalla, nunca se ha corrido. Antes de poder probarlo de
+  verdad: (1) correr la migración 063, (2) subir los archivos nuevos, (3)
+  que el usuario guarde su cuenta real del Buzón en "Mi cuenta" (ya se vio
+  una sesión real con `maluli200499@hotmail.com`), (4) instalar el robot
+  en la carpeta `ROBOTS\` de la máquina de Windows (`npm install` +
+  `npx playwright install chromium`) y correrlo a mano una vez,
+  reportando el error completo de la terminal + captura `debug_error_*.png`
+  si algo truena (muy probable a la primera, ver advertencias en el
+  propio `README.md` del robot).
+
 ## Robot de boletín CDMX (`robots/cdmx/cdmx.js`)
 - Bug real detectado y corregido (8 nov 2026): cuando el número de
   expediente del boletín llevaba un sufijo corto antes del punto final
