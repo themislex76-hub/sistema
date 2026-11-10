@@ -282,44 +282,52 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
   const vistos = estado[cuenta.cdmx_buzon_usuario] || {};
 
   try {
-    await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 });
     const campoUsuario = page.locator('input[type="email"], input[type="text"]').first();
     const campoPassword = page.locator('input[type="password"]').first();
-    await campoUsuario.waitFor({ state: 'visible', timeout: 15000 });
-    await campoUsuario.fill(cuenta.cdmx_buzon_usuario);
-    await campoPassword.fill(cuenta.cdmx_buzon_password);
-    const entroPorBoton = await clickTextoVisible(page, 'ENTRAR', false, 10000);
-    if (!entroPorBoton) await campoPassword.press('Enter').catch(() => {});
-    await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
 
     // Confirmado real con captura (10 nov 2026): si la cuenta ya tiene una
     // sesión activa (de una corrida anterior que no cerró sesión de
     // verdad -- cerrar el navegador no basta, el portal la sigue viendo
     // activa del lado del servidor), el portal bloquea el login con un
     // aviso rojo "No puede ingresar por que cuenta con una sesion
-    // activa..." y un link "Romper sesión" para forzar la entrada. Se
-    // detecta y se le da clic solo, y se reintenta el login (el
-    // formulario reaparece después de romper la sesión).
-    const rompioSesion = await clickTextoVisible(page, 'Romper sesión', false, 4000);
-    if (rompioSesion) {
-      console.log('  [login] había una sesión activa de una corrida anterior -- se rompió, reintentando.');
-      await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+    // activa..." y un link "Romper sesión" para forzar la entrada. Romper
+    // la sesión no siempre tiene efecto inmediato del lado del servidor
+    // (confirmado real: un solo reintento inmediato después del clic
+    // también salió bloqueado), así que se reintenta el login completo
+    // varias veces, con una pausa entre cada una.
+    let entroMenu = false;
+    for (let intento = 1; intento <= 4 && !entroMenu; intento++) {
+      if (intento === 1) {
+        await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 });
+      } else {
+        console.log(`  [login] reintento ${intento}/4...`);
+        await page.waitForTimeout(3000);
+        await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+      }
+      await campoUsuario.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
       await campoUsuario.fill(cuenta.cdmx_buzon_usuario).catch(() => {});
       await campoPassword.fill(cuenta.cdmx_buzon_password).catch(() => {});
-      const entroPorBoton2 = await clickTextoVisible(page, 'ENTRAR', false, 10000);
-      if (!entroPorBoton2) await campoPassword.press('Enter').catch(() => {});
+      const entroPorBoton = await clickTextoVisible(page, 'ENTRAR', false, 10000);
+      if (!entroPorBoton) await campoPassword.press('Enter').catch(() => {});
       await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
-    }
 
-    // Confirmado real (10 nov 2026): saltar directo con page.goto() a la URL
-    // de "Consulta de expedientes" a veces pierde la sesión recién iniciada
-    // (el portal regresa "Error 102 Por favor inicie sesión", típico de una
-    // app que guarda la sesión en memoria del navegador en vez de solo en
-    // una cookie -- una navegación completa la reinicia). Se navega dándole
-    // clic al menú, como lo haría una persona, para no perderla.
-    const entroMenu = await clickTextoVisible(page, 'Consulta de expedientes', false, 15000);
+      const rompioSesion = await clickTextoVisible(page, 'Romper sesión', false, 4000);
+      if (rompioSesion) {
+        console.log('  [login] había una sesión activa de una corrida anterior -- se rompió, esperando antes de reintentar.');
+        await page.waitForTimeout(3000);
+        continue; // vuelve a intentar el login completo desde cero en la siguiente vuelta
+      }
+
+      // Confirmado real (10 nov 2026): saltar directo con page.goto() a la
+      // URL de "Consulta de expedientes" a veces pierde la sesión recién
+      // iniciada (el portal regresa "Error 102 Por favor inicie sesión",
+      // típico de una app que guarda la sesión en memoria del navegador en
+      // vez de solo en una cookie -- una navegación completa la reinicia).
+      // Se navega dándole clic al menú, como lo haría una persona.
+      entroMenu = await clickTextoVisible(page, 'Consulta de expedientes', false, 15000);
+    }
     if (!entroMenu) {
-      console.log('  AVISO: no se encontró el menú "Consulta de expedientes" -- el login probablemente falló (revisa usuario/contraseña guardados en "Mi cuenta").');
+      console.log('  AVISO: no se encontró el menú "Consulta de expedientes" después de varios intentos -- el login probablemente falló (revisa usuario/contraseña guardados en "Mi cuenta").');
       await page.screenshot({ path: path.join(__dirname, `debug_error_${sanitizarParaArchivo(cuenta.cdmx_buzon_usuario)}.png`), fullPage: true }).catch(() => {});
       return 0;
     }
