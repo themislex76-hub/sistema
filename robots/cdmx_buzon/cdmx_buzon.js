@@ -278,6 +278,18 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
   const context = await browser.newContext();
   const page = await context.newPage();
   page.on('pageerror', (err) => console.log(`    [error de JS en la página] ${err.message}`));
+  // Confirmado real (10 nov 2026): "Romper sesión" dispara un confirm()
+  // nativo del navegador ("¿Esta seguro de romper la sesión?") y, al
+  // aceptarlo, un alert() de confirmación ("Se rompió la sesión
+  // exitosamente...") -- Playwright CANCELA estos diálogos solos si nadie
+  // los atiende (confirm() devuelve false), así que todos los clics
+  // anteriores a "Romper sesión" nunca rompían la sesión de verdad, por
+  // más que el link se haya encontrado y clicado sin error. Se aceptan
+  // automáticamente en cuanto aparecen.
+  page.on('dialog', async (dialog) => {
+    console.log(`    [diálogo del navegador] "${dialog.message()}" -- aceptado.`);
+    await dialog.accept().catch(() => {});
+  });
   let reportados = 0;
   const vistos = estado[cuenta.cdmx_buzon_usuario] || {};
 
