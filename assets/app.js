@@ -465,6 +465,29 @@ const TRIBUNALES_LOCALES_MX = {
     "Tribunal Laboral — Delicias",
     "Tribunal Laboral — Ciudad Juárez",
   ],
+  // Tribunales Laborales LOCALES de la Ciudad de México (Poder Judicial de
+  // la CDMX, post-reforma laboral 2022) -- NO confundir con los
+  // "...FEDERAL..." de TRIBUNALES_FEDERALES_MX, que son un sistema
+  // completamente distinto (Poder Judicial de la Federación) aunque
+  // también tengan sede física en la CDMX. Formato confirmado real
+  // (capturas de pantalla del Buzón Electrónico Laboral del PJCDMX, 10 nov
+  // 2026: "4 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX", "6 LABORAL...",
+  // "7 LABORAL...", "8 LABORAL..." -- el 1/2/3/5/9 se completaron por ser
+  // la misma numeración secuencial, confirmada por fuente oficial (9
+  // Tribunales Laborales de Asuntos Individuales según el organigrama
+  // 2024 del TSJCDMX) pero SIN captura real de esos 5 -- si alguno no
+  // coincide exacto con lo que se ve en el Buzón, avisar para corregirlo.
+  "Ciudad de México": [
+    "1 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "2 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "3 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "4 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "5 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "6 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "7 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "8 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "9 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+  ],
   "Coahuila de Zaragoza": [
     "Tribunal Laboral del Distrito Judicial de Saltillo",
     "Tribunal Laboral del Distrito Judicial de Torreón",

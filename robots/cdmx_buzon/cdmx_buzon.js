@@ -61,6 +61,37 @@ function sanitizarParaArchivo(s) {
   return (s || '').replace(/[\/\\]/g, '-');
 }
 
+// Match preciso pedido por el usuario (10 nov 2026): el número de
+// expediente solo es único DENTRO de cada tribunal, no en todo CDMX -- dos
+// tribunales distintos pueden traer el mismo "982/2025" por coincidencia.
+// Por eso no basta con que el número coincida: también se exige que el
+// NÚMERO ORDINAL del tribunal coincida (ej. "6" en "6 LABORAL DE ASUNTOS
+// INDIVIDUALES DE LA CDMX" del Buzón debe ser el mismo "6"/"Sexto" que el
+// Tribunal capturado en el sistema). El usuario se encarga de que todos
+// los expedientes tengan Tribunal y número capturados -- si a alguno le
+// falta, o el ordinal no coincide, el robot lo omite y lo dice en el log
+// (en vez de adivinar o aplicar un match dudoso).
+const ORDINALES_TEXTO = {
+  PRIMERO: 1, PRIMER: 1, SEGUNDO: 2, TERCERO: 3, TERCER: 3, CUARTO: 4, QUINTO: 5,
+  SEXTO: 6, SEPTIMO: 7, SÉPTIMO: 7, OCTAVO: 8, NOVENO: 9, DECIMO: 10, DÉCIMO: 10,
+  DECIMOPRIMERO: 11, DECIMOPRIMER: 11, DECIMOSEGUNDO: 12, DECIMOTERCERO: 13, DECIMOTERCER: 13,
+  DECIMOCUARTO: 14, DECIMOQUINTO: 15, DECIMOSEXTO: 16, DECIMOSEPTIMO: 17, DECIMOSÉPTIMO: 17,
+  DECIMOCTAVO: 18, DECIMONOVENO: 19, VIGESIMO: 20, VIGÉSIMO: 20,
+};
+function sinAcentos(s) {
+  return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+}
+function extraerOrdinal(texto) {
+  if (!texto) return null;
+  const limpio = sinAcentos(texto).trim();
+  const matchNumero = /^(\d+)\b/.exec(limpio);
+  if (matchNumero) return parseInt(matchNumero[1], 10);
+  for (const palabra of limpio.split(/[^A-ZÑ]+/)) {
+    if (ORDINALES_TEXTO[palabra]) return ORDINALES_TEXTO[palabra];
+  }
+  return null;
+}
+
 function pdfEsValido(buf) {
   return !!buf && buf.length > 4 && buf.slice(0, 4).toString('latin1') === '%PDF';
 }
@@ -164,7 +195,12 @@ async function leerFilasBuzones(page) {
     const textoFila = await fila.innerText().catch(() => '');
     const matchExp = /(\d+\/\d{4})/.exec(textoFila);
     if (!matchExp) continue;
-    filas.push({ expTexto: matchExp[1], textoCompleto: textoFila, linkVerAcuerdos: link });
+    // El nombre del Tribunal es el texto de la columna "EXPEDIENTE" ANTES
+    // del número (ej. "7 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX" antes
+    // de "982/2025") -- se usa para llenar solo el Tribunal en el sistema
+    // cuando el expediente no lo tenía capturado (ver actualizarTribunalSiFalta()).
+    const tribunalTexto = textoFila.slice(0, matchExp.index).replace(/\s+/g, ' ').trim();
+    filas.push({ expTexto: matchExp[1], tribunalTexto, textoCompleto: textoFila, linkVerAcuerdos: link });
   }
   return filas;
 }
@@ -257,10 +293,23 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
 
       for (const fila of filas) {
         const expNormalizado = normalizeExp(fila.expTexto);
-        const expedienteSistema = porNumero.get(expNormalizado);
-        if (!expedienteSistema) continue; // no es un expediente monitoreado en el sistema
+        const candidatos = porNumero.get(expNormalizado);
+        if (!candidatos || !candidatos.length) continue; // no es un expediente monitoreado en el sistema
 
-        console.log(`    Expediente ${fila.expTexto} (Exp. sistema ${expedienteSistema.exp}, id ${expedienteSistema.id}) -- revisando acuerdos...`);
+        const ordinalBuzon = extraerOrdinal(fila.tribunalTexto);
+        if (ordinalBuzon === null) {
+          console.log(`    Expediente ${fila.expTexto}: coincide el número pero no se pudo leer el ordinal del Tribunal en el Buzón ("${fila.tribunalTexto}") -- se omite por seguridad.`);
+          continue;
+        }
+
+        const expedienteSistema = candidatos.find(c => extraerOrdinal(c.tribunal || c.junta) === ordinalBuzon);
+        if (!expedienteSistema) {
+          const vistos = candidatos.map(c => `"${c.tribunal || c.junta || '(sin Tribunal capturado)'}"`).join(', ');
+          console.log(`    Expediente ${fila.expTexto}: el número coincide con ${candidatos.length} expediente(s) del sistema, pero ninguno tiene el Tribunal "${fila.tribunalTexto}" (ordinal ${ordinalBuzon}) -- Tribunal(es) capturado(s): ${vistos}. Se omite; captura/corrige el Tribunal en el sistema para que cruce.`);
+          continue;
+        }
+
+        console.log(`    Expediente ${fila.expTexto} (Exp. sistema ${expedienteSistema.exp}, id ${expedienteSistema.id}) -- Tribunal confirmado, revisando acuerdos...`);
         await fila.linkVerAcuerdos.click({ timeout: 15000 }).catch(() => {});
         const hayModal = await page.getByText(/LISTA DE ACUERDOS/i).first().waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
         if (!hayModal) {
@@ -331,13 +380,20 @@ async function main() {
   console.log(new Date().toISOString(), 'Iniciando revisión del Buzón Electrónico Laboral (CDMX)...');
 
   const expedientes = await obtenerExpedientesMonitoreados();
+  // Mapea a un ARREGLO de candidatos por número (no un solo expediente) --
+  // el número de expediente solo es único DENTRO de cada tribunal, así que
+  // dos tribunales distintos pueden compartir "982/2025" por coincidencia;
+  // el match final se desempata por el ordinal del Tribunal (ver
+  // extraerOrdinal() y el ciclo principal más abajo).
   const porNumero = new Map();
   for (const e of expedientes) {
     if (e.es_federal) continue; // el Buzón solo cubre tribunales laborales LOCALES de CDMX
     if (!e.exp) continue;
-    porNumero.set(normalizeExp(e.exp), e);
+    const key = normalizeExp(e.exp);
+    if (!porNumero.has(key)) porNumero.set(key, []);
+    porNumero.get(key).push(e);
   }
-  console.log(`${porNumero.size} expediente(s) con número de expediente capturado (no federal).`);
+  console.log(`${porNumero.size} número(s) de expediente capturado(s) (no federal).`);
 
   const cuentas = await obtenerCuentasCdmxBuzon();
   console.log(`${cuentas.length} cuenta(s) del Buzón Electrónico Laboral guardada(s).`);
