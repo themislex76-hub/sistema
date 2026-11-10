@@ -229,21 +229,40 @@ async function avanzarPagina(page) {
     return false;
   }
 
-  const siguiente = page.getByRole('link', { name: 'Next', exact: true }).first();
-  const hay = await siguiente.count();
-  if (!hay) {
-    console.log('      [paginación] no se encontró el enlace con nombre de accesibilidad "Next".');
+  // Puede haber más de un elemento con este mismo nombre de accesibilidad
+  // en el DOM (ej. una copia oculta para móvil) -- .first() podría agarrar
+  // uno que no es el que se ve en pantalla, hacer clic sin efecto, y sin
+  // error (porque ESE sí existe y es clicable). Se revisan todos y se usa
+  // el primero que de verdad esté visible.
+  const candidatos = page.getByRole('link', { name: 'Next', exact: true });
+  const nCandidatos = await candidatos.count();
+  console.log(`      [paginación] "${textoPagina}" -- ${nCandidatos} enlace(s) "Next" en el DOM.`);
+  if (!nCandidatos) {
+    console.log('      [paginación] no se encontró ningún enlace con nombre de accesibilidad "Next".');
     return false;
   }
-  console.log(`      [paginación] "${textoPagina}" -- enlace "Next" encontrado, dando clic.`);
-  await siguiente.click({ timeout: 10000 }).catch((e) => console.log(`      [paginación] el clic falló: ${e.message}`));
-  await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(1200);
+  let siguiente = null;
+  for (let i = 0; i < nCandidatos; i++) {
+    const cand = candidatos.nth(i);
+    if (await cand.isVisible().catch(() => false)) { siguiente = cand; break; }
+  }
+  if (!siguiente) {
+    console.log('      [paginación] ninguno de los enlaces "Next" está visible.');
+    return false;
+  }
 
-  // Confirma que de verdad cambió de página -- si el texto "Página X de Y"
-  // sigue diciendo lo mismo que antes, el clic no tuvo efecto (botón
-  // equivocado, o la tabla no reaccionó) y es mejor no fingir que avanzó.
-  const textoPaginaDespues = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => null);
+  await siguiente.scrollIntoViewIfNeeded().catch(() => {});
+  await siguiente.click({ timeout: 10000 }).catch((e) => console.log(`      [paginación] el clic falló: ${e.message}`));
+
+  // El cambio de página aquí es del lado del cliente (no siempre dispara
+  // una espera de red) -- en vez de una sola revisión después de un tiempo
+  // fijo, se reintenta varias veces por si el re-render tarda.
+  let textoPaginaDespues = textoPagina;
+  for (let intento = 0; intento < 8; intento++) {
+    await page.waitForTimeout(700);
+    textoPaginaDespues = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => textoPagina);
+    if (textoPaginaDespues !== textoPagina) break;
+  }
   if (textoPaginaDespues === textoPagina) {
     console.log(`      [paginación] después del clic el texto sigue diciendo "${textoPagina}" -- no avanzó de verdad.`);
     return false;
