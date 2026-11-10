@@ -114,6 +114,26 @@ foreach ($candidatos as $c) {
         }
         if ($yaTieneFecha) continue;
 
+        // Confirmado real (10 nov 2026): la IA puso "Objeciones y réplica"
+        // con una fecha ANTERIOR a "Contestación de demanda recibida" --
+        // imposible por ley (Art. 873-B LFT). Vio una fecha real en el
+        // contexto pero la atribuyó a la etapa equivocada. Se descarta
+        // cualquier sugerencia que rompa el orden cronológico real contra
+        // las demás etapas ya registradas, en vez de aplicarla a ciegas.
+        if (!etapa_fecha_es_consistente($s['etapa_key'], $s['fecha'], $etapas)) {
+            // Campo SIN el prefijo "etapa_" a propósito -- expediente_historial
+            // alimenta el conteo de "avances" de la semana en el frontend
+            // (metricsResumenSemanal(), filtra por /^etapa_/), y un rechazo
+            // no es un avance real; se deja registrado aparte, solo para
+            // auditoría/depuración.
+            log_historial(
+                $pdo, (int)$c['id'], ['id' => null, 'nombre' => 'IA (auditoría integral)'],
+                'auditoria_ia_rechazo_' . $s['etapa_key'], null,
+                "fecha sugerida {$s['fecha']} rechazada por romper el orden cronológico con otras etapas ya registradas" . ($s['motivo'] !== '' ? " (motivo de la IA: {$s['motivo']})" : '')
+            );
+            continue;
+        }
+
         $pdo->prepare(
             'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha)
              VALUES (:eid, :key, :fecha)
@@ -126,6 +146,10 @@ foreach ($candidatos as $c) {
             'etapa_' . $s['etapa_key'], null,
             "fecha: {$s['fecha']} (llenado automático por auditoría integral{$motivoTexto})"
         );
+        // Se refleja en el arreglo en memoria -- si la IA sugirió varias
+        // etapas en la misma corrida, las siguientes se revisan contra
+        // esta ya aplicada, no solo contra lo que había al principio.
+        $etapas[] = ['etapa_key' => $s['etapa_key'], 'fecha' => $s['fecha']];
         $huboFill = true;
         $aplicados++;
     }

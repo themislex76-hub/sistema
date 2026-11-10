@@ -124,6 +124,18 @@ foreach ($documentos as $doc) {
                 break;
             }
         }
+        // Confirmado real (10 nov 2026, en la auditoría integral): la IA
+        // puede atribuir una fecha real a la etapa EQUIVOCADA, rompiendo
+        // el orden cronológico del trámite. Mismo candado que en los
+        // demás mecanismos que llenan una etapa sola.
+        if (!$yaTieneFecha && !etapa_fecha_es_consistente($resultado['etapa_sugerida'], $resultado['fecha_mencionada'], $etapas)) {
+            log_historial(
+                $pdo, (int)$doc['expediente_id'], ['id' => null, 'nombre' => 'IA (lectura automática de documento)'],
+                'auditoria_ia_rechazo_' . $resultado['etapa_sugerida'], null,
+                "fecha sugerida {$resultado['fecha_mencionada']} (de '{$doc['nombre_archivo']}') rechazada por romper el orden cronológico con otras etapas ya registradas"
+            );
+            $yaTieneFecha = true; // reutiliza la misma rama de "no aplicar" de abajo
+        }
         if (!$yaTieneFecha) {
             $pdo->prepare(
                 'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha)

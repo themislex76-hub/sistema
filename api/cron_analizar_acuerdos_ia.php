@@ -92,6 +92,20 @@ foreach ($avisos as $aviso) {
             // si la hay; si no, la fecha de publicación del boletín (dato
             // real, no inventado) como mejor referencia disponible.
             $fechaEtapa = $resultado['fecha_mencionada'] ?: $aviso['fecha_publicacion'];
+            // Confirmado real (10 nov 2026, en la auditoría integral): la
+            // IA puede atribuir una fecha real a la etapa EQUIVOCADA,
+            // rompiendo el orden cronológico del trámite (ej. "Objeciones
+            // y réplica" con fecha anterior a "Contestación recibida",
+            // imposible por ley). Mismo candado ahí también, no solo en
+            // la auditoría.
+            if ($fechaEtapa && !etapa_fecha_es_consistente($resultado['etapa_sugerida'], $fechaEtapa, $etapas)) {
+                log_historial(
+                    $pdo, (int)$aviso['expediente_id'], ['id' => null, 'nombre' => 'IA (lectura automática del boletín)'],
+                    'auditoria_ia_rechazo_' . $resultado['etapa_sugerida'], null,
+                    "fecha sugerida $fechaEtapa rechazada por romper el orden cronológico con otras etapas ya registradas"
+                );
+                $fechaEtapa = null;
+            }
             if ($fechaEtapa) {
                 $pdo->prepare(
                     'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha)

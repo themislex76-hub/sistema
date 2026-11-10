@@ -73,10 +73,28 @@ if ($fechaMencionada && in_array($pregunta['etapa_key'], ETAPA_KEYS, true)) {
     // Nunca sobrescribe una etapa que ya tiene fecha capturada -- mismo
     // principio que cron_analizar_acuerdos_ia.php con los acuerdos de
     // boletín.
-    $yaTiene = $pdo->prepare('SELECT fecha FROM expediente_etapas WHERE expediente_id = :eid AND etapa_key = :key');
-    $yaTiene->execute([':eid' => $pregunta['expediente_id'], ':key' => $pregunta['etapa_key']]);
-    $filaExistente = $yaTiene->fetch();
+    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha FROM expediente_etapas WHERE expediente_id = :eid');
+    $etapasStmt->execute([':eid' => $pregunta['expediente_id']]);
+    $etapasExistentes = $etapasStmt->fetchAll();
+    $filaExistente = null;
+    foreach ($etapasExistentes as $e) {
+        if ($e['etapa_key'] === $pregunta['etapa_key']) { $filaExistente = $e; break; }
+    }
     $tieneFecha = $filaExistente && !empty($filaExistente['fecha']) && $filaExistente['fecha'] !== '0000-00-00';
+
+    // Mismo candado que en los demás mecanismos que llenan una etapa sola
+    // (confirmado real que la IA puede atribuir una fecha a la etapa
+    // equivocada, rompiendo el orden del trámite) -- aquí el riesgo es
+    // menor porque la etapa ya viene fija (es la de la pregunta), pero
+    // la fecha sigue siendo interpretada por IA de texto libre.
+    if (!$tieneFecha && !etapa_fecha_es_consistente($pregunta['etapa_key'], $fechaMencionada, $etapasExistentes)) {
+        log_historial(
+            $pdo, (int)$pregunta['expediente_id'], $user,
+            'auditoria_ia_rechazo_' . $pregunta['etapa_key'], null,
+            "fecha sugerida $fechaMencionada (respuesta del abogado al supervisor) rechazada por romper el orden cronológico con otras etapas ya registradas"
+        );
+        $tieneFecha = true; // reutiliza la misma rama de "no aplicar" de abajo
+    }
 
     if (!$tieneFecha) {
         $pdo->prepare(
