@@ -426,15 +426,21 @@ falta seguimiento):
      `supervisor_pregunta_responder.php`. Los rechazos quedan en
      `log_historial` (`auditoria_ia_rechazo_<etapa>`, sin el prefijo
      `etapa_` para no contarse como avance real en el resumen semanal).
-   - **Pendiente de corregir a mano**: la fecha equivocada
-     `objeciones_replica` = 2026-06-12 del expediente 13 sigue mal en la
-     base (el candado nuevo no deshace lo que ya se aplicó, solo evita
-     que se repita) -- avisar al usuario que la borre desde "Etapas del
-     juicio" (desmarcar/limpiar esa fecha) si todavía no lo ha hecho.
-   - **Sin volver a probar en vivo todavía** el candado nuevo -- hay que
-     esperar a la siguiente corrida del cron (o de cualquiera de los
-     otros 3 mecanismos) para confirmar que de verdad bloquea un caso
-     real sin bloquear los casos buenos por error.
+   - **Corregido a mano por el usuario** -- la fecha equivocada de
+     `objeciones_replica` del expediente 13 ya se borró desde "Etapas del
+     juicio".
+   - **Candado confirmado funcionando en vivo el mismo día**: en la
+     siguiente corrida del cron (10 candidatos, 10 auditados, 5 etapas
+     llenadas, 0 fallidos) se vio un rechazo real:
+     `auditoria_ia_rechazo_amparo_directo` en el expediente 12 -- la IA
+     quiso llenar esa etapa con una fecha que rompía el orden
+     cronológico, y el candado lo bloqueó solo en vez de aplicarlo a
+     ciegas. Las otras 5 etapas que sí llenó esa corrida (expedientes 16:
+     `conciliacion_prejudicial`+`emplazamiento`, expediente 2:
+     `emplazamiento`+`prevencion`, expediente 11:
+     `contestacion_recibida`) no violaban el orden, así que se aplicaron
+     normal -- confirma que el candado bloquea lo malo sin bloquear lo
+     bueno.
 
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
