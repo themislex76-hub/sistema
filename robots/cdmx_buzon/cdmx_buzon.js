@@ -395,8 +395,23 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
           continue;
         }
 
+        // Confirmado real (10 nov 2026): el modal "LISTA DE ACUERDOS" puede
+        // mostrarse con su título antes de que la tabla de acuerdos termine
+        // de cargar sus filas (misma carrera que ya se vio en la lista
+        // principal "LISTA DE BUZONES") -- contar los links "Ver acuerdo"
+        // de inmediato dio 0 aunque el expediente sí tenía un acuerdo real
+        // (confirmado con captura). Se espera a que el número de filas se
+        // quede estable entre lecturas antes de confiar en el conteo.
+        await page.waitForTimeout(1200);
+        let nAcuerdos = await page.locator('text=/Ver acuerdo/i').count();
+        for (let intento = 0; intento < 6; intento++) {
+          await page.waitForTimeout(700);
+          const nSiguiente = await page.locator('text=/Ver acuerdo/i').count();
+          if (nSiguiente === nAcuerdos) break;
+          nAcuerdos = nSiguiente;
+        }
+        console.log(`      ${nAcuerdos} acuerdo(s) en la lista de este expediente.`);
         const filasAcuerdo = page.locator('text=/Ver acuerdo/i');
-        const nAcuerdos = await filasAcuerdo.count();
         for (let i = 0; i < nAcuerdos; i++) {
           const linkVerAcuerdo = filasAcuerdo.nth(i);
           const filaAcuerdo = linkVerAcuerdo.locator('xpath=ancestor::tr[1]');
