@@ -317,12 +317,16 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       }
       await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
 
-      // Diagnóstico temporal (10 nov 2026): el aviso de "sesión activa" se
-      // vio real por captura varias veces, pero clickTextoVisible('Romper
-      // sesión') nunca lo detectó en varios intentos seguidos -- se
-      // imprime qué encuentra la búsqueda de texto antes de decidir, para
-      // saber si el elemento de verdad no está en el DOM en ese momento o
-      // si es un problema de la búsqueda misma.
+      // Confirmado real con captura (10 nov 2026): el aviso de "sesión
+      // activa" NO aparece de inmediato -- la app revisa la sesión del
+      // lado del cliente después de cargar y recién entonces redirige a
+      // una URL con "?error=1001..." que dispara el aviso. "networkidle"
+      // no alcanza a cubrir esa revisión -- se le da un margen fijo extra
+      // antes de revisar si está bloqueado.
+      await page.waitForTimeout(2500);
+
+      // Diagnóstico temporal: se imprime qué encuentra la búsqueda de
+      // texto antes de decidir, por si este margen tampoco alcanza.
       const textoBody = await page.locator('body').innerText().catch(() => '');
       const pareceBloqueado = /sesion activa|sesión activa/i.test(textoBody);
       const nRomper = await page.getByText('Romper sesión', { exact: false }).count().catch(() => -1);
