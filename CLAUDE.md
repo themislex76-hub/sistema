@@ -345,8 +345,15 @@ falta seguimiento):
      "🎤 Dictar" junto al textarea de respuesta (Web Speech API nativa del
      navegador, gratis, sin mandar audio a ningún servidor -- se omite
      solo si el navegador no lo soporta, ej. Safari/iPhone). `app.js?v=128`.
-     **Sin probar en vivo todavía** -- ni el push con link ni el dictado
-     por voz se han confirmado funcionando con un caso real.
+     **Dictado por voz confirmado funcionando en vivo (10 nov 2026)**.
+     El push con link directo (`?pregunta=<id>`) todavía sin confirmar --
+     el cron (`cron_generar_preguntas_supervisor.php`, ya reemplazado en
+     el servidor) solo manda push cuando INSERTA una pregunta nueva, y al
+     correrlo a mano el mismo día no encontró ningún atraso sin pregunta
+     todavía (las 20 pendientes visibles ya eran de antes de este
+     cambio) -- queda pendiente de confirmar la próxima vez que surja un
+     atraso genuinamente nuevo (corrida diaria programada, o una corrida
+     a mano futura que si encuentre uno).
 4. **IA lee documentos/fotos que sube el abogado -- HECHO (9 nov 2026),
    migración 062 y cron ya corridos/dados de alta (confirmado por el
    usuario el 10 nov 2026).** Pedido explícito del usuario: "sería excelente que en documentos se
