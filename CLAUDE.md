@@ -579,24 +579,44 @@ exacto que ya existía para Edomex:
     "LISTA DE BUZONES", encontró ahí el expediente de prueba confirmado
     (**Zeltzin Monserrat Flores Cruz vs Institufacil, S.A. de C.V., exp.
     1139/2026, Tribunal "5 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX"**),
-    hizo match por Tribunal+expediente, abrió "Ver Acuerdos" sin error, y
-    terminó reportando 0 avisos nuevos para esa cuenta -- consistente con
-    que ese expediente en particular todavía no tiene ningún acuerdo
-    publicado en el Buzón (no se detectó ningún error ni mensaje de "no
-    se abrió la lista de acuerdos" en esa corrida, así que el modal sí
-    abrió, solo no había renglones de acuerdo adentro). **Pendiente real
-    todavía**: nunca se ha visto el tramo de descarga+subida de PDF
-    (`descargarPdfDesdeLink()`/`subirPdfAlSistema()`/`reportarAviso()`)
-    ejecutarse de verdad, porque ningún expediente de prueba usado hasta
-    ahora tenía al menos 1 acuerdo real en el Buzón. Siguiente paso:
-    conseguir o esperar un expediente del despacho que sí tenga un
-    acuerdo visible en "Ver Acuerdos" de alguna cuenta del Buzón, correr
-    el robot contra ese caso, y confirmar que el PDF se descargue, suba a
-    la pestaña Documentos del expediente, y el aviso aparezca en Agenda
-    general -- recién entonces se puede dar por completamente probado de
-    punta a punta. Mientras tanto, programarlo en el Task Scheduler
-    (diario, mismo patrón que los otros robots) es razonable ya que el
-    mecanismo de login/paginación/match quedó confirmado real.
+    hizo match por Tribunal+expediente, y abrió "Ver Acuerdos" sin error
+    -- esa primera corrida reportó 0 avisos porque el conteo de filas de
+    acuerdos también se leía demasiado pronto (ver siguiente punto).
+  - **El modal "LISTA DE ACUERDOS" tiene la misma carrera de carga que la
+    lista principal**: el usuario confirmó con captura real que el
+    expediente 1139/2026 SÍ tenía un acuerdo (1139/2026-1, 2026-05-20),
+    pero el robot contaba los links "Ver acuerdo" antes de que la tabla
+    terminara de cargar y veía 0. Se agregó la misma espera de
+    estabilización que ya tenía la lista principal.
+  - **Causa real de que el login fallara intermitentemente** (la pieza
+    que más costó encontrar): "Romper sesión" dispara un `confirm()`
+    nativo del navegador ("¿Esta seguro de romper la sesión?") y, al
+    aceptarlo, un `alert()` de confirmación -- confirmado en vivo por el
+    usuario con capturas reales de ambos cuadros. Playwright **cancela
+    estos diálogos solos** si nadie los atiende (un `confirm()` sin
+    manejador devuelve `false`), así que el robot "clicaba" el link sin
+    error pero nunca rompía la sesión de verdad -- por eso parecía fallar
+    al azar. Se agregó un listener `page.on('dialog', ...)` que los
+    acepta automáticamente. Además, el aviso de "sesión activa" no
+    aparece al instante tras cargar la página (la app revisa la sesión
+    del lado del cliente y redirige a una URL con `?error=1001...`
+    después) -- se agregó un margen fijo de 2.5s antes de revisarlo.
+  - **Confirmado funcionando de punta a punta por primera vez de verdad
+    (10 nov 2026)**: con todos los arreglos de arriba, una corrida real
+    completa reportó **"1 aviso(s) nuevo(s)"** para el expediente
+    1139/2026 -- el usuario confirmó en el sistema que el PDF real
+    (`Acuerdo_1139-2026-1.pdf`, 646 KB, 8 páginas, "AUTO DE RADICACIÓN"
+    del Quinto Tribunal Laboral de Asuntos Individuales de la CDMX) se
+    subió correctamente a la pestaña Documentos del expediente. Con esto
+    el mecanismo completo (login, romper sesión, paginación, match,
+    lista de acuerdos, descarga, subida, aviso) queda confirmado real de
+    punta a punta por primera vez.
+  - **Programado en el Task Scheduler de Windows (10 nov 2026)**:
+    `robots/cdmx_buzon/run_diario.bat` (mismo patrón que los otros 4
+    robots) a las **6:00 am todos los días** -- hora pedida explícitamente
+    por el usuario para que no choque con la abogada usando su propia
+    cuenta del Buzón en horario de oficina (el portal solo permite una
+    sesión activa por cuenta).
 
 ## Robot de boletín CDMX (`robots/cdmx/cdmx.js`)
 - Bug real detectado y corregido (8 nov 2026): cuando el número de

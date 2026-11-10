@@ -13,15 +13,29 @@ dado de alta como apoderado, con los acuerdos y el PDF de cada uno listo
 para descargar — sin tener que "adivinar" si un caso del boletín
 corresponde al expediente correcto por el nombre de las partes.
 
-**Primera versión, nunca se ha corrido en vivo** — se construyó a partir
-de capturas de pantalla reales del portal (login, lista de expedientes,
-lista de acuerdos, PDF de un acuerdo real). Es muy probable que algo
-truene a la primera corrida, sobre todo:
-- La **paginación** de "LISTA DE BUZONES" (los botones son iconos, sin
-  texto — se localizan por posición, lo más frágil de este robot).
-- La **descarga del PDF** al darle clic a "Ver acuerdo" (puede abrir una
-  pestaña nueva o disparar una descarga directa — el código escucha los
-  dos casos, pero no se ha confirmado cuál usa el portal de verdad).
+**Confirmado funcionando de punta a punta (10 nov 2026)**: login, romper
+sesión activa si hace falta, paginación de "LISTA DE BUZONES", match por
+Tribunal+expediente, lista de acuerdos, descarga y subida del PDF real, y
+aviso reportado en el sistema — todo probado con un caso real (expediente
+1139/2026, Quinto Tribunal Laboral de Asuntos Individuales de la CDMX).
+
+Detalles que costó encontrar, por si algo similar vuelve a fallar:
+- El portal solo permite **una sesión activa por cuenta**. Si la cuenta ya
+  tiene una sesión abierta (de una corrida anterior, o de la abogada
+  usándola a la vez), muestra un aviso con un link "Romper sesión" que el
+  robot detecta y acepta solo — pero ese link dispara dos diálogos nativos
+  del navegador (confirm/alert) que Playwright cancela solos si nadie los
+  atiende; el robot ya los acepta automáticamente. El aviso tampoco
+  aparece al instante tras cargar la página (hay un margen fijo de espera
+  antes de revisarlo).
+- La **paginación** son iconos `<a class="page-link">` (no botones), con
+  nombre de accesibilidad en inglés ("Next"/"Last") aunque el resto de la
+  pantalla esté en español, y puede haber más de uno con el mismo nombre
+  en el DOM (el robot prueba todos hasta que uno sí mueva la tabla).
+- Tanto la lista principal de expedientes como la lista de acuerdos de
+  cada expediente tardan un momento en terminar de cargar sus filas
+  después de que el texto del modal/tabla ya es visible — el robot espera
+  a que el conteo se estabilice antes de confiar en él.
 
 Si algo falla, manda el **mensaje de error completo de la terminal** y el
 archivo `debug_error_<cuenta>.png` que se guarda en esta misma carpeta —
@@ -50,9 +64,24 @@ con eso se ajusta el selector exacto, no se puede adivinar sin eso.
 
 Igual que los demás robots (ver `CLAUDE.md` del repo principal, sección
 "Robots locales"): crea una tarea en el Programador de tareas de Windows
-que corra `node cdmx_buzon.js` en esta carpeta, diario, a la hora que
-prefieras (después de que corran Federal/CDMX/Edomex es buena idea, para
-no saturar la conexión a la vez).
+que corra `run_diario.bat` (ya incluido en esta carpeta) todos los días.
+
+Recordatorio importante (pedido explícito del usuario, 10 nov 2026):
+como el portal solo permite una sesión activa por cuenta, prográmalo
+**temprano en la mañana (ej. 6:00 am)**, antes de que la abogada dueña de
+la cuenta empiece a usarla ella misma — así se evita el choque de
+sesiones (el robot lo recupera solo si pasa, pero es mejor evitarlo).
+
+Desde PowerShell **como administrador** (clic derecho → "Ejecutar como
+administrador"), pega este comando (ajusta la ruta si tu carpeta es
+distinta):
+```
+schtasks /create /tn "Robot Buzon CDMX Expertos Laborales" /tr "C:\Users\Ruben\Desktop\ROBOTS\cdmx_buzon\run_diario.bat" /sc daily /st 06:00
+```
+Para confirmar que quedó bien:
+```
+schtasks /query /tn "Robot Buzon CDMX Expertos Laborales" /v /fo list
+```
 
 ## Cómo decide qué expediente revisar
 
