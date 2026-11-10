@@ -354,6 +354,41 @@ falta seguimiento):
      cambio) -- queda pendiente de confirmar la próxima vez que surja un
      atraso genuinamente nuevo (corrida diaria programada, o una corrida
      a mano futura que si encuentre uno).
+   - **Push confirmado saliendo bien del servidor, pendiente de llegar al
+     celular (10 nov 2026)**: se forzó una prueba real borrando una
+     `supervisor_preguntas` ya generada y volviendo a correr el cron a
+     mano -- regeneró la pregunta y `api/push_debug.log` confirma
+     `OK -- https://web.push.apple.com/...` (abogada con iPhone). No le
+     llegó al celular. El código del lado del servidor queda descartado
+     como causa (mandó bien, Apple lo aceptó) -- pendiente de que ella
+     pruebe el botón "Probar notificación" de "Mi cuenta" para aislar si
+     es configuración de su iPhone (típicamente: el sistema no agregado a
+     la pantalla de inicio, o notificaciones desactivadas para esa "app"
+     en Ajustes) o algo más puntual de esta pregunta.
+   - **Dictado por voz generalizado a TODO el sistema (11 nov 2026)**,
+     pedido explícito del usuario tras confirmar que el de "Preguntas al
+     abogado" funcionaba bien: se sacó la lógica de Web Speech API de ahí
+     (antes vivía solo en el handler de ese botón) a un helper reutilizable
+     -- `dictadoBotonHTML(targetId)` pinta el botón "🎤 Dictar" junto a
+     cualquier `<textarea>` (se omite solo si el navegador no lo soporta),
+     y un único listener delegado al final de `assets/app.js`
+     (`document.addEventListener('click', ...)` sobre `.btn-dictar`)
+     maneja el reconocimiento de voz sin tener que re-enganchar nada cada
+     vez que un modal se vuelve a renderizar. Conectado en los 6 lugares
+     del sistema donde se escribe texto libre: respuesta al supervisor
+     (ya existía, solo se migró al helper), nota de seguimiento del
+     expediente (`nuevaNotaTexto`), "¿Qué encontraste?" al registrar una
+     revisión de boletín (`avisoResumen`), notas internas del despacho
+     (`notasInternas`), descripción de hechos en "Consultar
+     jurisprudencia" (`jurisprudenciaPreguntaInput`), y el campo
+     `textarea` genérico de "Editar datos" (cubre `hecho_causa_narrativa`
+     de Rescisión Art. 51, `ultima_nota`, y cualquier campo futuro de
+     `EDITABLE_FIELDS` marcado `type:'textarea'`, sin tener que tocar
+     nada cuando se agregue uno nuevo). `app.js?v=129`. Sin cambios de
+     base de datos. No se tocó `mergeTags()`/`calcularJornada()`/tags de
+     formato de demanda -- no aplica `verificar_tags.js`. **Sin probar en
+     vivo todavía** ninguno de estos 5 lugares nuevos (el de supervisor ya
+     estaba confirmado desde antes de generalizarse).
 4. **IA lee documentos/fotos que sube el abogado -- HECHO (9 nov 2026),
    migración 062 y cron ya corridos/dados de alta (confirmado por el
    usuario el 10 nov 2026).** Pedido explícito del usuario: "sería excelente que en documentos se
