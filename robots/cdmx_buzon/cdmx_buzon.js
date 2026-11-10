@@ -229,11 +229,12 @@ async function avanzarPagina(page) {
     return false;
   }
 
-  // Puede haber más de un elemento con este mismo nombre de accesibilidad
-  // en el DOM (ej. una copia oculta para móvil) -- .first() podría agarrar
-  // uno que no es el que se ve en pantalla, hacer clic sin efecto, y sin
-  // error (porque ESE sí existe y es clicable). Se revisan todos y se usa
-  // el primero que de verdad esté visible.
+  // Confirmado real (10 nov 2026): puede haber más de un elemento con este
+  // mismo nombre de accesibilidad en el DOM (2 vistos en una corrida real),
+  // y el primero visible no siempre es el que de verdad mueve la tabla (el
+  // clic no tira error -- el elemento existe y es clicable -- pero el
+  // texto "Página X de Y" no cambia). En vez de apostarle a uno solo, se
+  // prueban todos los visibles en orden hasta que alguno sí tenga efecto.
   const candidatos = page.getByRole('link', { name: 'Next', exact: true });
   const nCandidatos = await candidatos.count();
   console.log(`      [paginación] "${textoPagina}" -- ${nCandidatos} enlace(s) "Next" en el DOM.`);
@@ -241,34 +242,35 @@ async function avanzarPagina(page) {
     console.log('      [paginación] no se encontró ningún enlace con nombre de accesibilidad "Next".');
     return false;
   }
-  let siguiente = null;
+
   for (let i = 0; i < nCandidatos; i++) {
     const cand = candidatos.nth(i);
-    if (await cand.isVisible().catch(() => false)) { siguiente = cand; break; }
-  }
-  if (!siguiente) {
-    console.log('      [paginación] ninguno de los enlaces "Next" está visible.');
-    return false;
+    const visible = await cand.isVisible().catch(() => false);
+    const caja = await cand.boundingBox().catch(() => null);
+    console.log(`      [paginación] candidato ${i}: visible=${visible}${caja ? ` x=${Math.round(caja.x)} y=${Math.round(caja.y)}` : ''}`);
+    if (!visible) continue;
+
+    await cand.scrollIntoViewIfNeeded().catch(() => {});
+    await cand.click({ timeout: 10000 }).catch((e) => console.log(`      [paginación] el clic al candidato ${i} falló: ${e.message}`));
+
+    // El cambio de página aquí es del lado del cliente (no siempre dispara
+    // una espera de red) -- en vez de una sola revisión a tiempo fijo, se
+    // reintenta varias veces por si el re-render tarda.
+    let textoPaginaDespues = textoPagina;
+    for (let intento = 0; intento < 6; intento++) {
+      await page.waitForTimeout(600);
+      textoPaginaDespues = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => textoPagina);
+      if (textoPaginaDespues !== textoPagina) break;
+    }
+    if (textoPaginaDespues !== textoPagina) {
+      console.log(`      [paginación] avanzó con el candidato ${i}: ahora dice "${textoPaginaDespues}".`);
+      return true;
+    }
+    console.log(`      [paginación] el candidato ${i} no tuvo efecto.`);
   }
 
-  await siguiente.scrollIntoViewIfNeeded().catch(() => {});
-  await siguiente.click({ timeout: 10000 }).catch((e) => console.log(`      [paginación] el clic falló: ${e.message}`));
-
-  // El cambio de página aquí es del lado del cliente (no siempre dispara
-  // una espera de red) -- en vez de una sola revisión después de un tiempo
-  // fijo, se reintenta varias veces por si el re-render tarda.
-  let textoPaginaDespues = textoPagina;
-  for (let intento = 0; intento < 8; intento++) {
-    await page.waitForTimeout(700);
-    textoPaginaDespues = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => textoPagina);
-    if (textoPaginaDespues !== textoPagina) break;
-  }
-  if (textoPaginaDespues === textoPagina) {
-    console.log(`      [paginación] después del clic el texto sigue diciendo "${textoPagina}" -- no avanzó de verdad.`);
-    return false;
-  }
-  console.log(`      [paginación] avanzó: ahora dice "${textoPaginaDespues}".`);
-  return true;
+  console.log('      [paginación] ningún candidato "Next" avanzó de página de verdad.');
+  return false;
 }
 
 async function procesarCuenta(cuenta, porNumero, estado, browser) {
