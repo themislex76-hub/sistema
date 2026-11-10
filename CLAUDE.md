@@ -543,15 +543,60 @@ exacto que ya existía para Edomex:
     Laborales de Asuntos Individuales, organigrama TSJCDMX 2024) **sin
     captura real de esos 5** -- si alguno no coincide exacto con lo que
     se ve en el Buzón, avisar para corregirlo. `app.js?v=126`.
-  - **Todavía sin confirmar un acuerdo real de punta a punta** (nunca se
-    ha visto el robot subir un PDF ni reportar un aviso) -- la corrida
-    más reciente antes de este arreglo encontró 5 expedientes en la
-    página 1 de "LISTA DE BUZONES" pero 0 coincidencias (antes de ambos
-    arreglos de arriba). Siguiente paso: correr de nuevo con estos 2
-    arreglos + el catálogo de Tribunal nuevo, y confirmar que por lo
-    menos 1 expediente real (ej. el 774/2025 de Erik Giovanni Román
-    Rodríguez vs KPMG, Sexto Tribunal, visto en captura real) cruce bien
-    y suba al menos 1 acuerdo.
+  - **Sesión activa bloqueando el login (10 nov 2026, encontrado y
+    arreglado en vivo esa misma noche)**: tras varias corridas seguidas
+    en poco tiempo, el login empezó a fallar siempre ("no se encontró el
+    menú 'Consulta de expedientes'"). Confirmado con captura real: el
+    portal muestra un aviso rojo "No puede ingresar por que cuenta con
+    una sesion activa..." con un link **"Romper sesión"** -- aparece YA
+    en la carga inicial de la página (depende de la cookie/sesión que
+    quedó viva de la corrida anterior, NO de enviar el formulario de
+    login), y cerrar el navegador del lado de Playwright no cierra esa
+    sesión del lado del servidor. El robot ahora revisa esto justo al
+    entrar a la página (antes de llenar usuario/contraseña), le da clic
+    solo si aparece, recarga, confirma que ya no sigue bloqueado, y
+    reintenta el login completo hasta 5 veces con pausas de por medio.
+    Si el usuario ve este mismo aviso corriendo el robot varias veces
+    seguidas en poco tiempo (normal en pruebas), es justo este caso --
+    si el arreglo automático no alcanza (puede pasar si se acumulan
+    varias sesiones "zombie" de muchas corridas de prueba seguidas),
+    entrar manual con esa cuenta en un navegador normal, romper sesión
+    ahí, y cerrar sesión bien (buscar un botón "Cerrar sesión"/"Salir")
+    antes de volver a correr el robot.
+  - **Paginación: confirmado con F12 que los iconos de paginación
+    («/‹/›/») son enlaces `<a class="page-link">`, NO `<button>`** --
+    con nombre de accesibilidad en INGLÉS aunque el resto de la pantalla
+    esté en español ("Next" para ›, "Last" para »), por eso las
+    versiones que subían por los contenedores padres buscando `button`
+    siempre encontraban 0. Además hay **2 elementos** con ese mismo
+    nombre de accesibilidad en el DOM (confirmado real) -- el primero
+    visible no necesariamente es el que mueve la tabla (clic sin error,
+    pero sin efecto real); el robot ahora prueba cada candidato visible
+    en orden hasta que uno sí cambie el texto "Página X de Y".
+  - **Confirmado funcionando de punta a punta por primera vez (10 nov
+    2026, cuenta `maluli200499@hotmail.com`)**: con los 2 arreglos de
+    arriba, una corrida real avanzó de la página 1 a la página 2 de
+    "LISTA DE BUZONES", encontró ahí el expediente de prueba confirmado
+    (**Zeltzin Monserrat Flores Cruz vs Institufacil, S.A. de C.V., exp.
+    1139/2026, Tribunal "5 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX"**),
+    hizo match por Tribunal+expediente, abrió "Ver Acuerdos" sin error, y
+    terminó reportando 0 avisos nuevos para esa cuenta -- consistente con
+    que ese expediente en particular todavía no tiene ningún acuerdo
+    publicado en el Buzón (no se detectó ningún error ni mensaje de "no
+    se abrió la lista de acuerdos" en esa corrida, así que el modal sí
+    abrió, solo no había renglones de acuerdo adentro). **Pendiente real
+    todavía**: nunca se ha visto el tramo de descarga+subida de PDF
+    (`descargarPdfDesdeLink()`/`subirPdfAlSistema()`/`reportarAviso()`)
+    ejecutarse de verdad, porque ningún expediente de prueba usado hasta
+    ahora tenía al menos 1 acuerdo real en el Buzón. Siguiente paso:
+    conseguir o esperar un expediente del despacho que sí tenga un
+    acuerdo visible en "Ver Acuerdos" de alguna cuenta del Buzón, correr
+    el robot contra ese caso, y confirmar que el PDF se descargue, suba a
+    la pestaña Documentos del expediente, y el aviso aparezca en Agenda
+    general -- recién entonces se puede dar por completamente probado de
+    punta a punta. Mientras tanto, programarlo en el Task Scheduler
+    (diario, mismo patrón que los otros robots) es razonable ya que el
+    mecanismo de login/paginación/match quedó confirmado real.
 
 ## Robot de boletín CDMX (`robots/cdmx/cdmx.js`)
 - Bug real detectado y corregido (8 nov 2026): cuando el número de
