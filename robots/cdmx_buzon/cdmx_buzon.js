@@ -205,10 +205,12 @@ async function leerFilasBuzones(page) {
   return filas;
 }
 
-// Paginación con iconos («/‹/›/», sin texto) -- se localizan los botones
-// por posición dentro del contenedor que trae el texto "Página X de Y".
-// Esto es lo más frágil del archivo (ver nota al principio): si deja de
-// avanzar de página, confirmar aquí primero con una captura real del HTML.
+// Paginación con iconos («/‹/›/», sin texto). Confirmado real con F12 (10
+// nov 2026): NO son <button> (por eso las versiones anteriores que subían
+// por los ancestros buscando "button" siempre encontraban 0) -- son <a
+// class="page-link"> con nombre de accesibilidad en INGLÉS aunque el resto
+// de la pantalla esté en español: "Next" para ›, "Last" para ». Se usa
+// el rol de accesibilidad directo, sin adivinar posición.
 async function avanzarPagina(page) {
   const textoPagina = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => null);
   if (!textoPagina) {
@@ -227,30 +229,14 @@ async function avanzarPagina(page) {
     return false;
   }
 
-  // Confirmado real (10 nov 2026): los botones NO viven en el contenedor
-  // inmediato del texto "Página X de Y" (0 encontrados ahí) -- deben estar
-  // más arriba en la estructura (ej. hermanos de un contenedor padre
-  // común, no hijos directos de donde está el texto). Se sube nivel por
-  // nivel hasta encontrar al menos 2 botones.
-  let botones = null;
-  let nBotones = 0;
-  let nivelEncontrado = 0;
-  for (let nivel = 1; nivel <= 5; nivel++) {
-    const contenedor = page.getByText(/Página \d+ de \d+/i).first().locator('xpath=' + Array(nivel).fill('..').join('/'));
-    const candidato = contenedor.locator('button');
-    const n = await candidato.count();
-    if (n >= 2) { botones = candidato; nBotones = n; nivelEncontrado = nivel; break; }
-  }
-  console.log(`      [paginación] "${textoPagina}" -- ${nBotones} botón(es) encontrado(s) (subiendo ${nivelEncontrado} nivel(es) desde el texto).`);
-  if (!botones || nBotones < 2) {
-    console.log('      [paginación] menos de 2 botones -- no se puede identificar cuál es "siguiente".');
+  const siguiente = page.getByRole('link', { name: 'Next', exact: true }).first();
+  const hay = await siguiente.count();
+  if (!hay) {
+    console.log('      [paginación] no se encontró el enlace con nombre de accesibilidad "Next".');
     return false;
   }
-  // Orden visto en pantalla: « ‹ (Página X de Y) › » -- el botón "siguiente"
-  // es el que sigue inmediatamente después del texto de la página (índice
-  // nBotones/2, ej. con 4 botones el índice 2 = el 3er botón = "›").
-  const indiceSiguiente = Math.floor(nBotones / 2);
-  await botones.nth(indiceSiguiente).click({ timeout: 10000 }).catch((e) => console.log(`      [paginación] el clic falló: ${e.message}`));
+  console.log(`      [paginación] "${textoPagina}" -- enlace "Next" encontrado, dando clic.`);
+  await siguiente.click({ timeout: 10000 }).catch((e) => console.log(`      [paginación] el clic falló: ${e.message}`));
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
   await page.waitForTimeout(1200);
 
