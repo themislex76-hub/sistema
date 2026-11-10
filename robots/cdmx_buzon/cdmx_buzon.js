@@ -31,7 +31,6 @@ const path = require('path');
 const config = require('./config');
 
 const BASE = 'https://buzonelectronicolaboral.poderjudicialcdmx.gob.mx:2083';
-const RUTA_CONSULTA_EXPEDIENTES = `${BASE}/notificaciones_laboral_expedientes`;
 const ESTADO_FILE = path.join(__dirname, 'procesados_cdmx_buzon.json');
 
 function cargarProcesados() {
@@ -214,12 +213,39 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     if (!entroPorBoton) await campoPassword.press('Enter').catch(() => {});
     await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
 
-    await page.goto(RUTA_CONSULTA_EXPEDIENTES, { waitUntil: 'networkidle', timeout: 30000 });
+    // Confirmado real (10 nov 2026): saltar directo con page.goto() a la URL
+    // de "Consulta de expedientes" a veces pierde la sesión recién iniciada
+    // (el portal regresa "Error 102 Por favor inicie sesión", típico de una
+    // app que guarda la sesión en memoria del navegador en vez de solo en
+    // una cookie -- una navegación completa la reinicia). Se navega dándole
+    // clic al menú, como lo haría una persona, para no perderla.
+    const entroMenu = await clickTextoVisible(page, 'Consulta de expedientes', false, 15000);
+    if (!entroMenu) {
+      console.log('  AVISO: no se encontró el menú "Consulta de expedientes" -- el login probablemente falló (revisa usuario/contraseña guardados en "Mi cuenta").');
+      await page.screenshot({ path: path.join(__dirname, `debug_error_${sanitizarParaArchivo(cuenta.cdmx_buzon_usuario)}.png`), fullPage: true }).catch(() => {});
+      return 0;
+    }
+    await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+
+    // La tabla de "LISTA DE BUZONES" se ve armada por una librería (tipo
+    // DataTables) que a veces sigue inicializándose un instante después de
+    // que la página ya se ve lista -- leerla demasiado pronto puede dar
+    // menos filas de las reales o pisarse con un error de JS de esa
+    // librería (confirmado real: "Cannot set properties of undefined
+    // (setting '_DT_CellIndex')"). Se espera a que el número de filas se
+    // quede estable entre 2 lecturas antes de confiar en la lista.
     const hayLista = await page.getByText(/LISTA DE BUZONES/i).first().waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
     if (!hayLista) {
       console.log('  AVISO: no apareció "LISTA DE BUZONES" -- el login pudo fallar, o el portal cambió.');
       await page.screenshot({ path: path.join(__dirname, `debug_error_${sanitizarParaArchivo(cuenta.cdmx_buzon_usuario)}.png`), fullPage: true }).catch(() => {});
       return 0;
+    }
+    let conteoAnterior = -1;
+    for (let intento = 0; intento < 6; intento++) {
+      const conteoActual = await page.locator('text=/Ver Acuerdos/i').count();
+      if (conteoActual > 0 && conteoActual === conteoAnterior) break;
+      conteoAnterior = conteoActual;
+      await page.waitForTimeout(800);
     }
 
     let pagina = 1;

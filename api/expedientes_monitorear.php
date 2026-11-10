@@ -3,9 +3,17 @@ declare(strict_types=1);
 require_once __DIR__ . '/config.php';
 
 // Llamado por los robots de monitoreo de boletines (no por el frontend) para
-// saber qué expedientes activos tienen tribunal capturado y necesitan
-// revisión diaria. No filtra por jurisdicción aquí — cada robot decide qué
-// le corresponde según el texto de 'junta'/'tribunal'.
+// saber qué expedientes activos necesitan revisión diaria. No filtra por
+// jurisdicción aquí — cada robot decide qué le corresponde según el texto
+// de 'junta'/'tribunal' (Federal/CDMX/Edomex, que SÍ necesitan ese texto
+// para reconocer de qué tribunal se trata) o, para robots que matchean
+// solo por número de expediente (ej. cdmx_buzon, que ve directo los
+// expedientes de la cuenta sin necesitar saber el Tribunal), basta con que
+// 'exp' esté capturado -- por eso también se incluyen esos aunque no
+// tengan Tribunal/Junta/amparo, para no dejarlos invisibles para ESE tipo
+// de robot (bug real detectado 10 nov 2026: un expediente real sin
+// Tribunal capturado nunca llegaba aquí, así que cdmx_buzon.js nunca podía
+// intentar el match aunque su lógica de comparación fuera correcta).
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') fail('Método no permitido.', 405);
 require_robot_key();
 
@@ -14,6 +22,7 @@ $sql = "SELECT id, exp, actor, demandado, junta, tribunal, amparo_expediente, am
         FROM expedientes
         WHERE (junta IS NOT NULL AND junta <> '') OR (tribunal IS NOT NULL AND tribunal <> '')
            OR (amparo_expediente IS NOT NULL AND amparo_expediente <> '')
+           OR (exp IS NOT NULL AND exp <> '')
         ORDER BY id";
 $rows = $pdo->query($sql)->fetchAll();
 
