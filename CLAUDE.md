@@ -508,16 +508,50 @@ exacto que ya existía para Edomex:
 - **Complementa, NO reemplaza** al robot de boletín viejo
   (`robots/cdmx/cdmx.js`) -- pedido explícito del usuario ("el que ya
   tenemos se queda"), corren los dos en paralelo.
-- **Sin probar en vivo todavía** -- recién construido a partir de
-  capturas de pantalla, nunca se ha corrido. Antes de poder probarlo de
-  verdad: (1) correr la migración 063, (2) subir los archivos nuevos, (3)
-  que el usuario guarde su cuenta real del Buzón en "Mi cuenta" (ya se vio
-  una sesión real con `maluli200499@hotmail.com`), (4) instalar el robot
-  en la carpeta `ROBOTS\` de la máquina de Windows (`npm install` +
-  `npx playwright install chromium`) y correrlo a mano una vez,
-  reportando el error completo de la terminal + captura `debug_error_*.png`
-  si algo truena (muy probable a la primera, ver advertencias en el
-  propio `README.md` del robot).
+- **Primeras corridas reales (10 nov 2026)** -- 2 bugs reales encontrados
+  y corregidos antes de llegar a ver un acuerdo de verdad:
+  1. `expedientes_monitorear.php` excluía cualquier expediente sin
+     Tribunal/Junta/amparo capturado -- ni siquiera le llegaba al robot
+     intentar el match aunque tuviera `exp`. Corregido ampliando el WHERE.
+  2. `page.goto()` directo a "Consulta de expedientes" después del login
+     perdía la sesión de forma intermitente ("Error 102 Por favor inicie
+     sesión", confirmado real con captura) -- la app parece guardar la
+     sesión en memoria del navegador, y una navegación completa la
+     reinicia. Corregido: ahora navega dándole clic al menú, y espera a
+     que el número de filas de "LISTA DE BUZONES" se estabilice antes de
+     leerla (había un error de JS real de la librería de la tabla al
+     leerla demasiado pronto).
+  - **Match ahora exige Tribunal + expediente, no solo expediente** --
+    pedido explícito del usuario: el número de expediente solo es único
+    DENTRO de cada tribunal, no en todo CDMX, así que dos tribunales
+    distintos podrían compartir número por coincidencia.
+    `extraerOrdinal()` saca el número ordinal del Tribunal de ambos lados
+    (del Buzón y del capturado en el sistema, acepta dígito o palabra
+    "Sexto"/"SEXTO") y exige que coincidan; si no, se omite y se explica
+    por qué en el log (no se adivina ni se aplica un match dudoso). El
+    usuario se encarga de que los expedientes tengan Tribunal y número
+    bien capturados.
+  - **Hueco real destapado de paso**: `TRIBUNALES_LOCALES_MX` no tenía
+    NINGUNA entrada para "Ciudad de México" (sí tenía los tribunales
+    "...Federal..." en `TRIBUNALES_FEDERALES_MX`, que es un sistema
+    aparte) -- por eso el selector de Tribunal solo ofrecía "Otro" para
+    los Tribunales Laborales LOCALES de la CDMX, lo que explica los 2
+    casos mal capturados (sin la palabra "Federal") del reporte de ayer.
+    Se agregó con el formato confirmado real por captura del Buzón ("4/6/
+    7/8 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX"); el 1/2/3/5/9 se
+    completaron por la numeración secuencial oficial (9 Tribunales
+    Laborales de Asuntos Individuales, organigrama TSJCDMX 2024) **sin
+    captura real de esos 5** -- si alguno no coincide exacto con lo que
+    se ve en el Buzón, avisar para corregirlo. `app.js?v=126`.
+  - **Todavía sin confirmar un acuerdo real de punta a punta** (nunca se
+    ha visto el robot subir un PDF ni reportar un aviso) -- la corrida
+    más reciente antes de este arreglo encontró 5 expedientes en la
+    página 1 de "LISTA DE BUZONES" pero 0 coincidencias (antes de ambos
+    arreglos de arriba). Siguiente paso: correr de nuevo con estos 2
+    arreglos + el catálogo de Tribunal nuevo, y confirmar que por lo
+    menos 1 expediente real (ej. el 774/2025 de Erik Giovanni Román
+    Rodríguez vs KPMG, Sexto Tribunal, visto en captura real) cruce bien
+    y suba al menos 1 acuerdo.
 
 ## Robot de boletín CDMX (`robots/cdmx/cdmx.js`)
 - Bug real detectado y corregido (8 nov 2026): cuando el número de
