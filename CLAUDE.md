@@ -353,8 +353,80 @@ falta seguimiento):
      limpio sobre un lote real ("15 documento(s) en el lote, 15
      analizado(s) con IA... 1 etapa(s) llenada(s) sola(s)") -- confirma
      tanto el mecanismo de PDF como el de imagen/foto.
+5. **Auditoría integral del expediente -- HECHO (10 nov 2026), migración
+   064 pendiente de correr, y FALTA DAR DE ALTA EL CRON NUEVO.** Pedido
+   explícito del usuario tras ver un caso real (informe ejecutivo de
+   Margarita Reyna Ramírez Mercado desactualizado -- ver pieza aparte más
+   abajo sobre ese bug puntual, ya corregido): "la ia tiene que leer toda
+   la info del expediente y modificar todo... acuerdate que la intencion
+   es que el sistema sea lo mas autosuficiente posible". Las piezas 2-4 ya
+   llenan una etapa sola, pero cada una mira SOLO la pieza de información
+   que acaba de llegar (un acuerdo, un documento, una respuesta) -- nadie
+   hacía una pasada que viera el expediente COMPLETO junto, para detectar
+   algo que cruzando varias fuentes sí se puede concluir pero que ningún
+   disparador puntual alcanza a ver por sí solo.
+   - Nueva función `ia_auditar_expediente()` (`api/ia_helpers.php`):
+     recibe TODO el contexto ya guardado de un expediente (bitácora de
+     etapas completa, documentos+resúmenes, avisos de boletín+resúmenes,
+     preguntas del supervisor ya respondidas) y, SOLO para las etapas que
+     siguen sin fecha, busca si esa información ya junta menciona
+     LITERALMENTE cuándo pasó algo (mismo principio de siempre: nunca
+     calcula ni infiere un plazo). Devuelve una lista de sugerencias con
+     motivo citando de dónde sale cada fecha. Usa Haiku (mismo modelo que
+     el resumen ejecutivo y las preguntas del supervisor) -- es pura
+     síntesis de texto ya resumido, no lee PDF/imagen directo aquí.
+   - Nuevo cron **`api/cron_auditoria_expediente_ia.php`** (correr una
+     vez al día, puede ir junto con
+     `cron_generar_preguntas_supervisor.php`): candidatos = expedientes
+     activos con al menos una etapa ya registrada (si no tiene ninguna
+     sigue siendo pre-demanda, nada que auditar) que cambiaron desde la
+     última auditoría. Columna nueva `expedientes.ultima_auditoria_ia`
+     (migración 064) -- mismo patrón de "no re-pagar si no cambió nada"
+     que ya usa `resumen_ejecutivo_generado_en`; se marca al mismo tiempo
+     que `actualizado_en` cuando sí se llena algo (mismo `NOW()` en la
+     misma sentencia, para que la comparación de la siguiente corrida dé
+     exactamente "no stale"). Cada fill llena la etapa (nunca sobrescribe
+     una que ya tiene fecha, doble-checado contra la base justo antes de
+     escribir, no solo confiando en lo que diga la IA) y queda en
+     `log_historial` como "IA (auditoría integral)" con el motivo citado.
+   - **Efecto en cadena gratis, sin tocar nada más**: al llenar una etapa
+     esto ya bumpea `actualizado_en`, que es justo lo que el Informe
+     Ejecutivo revisa (ver el arreglo del mismo día, un poco más abajo)
+     para regenerarse solo la próxima vez que se abra -- y Agenda general
+     ya lee las fechas de `expediente_etapas` directo, así que una etapa
+     con fecha nueva aparece en la agenda sin tener que "agendar" nada
+     aparte.
+   - **Sin probar en vivo todavía** -- recién construido, nunca se ha
+     corrido el cron nuevo. Probar primero con un expediente real que
+     tenga etapas sin fecha Y documentos/avisos/preguntas con info
+     suficiente para cruzar, y confirmar que la etapa se llene con el
+     motivo correcto (o que, si no hay evidencia clara, de verdad no
+     invente nada).
+   - **Falta dar de alta el Cron Job en cPanel**: comando
+     `php /ruta/completa/a/api/cron_auditoria_expediente_ia.php`,
+     frecuencia una vez al día.
 
-Principio de diseño acordado con el usuario para las piezas 2-4: los
+## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
+El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
+Mercado) que el Informe Ejecutivo con IA seguía diciendo "aún no se ha
+registrado el resultado de la conciliación", generado el 19 oct, aunque
+el abogado ya había marcado "Constancia de no conciliación recibida" el
+9 nov -- el informe nunca se enteró. El backend
+(`expediente_resumen_ejecutivo.php`) ya comparaba `actualizado_en` contra
+`resumen_ejecutivo_generado_en` para decidir si regenerar, y
+`expedientes_update_etapas.php` ya actualizaba `actualizado_en` al
+guardar una etapa (a propósito, para esto) -- pero el frontend solo
+llamaba al endpoint si `!k.resumen_ejecutivo`, así que un informe ya
+generado una vez nunca volvía a pedirle al backend que revisara si
+seguía vigente. Se quitó esa condición en los 2 lugares que abren la
+pestaña "Informe del juicio" (`abrirCaso()` y el click handler de
+`.modal-tabs`); para no tapar el texto ya visible con el indicador de
+carga cada vez que se abre, la revisión es silenciosa cuando ya había un
+resumen mostrado (solo se ve "cargando" si no hay nada todavía o si se
+fuerza con el botón "Actualizar"). `app.js?v=127`. Sin cambios de base de
+datos.
+
+Principio de diseño acordado con el usuario para las piezas 2-5: los
 DATOS DUROS (fechas, etapas) siguen siendo estructurados -- de ahí sale
 el cálculo automático de plazos que ya existe y funciona (prescripción,
 amparo). Lo que se vuelve IA es el CRITERIO de qué preguntar/proponer y
