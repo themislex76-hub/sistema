@@ -56,14 +56,25 @@ function push_enviar_a_usuario(PDO $pdo, int $usuarioId, string $titulo, string 
     // etc.) NUNCA debe tumbar el flujo que las llama (confirmar un pago,
     // contestar por WhatsApp), así que se atrapa cualquier error y solo se
     // registra en el log de PHP.
+    // Diagnóstico temporal (10 nov 2026): el usuario confirmó que SÍ le
+    // llegan otras notificaciones push (el mecanismo en general funciona),
+    // pero la escalación de cron_recordatorio_abogado.php no le llegó, sin
+    // error visible -- esta función tiene 2 puntos de salida silenciosa
+    // (`return` sin avisar nada) y el servidor no tiene un error_log
+    // estándar fácil de encontrar en cPanel. Se escribe un archivo propio
+    // (api/push_debug.log) con cada intento, para diagnosticar sin
+    // depender de encontrar el log del servidor.
+    $debugLog = function (string $msg) use ($usuarioId) {
+        file_put_contents(__DIR__ . '/push_debug.log', date('c') . " | usuario_id=$usuarioId | $msg\n", FILE_APPEND);
+    };
     try {
         $webPush = push_webpush_instancia();
-        if ($webPush === null) return;
+        if ($webPush === null) { $debugLog('push_webpush_instancia() devolvió null -- falta api/vendor/ o api/push_credentials.php en el servidor.'); return; }
 
         $stmt = $pdo->prepare('SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE usuario_id = :uid');
         $stmt->execute([':uid' => $usuarioId]);
         $filas = $stmt->fetchAll();
-        if (!$filas) return;
+        if (!$filas) { $debugLog('sin suscripciones guardadas para este usuario.'); return; }
 
         $payload = json_encode(['title' => $titulo, 'body' => $cuerpo, 'url' => $url], JSON_UNESCAPED_UNICODE);
 
@@ -79,18 +90,25 @@ function push_enviar_a_usuario(PDO $pdo, int $usuarioId, string $titulo, string 
             );
         }
 
+        $debugLog(count($filas) . ' suscripción(es) encontrada(s), mandando: ' . $titulo);
         foreach ($webPush->flush() as $reporte) {
-            if ($reporte->isSuccess()) continue;
+            if ($reporte->isSuccess()) {
+                $debugLog('OK -- ' . $reporte->getEndpoint());
+                continue;
+            }
             $endpoint = $reporte->getEndpoint();
+            $debugLog('FALLÓ -- ' . $endpoint . ' -- ' . $reporte->getReason());
             // 404/410 = el navegador ya no reconoce esa suscripción (caducó o
             // se desactivó del otro lado) — hay que dejar de intentarle.
             if ($reporte->isSubscriptionExpired() && isset($porId[$endpoint])) {
                 $del = $pdo->prepare('DELETE FROM push_subscriptions WHERE id = :id');
                 $del->execute([':id' => $porId[$endpoint]]);
+                $debugLog('suscripción caducada, borrada de la base.');
             }
         }
     } catch (\Throwable $e) {
         error_log('push_enviar_a_usuario falló: ' . $e->getMessage());
+        $debugLog('EXCEPCIÓN -- ' . $e->getMessage());
     }
 }
 
