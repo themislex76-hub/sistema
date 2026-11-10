@@ -211,22 +211,47 @@ async function leerFilasBuzones(page) {
 // avanzar de página, confirmar aquí primero con una captura real del HTML.
 async function avanzarPagina(page) {
   const textoPagina = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => null);
-  if (!textoPagina) return false;
+  if (!textoPagina) {
+    console.log('      [paginación] no se encontró el texto "Página X de Y" -- no se puede avanzar.');
+    return false;
+  }
   const m = /Página (\d+) de (\d+)/i.exec(textoPagina);
-  if (!m) return false;
+  if (!m) {
+    console.log(`      [paginación] el texto encontrado no tiene el formato esperado: "${textoPagina}".`);
+    return false;
+  }
   const actual = parseInt(m[1], 10);
   const total = parseInt(m[2], 10);
-  if (actual >= total) return false;
+  if (actual >= total) {
+    console.log(`      [paginación] ya está en la última página (${actual} de ${total}).`);
+    return false;
+  }
 
   const contenedor = page.getByText(/Página \d+ de \d+/i).first().locator('xpath=..');
   const botones = contenedor.locator('button');
   const nBotones = await botones.count();
-  if (nBotones < 2) return false;
+  console.log(`      [paginación] "${textoPagina}" -- ${nBotones} botón(es) encontrado(s) junto al texto.`);
+  if (nBotones < 2) {
+    console.log('      [paginación] menos de 2 botones -- no se puede identificar cuál es "siguiente".');
+    return false;
+  }
   // Orden visto en pantalla: « ‹ (Página X de Y) › » -- el botón "siguiente"
-  // es el que sigue inmediatamente después del texto de la página.
-  await botones.nth(Math.floor(nBotones / 2)).click({ timeout: 10000 }).catch(() => {});
+  // es el que sigue inmediatamente después del texto de la página (índice
+  // nBotones/2, ej. con 4 botones el índice 2 = el 3er botón = "›").
+  const indiceSiguiente = Math.floor(nBotones / 2);
+  await botones.nth(indiceSiguiente).click({ timeout: 10000 }).catch((e) => console.log(`      [paginación] el clic falló: ${e.message}`));
   await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {});
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1200);
+
+  // Confirma que de verdad cambió de página -- si el texto "Página X de Y"
+  // sigue diciendo lo mismo que antes, el clic no tuvo efecto (botón
+  // equivocado, o la tabla no reaccionó) y es mejor no fingir que avanzó.
+  const textoPaginaDespues = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => null);
+  if (textoPaginaDespues === textoPagina) {
+    console.log(`      [paginación] después del clic el texto sigue diciendo "${textoPagina}" -- no avanzó de verdad.`);
+    return false;
+  }
+  console.log(`      [paginación] avanzó: ahora dice "${textoPaginaDespues}".`);
   return true;
 }
 
@@ -276,13 +301,15 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       await page.screenshot({ path: path.join(__dirname, `debug_error_${sanitizarParaArchivo(cuenta.cdmx_buzon_usuario)}.png`), fullPage: true }).catch(() => {});
       return 0;
     }
+    await page.waitForTimeout(1500); // margen fijo antes de empezar a contar, para no agarrar el primer render a medias
     let conteoAnterior = -1;
-    for (let intento = 0; intento < 6; intento++) {
+    for (let intento = 0; intento < 8; intento++) {
       const conteoActual = await page.locator('text=/Ver Acuerdos/i').count();
       if (conteoActual > 0 && conteoActual === conteoAnterior) break;
       conteoAnterior = conteoActual;
-      await page.waitForTimeout(800);
+      await page.waitForTimeout(900);
     }
+    console.log(`    (${conteoAnterior} fila(s) detectada(s) después de esperar a que se estabilizara la tabla)`);
 
     let pagina = 1;
     let seguir = true;
