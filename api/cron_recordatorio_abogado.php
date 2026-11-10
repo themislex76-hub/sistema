@@ -93,7 +93,10 @@ foreach ($porAbogado as $abogadoId => $items) {
     }, $items);
 
     $titulo = count($items) === 1 ? '📅 Tienes 1 pendiente' : '📅 Tienes ' . count($items) . ' pendientes';
-    $cuerpo = implode("\n", $lineas);
+    // Confirmado real (10 nov 2026): el protocolo de push tiene un límite
+    // de tamaño de payload -- con muchos pendientes juntos se rebasaba y
+    // el mensaje nunca llegaba, sin error visible para nadie.
+    $cuerpo = push_armar_cuerpo($lineas);
 
     push_enviar_a_usuario($pdo, $abogadoId, $titulo, $cuerpo, '/sistema/');
 
@@ -117,7 +120,10 @@ if ($paraEscalar) {
     $tituloEscalar = count($paraEscalar) === 1
         ? '⚠️ 1 asunto lleva días sin resolverse'
         : '⚠️ ' . count($paraEscalar) . ' asuntos llevan días sin resolverse';
-    $cuerpoEscalar = implode("\n", $lineasEscalar);
+    // Confirmado real (10 nov 2026): con muchos asuntos escalados juntos
+    // (59 en la primera corrida real) esto rebasaba el límite de tamaño
+    // del protocolo de push y el mensaje nunca llegaba, sin error visible.
+    $cuerpoEscalar = push_armar_cuerpo($lineasEscalar);
 
     foreach ($admins as $adminId) {
         $ya = $pdo->prepare('SELECT 1 FROM agenda_escalaciones_enviadas WHERE admin_id = :aid AND fecha = CURDATE()');

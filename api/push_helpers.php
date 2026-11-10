@@ -14,6 +14,34 @@ use Http\Client\Curl\Client as PushCurlClient;
 use Nyholm\Psr7\Factory\Psr17Factory;
 
 /**
+ * Causa real confirmada (10 nov 2026, vía api/push_debug.log): el protocolo
+ * de notificaciones push tiene un límite de tamaño de payload (4078 bytes,
+ * confirmado real con el error "Size of payload must not be greater than
+ * 4078 octets") -- un resumen diario con muchos pendientes juntos (ej. 59
+ * asuntos atorados en una sola escalación al Administrador) lo rebasaba
+ * fácil, y la excepción se atrapaba en silencio: el push nunca se mandaba
+ * y nadie se enteraba. Junta las líneas de un mensaje y, si el total se
+ * acerca al límite, corta la lista y agrega un resumen en vez de mandar
+ * todo (mejor un aviso corto que ninguno).
+ */
+function push_armar_cuerpo(array $lineas, int $maxBytes = 2800): string
+{
+    $incluidas = [];
+    $bytesAcumulados = 0;
+    foreach ($lineas as $i => $linea) {
+        $bytesLinea = strlen($linea) + 1; // +1 por el "\n" que lleva entre líneas
+        if ($bytesAcumulados + $bytesLinea > $maxBytes) {
+            $restantes = count($lineas) - $i;
+            $incluidas[] = "…y {$restantes} más — entra al sistema para verlos todos.";
+            break;
+        }
+        $incluidas[] = $linea;
+        $bytesAcumulados += $bytesLinea;
+    }
+    return implode("\n", $incluidas);
+}
+
+/**
  * Instancia lista para mandar notificaciones, o null si todavía no se
  * instaló la librería (api/vendor/) o no existe push_credentials.php.
  */
