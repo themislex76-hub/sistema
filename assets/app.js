@@ -2277,14 +2277,34 @@ async function loadAvisosBoletin(){
 
 // Preguntas del supervisor de IA (ver cron_generar_preguntas_supervisor.php):
 // por cada "posible atraso" (buildAgendaEntries(), tipo 'atraso') sin
-// resolver, la IA ya redactó una pregunta concreta -- aparecen aquí sin
-// mandar ningún push (pedido del usuario), solo al entrar al sistema.
+// resolver, la IA ya redactó una pregunta concreta. Al principio se pidió
+// explícitamente SIN push (que solo aparecieran al entrar al sistema) --
+// el usuario cambió de opinión el 10 nov 2026 y pidió que cada pregunta
+// nueva sí mande un push con link directo a contestarla (ver
+// abrirPreguntaDesdeNotificacion() y el push que manda
+// cron_generar_preguntas_supervisor.php).
 let SUPERVISOR_PREGUNTAS = [];
+// Id de una pregunta a la que hay que llevar la vista y enfocar su
+// textarea en cuanto se renderice "preguntas_abogado" (viene de abrir el
+// sistema desde el push de una pregunta nueva) -- se limpia solo después
+// de usarse una vez, para no volver a hacer scroll en renders futuros.
+let PREGUNTA_ENFOCAR = null;
 async function loadSupervisorPreguntas(){
   try{
     const d = await api('GET', 'supervisor_preguntas_list.php');
     SUPERVISOR_PREGUNTAS = d.preguntas;
   }catch(e){ SUPERVISOR_PREGUNTAS = []; }
+}
+// Se abrió el sistema desde el push de una pregunta nueva (ver
+// cron_generar_preguntas_supervisor.php) -- lleva a "Preguntas al
+// abogado" y marca cuál enfocar; bindViewBody() hace el scroll/foco real
+// una vez que esa vista ya tiene el HTML en el DOM.
+async function abrirPreguntaDesdeNotificacion(preguntaId){
+  if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
+  if(!SUPERVISOR_PREGUNTAS.length) await loadSupervisorPreguntas();
+  PREGUNTA_ENFOCAR = parseInt(preguntaId, 10) || null;
+  VIEW = 'preguntas_abogado';
+  render();
 }
 function supervisorPreguntasPendientesCount(){ return SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente').length; }
 function supervisorPreguntaCardHTML(p){
@@ -2297,7 +2317,10 @@ function supervisorPreguntaCardHTML(p){
           </div>
         </div>
         <div class="aviso-resumen">${escapeHTML(p.pregunta)}</div>
-        <div class="field" style="margin-top:10px;"><textarea class="supervisor-respuesta-input" placeholder="Escribe tu respuesta aquí..." style="min-height:50px;"></textarea></div>
+        <div class="field" style="margin-top:10px;">
+          <textarea class="supervisor-respuesta-input" placeholder="Escribe tu respuesta aquí, o dale a 'Dictar' y habla..." style="min-height:50px;"></textarea>
+          ${('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) ? `<button type="button" class="btn secondary supervisor-respuesta-dictar" style="margin-top:6px; padding:4px 10px; font-size:11.5px;">🎤 Dictar</button>` : ''}
+        </div>
         <div class="field" style="margin-top:6px;">
           <label style="font-size:11.5px; color:var(--gray); display:block; margin-bottom:4px;">Adjuntar foto o documento (opcional — ej. cédula de notificación, constancia):</label>
           <input type="file" class="supervisor-respuesta-archivo" accept=".pdf,.jpg,.jpeg,.png">
@@ -7129,6 +7152,53 @@ function bindViewBody(){
       }
     });
   });
+  // Dictar la respuesta por voz (10 nov 2026, pedido explícito del
+  // usuario) -- usa el reconocimiento de voz nativo del navegador (Web
+  // Speech API), gratis y sin mandar nada a ningún servidor de
+  // transcripción. El botón ya se omite del HTML si el navegador no lo
+  // soporta (Safari/iPhone lo soporta mal o nada) -- aquí nomás se conecta.
+  document.querySelectorAll('.supervisor-respuesta-dictar').forEach(btn=>{
+    btn.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      const card = btn.closest('[data-supervisor-pregunta-id]');
+      const textarea = card ? card.querySelector('.supervisor-respuesta-input') : null;
+      if(!textarea) return;
+      if(btn.dataset.grabando === '1'){ if(window.__dictadoActivo) window.__dictadoActivo.stop(); return; }
+      if(window.__dictadoActivo) window.__dictadoActivo.stop(); // solo un dictado activo a la vez
+
+      const Reconocedor = window.SpeechRecognition || window.webkitSpeechRecognition;
+      const recog = new Reconocedor();
+      recog.lang = 'es-MX';
+      recog.interimResults = false;
+      recog.continuous = true;
+      const textoBase = textarea.value;
+      recog.onresult = (ev2)=>{
+        let textoNuevo = '';
+        for(let i = ev2.resultIndex; i < ev2.results.length; i++) textoNuevo += ev2.results[i][0].transcript;
+        textarea.value = (textoBase + ' ' + textoNuevo).trim();
+      };
+      recog.onerror = ()=>{ alert('No se pudo escuchar — revisa que le diste permiso de micrófono al navegador.'); };
+      recog.onend = ()=>{ btn.dataset.grabando = '0'; btn.textContent = '🎤 Dictar'; window.__dictadoActivo = null; };
+      window.__dictadoActivo = recog;
+      btn.dataset.grabando = '1';
+      btn.textContent = '⏹️ Detener';
+      recog.start();
+    });
+  });
+  // Se abrió el sistema desde el push de una pregunta nueva
+  // (abrirPreguntaDesdeNotificacion()) -- ya se renderizó "Preguntas al
+  // abogado" con el HTML en el DOM, así que recién aquí se puede hacer
+  // scroll y enfocar la tarjeta correcta. Se limpia después de usarse una
+  // sola vez.
+  if(PREGUNTA_ENFOCAR && VIEW === 'preguntas_abogado'){
+    const card = document.querySelector(`[data-supervisor-pregunta-id="${PREGUNTA_ENFOCAR}"]`);
+    if(card){
+      card.scrollIntoView({behavior:'smooth', block:'center'});
+      const textarea = card.querySelector('.supervisor-respuesta-input');
+      if(textarea) textarea.focus();
+    }
+    PREGUNTA_ENFOCAR = null;
+  }
   document.querySelectorAll('[data-prospecto-abrir]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const id = parseInt(el.dataset.prospectoAbrir);
@@ -9141,6 +9211,14 @@ async function init(){
     history.replaceState(null, '', location.pathname);
     abrirConversacionDesdeNotificacion(abrirParam);
   }
+
+  // Igual, pero para el push de "pregunta nueva del supervisor" (10 nov
+  // 2026) -- lleva directo a "Preguntas al abogado" y enfoca esa pregunta.
+  const preguntaParam = new URLSearchParams(location.search).get('pregunta');
+  if(preguntaParam){
+    history.replaceState(null, '', location.pathname);
+    abrirPreguntaDesdeNotificacion(preguntaParam);
+  }
 }
 init();
 
@@ -9150,8 +9228,11 @@ init();
 if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('message', (event)=>{
     if(event.data && event.data.type === 'abrir-conversacion' && event.data.url){
-      const telefono = new URL(event.data.url, location.origin).searchParams.get('abrir');
+      const urlNotificacion = new URL(event.data.url, location.origin);
+      const telefono = urlNotificacion.searchParams.get('abrir');
+      const preguntaId = urlNotificacion.searchParams.get('pregunta');
       if(telefono) abrirConversacionDesdeNotificacion(telefono);
+      if(preguntaId) abrirPreguntaDesdeNotificacion(preguntaId);
     }
   });
 }
