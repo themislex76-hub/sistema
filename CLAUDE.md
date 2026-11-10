@@ -403,13 +403,38 @@ falta seguimiento):
      que `reporte_monitoreo_faltante.php` -- el script no exige sesión).
      Primera corrida real: "20 expediente(s) candidato(s), 20
      auditado(s) con IA, 2 etapa(s) llenada(s) sola(s), 0 fallido(s)" --
-     ambas llenadas en el mismo expediente (id 13):
-     `conciliacion_prejudicial` (2026-05-18) y `objeciones_replica`
-     (2026-06-12). **Pendiente de confirmar con el usuario**: que esas 2
-     fechas sean correctas de verdad (cruzarlas contra los documentos/
-     avisos reales de ese expediente) -- quedó pendiente de revisar el
-     motivo completo en `expediente_historial` (la vista en grilla de
-     phpMyAdmin corta el texto, hay que abrir la celda o exportar).
+     ambas llenadas en el mismo expediente (id 13, Mir Castro Ma Claudia
+     vs Servicio Postal Mexicano, Exp. 242/2026): `conciliacion_prejudicial`
+     (2026-05-18) y `objeciones_replica` (2026-06-12).
+   - **Bug real encontrado por el usuario al revisar esos 2 llenados**: la
+     fecha de `objeciones_replica` (2026-06-12) es ANTERIOR a
+     `contestacion_recibida` (2026-07-26) -- imposible por ley (Art.
+     873-B LFT, las objeciones/réplica solo pueden pasar DESPUÉS de que
+     se reciba la contestación). La IA sí vio una fecha real en el
+     contexto del expediente, pero la atribuyó a la etapa equivocada.
+     `conciliacion_prejudicial` (2026-05-18) sí es consistente (es
+     anterior a todo lo demás, que tiene fecha 2026-07-26 en bloque --
+     parece una importación masiva el mismo día).
+   - **Corregido (10 nov 2026)**: nueva función
+     `etapa_fecha_es_consistente()` (`api/expediente_helpers.php`) usa el
+     orden real de `ETAPA_KEYS` para rechazar cualquier fecha nueva que
+     rompa la secuencia cronológica contra las etapas YA registradas de
+     ese expediente. Se conectó en los 4 mecanismos que llenan una etapa
+     sola (no solo la auditoría -- el mismo riesgo existía desde las
+     piezas 2-4): `cron_auditoria_expediente_ia.php`,
+     `cron_analizar_acuerdos_ia.php`, `cron_analizar_documentos_ia.php` y
+     `supervisor_pregunta_responder.php`. Los rechazos quedan en
+     `log_historial` (`auditoria_ia_rechazo_<etapa>`, sin el prefijo
+     `etapa_` para no contarse como avance real en el resumen semanal).
+   - **Pendiente de corregir a mano**: la fecha equivocada
+     `objeciones_replica` = 2026-06-12 del expediente 13 sigue mal en la
+     base (el candado nuevo no deshace lo que ya se aplicó, solo evita
+     que se repita) -- avisar al usuario que la borre desde "Etapas del
+     juicio" (desmarcar/limpiar esa fecha) si todavía no lo ha hecho.
+   - **Sin volver a probar en vivo todavía** el candado nuevo -- hay que
+     esperar a la siguiente corrida del cron (o de cualquiera de los
+     otros 3 mecanismos) para confirmar que de verdad bloquea un caso
+     real sin bloquear los casos buenos por error.
 
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
