@@ -7487,17 +7487,27 @@ async function openModal(k, tab){
   ARCHIVO_CROP_QUEUE = [];
   ACTIVE_CASE = k; MODAL_TAB = tab || "resumen";
   if(MODAL_TAB === 'documentos') await loadDocumentos(k.id);
-  if(MODAL_TAB === 'resumen' && !k.resumen_ejecutivo && !(INFORME_EJECUTIVO_STATE[k.id]||{}).cargando) cargarInformeEjecutivo(k.id, false);
+  if(MODAL_TAB === 'resumen' && !(INFORME_EJECUTIVO_STATE[k.id]||{}).cargando) cargarInformeEjecutivo(k.id, false);
   renderModal();
   document.getElementById('modalOverlay').classList.add('show');
 }
 // Pide (o regenera) el informe ejecutivo con IA de un expediente. El backend
 // cachea el resultado y solo vuelve a llamar a la IA si el expediente cambió
 // desde la última vez -- por eso es seguro llamar esto sin forzar cada vez
-// que se abre la pestaña "Informe del juicio".
+// que se abre la pestaña "Informe del juicio" (confirmado real, 10 nov 2026:
+// antes los 2 lugares que llamaban a esta función solo lo hacían si
+// `!k.resumen_ejecutivo`, así que un informe generado una sola vez se
+// quedaba congelado para siempre -- el chequeo de "¿cambió el expediente?"
+// del backend nunca llegaba a correr de nuevo). Si ya había un resumen
+// mostrado, la revisión es silenciosa (no se tapa el texto con el
+// indicador de carga) -- solo se ve el "cargando" cuando no hay nada
+// todavía o cuando se fuerza a mano con el botón "Actualizar".
 async function cargarInformeEjecutivo(caseId, forzar){
-  INFORME_EJECUTIVO_STATE[caseId] = {cargando:true, error:null};
-  if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
+  const yaHabiaResumen = !!(findCase(caseId) || {}).resumen_ejecutivo;
+  if(!yaHabiaResumen || forzar){
+    INFORME_EJECUTIVO_STATE[caseId] = {cargando:true, error:null};
+    if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
+  }
   try{
     const r = await api('POST', 'expediente_resumen_ejecutivo.php', {id: caseId, forzar: !!forzar});
     const kc = findCase(caseId);
@@ -7576,7 +7586,7 @@ function renderModal(){
       if(b.dataset.t !== 'documentos'){ detenerCamara(); CROP_PENDING = null; ARCHIVO_CROP_QUEUE = []; } // no dejar la cámara prendida ni una cola de recorte a medias al salir de la pestaña
       MODAL_TAB = b.dataset.t;
       if(MODAL_TAB === 'documentos') await loadDocumentos(ACTIVE_CASE.id);
-      if(MODAL_TAB === 'resumen' && !ACTIVE_CASE.resumen_ejecutivo && !(INFORME_EJECUTIVO_STATE[ACTIVE_CASE.id]||{}).cargando) cargarInformeEjecutivo(ACTIVE_CASE.id, false);
+      if(MODAL_TAB === 'resumen' && !(INFORME_EJECUTIVO_STATE[ACTIVE_CASE.id]||{}).cargando) cargarInformeEjecutivo(ACTIVE_CASE.id, false);
       renderModal();
     });
   });
