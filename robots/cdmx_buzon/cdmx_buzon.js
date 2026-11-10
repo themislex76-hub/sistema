@@ -288,35 +288,41 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     // Confirmado real con captura (10 nov 2026): si la cuenta ya tiene una
     // sesión activa (de una corrida anterior que no cerró sesión de
     // verdad -- cerrar el navegador no basta, el portal la sigue viendo
-    // activa del lado del servidor), el portal bloquea el login con un
-    // aviso rojo "No puede ingresar por que cuenta con una sesion
-    // activa..." y un link "Romper sesión" para forzar la entrada. Romper
-    // la sesión no siempre tiene efecto inmediato del lado del servidor
-    // (confirmado real: un solo reintento inmediato después del clic
-    // también salió bloqueado), así que se reintenta el login completo
-    // varias veces, con una pausa entre cada una.
+    // activa del lado del servidor), el portal muestra el aviso rojo "No
+    // puede ingresar por que cuenta con una sesion activa..." Y el link
+    // "Romper sesión" YA en la carga inicial de la página (antes de llenar
+    // ni enviar nada -- el bloqueo depende de la sesión/cookie existente,
+    // no de un intento de login nuevo). Por eso se revisa esto justo
+    // después de entrar a la página, antes de llenar el formulario.
+    // Romper la sesión tampoco tiene efecto inmediato siempre (confirmado
+    // real: a veces sigue bloqueado después de un solo romper+recargar),
+    // así que se reintenta varias veces.
     let entroMenu = false;
-    for (let intento = 1; intento <= 4 && !entroMenu; intento++) {
-      if (intento === 1) {
-        await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 });
-      } else {
-        console.log(`  [login] reintento ${intento}/4...`);
+    for (let intento = 1; intento <= 5 && !entroMenu; intento++) {
+      if (intento > 1) {
+        console.log(`  [login] reintento ${intento}/5...`);
+        await page.waitForTimeout(3000);
+      }
+      await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+
+      const rompioSesion = await clickTextoVisible(page, 'Romper sesión', false, 8000);
+      if (rompioSesion) {
+        console.log('  [login] había una sesión activa de una corrida anterior -- se rompió, recargando antes de reintentar.');
         await page.waitForTimeout(3000);
         await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+        const sigueBloqueado = await clickTextoVisible(page, 'Romper sesión', false, 4000);
+        if (sigueBloqueado) {
+          console.log('  [login] sigue bloqueado después de romper sesión -- se reintenta de nuevo.');
+          continue;
+        }
       }
+
       await campoUsuario.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {});
       await campoUsuario.fill(cuenta.cdmx_buzon_usuario).catch(() => {});
       await campoPassword.fill(cuenta.cdmx_buzon_password).catch(() => {});
       const entroPorBoton = await clickTextoVisible(page, 'ENTRAR', false, 10000);
       if (!entroPorBoton) await campoPassword.press('Enter').catch(() => {});
       await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
-
-      const rompioSesion = await clickTextoVisible(page, 'Romper sesión', false, 4000);
-      if (rompioSesion) {
-        console.log('  [login] había una sesión activa de una corrida anterior -- se rompió, esperando antes de reintentar.');
-        await page.waitForTimeout(3000);
-        continue; // vuelve a intentar el login completo desde cero en la siguiente vuelta
-      }
 
       // Confirmado real (10 nov 2026): saltar directo con page.goto() a la
       // URL de "Consulta de expedientes" a veces pierde la sesión recién
