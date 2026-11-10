@@ -205,10 +205,23 @@ falta seguimiento):
    ignorando uno de estos, TAMBIÉN se le avisa al Administrador (tabla
    nueva `agenda_escalaciones_enviadas`, dedupe aparte de
    `agenda_avisos_enviados` para que no choque si el admin también es
-   abogado con sus propios pendientes). `app.js?v=117`. **Sin probar en
-   vivo todavía** (nadie ha visto llegar el push de un atraso real ni la
-   escalación al admin) -- confirmar en cuanto el cron corra de nuevo
-   con asuntos atorados reales.
+   abogado con sus propios pendientes). `app.js?v=117`.
+   - **Bug real encontrado y corregido (10 nov 2026)**: el push nunca
+     llegaba, sin error visible para nadie. Causa real (encontrada vía
+     un log de diagnóstico nuevo, `api/push_debug.log`, agregado porque
+     el servidor no tiene un `error_log` fácil de encontrar en cPanel):
+     "Size of payload must not be greater than 4078 octets" -- el
+     protocolo de notificaciones push tiene un límite de tamaño, y con
+     muchos asuntos atorados juntos en un solo mensaje (59 en la
+     escalación al Administrador, confirmado real) se rebasaba por
+     mucho; la excepción se atrapaba y se perdía en silencio. Nueva
+     función `push_armar_cuerpo()` (`api/push_helpers.php`) arma el
+     mensaje línea por línea hasta acercarse al límite y corta el resto
+     con "…y N más — entra al sistema para verlos todos" en vez de
+     intentar mandarlo completo. Confirmado que es el único lugar del
+     sistema con este patrón de mensaje-lista-larga.
+   - **Confirmado funcionando de punta a punta en vivo (10 nov 2026)**:
+     tras el arreglo, el usuario recibió el push real en su celular.
 2. **IA lee el contenido real de los acuerdos de boletín -- HECHO (9 nov
    2026), migración 060 y cron ya corridos/dados de alta (confirmado por
    el usuario el 10 nov 2026).** Antes el resumen guardado era genérico ("Acuerdo No. X del
