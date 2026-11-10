@@ -317,6 +317,17 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       }
       await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
 
+      // Diagnóstico temporal (10 nov 2026): el aviso de "sesión activa" se
+      // vio real por captura varias veces, pero clickTextoVisible('Romper
+      // sesión') nunca lo detectó en varios intentos seguidos -- se
+      // imprime qué encuentra la búsqueda de texto antes de decidir, para
+      // saber si el elemento de verdad no está en el DOM en ese momento o
+      // si es un problema de la búsqueda misma.
+      const textoBody = await page.locator('body').innerText().catch(() => '');
+      const pareceBloqueado = /sesion activa|sesión activa/i.test(textoBody);
+      const nRomper = await page.getByText('Romper sesión', { exact: false }).count().catch(() => -1);
+      console.log(`    [diagnóstico] texto de la página menciona "sesión activa": ${pareceBloqueado} -- elementos que matchean "Romper sesión": ${nRomper}`);
+
       const rompioSesion = await clickTextoVisible(page, 'Romper sesión', false, 8000);
       if (rompioSesion) {
         console.log('  [login] había una sesión activa de una corrida anterior -- se rompió, recargando antes de reintentar.');
