@@ -358,7 +358,14 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     // librería (confirmado real: "Cannot set properties of undefined
     // (setting '_DT_CellIndex')"). Se espera a que el número de filas se
     // quede estable entre 2 lecturas antes de confiar en la lista.
-    const hayLista = await page.getByText(/LISTA DE BUZONES/i).first().waitFor({ state: 'visible', timeout: 15000 }).then(() => true).catch(() => false);
+    // Confirmado real (10 nov 2026): a veces esta tabla tarda en aparecer
+    // más de lo que un solo intento de 15s alcanza a cubrir (sin relación
+    // con el login, que para ese punto ya tuvo éxito) -- se le da más
+    // margen antes de darse por vencido. OJO: no se usa page.reload() ni
+    // page.goto() aquí para reintentar -- una navegación completa puede
+    // perder la sesión recién iniciada (ver nota de clickTextoVisible más
+    // abajo), así que solo se espera más tiempo sobre la misma página.
+    const hayLista = await page.getByText(/LISTA DE BUZONES/i).first().waitFor({ state: 'visible', timeout: 30000 }).then(() => true).catch(() => false);
     if (!hayLista) {
       console.log('  AVISO: no apareció "LISTA DE BUZONES" -- el login pudo fallar, o el portal cambió.');
       await page.screenshot({ path: path.join(__dirname, `debug_error_${sanitizarParaArchivo(cuenta.cdmx_buzon_usuario)}.png`), fullPage: true }).catch(() => {});
