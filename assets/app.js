@@ -1268,13 +1268,22 @@ function etapaExpectedDeadline(def, fechaAnterior){
 const AUDIENCIA_LABEL_CLIENTE = {
   audiencia_preliminar: 'Audiencia preliminar — donde se organiza tu caso y se admiten las pruebas',
   audiencia_juicio: 'Audiencia de juicio — donde se presentan las pruebas',
+  // Bug real encontrado por el usuario (11 nov 2026): un citatorio de
+  // conciliación agendado (ej. "audiencia de conciliación" de Veronica
+  // Gabriela) nunca aparecía en ningún lado de Agenda -- proximaAudiencia()
+  // solo revisaba audiencia_preliminar/juicio, y "Etapas del juicio" ni
+  // siquiera ofrecía un campo de "Fecha agendada" para estos 2 (ver
+  // esAudiencia más abajo), solo la fecha en que ya se celebró.
+  conciliacion_primer_citatorio: 'Conciliación prejudicial — primer citatorio',
+  conciliacion_segundo_citatorio: 'Conciliación prejudicial — segundo citatorio',
 };
 
-// Revisa si hay una audiencia (preliminar o de juicio) agendada que todavía
-// no se ha celebrado, para avisarle al cliente y al abogado con anticipación.
+// Revisa si hay una audiencia o citatorio de conciliación agendado que
+// todavía no se ha celebrado, para avisarle al cliente y al abogado con
+// anticipación.
 function proximaAudiencia(kase){
   const meta = getMeta(kase.id);
-  const candidatas = ['audiencia_preliminar','audiencia_juicio']
+  const candidatas = ['audiencia_preliminar','audiencia_juicio','conciliacion_primer_citatorio','conciliacion_segundo_citatorio']
     .map(key=>{
       const e = meta.etapas[key];
       if(!e || e.fecha || !e.fecha_programada) return null; // ya celebrada, o sin fecha agendada
@@ -5219,8 +5228,36 @@ function calendarioMesHTML(all){
   const todayISO = dateToISO(hoy);
   const nombreMes = new Date(y, m, 1).toLocaleDateString('es-MX', {month:'long', year:'numeric'});
 
+  // El calendario se limita a lo que de verdad son fechas puntuales del
+  // calendario del abogado -- audiencias/citatorios agendados, pagos de
+  // convenio, y vencimientos de plazo (prescripción/amparo). Pedientes y
+  // "posibles atrasos"/sugerencias de IA se quedan solo en la lista de
+  // "General" (ahí sí hace falta el botón de resolver acción, que el
+  // calendario no tiene espacio para mostrar bien). Pedido explícito del
+  // usuario (11 nov 2026).
+  const TIPOS_CALENDARIO = ['audiencia', 'pago', 'prescripcion', 'amparo'];
+  let itemsCalendario = all.filter(e => TIPOS_CALENDARIO.includes(e.tipo));
+  // Prescripción/amparo: además del día exacto del vencimiento, se duplica
+  // un aviso "Vence mañana" un día antes -- mismo principio que ya usa el
+  // push diario (cron_recordatorio_abogado.php avisa justo 1 día antes),
+  // pedido explícito del usuario para que también se vea así en el
+  // calendario visual, no solo el día del vencimiento.
+  const avisosUnDiaAntes = itemsCalendario
+    .filter(e => e.tipo === 'prescripcion' || e.tipo === 'amparo')
+    .map(e => {
+      const fechaAntes = parseDate(e.fecha);
+      if(!fechaAntes) return null;
+      return Object.assign({}, e, {
+        fecha: dateToISO(addDaysDate(fechaAntes, -1)),
+        label: '¡Vence mañana! ' + e.label,
+        avisoAnticipado: true,
+      });
+    })
+    .filter(Boolean);
+  itemsCalendario = itemsCalendario.concat(avisosUnDiaAntes);
+
   const porDia = {};
-  all.forEach(e=>{ (porDia[e.fecha] = porDia[e.fecha] || []).push(e); });
+  itemsCalendario.forEach(e=>{ (porDia[e.fecha] = porDia[e.fecha] || []).push(e); });
   Object.values(porDia).forEach(list=>list.sort((a,b)=>(a.hora||'99:99').localeCompare(b.hora||'99:99')));
 
   const primerDiaSemana = (new Date(y, m, 1).getDay() + 6) % 7; // 0 = lunes
@@ -5243,7 +5280,7 @@ function calendarioMesHTML(all){
       ${visibles.map(e=>{
         const t = AGENDA_TIPO[e.tipo];
         const tituloTip = `${e.label} — ${e.k.actor} vs ${truncate(e.k.demandado,30)}`;
-        return `<div data-id="${e.k.id}" style="cursor:pointer; font-size:10.5px; background:${t.color}1a; color:${t.color}; border-radius:4px; padding:2px 5px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHTML(tituloTip)}">${e.hora? escapeHTML(e.hora.slice(0,5))+' ' : ''}${escapeHTML(truncate(e.k.actor,14))}${e.chocaCon?' &#9888;':''}</div>`;
+        return `<div data-id="${e.k.id}" style="cursor:pointer; font-size:10.5px; background:${t.color}1a; color:${t.color}; border-radius:4px; padding:2px 5px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; ${e.avisoAnticipado?'border:1px dashed '+t.color+';':''}" title="${escapeHTML(tituloTip)}">${e.avisoAnticipado?'⏰ ':''}${e.hora? escapeHTML(e.hora.slice(0,5))+' ' : ''}${escapeHTML(truncate(e.k.actor,14))}${e.chocaCon?' &#9888;':''}</div>`;
       }).join("")}
       ${resto>0 ? `<div style="font-size:10px; color:var(--gray);">+${resto} más</div>` : ''}
     </div>`;
@@ -6486,7 +6523,7 @@ function agendaHTML(){
         ${calendarioMesHTML(all)}
       </div>
     </div>
-    <div class="notice" style="margin-top:12px; max-width:100%;">Clic en cualquier pendiente del calendario abre el expediente directo. &#9888; marca choque de horario con otro socio en la misma fecha y hora.</div>
+    <div class="notice" style="margin-top:12px; max-width:100%;">Clic en cualquier pendiente del calendario abre el expediente directo. &#9888; marca choque de horario con otro socio en la misma fecha y hora. ⏰ marca un aviso de "vence mañana" (prescripción/amparo) -- el vencimiento real sigue marcado también el día exacto.</div>
     `;
   }
 
@@ -8440,7 +8477,13 @@ function modalTabContent(k,p,meta){
     <div class="notice" style="margin-bottom:14px;">Marca cada etapa conforme vaya ocurriendo. Al registrar "Demanda presentada" el sistema deja de contar la prescripción de este asunto automáticamente. En las audiencias puedes capturar la fecha en que están agendadas aunque todavía no se celebren — eso es lo que le aparece a tu cliente como "próxima audiencia".</div>
     ${ETAPAS_DEF.map(def=>{
       const val = k_etapa_valor(meta, def.key);
-      const esAudiencia = def.key==='audiencia_preliminar' || def.key==='audiencia_juicio';
+      // Los citatorios de conciliación también se agendan con anticipación
+      // (igual que una audiencia) -- antes solo tenían un campo de fecha
+      // ambiguo ("¿ya pasó o está agendado?"), así que nunca aparecían en
+      // Agenda como pendientes (11 nov 2026, bug real reportado por el
+      // usuario: un citatorio agendado no se veía en ningún lado).
+      const esAudiencia = def.key==='audiencia_preliminar' || def.key==='audiencia_juicio'
+        || def.key==='conciliacion_primer_citatorio' || def.key==='conciliacion_segundo_citatorio';
       const esSentencia = def.key==='sentencia';
       const programada = (meta.etapas[def.key] && meta.etapas[def.key].fecha_programada) || '';
       const resultado = (meta.etapas[def.key] && meta.etapas[def.key].resultado) || '';

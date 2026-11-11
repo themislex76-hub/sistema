@@ -621,6 +621,34 @@ Demanda normal + Rescisión Art. 51 + Prima de antigüedad de un jalón).
   generar un documento de Rescisión Art. 51 real para ver cómo sale en
   Word sin las cuentas bancarias y con el hecho manual.
 
+## Calendario: bug de citatorios de conciliación + alcance limitado a fechas puntuales (11 nov 2026, `app.js?v=134`)
+Pedido/bug real del usuario al probar el calendario nuevo: "la abogada tiene un pago de Francisco agendado y una audiencia de conciliación de Veronica Gabriela" que no aparecían.
+- **Bug real encontrado**: un citatorio de conciliación agendado (`conciliacion_primer_citatorio`/
+  `conciliacion_segundo_citatorio` en `ETAPAS_DEF`) **nunca aparecía en NINGÚN lado de Agenda** --
+  no era un bug solo del calendario nuevo, es un hueco que existía desde antes en toda la Agenda
+  (lista "General" incluida). Causa real: `proximaAudiencia()` solo revisaba
+  `audiencia_preliminar`/`audiencia_juicio`, y "Etapas del juicio" ni siquiera ofrecía un campo de
+  "Fecha agendada" para los citatorios de conciliación (`esAudiencia` los excluía) -- solo tenían
+  un único campo de fecha ambiguo que servía lo mismo para "ya se celebró" que para "está agendado
+  para". Corregido: los citatorios de conciliación ahora tienen su propio campo "Fecha agendada"
+  (igual que una audiencia) y `proximaAudiencia()` los incluye.
+  - **Acción pendiente del usuario**: cualquier expediente que YA tenía un citatorio de conciliación
+    capturado (como el de Veronica Gabriela) lo tiene guardado en el campo viejo "Fecha en que se
+    celebró" -- si todavía no se celebra, hay que pasarlo a mano al nuevo campo "Fecha agendada"
+    desde "Etapas del juicio" para que empiece a aparecer en Agenda/Calendario.
+- **Alcance del calendario limitado a fechas puntuales** (pedido explícito): solo muestra
+  audiencias/citatorios agendados, pagos de convenio, y vencimientos de prescripción/amparo --
+  pendientes manuales y "posibles atrasos"/sugerencias de IA se quedan solo en la lista "General"
+  (ahí sí hace falta el botón de resolver acción). Se incluyó amparo junto con prescripción por
+  ser el mismo tipo de plazo legal -- no se preguntó explícitamente, avisar si no era lo que
+  quería.
+- **Aviso "vence mañana"**: prescripción y amparo ahora también se marcan un día antes del
+  vencimiento real (con ⏰, borde punteado), además del día exacto -- mismo principio que ya usa
+  el push diario (`cron_recordatorio_abogado.php` avisa justo 1 día antes), ahora también visible
+  en el calendario.
+- **Sin probar en vivo todavía** ninguna de las 3 piezas (citatorio de conciliación, alcance
+  limitado, aviso de un día antes).
+
 ## Calendario visual en Agenda general + IA sugiere categoría de documento (11 nov 2026, `app.js?v=130`)
 Pedido del usuario tras una lluvia de ideas sobre autonomía del sistema
 ("que mas se te ocurre"): de 4 propuestas, aceptó 1 (categoría sugerida),
