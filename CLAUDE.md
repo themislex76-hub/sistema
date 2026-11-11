@@ -621,6 +621,81 @@ Demanda normal + Rescisión Art. 51 + Prima de antigüedad de un jalón).
   generar un documento de Rescisión Art. 51 real para ver cómo sale en
   Word sin las cuentas bancarias y con el hecho manual.
 
+## Google Calendar → sistema: lectura de audiencias agendadas por los abogados (11 nov 2026, `app.js?v=135`, migración 067)
+Pedido explícito del usuario, descubierto mientras se investigaba el bug de
+la audiencia de conciliación de Verónica Gabriela: cada abogado agenda sus
+audiencias/citatorios directo en su propio sub-calendario de Google (ej.
+"Audiencias Lindsay", visibles todos desde UNA sola cuenta de Google -- la
+del Administrador, que ya la conectó antes para el sync de salida que ya
+existía), en vez de capturarlas en el sistema. Esto agrega la lectura en
+sentido CONTRARIO al sync que ya había (que solo mandaba del sistema hacia
+Google, nunca al revés).
+- **Dato técnico bueno confirmado**: el scope de OAuth que ya se pidió
+  (`calendar.events`) alcanza para LEER eventos también, no sólo
+  escribirlos -- no hizo falta pedirle a nadie que reautorice nada.
+- **Diseño acordado con el usuario** (2 preguntas antes de construir):
+  (1) una sola cuenta de Google (la del Administrador) con un sub-
+  calendario por abogado, en vez de que cada quien conecte la suya; (2) el
+  texto de un evento es libre ("Conciliación Verónica Gabriela", puede
+  haber tocayos/apellidos distintos/errores de dedo) -- la IA SUGIERE a
+  qué expediente/etapa corresponde, nunca lo aplica sola; el abogado
+  confirma con un tap (mismo principio de todo el sistema).
+- **Migración 067**: `google_calendarios_vigilados` (qué sub-calendario
+  corresponde a qué abogado, y qué usuario tiene la cuenta de Google
+  conectada con visibilidad sobre él) + `google_calendario_sugerencias`
+  (un renglón por evento ya revisado -- la clave única
+  `(calendar_id, google_event_id)` es el candado contra duplicados que
+  pidió el usuario explícitamente: un evento ya visto, en cualquier
+  estado, nunca se vuelve a procesar ni a re-sugerir).
+- **`api/google_calendar_helpers.php`** (ya existía para el sync de
+  salida): se agregaron `google_listar_calendarios()` y
+  `google_listar_eventos()` (próximos 60 días, `singleEvents=true` para
+  que una recurrencia llegue como instancias concretas, no como un bloque
+  RRULE que habría que interpretar aparte).
+- **`ia_matchear_evento_calendario()`** (`api/ia_helpers.php`, Haiku,
+  texto puro): recibe el evento (título/descripción/fecha) + la lista de
+  expedientes ACTIVOS de ese mismo abogado, y responde (1) a qué
+  expediente corresponde -- SOLO si el nombre calza con claridad, nunca
+  adivina entre candidatos ambiguos -- y (2) qué etapa representa, de un
+  vocabulario cerrado a propósito a solo 4 claves con concepto de "fecha
+  agendada" (`conciliacion_primer_citatorio`, `conciliacion_segundo_citatorio`,
+  `audiencia_preliminar`, `audiencia_juicio`) -- "audiencia" a secas sin
+  decir si es preliminar o de juicio responde (ninguna), nunca adivina
+  cuál de las dos.
+- **Nuevo cron `api/cron_leer_google_calendar.php`** (correr 1-2 veces al
+  día): por cada calendario vigilado, lee sus eventos próximos, descarta
+  los que ya se procesaron antes (candado de duplicados), y para los
+  nuevos llama a la IA. Si hay match de expediente Y etapa → queda
+  `estado='pendiente'` y manda push al abogado con link directo
+  (`?pregunta_calendario=1` → `VIEW='preguntas_abogado'`, mismo patrón que
+  `?pregunta=<id>` de la pieza 3). Si no hay match claro → queda
+  `estado='sin_match'`, registrado pero sin molestar a nadie (**pendiente
+  real**: hoy esos "sin_match" no se ven en ningún lado de la UI -- si
+  resultan ser muchos en la práctica, falta una pantalla para revisarlos a
+  mano en vez de que se pierdan silenciosamente).
+- **Confirmar/descartar** (`api/google_calendario_sugerencia_resolver.php`):
+  nuevo panel "📅 Eventos de tu Google Calendar por confirmar" arriba de
+  "Pendientes" en la vista "Preguntas al abogado" -- un tap en "Sí, es
+  esta" llena `fecha_programada`/`hora` de la etapa correspondiente (nunca
+  toca `fecha`/`resultado` si ya existían), registra en `log_historial`, y
+  bumpea `actualizado_en` (para que el Informe Ejecutivo se refresque
+  solo, mismo patrón que el resto del sistema). "No es esta" solo descarta
+  -- la clave única ya evita que ese mismo evento se vuelva a sugerir.
+- **Configuración nueva, solo Administrador** ("Equipo" → panel
+  "Calendarios de Google vigilados"): botón "Cargar calendarios
+  disponibles" (llama a Google en vivo con la cuenta ya conectada del
+  Administrador) + un selector de abogado por calendario + "Guardar"/
+  "Quitar".
+- **Acción pendiente del usuario para probarlo**: entrar a "Equipo",
+  cargar la lista de calendarios, y mapear cada "Audiencias X" al abogado
+  correspondiente (ej. "Audiencias linsday" → Lic. Lindsay Luna Maldonado)
+  -- sin esto el cron no tiene nada que vigilar todavía. Después correr
+  `cron_leer_google_calendar.php` a mano (mismo patrón que los demás
+  crons, abrir la URL directo) para la primera prueba real.
+- **Sin probar en vivo todavía** ninguna pieza de esto -- ni listar
+  calendarios, ni el match de la IA, ni el candado de duplicados, ni el
+  push con link.
+
 ## Calendario: bug de citatorios de conciliación + alcance limitado a fechas puntuales (11 nov 2026, `app.js?v=134`)
 Pedido/bug real del usuario al probar el calendario nuevo: "la abogada tiene un pago de Francisco agendado y una audiencia de conciliación de Veronica Gabriela" que no aparecían.
 - **Bug real encontrado**: un citatorio de conciliación agendado (`conciliacion_primer_citatorio`/

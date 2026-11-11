@@ -3689,3 +3689,107 @@ function ia_generar_resumen_semanal(array $metricas): ?string
     return $texto !== '' ? $texto : null;
 }
 
+
+// Google Calendar → sistema (11 nov 2026, pedido explícito del usuario):
+// cada abogado agenda sus audiencias/citatorios directo en su sub-
+// calendario de Google ("Audiencias Lindsay", etc.) en vez de capturarlas
+// en el sistema -- esto lee esos eventos (ver cron_leer_google_calendar.php)
+// e intenta decir a qué expediente corresponden y qué etapa representan.
+// El texto de un evento de calendario es libre (ej. "Conciliación Verónica
+// Gabriela") -- puede haber tocayos, apellidos distintos, errores de dedo
+// -- así que esto NUNCA llena nada solo: solo sugiere, y el abogado
+// confirma con un tap (ver google_calendario_sugerencia_resolver.php).
+// Si no hay un match claro, responde (ninguno) en vez de forzar una
+// adivinanza.
+const ETAPA_CALENDARIO_KEYS = ['conciliacion_primer_citatorio', 'conciliacion_segundo_citatorio', 'audiencia_preliminar', 'audiencia_juicio'];
+
+function ia_matchear_evento_calendario(string $tituloEvento, ?string $descripcionEvento, string $fechaEvento, array $expedientesCandidatos): ?array
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    if (!$expedientesCandidatos) return ['expediente_id' => null, 'etapa_key' => null];
+
+    $listaExpedientes = implode("\n", array_map(
+        fn($e) => "id={$e['id']}: {$e['actor']} vs " . ($e['demandado'] ?: '(sin demandado)') . ($e['exp'] ? ", Exp. {$e['exp']}" : ''),
+        $expedientesCandidatos
+    ));
+    $vocabularioEtapas = implode(', ', array_map(fn($k) => "$k (" . (ETAPA_LABELS[$k] ?? $k) . ')', ETAPA_CALENDARIO_KEYS));
+
+    $instrucciones = 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado '
+        . 'agenda sus audiencias y citatorios de conciliación directo en su Google Calendar, con texto libre (puede '
+        . 'traer solo el nombre del trabajador, con errores de dedo o apellidos incompletos). Te doy el evento real '
+        . "y la lista de expedientes activos de ese mismo abogado. Tu tarea tiene dos partes.\n\n"
+        . 'PARTE 1 -- expediente: si el evento corresponde CLARAMENTE a uno de los expedientes de la lista (el '
+        . 'nombre coincide, aunque tenga errores de dedo o esté incompleto), responde su id exacto. Si hay duda '
+        . 'real entre 2 o más expedientes, o el nombre no se parece a ninguno, responde (ninguno) -- NUNCA '
+        . 'adivines entre candidatos ambiguos.'
+        . "\n\n"
+        . 'PARTE 2 -- etapa: si el título/descripción del evento deja claro de qué trámite se trata, responde su '
+        . "clave exacta. Vocabulario: $vocabularioEtapas. Una \"conciliación\" sin especificar primer/segundo "
+        . 'citatorio -- usa el sentido común del título (ej. si dice "segundo citatorio" o "2a cita", usa esa '
+        . 'clave; si no hay forma de distinguir, usa conciliacion_primer_citatorio). "Audiencia" a secas, sin decir '
+        . 'si es preliminar o de juicio -- responde (ninguna), no adivines cuál de las dos. Si el evento es otra '
+        . 'cosa (un pago, una cita que no es de tribunal, etc.), responde (ninguna).'
+        . "\n\n"
+        . "Responde EXACTAMENTE en este formato (las líneas en mayúsculas son literales):\n\n"
+        . "EXPEDIENTE_ID: [id exacto, o (ninguno)]\nETAPA: [clave exacta, o (ninguna)]";
+
+    $contexto = "Evento del calendario:\nTítulo: $tituloEvento\n"
+        . ($descripcionEvento ? "Descripción: $descripcionEvento\n" : '')
+        . "Fecha: $fechaEvento\n\nExpedientes activos de este abogado:\n$listaExpedientes";
+
+    $payload = [
+        'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
+        'max_tokens' => 150,
+        'thinking' => ['type' => 'disabled'],
+        'messages' => [['role' => 'user', 'content' => $instrucciones . "\n\n" . $contexto]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [matchear_evento_calendario] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+    if ($texto === '') return null;
+
+    $idsValidos = array_map(fn($e) => (int)$e['id'], $expedientesCandidatos);
+    $expedienteId = null;
+    $etapaKey = null;
+    if (preg_match('/EXPEDIENTE_ID:\s*(\d+)/', $texto, $m) && in_array((int)$m[1], $idsValidos, true)) {
+        $expedienteId = (int)$m[1];
+    }
+    if (preg_match('/ETAPA:\s*([a-z_]+)/i', $texto, $m) && in_array($m[1], ETAPA_CALENDARIO_KEYS, true)) {
+        $etapaKey = $m[1];
+    }
+
+    return ['expediente_id' => $expedienteId, 'etapa_key' => $etapaKey];
+}

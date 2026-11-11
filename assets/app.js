@@ -2316,6 +2316,29 @@ async function loadSupervisorPreguntas(){
     SUPERVISOR_PREGUNTAS = d.preguntas;
   }catch(e){ SUPERVISOR_PREGUNTAS = []; }
 }
+// Sugerencias de Google Calendar por confirmar (11 nov 2026, ver
+// cron_leer_google_calendar.php) -- mismo panel que "Preguntas al
+// abogado", nunca se aplican solas (texto libre de un evento, puede haber
+// tocayos/errores de dedo).
+let GOOGLE_CALENDARIO_SUGERENCIAS = [];
+async function loadGoogleCalendarioSugerencias(){
+  try{
+    const d = await api('GET', 'google_calendario_sugerencias_list.php');
+    GOOGLE_CALENDARIO_SUGERENCIAS = d.sugerencias;
+  }catch(e){ GOOGLE_CALENDARIO_SUGERENCIAS = []; }
+}
+// Mapeo de sub-calendarios de Google → abogado (11 nov 2026, solo
+// Administrador, ver "Equipo"). GOOGLE_CALENDARIOS_DISPONIBLES solo se
+// carga bajo demanda (botón) -- llamar a la API de Google en cada render
+// sería lento e innecesario.
+let GOOGLE_CALENDARIOS_MAPEO = [];
+let GOOGLE_CALENDARIOS_DISPONIBLES = null; // null = todavía no se ha pedido la lista
+async function loadGoogleCalendariosMapeo(){
+  try{
+    const d = await api('GET', 'google_calendarios_mapeo_listar.php');
+    GOOGLE_CALENDARIOS_MAPEO = d.mapeo;
+  }catch(e){ GOOGLE_CALENDARIOS_MAPEO = []; }
+}
 // Se abrió el sistema desde el push de una pregunta nueva (ver
 // cron_generar_preguntas_supervisor.php) -- lleva a "Preguntas al
 // abogado" y marca cuál enfocar; bindViewBody() hace el scroll/foco real
@@ -2757,6 +2780,7 @@ async function refreshBootstrap(){
   EQUIPO = data.equipo.map(u => ({id:u.id, name:u.nombre, role:mapRol(u.rol)}));
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadUsuariosAdmin();
+    await loadGoogleCalendariosMapeo();
   }
   await loadDiasInhabiles();
   syncAvisosAbogado(); // en segundo plano, no bloquea la carga
@@ -2766,6 +2790,7 @@ async function refreshBootstrap(){
   await loadTribunalesCustom();
   await loadAvisosBoletin();
   await loadSupervisorPreguntas();
+  await loadGoogleCalendarioSugerencias();
   await loadPjfCredenciales();
   await loadEdomexCorreoCredenciales();
   await loadCdmxBuzonCredenciales();
@@ -6421,11 +6446,32 @@ function disponibilidadPanelHTML(){
   </div>`;
 }
 
+function googleCalendarioSugerenciaCardHTML(s){
+  return `
+      <div class="aviso-card" data-calendario-sugerencia-id="${s.id}">
+        <div class="aviso-head">
+          <div data-id="${s.expediente_id}" data-tab="etapas" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(s.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(s.expediente_demandado||'—',30))} ${s.expediente_exp? `&middot; Exp. ${escapeHTML(s.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">${escapeHTML(s.nombre_calendario||'Google Calendar')} &middot; ${etapaLabelPorKey(s.etapa_key)}</div>
+          </div>
+        </div>
+        <div class="aviso-resumen">📅 "${escapeHTML(s.titulo_evento)}" — ${fmtDate(s.fecha)}${s.hora? ' '+escapeHTML(s.hora.slice(0,5))+' hrs':''}</div>
+        <div class="aviso-actions">
+          <button class="btn" data-calendario-sugerencia-aplicar="${s.id}" style="padding:6px 12px; font-size:11.5px;">Sí, es esta — aplicar</button>
+          <button class="btn secondary" data-calendario-sugerencia-descartar="${s.id}" style="padding:6px 12px; font-size:11.5px;">No es esta</button>
+        </div>
+      </div>`;
+}
 function preguntasAbogadoHTML(){
   const pendientes = SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente');
   const historial = SUPERVISOR_PREGUNTAS.filter(p=>p.estado!=='pendiente');
   return `
   <div class="notice" style="margin-bottom:16px; max-width:100%;">Preguntas que el supervisor de IA le hace al abogado a cargo cuando detecta un posible atraso, buscando el dato concreto que falta para seguir el plazo legal — normalmente una fecha. Puedes contestar con texto, o adjuntar una foto/documento (ej. una cédula de notificación) para que la IA lo lea y, si confirma una fecha, llene sola la etapa correspondiente.</div>
+  ${GOOGLE_CALENDARIO_SUGERENCIAS.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>📅 Eventos de tu Google Calendar por confirmar</h3><span class="count">${GOOGLE_CALENDARIO_SUGERENCIAS.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${GOOGLE_CALENDARIO_SUGERENCIAS.map(googleCalendarioSugerenciaCardHTML).join("")}</div>
+  </div>` : ''}
   ${pendientes.length ? `
   <div class="panel">
     <div class="panel-head"><h3>Pendientes</h3><span class="count">${pendientes.length}</span></div>
@@ -6756,6 +6802,32 @@ function equipoHTML(){
       <div class="field" style="margin:0;"><label>Mixta (horas)</label><input type="text" id="jornadaMixtaInput" value="${JORNADA_MAXIMA.mixta}" style="max-width:100px;"></div>
       <button type="submit" class="btn">Guardar</button>
     </form>
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Calendarios de Google vigilados</div>
+    <div class="notice" style="margin-bottom:14px;">Cada abogado agenda sus audiencias/citatorios directo en su propio sub-calendario de Google (ej. "Audiencias Lindsay") -- liga aquí cuál corresponde a cuál abogado para que el sistema los lea solo y sugiera a qué expediente corresponde cada evento (nunca lo aplica solo -- siempre pide confirmar con un tap en "Preguntas al abogado"). Usa la MISMA cuenta de Google que ya conectaste en "Mi cuenta" (tiene que ver todos esos sub-calendarios en su "Mis calendarios").</div>
+    ${GOOGLE_CALENDARIOS_MAPEO.length ? `
+    <table style="margin-bottom:14px;"><thead><tr><th>Calendario</th><th>Abogado</th><th></th></tr></thead><tbody>
+      ${GOOGLE_CALENDARIOS_MAPEO.map(m=>`<tr>
+        <td>${escapeHTML(m.nombre_calendario)}</td>
+        <td>${escapeHTML(m.abogado_nombre)}</td>
+        <td><button class="btn secondary" data-calendario-mapeo-quitar="${m.id}" style="padding:5px 10px; font-size:11px;">Quitar</button></td>
+      </tr>`).join("")}
+    </tbody></table>` : ''}
+    <button class="btn secondary" id="cargarCalendariosGoogleBtn">${GOOGLE_CALENDARIOS_DISPONIBLES===null ? 'Cargar calendarios disponibles' : 'Actualizar lista'}</button>
+    <div id="calendariosGoogleDisponiblesWrap" style="margin-top:12px;">
+      ${GOOGLE_CALENDARIOS_DISPONIBLES && GOOGLE_CALENDARIOS_DISPONIBLES.length ? GOOGLE_CALENDARIOS_DISPONIBLES.map(c=>{
+        const yaMapeado = GOOGLE_CALENDARIOS_MAPEO.find(m=>m.calendar_id===c.id);
+        return `<div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); flex-wrap:wrap;">
+          <div style="flex:1; min-width:180px; font-size:13px;">${escapeHTML(c.nombre)}</div>
+          <select class="calendario-google-abogado-select" data-calendar-id="${escapeHTML(c.id)}" data-calendar-nombre="${escapeHTML(c.nombre)}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12.5px;">
+            <option value="">— No vigilar —</option>
+            ${EQUIPO.map(u=>`<option value="${u.id}" ${yaMapeado && yaMapeado.abogado_id===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+          </select>
+          <button class="btn secondary" data-calendario-mapeo-guardar style="padding:5px 10px; font-size:11px;">Guardar</button>
+        </div>`;
+      }).join("") : (GOOGLE_CALENDARIOS_DISPONIBLES && !GOOGLE_CALENDARIOS_DISPONIBLES.length ? '<div class="empty">Sin calendarios encontrados en esa cuenta de Google.</div>' : '')}
+    </div>
   </div></div>
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Respaldo de toda la información</div>
@@ -7333,6 +7405,22 @@ function bindViewBody(){
       }
     });
   });
+  // Confirmar/descartar una sugerencia de Google Calendar (11 nov 2026) --
+  // siempre requiere este tap, nunca se aplica sola.
+  document.querySelectorAll('[data-calendario-sugerencia-aplicar], [data-calendario-sugerencia-descartar]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const aplicar = btn.hasAttribute('data-calendario-sugerencia-aplicar');
+      const id = parseInt(aplicar ? btn.dataset.calendarioSugerenciaAplicar : btn.dataset.calendarioSugerenciaDescartar);
+      btn.disabled = true;
+      try{
+        await api('POST', 'google_calendario_sugerencia_resolver.php', {id, aplicar});
+        await loadGoogleCalendarioSugerencias();
+        if(ACTIVE_CASE){ ACTIVE_CASE = findCase(ACTIVE_CASE.id); renderModal(); }
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); btn.disabled = false; }
+    });
+  });
   // Se abrió el sistema desde el push de una pregunta nueva
   // (abrirPreguntaDesdeNotificacion()) -- ya se renderizó "Preguntas al
   // abogado" con el HTML en el DOM, así que recién aquí se puede hacer
@@ -7543,6 +7631,46 @@ function bindViewBody(){
   if(reporteEjecutivoBtn) reporteEjecutivoBtn.addEventListener('click', abrirReporteEjecutivoPDF);
   const descargarRespaldoBtn = document.getElementById('descargarRespaldoBtn');
   if(descargarRespaldoBtn) descargarRespaldoBtn.addEventListener('click', exportarRespaldo);
+  const cargarCalendariosGoogleBtn = document.getElementById('cargarCalendariosGoogleBtn');
+  if(cargarCalendariosGoogleBtn){
+    cargarCalendariosGoogleBtn.addEventListener('click', async ()=>{
+      cargarCalendariosGoogleBtn.disabled = true;
+      cargarCalendariosGoogleBtn.textContent = 'Cargando...';
+      try{
+        const d = await api('GET', 'google_calendarios_disponibles.php');
+        GOOGLE_CALENDARIOS_DISPONIBLES = d.calendarios;
+        renderViewBody();
+      }catch(err){ alert('No se pudo cargar: ' + err.message); }
+      finally{ cargarCalendariosGoogleBtn.disabled = false; cargarCalendariosGoogleBtn.textContent = 'Actualizar lista'; }
+    });
+  }
+  document.querySelectorAll('[data-calendario-mapeo-guardar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const sel = btn.previousElementSibling;
+      if(!sel || !sel.classList.contains('calendario-google-abogado-select')) return;
+      const calendarId = sel.dataset.calendarId;
+      const nombreCalendario = sel.dataset.calendarNombre;
+      const abogadoId = parseInt(sel.value);
+      if(!abogadoId){ alert('Elige a qué abogado corresponde este calendario primero.'); return; }
+      btn.disabled = true;
+      try{
+        await api('POST', 'google_calendarios_mapeo_set.php', {calendar_id: calendarId, nombre_calendario: nombreCalendario, abogado_id: abogadoId});
+        await loadGoogleCalendariosMapeo();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-calendario-mapeo-quitar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('¿Dejar de vigilar este calendario? Las sugerencias ya aplicadas no se tocan.')) return;
+      btn.disabled = true;
+      try{
+        await api('POST', 'google_calendarios_mapeo_delete.php', {id: parseInt(btn.dataset.calendarioMapeoQuitar)});
+        await loadGoogleCalendariosMapeo();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); btn.disabled = false; }
+    });
+  });
   const addBtn = document.getElementById('addLawyerBtn2');
   if(addBtn) addBtn.addEventListener('click', async ()=>{
     const name = prompt("Nombre completo del socio/a a agregar:");
@@ -9419,6 +9547,15 @@ async function init(){
   if(preguntaParam){
     history.replaceState(null, '', location.pathname);
     abrirPreguntaDesdeNotificacion(preguntaParam);
+  }
+
+  // Push de "evento de calendario por confirmar" (ver
+  // cron_leer_google_calendar.php, 11 nov 2026) -- lleva directo a
+  // "Preguntas al abogado", donde vive el panel de sugerencias.
+  const pregCalParam = new URLSearchParams(location.search).get('pregunta_calendario');
+  if(pregCalParam){
+    history.replaceState(null, '', location.pathname);
+    if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){ VIEW = 'preguntas_abogado'; render(); }
   }
 }
 init();
