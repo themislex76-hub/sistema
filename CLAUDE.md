@@ -884,12 +884,38 @@ semanal con horas, o "+N más" clicable) y eligió las primeras 2.
   `CAL_POPOVER_ITEMS` guarda el detalle completo de cada chip del render
   actual (el HTML del chip solo lleva un índice, no todo el texto, para
   no complicar el escapado de comillas/caracteres).
-- Las otras 2 opciones que el usuario NO eligió (vista semanal con horas,
-  "+N más" clicable) quedan pendientes por si las pide después -- no se
-  tocó nada de eso.
 - Sin cambios de base de datos. No se tocó `mergeTags()`/tags de
-  demanda -- no aplica `verificar_tags.js`. **Sin probar en vivo
-  todavía**.
+  demanda -- no aplica `verificar_tags.js`.
+- **Bug real encontrado por el usuario al probar en vivo (11 nov 2026)**:
+  el popover se veía "transparente", con texto traslapado e ilegible.
+  Causa real: tanto el popover como el fondo de las celdas del mes usaban
+  `var(--card)` -- una variable CSS que **nunca existió** en
+  `style.css` (la correcta es `--paper`). Un `background:var(--card)`
+  sin valor de respaldo es inválido y el navegador lo ignora por
+  completo, dejando el fondo transparente -- por eso se veía el texto de
+  las celdas de atrás encimado con el del popover. Corregido en los 2
+  lugares (celdas del mes y popover) + aumentada la opacidad del tinte de
+  color de cada chip (`${t.color}14` → `${t.color}26`) + el popover ahora
+  lleva una franja superior sólida del color del tipo (en vez de solo un
+  puntito) para que se vea "más bonito, con color" como pidió el usuario.
+- **Vistas Semana y Día agregadas (11 nov 2026, mismo día, pedido
+  explícito del usuario: "que se pueda ver por semana y dia")** -- antes
+  solo existía la vista de Mes. Pestañas nuevas arriba del calendario
+  (Mes/Semana/Día, `AGENDA_CAL_VISTA`). Semana: 7 columnas (lunes-primero)
+  con los pendientes de cada día apilados (no se implementó un grid de
+  horas con posición absoluta por minuto -- con pocos pendientes por día
+  una lista simple ordenada por hora se lee mejor y es más robusta). Día:
+  una sola columna en grande con el nombre completo sin truncar. Las 3
+  vistas comparten el mismo popover de detalle al dar clic
+  (`calCeldaChip()`, helper nuevo que reemplaza el chip inline que antes
+  solo vivía dentro de `calendarioMesHTML`). Semana/Día comparten una
+  ancla de fecha nueva (`AGENDA_CAL_DIA`, independiente de `AGENDA_CAL_MES`
+  que sigue siendo mes/año para la vista Mes) -- los botones ‹/›/Hoy
+  mueven 7/1 días en Semana/Día, o el mes completo en Mes, según la
+  pestaña activa. `app.js?v=138`.
+- **Sin probar en vivo todavía** las vistas Semana/Día (el arreglo del
+  popover transparente sí quedó confirmado por el usuario al reportarlo
+  con capturas reales).
 
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez

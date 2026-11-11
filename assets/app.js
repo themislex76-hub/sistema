@@ -5238,36 +5238,31 @@ let AGENDA_TAB = 'general';
 // que ya usan las demás pestañas). null hasta el primer render, momento en
 // que calendarioMesHTML() lo inicializa al mes actual.
 let AGENDA_CAL_MES = null;
+// Ancla (fecha ISO) para las vistas Semana/Día -- comparten una sola
+// variable porque navegar en cualquiera de las 2 mueve la misma fecha de
+// referencia; Mes sigue usando AGENDA_CAL_MES por separado (mes/año, no
+// un día puntual). null hasta el primer render, se inicializa a hoy.
+let AGENDA_CAL_DIA = null;
+// Vista activa del calendario: 'mes' | 'semana' | 'dia' (11 nov 2026,
+// pedido explícito del usuario: "que se pueda ver por semana y dia").
+let AGENDA_CAL_VISTA = 'mes';
 const AGENDA_CAL_DIAS = ['L','M','M','J','V','S','D']; // lunes-primero, solo para la cuadrícula del calendario
 // Datos completos de cada chip del calendario visual (11 nov 2026, pedido
 // explícito del usuario: "mismo efecto visual que Google Calendar" --
 // tarjetas más pulidas + ver el detalle sin salir del calendario). Se
-// llena en cada render de calendarioMesHTML(); el chip solo guarda su
+// llena en cada render de calendarioHTML(); el chip solo guarda su
 // índice aquí (data-cal-idx) porque meter todo el detalle en atributos
 // HTML sería más frágil (comillas, texto largo, etc.).
 let CAL_POPOVER_ITEMS = [];
-// `all` ya viene filtrada (abogado solo ve lo suyo vía visibleCases(), y
-// el Administrador ya aplicó el selector de socio) -- aquí solo se agrupa
-// por fecha y se pinta la cuadrícula del mes. Reutiliza AGENDA_TIPO para
-// los mismos colores por tipo que ya usa la vista de lista, y e.chocaCon
-// (marcarChoquesDeAgenda()) para marcar el mismo choque de horario.
-function calendarioMesHTML(all){
-  if(!AGENDA_CAL_MES){
-    const hoy = new Date();
-    AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
-  }
-  const {y, m} = AGENDA_CAL_MES;
-  const hoy = new Date(); hoy.setHours(0,0,0,0);
-  const todayISO = dateToISO(hoy);
-  const nombreMes = new Date(y, m, 1).toLocaleDateString('es-MX', {month:'long', year:'numeric'});
 
-  // El calendario se limita a lo que de verdad son fechas puntuales del
-  // calendario del abogado -- audiencias/citatorios agendados, pagos de
-  // convenio, y vencimientos de plazo (prescripción/amparo). Pedientes y
-  // "posibles atrasos"/sugerencias de IA se quedan solo en la lista de
-  // "General" (ahí sí hace falta el botón de resolver acción, que el
-  // calendario no tiene espacio para mostrar bien). Pedido explícito del
-  // usuario (11 nov 2026).
+// El calendario se limita a lo que de verdad son fechas puntuales del
+// calendario del abogado -- audiencias/citatorios agendados, pagos de
+// convenio, y vencimientos de plazo (prescripción/amparo). Pendientes y
+// "posibles atrasos"/sugerencias de IA se quedan solo en la lista de
+// "General" (ahí sí hace falta el botón de resolver acción, que el
+// calendario no tiene espacio para mostrar bien). Pedido explícito del
+// usuario (11 nov 2026). Compartido entre las 3 vistas (mes/semana/día).
+function calendarioItemsPorDia(all){
   const TIPOS_CALENDARIO = ['audiencia', 'pago', 'prescripcion', 'amparo'];
   let itemsCalendario = all.filter(e => TIPOS_CALENDARIO.includes(e.tipo));
   // Prescripción/amparo: además del día exacto del vencimiento, se duplica
@@ -5292,6 +5287,52 @@ function calendarioMesHTML(all){
   const porDia = {};
   itemsCalendario.forEach(e=>{ (porDia[e.fecha] = porDia[e.fecha] || []).push(e); });
   Object.values(porDia).forEach(list=>list.sort((a,b)=>(a.hora||'99:99').localeCompare(b.hora||'99:99')));
+  return porDia;
+}
+
+// Punto de entrada del calendario -- pestañas Mes/Semana/Día + despacha a
+// la vista activa. `all` ya viene filtrada (abogado solo ve lo suyo vía
+// visibleCases(), y el Administrador ya aplicó el selector de socio).
+function calendarioHTML(all){
+  if(!AGENDA_CAL_MES){
+    const hoy = new Date();
+    AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
+  }
+  if(!AGENDA_CAL_DIA) AGENDA_CAL_DIA = dateToISO(new Date());
+
+  const porDia = calendarioItemsPorDia(all);
+  CAL_POPOVER_ITEMS = [];
+
+  const tabsHTML = `
+  <div style="display:flex; gap:6px; margin-bottom:14px;">
+    <button class="btn ${AGENDA_CAL_VISTA==='mes'?'':'secondary'}" data-cal-vista="mes" style="padding:5px 14px; font-size:12px;">Mes</button>
+    <button class="btn ${AGENDA_CAL_VISTA==='semana'?'':'secondary'}" data-cal-vista="semana" style="padding:5px 14px; font-size:12px;">Semana</button>
+    <button class="btn ${AGENDA_CAL_VISTA==='dia'?'':'secondary'}" data-cal-vista="dia" style="padding:5px 14px; font-size:12px;">Día</button>
+  </div>`;
+
+  if(AGENDA_CAL_VISTA === 'semana') return tabsHTML + calendarioSemanaHTML(porDia);
+  if(AGENDA_CAL_VISTA === 'dia') return tabsHTML + calendarioDiaHTML(porDia);
+  return tabsHTML + calendarioMesHTML(porDia);
+}
+
+// Reutilizada por las 3 vistas, para el mismo look de tarjeta pulida y el
+// mismo popover de detalle al dar clic (ver abrirCalPopover()).
+function calCeldaChip(e, grande){
+  const t = AGENDA_TIPO[e.tipo];
+  const idx = CAL_POPOVER_ITEMS.length;
+  CAL_POPOVER_ITEMS.push(e);
+  const tam = grande ? 'font-size:13px; padding:8px 10px;' : 'font-size:10.5px; padding:3px 6px;';
+  return `<div data-cal-idx="${idx}" style="cursor:pointer; ${tam} background:${t.color}26; color:var(--ink); border-left:3px solid ${t.color}; border-radius:5px; margin-bottom:4px; white-space:${grande?'normal':'nowrap'}; overflow:hidden; text-overflow:ellipsis; box-shadow:0 1px 1px rgba(0,0,0,.06); ${e.avisoAnticipado?'border-style:dashed;':''}">${e.avisoAnticipado?'⏰ ':''}${e.hora? `<strong>${escapeHTML(e.hora.slice(0,5))}</strong> ` : ''}${escapeHTML(truncate(e.k.actor, grande?60:14))}${e.chocaCon?' &#9888;':''}</div>`;
+}
+
+// Reutiliza AGENDA_TIPO para los mismos colores por tipo que ya usa la
+// vista de lista, y e.chocaCon (marcarChoquesDeAgenda()) para marcar el
+// mismo choque de horario.
+function calendarioMesHTML(porDia){
+  const {y, m} = AGENDA_CAL_MES;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const todayISO = dateToISO(hoy);
+  const nombreMes = new Date(y, m, 1).toLocaleDateString('es-MX', {month:'long', year:'numeric'});
 
   const primerDiaSemana = (new Date(y, m, 1).getDay() + 6) % 7; // 0 = lunes
   const diasEnMes = new Date(y, m+1, 0).getDate();
@@ -5300,7 +5341,6 @@ function calendarioMesHTML(all){
   for(let d=1; d<=diasEnMes; d++) celdas.push(d);
   while(celdas.length % 7 !== 0) celdas.push(null);
 
-  CAL_POPOVER_ITEMS = [];
   const MAX_VISIBLES = 3;
   const celdaHTML = (d)=>{
     if(d===null) return `<div style="min-height:92px; background:transparent;"></div>`;
@@ -5309,14 +5349,9 @@ function calendarioMesHTML(all){
     const esHoy = fechaISO === todayISO;
     const visibles = items.slice(0, MAX_VISIBLES);
     const resto = items.length - visibles.length;
-    return `<div style="min-height:92px; border-radius:8px; border:1px solid var(--border); padding:6px; background:${esHoy?'#fdf3e0':'var(--card)'};">
+    return `<div style="min-height:92px; border-radius:8px; border:1px solid var(--border); padding:6px; background:${esHoy?'#fdf3e0':'var(--paper)'};">
       <div style="font-size:11px; font-weight:${esHoy?'700':'400'}; color:${esHoy?'var(--brass)':'var(--gray)'}; margin-bottom:4px;">${d}${esHoy?' &middot; hoy':''}</div>
-      ${visibles.map(e=>{
-        const t = AGENDA_TIPO[e.tipo];
-        const idx = CAL_POPOVER_ITEMS.length;
-        CAL_POPOVER_ITEMS.push(e);
-        return `<div data-cal-idx="${idx}" style="cursor:pointer; font-size:10.5px; background:${t.color}14; color:var(--ink); border-left:3px solid ${t.color}; border-radius:4px; padding:3px 6px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 1px 1px rgba(0,0,0,.04); ${e.avisoAnticipado?'border-style:dashed;':''}">${e.avisoAnticipado?'⏰ ':''}${e.hora? `<strong>${escapeHTML(e.hora.slice(0,5))}</strong> ` : ''}${escapeHTML(truncate(e.k.actor,14))}${e.chocaCon?' &#9888;':''}</div>`;
-      }).join("")}
+      ${visibles.map(e=>calCeldaChip(e,false)).join("")}
       ${resto>0 ? `<div style="font-size:10px; color:var(--gray); font-weight:600; padding-left:3px;">+${resto} más</div>` : ''}
     </div>`;
   };
@@ -5335,6 +5370,67 @@ function calendarioMesHTML(all){
   </div>
   <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px;">
     ${celdas.map(celdaHTML).join("")}
+  </div>`;
+}
+
+// Vista Semana (11 nov 2026, pedido explícito del usuario: "que se pueda
+// ver por semana y dia") -- 7 columnas (lunes-primero) con los pendientes
+// de cada día apilados por hora, sin intentar un grid de horas absoluto
+// (con pocos pendientes por día, una lista simple se lee mejor y es más
+// robusta que calcular posiciones por minuto).
+function calendarioSemanaHTML(porDia){
+  const ancla = parseDate(AGENDA_CAL_DIA) || new Date();
+  const diaSemana = (ancla.getDay() + 6) % 7; // 0 = lunes
+  const lunes = addDaysDate(ancla, -diaSemana);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const todayISO = dateToISO(hoy);
+  const dias = [];
+  for(let i=0;i<7;i++) dias.push(addDaysDate(lunes, i));
+  const rangoTexto = `${dias[0].toLocaleDateString('es-MX',{day:'numeric', month:'short'})} – ${dias[6].toLocaleDateString('es-MX',{day:'numeric', month:'short', year:'numeric'})}`;
+
+  return `
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn secondary" data-cal-nav="-1" style="padding:5px 10px;">&#8249;</button>
+      <div style="font-family:var(--serif); font-size:15px; font-weight:700; min-width:200px; text-align:center;">${rangoTexto}</div>
+      <button class="btn secondary" data-cal-nav="1" style="padding:5px 10px;">&#8250;</button>
+    </div>
+    <button class="btn secondary" data-cal-nav="0" style="padding:5px 10px;">Hoy</button>
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:8px;">
+    ${dias.map(d=>{
+      const fechaISO = dateToISO(d);
+      const esHoy = fechaISO === todayISO;
+      const items = porDia[fechaISO] || [];
+      return `<div style="min-height:170px; border-radius:8px; border:1px solid var(--border); padding:8px; background:${esHoy?'#fdf3e0':'var(--paper)'};">
+        <div style="font-size:11px; font-weight:700; color:${esHoy?'var(--brass)':'var(--ink)'}; margin-bottom:6px; text-align:center; text-transform:capitalize;">${d.toLocaleDateString('es-MX',{weekday:'short'})}<br><span style="font-size:16px;">${d.getDate()}</span></div>
+        ${items.length ? items.map(e=>calCeldaChip(e,false)).join("") : `<div style="font-size:11px; color:var(--gray); text-align:center; padding-top:10px;">—</div>`}
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+// Vista Día -- misma fecha ancla que Semana, un solo día en grande con el
+// detalle completo (sin truncar el nombre del actor).
+function calendarioDiaHTML(porDia){
+  const d = parseDate(AGENDA_CAL_DIA) || new Date();
+  const fechaISO = dateToISO(d);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const esHoy = fechaISO === dateToISO(hoy);
+  const items = porDia[fechaISO] || [];
+  const fechaLegible = d.toLocaleDateString('es-MX', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+
+  return `
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn secondary" data-cal-nav="-1" style="padding:5px 10px;">&#8249;</button>
+      <div style="font-family:var(--serif); font-size:15px; font-weight:700; min-width:230px; text-align:center; text-transform:capitalize; color:${esHoy?'var(--brass)':'var(--ink)'};">${escapeHTML(fechaLegible)}${esHoy?' &middot; hoy':''}</div>
+      <button class="btn secondary" data-cal-nav="1" style="padding:5px 10px;">&#8250;</button>
+    </div>
+    <button class="btn secondary" data-cal-nav="0" style="padding:5px 10px;">Hoy</button>
+  </div>
+  <div style="border-radius:8px; border:1px solid var(--border); padding:14px; background:${esHoy?'#fdf3e0':'var(--paper)'}; min-height:160px;">
+    ${items.length ? items.map(e=>calCeldaChip(e,true)).join("") : `<div class="empty">Sin audiencias, pagos ni vencimientos este día.</div>`}
   </div>`;
 }
 
@@ -5362,16 +5458,15 @@ function abrirCalPopover(idx, anchorEl){
   })();
   const pop = document.createElement('div');
   pop.id = 'calPopover';
-  pop.style.cssText = 'position:fixed; z-index:300; background:var(--card); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.2); padding:14px; width:260px; font-size:13px;';
+  pop.style.cssText = `position:fixed; z-index:300; background:var(--paper); border:1px solid var(--border); border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.25); width:270px; font-size:13px; overflow:hidden;`;
   pop.innerHTML = `
-    <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
-      <span style="width:9px; height:9px; border-radius:50%; background:${t.color}; display:inline-block; flex-shrink:0;"></span>
-      <strong style="color:${t.color}; font-size:11px; text-transform:uppercase; letter-spacing:.03em;">${escapeHTML(t.label||e.tipo)}</strong>
+    <div style="background:${t.color}; color:#fff; padding:10px 14px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;">${escapeHTML(t.label||e.tipo)}</div>
+    <div style="padding:14px;">
+      <div style="font-weight:700; margin-bottom:3px; line-height:1.3; color:var(--ink);">${escapeHTML(e.label)}</div>
+      <div style="color:var(--gray); margin-bottom:8px; text-transform:capitalize;">${escapeHTML(fechaLegible)}${e.hora?' &middot; '+escapeHTML(e.hora.slice(0,5))+' hrs':''}</div>
+      <div style="margin-bottom:12px; padding-top:8px; border-top:1px solid var(--border); color:var(--ink);">${escapeHTML(e.k.actor)} <span style="color:var(--gray);">vs</span> ${escapeHTML(truncate(e.k.demandado||'—',40))}${e.k.exp?`<br><span style="color:var(--gray); font-size:12px;">Exp. ${escapeHTML(e.k.exp)}</span>`:''}</div>
+      <button class="btn" id="calPopoverAbrir" style="width:100%; padding:7px;">Abrir expediente</button>
     </div>
-    <div style="font-weight:700; margin-bottom:3px; line-height:1.3;">${escapeHTML(e.label)}</div>
-    <div style="color:var(--gray); margin-bottom:8px; text-transform:capitalize;">${escapeHTML(fechaLegible)}${e.hora?' &middot; '+escapeHTML(e.hora.slice(0,5))+' hrs':''}</div>
-    <div style="margin-bottom:12px; padding-top:8px; border-top:1px solid var(--border);">${escapeHTML(e.k.actor)} <span style="color:var(--gray);">vs</span> ${escapeHTML(truncate(e.k.demandado||'—',40))}${e.k.exp?`<br><span style="color:var(--gray); font-size:12px;">Exp. ${escapeHTML(e.k.exp)}</span>`:''}</div>
-    <button class="btn" id="calPopoverAbrir" style="width:100%; padding:7px;">Abrir expediente</button>
   `;
   document.body.appendChild(pop);
 
@@ -6630,7 +6725,7 @@ function agendaHTML(){
     ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%; margin-bottom:16px;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
     <div class="panel">
       <div class="panel-body" style="padding:16px 20px;">
-        ${calendarioMesHTML(all)}
+        ${calendarioHTML(all)}
       </div>
     </div>
     <div class="notice" style="margin-top:12px; max-width:100%;">Clic en cualquier pendiente del calendario abre el expediente directo. &#9888; marca choque de horario con otro socio en la misma fecha y hora. ⏰ marca un aviso de "vence mañana" (prescripción/amparo) -- el vencimiento real sigue marcado también el día exacto.</div>
@@ -7232,15 +7327,33 @@ function bindViewBody(){
   document.querySelectorAll('[data-cal-nav]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const dir = parseInt(el.dataset.calNav, 10);
-      if(dir === 0){
-        const hoy = new Date();
-        AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
-      } else if(AGENDA_CAL_MES){
-        let {y, m} = AGENDA_CAL_MES;
-        m += dir;
-        if(m < 0){ m = 11; y--; } else if(m > 11){ m = 0; y++; }
-        AGENDA_CAL_MES = {y, m};
+      if(AGENDA_CAL_VISTA === 'mes'){
+        if(dir === 0){
+          const hoy = new Date();
+          AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
+        } else if(AGENDA_CAL_MES){
+          let {y, m} = AGENDA_CAL_MES;
+          m += dir;
+          if(m < 0){ m = 11; y--; } else if(m > 11){ m = 0; y++; }
+          AGENDA_CAL_MES = {y, m};
+        }
+      } else {
+        // Semana/Día comparten la misma ancla -- navegar de 7 en 7 días o
+        // de 1 en 1 según la vista activa.
+        if(dir === 0){
+          AGENDA_CAL_DIA = dateToISO(new Date());
+        } else {
+          const paso = AGENDA_CAL_VISTA === 'semana' ? 7 : 1;
+          const base = parseDate(AGENDA_CAL_DIA) || new Date();
+          AGENDA_CAL_DIA = dateToISO(addDaysDate(base, dir * paso));
+        }
       }
+      renderViewBody();
+    });
+  });
+  document.querySelectorAll('[data-cal-vista]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      AGENDA_CAL_VISTA = el.dataset.calVista;
       renderViewBody();
     });
   });
