@@ -570,11 +570,25 @@ Demanda normal + Rescisión Art. 51 + Prima de antigüedad de un jalón).
   viejas que esperaban `hecho_causa_auto` con texto y numeración variable
   por bancos ya no aplicaban con el diseño nuevo -- se reescribieron para
   reflejar el comportamiento correcto) -- pasa limpio.
-- **Sin probar en vivo todavía** -- ninguna de las 2 piezas (filtro por
-  tipo_demanda, ni la Rescisión simplificada). Falta confirmar con un
-  expediente real: que el selector muestre/oculte los campos correctos al
-  cambiarlo sin guardar, y que un documento de Rescisión Art. 51 generado
-  con el hecho manual y sin pruebas bancarias se vea bien en Word.
+- **Bug real encontrado por el usuario al probar en vivo (11 nov 2026)**:
+  al elegir "Prima de antigüedad" seguían apareciendo "Nombre de quien
+  despidió" / "Puesto de quien despidió" / "Hora del despido" -- esos 3
+  campos no tenían `scope` (se habían dejado como "comunes" por error, ya
+  que no llevaban el prefijo "Rescisión —"/"Prima antigüedad —" en su
+  label). Son específicos de una demanda por despido clásico (no aplican
+  a Rescisión -- ahí es el trabajador quien se va -- ni a Prima de
+  antigüedad, que no tiene despido de por medio). Corregido: ahora llevan
+  `scope:'Demanda (despido / prestaciones)'`. `app.js?v=132`.
+  **Quedan pendientes de revisar** otros campos "comunes" que podrían ser
+  igual de específicos a un solo tipo (ej. los de aguinaldo/salarios
+  devengados/vacaciones anteriores) -- no se tocaron todavía porque
+  Rescisión Art. 51 SÍ los reutiliza en su propio panel de prestaciones
+  opcionales (`PRESTACIONES_RESCISION_OPCIONES`), así que esconderlos a
+  ciegas podría romper eso. Pedirle al usuario que confirme cuál de los 3
+  tipos los necesita antes de tocarlos, no adivinar.
+- **Sin probar en vivo todavía** la Rescisión Art. 51 simplificada en sí
+  (sin cuentas bancarias, hecho manual) -- falta generar un documento real
+  para confirmarlo.
 
 ## Calendario visual en Agenda general + IA sugiere categoría de documento (11 nov 2026, `app.js?v=130`)
 Pedido del usuario tras una lluvia de ideas sobre autonomía del sistema

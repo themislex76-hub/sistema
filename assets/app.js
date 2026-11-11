@@ -339,9 +339,14 @@ const EDITABLE_FIELDS = [
   {key:'tribunal', label:'Tribunal', type:'tribunal'},
   {key:'exp', label:'Número de expediente'},
   {key:'status', label:'Estatus', type:'select', options:STATUS_OPCIONES},
-  {key:'quien_despidio', label:'Nombre de quien despidió'},
-  {key:'puesto_despidio', label:'Puesto de quien despidió'},
-  {key:'hora_despido', label:'Hora del despido'},
+  // Solo aplican a una demanda por despido clásico -- no a Rescisión
+  // Art. 51 (ahí es el trabajador quien decide irse, no hay "quien
+  // despidió") ni a Prima de antigüedad (reclamo puntual de jubilación,
+  // sin despido de por medio). Confirmado en vivo por el usuario (11 nov
+  // 2026): se veían sin querer al elegir Prima de antigüedad.
+  {key:'quien_despidio', label:'Nombre de quien despidió', scope:'Demanda (despido / prestaciones)'},
+  {key:'puesto_despidio', label:'Puesto de quien despidió', scope:'Demanda (despido / prestaciones)'},
+  {key:'hora_despido', label:'Hora del despido', scope:'Demanda (despido / prestaciones)'},
   {key:'hora_entrada', label:'Horario — hora de entrada', type:'time'},
   {key:'hora_salida', label:'Horario — hora de salida real (incluyendo tiempo extra)', type:'time'},
   {key:'comida_inicio', label:'Horario — comida, hora de inicio (opcional, déjalo vacío para no especificar)', type:'time'},
