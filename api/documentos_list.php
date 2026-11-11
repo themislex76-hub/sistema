@@ -14,7 +14,7 @@ guard_expediente_access($pdo, $user, $expedienteId);
 
 $stmt = $pdo->prepare(
     'SELECT d.id, d.expediente_id, d.nombre_archivo, d.tipo_mime, d.tamano_bytes, d.categoria, d.creado_en,
-            d.ia_resumen, d.ia_etapa_sugerida, d.ia_aplicado,
+            d.ia_resumen, d.ia_etapa_sugerida, d.ia_aplicado, d.ia_categoria_sugerida,
             u.nombre AS subido_por_nombre
      FROM expediente_documentos d
      LEFT JOIN usuarios u ON u.id = d.subido_por

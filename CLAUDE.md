@@ -518,6 +518,55 @@ falta seguimiento):
      normal -- confirma que el candado bloquea lo malo sin bloquear lo
      bueno.
 
+## Calendario visual en Agenda general + IA sugiere categoría de documento (11 nov 2026, `app.js?v=130`)
+Pedido del usuario tras una lluvia de ideas sobre autonomía del sistema
+("que mas se te ocurre"): de 4 propuestas, aceptó 1 (categoría sugerida),
+rechazó 2 (tribunal automático por prefijo -- aclaró que esos prefijos son
+de Centros de Conciliación, no de Tribunal; y avisos anticipados antes del
+vencimiento), y redirigió la 4ª (checklist de choques de horario, que
+**ya existía** -- `marcarChoquesDeAgenda()`, sin que lo supiera) hacia algo
+distinto: un calendario visual en vez de solo lista.
+- **Pestaña "Calendario" nueva dentro de Agenda general** (`AGENDA_TAB=
+  'calendario'`, junto a General/Asesorías/Seguimiento IA): cuadrícula de
+  mes (`calendarioMesHTML()`, lunes-primero) con navegación ‹ mes actual
+  › y botón "Hoy". Reutiliza `buildAgendaEntries()` +
+  `marcarChoquesDeAgenda()` tal cual (mismo filtro de socio para el
+  Administrador, `AGENDA_SOCIO`, que ya traían las demás pestañas -- cada
+  abogado ya veía solo lo suyo automáticamente vía `visibleCases()`, eso
+  NO era nuevo, solo le faltaba la vista de calendario). Cada pendiente es
+  un bloque clicable con el color de `AGENDA_TIPO` que abre el expediente
+  directo (mismo patrón `[data-id]` que ya usa toda la app); ⚠ marca
+  choque de horario. Variable de estado nueva `AGENDA_CAL_MES` (null hasta
+  el primer render, se inicializa al mes actual).
+- **IA sugiere la categoría de un documento subido como "Otro"**: extiende
+  `ia_analizar_acuerdo_boletin()` (ya analiza cualquier documento desde la
+  pieza 4) con una 4ª parte en el prompt -- si el contenido deja clarísimo
+  que el documento es, por ejemplo, un Convenio o una Contestación, lo
+  dice; si la categoría actual ya es razonable o no hay nada obvio,
+  responde `(ninguna)`. **A propósito SOLO se usa cuando el documento se
+  guardó bajo el cajón genérico 'otro'** -- si el abogado ya eligió algo
+  específico a mano, no se le molesta con una sugerencia.
+  - **Diferencia de diseño importante frente a las etapas**: una fecha de
+    etapa llenada sola se puede borrar después desde "Etapas del juicio"
+    si la IA se equivocó -- hoy NO existe ninguna forma de editar la
+    categoría de un documento ya subido salvo borrándolo entero. Por eso
+    esto NUNCA se aplica solo: la sugerencia se guarda en la columna nueva
+    `ia_categoria_sugerida` (migración **065_ia_sugiere_categoria_documento.sql**)
+    y se muestra en la pestaña "Documentos" como "📁 ¿Categoría: X? [Usar]"
+    -- el abogado confirma con un tap (`api/documentos_recategorizar.php`,
+    nuevo endpoint, valida que la categoría sugerida siga siendo válida,
+    actualiza `categoria`, limpia la sugerencia, y lo deja en
+    `log_historial` como `documento_categoria`).
+  - `cron_analizar_documentos_ia.php` ahora guarda esa sugerencia junto con
+    el resto del análisis (solo cuando `categoria === 'otro'`) -- no corre
+    más seguido, mismo cron de cada 15-30 min de la pieza 4. Los acuerdos
+    de boletín (vía `cron_analizar_acuerdos_ia.php`) NO se tocan por esto
+    -- ya llegan con categoría correcta (`acuerdo`/`acuerdo_amparo`) puesta
+    por el robot, nunca bajo "Otro", así que la sugerencia no les aplica.
+- Sin cambios a `mergeTags()`/`calcularJornada()`/tags de demanda -- no
+  aplica `verificar_tags.js`. **Sin probar en vivo todavía** ninguna de las
+  dos piezas (ni el calendario ni la sugerencia de categoría).
+
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
 Mercado) que el Informe Ejecutivo con IA seguía diciendo "aún no se ha

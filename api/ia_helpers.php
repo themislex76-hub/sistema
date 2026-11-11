@@ -2992,10 +2992,23 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
 
     $vocabularioEtapas = implode(', ', array_map(fn($k) => "$k (" . (ETAPA_LABELS[$k] ?? $k) . ')', $ordenEtapas));
 
+    // Categorías válidas para re-sugerir la clasificación del documento
+    // (11 nov 2026, pedido explícito del usuario) -- 'otro' se excluye del
+    // vocabulario a sugerir a propósito, es el cajón genérico, nunca una
+    // sugerencia útil en sí misma.
+    $categoriaLabels = [
+        'constancia_no_conciliacion' => 'Constancia de no conciliación',
+        'demanda' => 'Demanda', 'contestacion' => 'Contestación', 'pruebas' => 'Pruebas',
+        'actas' => 'Actas de audiencia', 'convenio' => 'Convenio', 'acuerdo' => 'Acuerdo (boletín)',
+        'acuerdo_amparo' => 'Acuerdo (amparo)',
+    ];
+    $categoriasValidas = defined('CATEGORIA_DOCUMENTO_KEYS') ? array_diff(CATEGORIA_DOCUMENTO_KEYS, ['otro']) : array_keys($categoriaLabels);
+    $vocabularioCategorias = implode(', ', array_map(fn($c) => "$c (" . ($categoriaLabels[$c] ?? $c) . ')', $categoriasValidas));
+
     $instrucciones = 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Te doy un '
         . 'documento real de un expediente (puede ser un acuerdo judicial/texto de boletín, pero también una '
         . 'constancia, un convenio, pruebas, una cédula de notificación, o cualquier otro documento que el '
-        . 'abogado haya subido), más el contexto de en qué va el trámite. Tu tarea tiene tres partes.'
+        . 'abogado haya subido), más el contexto de en qué va el trámite. Tu tarea tiene cuatro partes.'
         . "\n\n"
         . 'PARTE 1 -- resumen (1-2 líneas, español, directo): qué contiene este documento en concreto -- qué '
         . 'resolvió el Tribunal/Juzgado, qué ordenó, qué acredita, o qué pide. No repitas datos genéricos (nombre '
@@ -3014,8 +3027,13 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
         . 'una fecha así de explícita, o tendrías que calcularla/inferirla, responde (ninguna) -- NUNCA calcules '
         . 'ni inventes una fecha.'
         . "\n\n"
+        . 'PARTE 4 -- categoría sugerida: el documento se guardó con la categoría "' . ($categoria ?: '(sin definir)') . '". '
+        . "Si el CONTENIDO deja clarísimo que corresponde a otra categoría del vocabulario del sistema, responde esa "
+        . "clave exacta. Vocabulario: $vocabularioCategorias. Si la categoría actual ya es razonable, o el contenido "
+        . 'no deja una categoría obvia, responde (ninguna) -- NUNCA sugieras solo por parecido superficial.'
+        . "\n\n"
         . "Responde EXACTAMENTE en este formato (las líneas en mayúsculas son literales):\n\n"
-        . "RESUMEN: [tu resumen aquí]\nETAPA: [clave exacta, o (ninguna)]\nFECHA: [YYYY-MM-DD, o (ninguna)]";
+        . "RESUMEN: [tu resumen aquí]\nETAPA: [clave exacta, o (ninguna)]\nFECHA: [YYYY-MM-DD, o (ninguna)]\nCATEGORIA: [clave exacta, o (ninguna)]";
 
     $contentBlocks = [];
     if ($esPdf) {
@@ -3081,12 +3099,14 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
     $resumen = null;
     $etapaSugerida = null;
     $fechaMencionada = null;
+    $categoriaSugerida = null;
     if (preg_match('/RESUMEN:\s*(.+?)(?:\n[A-Z]+:|$)/s', $texto, $m)) $resumen = trim($m[1]);
     if (preg_match('/ETAPA:\s*([a-z_]+)/i', $texto, $m) && in_array($m[1], $ordenEtapas, true)) $etapaSugerida = $m[1];
     if (preg_match('/FECHA:\s*(\d{4}-\d{2}-\d{2})/', $texto, $m)) $fechaMencionada = $m[1];
+    if (preg_match('/CATEGORIA:\s*([a-z_]+)/i', $texto, $m) && in_array($m[1], $categoriasValidas, true) && $m[1] !== $categoria) $categoriaSugerida = $m[1];
 
     if ($resumen === null) return null;
-    return ['resumen' => $resumen, 'etapa_sugerida' => $etapaSugerida, 'fecha_mencionada' => $fechaMencionada];
+    return ['resumen' => $resumen, 'etapa_sugerida' => $etapaSugerida, 'fecha_mencionada' => $fechaMencionada, 'categoria_sugerida' => $categoriaSugerida];
 }
 
 // Supervisor por IA: dado un asunto ESTANCADO (ya detectado por

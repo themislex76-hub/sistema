@@ -64,6 +64,7 @@ $copiados = 0;
 $aplicados = 0;
 $omitidos = 0;
 $fallidos = 0;
+$sugerenciasCategoria = 0;
 
 foreach ($documentos as $doc) {
     // Caso 1: ya viene de un robot de boletín y ya se analizó ahí --
@@ -154,19 +155,31 @@ foreach ($documentos as $doc) {
         }
     }
 
+    // Sugerencia de categoría (11 nov 2026, pedido explícito del usuario)
+    // -- solo tiene sentido cuando se guardó bajo el cajón genérico 'otro'
+    // (si el abogado ya eligió algo específico, no se le molesta con una
+    // sugerencia). NUNCA se aplica sola -- a diferencia de una fecha de
+    // etapa, hoy no hay forma de deshacer una recategorización mal hecha
+    // desde la UI salvo borrando el documento, así que el abogado confirma
+    // con un tap en la pestaña "Documentos" (ver documentos_recategorizar.php).
+    $categoriaSugerida = ($doc['categoria'] === 'otro') ? $resultado['categoria_sugerida'] : null;
+
     $pdo->prepare(
         'UPDATE expediente_documentos
-         SET ia_resumen = :resumen, ia_etapa_sugerida = :etapa, ia_fecha_mencionada = :fecha, ia_aplicado = :aplicado, ia_analizado_en = NOW()
+         SET ia_resumen = :resumen, ia_etapa_sugerida = :etapa, ia_fecha_mencionada = :fecha, ia_aplicado = :aplicado, ia_categoria_sugerida = :cat_sug, ia_analizado_en = NOW()
          WHERE id = :id'
     )->execute([
         ':resumen' => $resultado['resumen'],
         ':etapa' => $resultado['etapa_sugerida'],
         ':fecha' => $resultado['fecha_mencionada'],
         ':aplicado' => $aplicado ? 1 : 0,
+        ':cat_sug' => $categoriaSugerida,
         ':id' => $doc['id'],
     ]);
+    if ($categoriaSugerida) $sugerenciasCategoria++;
 }
 
 echo count($documentos) . " documento(s) en el lote, " . $analizados . " analizado(s) con IA, "
     . $copiados . " copiado(s) de su aviso de boletín, " . $omitidos . " omitido(s) (formato no legible), "
-    . $aplicados . " etapa(s) llenada(s) sola(s), " . $fallidos . " fallido(s) (se reintentan después).\n";
+    . $aplicados . " etapa(s) llenada(s) sola(s), " . $sugerenciasCategoria . " sugerencia(s) de categoría pendiente(s) de confirmar, "
+    . $fallidos . " fallido(s) (se reintentan después).\n";

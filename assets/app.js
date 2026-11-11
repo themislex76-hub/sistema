@@ -2266,7 +2266,13 @@ function avisoIaHTML(a){
 }
 function documentoIaHTML(d){
   if(!d.ia_resumen) return '';
-  return `<div class="aviso-ia" style="margin-top:4px;">🤖 ${escapeHTML(d.ia_resumen)}${d.ia_aplicado && d.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(d.ia_etapa_sugerida))}</span>` : ''}</div>`;
+  // Sugerencia de categoría (11 nov 2026, pedido explícito del usuario) --
+  // a diferencia de una etapa llenada sola, esto SIEMPRE requiere un tap
+  // de confirmación (hoy no hay forma de deshacerlo desde la UI salvo
+  // borrando el documento) -- ver documentos_recategorizar.php.
+  const sugerenciaCategoria = d.ia_categoria_sugerida ? `
+    <div style="margin-top:4px; font-size:11.5px; color:var(--ink);">📁 ¿Categoría: <strong>${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[d.ia_categoria_sugerida] || d.ia_categoria_sugerida)}</strong>? <button class="btn secondary" data-documento-recategorizar="${d.id}" style="padding:2px 8px; font-size:11px; margin-left:4px;">Usar</button></div>` : '';
+  return `<div class="aviso-ia" style="margin-top:4px;">🤖 ${escapeHTML(d.ia_resumen)}${d.ia_aplicado && d.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(d.ia_etapa_sugerida))}</span>` : ''}${sugerenciaCategoria}</div>`;
 }
 async function loadAvisosBoletin(){
   try{
@@ -5184,6 +5190,75 @@ function marcarChoquesDeAgenda(entries){
 
 let AGENDA_SOCIO = 'todos';
 let AGENDA_TAB = 'general';
+// Mes que se muestra en la pestaña "Calendario" de Agenda general (11 nov
+// 2026, pedido explícito del usuario: ver la agenda en calendario visual,
+// no solo como lista -- cada abogado ve la suya, el Administrador puede
+// ver "Todos" o un socio en particular con el mismo selector AGENDA_SOCIO
+// que ya usan las demás pestañas). null hasta el primer render, momento en
+// que calendarioMesHTML() lo inicializa al mes actual.
+let AGENDA_CAL_MES = null;
+const AGENDA_CAL_DIAS = ['L','M','M','J','V','S','D']; // lunes-primero, solo para la cuadrícula del calendario
+// `all` ya viene filtrada (abogado solo ve lo suyo vía visibleCases(), y
+// el Administrador ya aplicó el selector de socio) -- aquí solo se agrupa
+// por fecha y se pinta la cuadrícula del mes. Reutiliza AGENDA_TIPO para
+// los mismos colores por tipo que ya usa la vista de lista, y e.chocaCon
+// (marcarChoquesDeAgenda()) para marcar el mismo choque de horario.
+function calendarioMesHTML(all){
+  if(!AGENDA_CAL_MES){
+    const hoy = new Date();
+    AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
+  }
+  const {y, m} = AGENDA_CAL_MES;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const todayISO = dateToISO(hoy);
+  const nombreMes = new Date(y, m, 1).toLocaleDateString('es-MX', {month:'long', year:'numeric'});
+
+  const porDia = {};
+  all.forEach(e=>{ (porDia[e.fecha] = porDia[e.fecha] || []).push(e); });
+  Object.values(porDia).forEach(list=>list.sort((a,b)=>(a.hora||'99:99').localeCompare(b.hora||'99:99')));
+
+  const primerDiaSemana = (new Date(y, m, 1).getDay() + 6) % 7; // 0 = lunes
+  const diasEnMes = new Date(y, m+1, 0).getDate();
+  const celdas = [];
+  for(let i=0;i<primerDiaSemana;i++) celdas.push(null);
+  for(let d=1; d<=diasEnMes; d++) celdas.push(d);
+  while(celdas.length % 7 !== 0) celdas.push(null);
+
+  const MAX_VISIBLES = 3;
+  const celdaHTML = (d)=>{
+    if(d===null) return `<div style="min-height:92px; background:transparent;"></div>`;
+    const fechaISO = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const items = porDia[fechaISO] || [];
+    const esHoy = fechaISO === todayISO;
+    const visibles = items.slice(0, MAX_VISIBLES);
+    const resto = items.length - visibles.length;
+    return `<div style="min-height:92px; border-radius:6px; border:1px solid var(--border); padding:6px; background:${esHoy?'#fdf3e0':'var(--card)'};">
+      <div style="font-size:11px; font-weight:${esHoy?'700':'400'}; color:${esHoy?'var(--brass)':'var(--gray)'}; margin-bottom:4px;">${d}${esHoy?' &middot; hoy':''}</div>
+      ${visibles.map(e=>{
+        const t = AGENDA_TIPO[e.tipo];
+        const tituloTip = `${e.label} — ${e.k.actor} vs ${truncate(e.k.demandado,30)}`;
+        return `<div data-id="${e.k.id}" style="cursor:pointer; font-size:10.5px; background:${t.color}1a; color:${t.color}; border-radius:4px; padding:2px 5px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHTML(tituloTip)}">${e.hora? escapeHTML(e.hora.slice(0,5))+' ' : ''}${escapeHTML(truncate(e.k.actor,14))}${e.chocaCon?' &#9888;':''}</div>`;
+      }).join("")}
+      ${resto>0 ? `<div style="font-size:10px; color:var(--gray);">+${resto} más</div>` : ''}
+    </div>`;
+  };
+
+  return `
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn secondary" data-cal-nav="-1" style="padding:5px 10px;">&#8249;</button>
+      <div style="font-family:var(--serif); font-size:16px; font-weight:700; text-transform:capitalize; min-width:170px; text-align:center;">${nombreMes}</div>
+      <button class="btn secondary" data-cal-nav="1" style="padding:5px 10px;">&#8250;</button>
+    </div>
+    <button class="btn secondary" data-cal-nav="0" style="padding:5px 10px;">Hoy</button>
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:4px;">
+    ${AGENDA_CAL_DIAS.map(d=>`<div style="text-align:center; font-size:11px; color:var(--gray); font-weight:700;">${d}</div>`).join("")}
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px;">
+    ${celdas.map(celdaHTML).join("")}
+  </div>`;
+}
 
 const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
 const PROSPECTO_ESTATUS_BADGE = {nuevo:'crit', contactado:'warn', descartado:'closed', convertido:'ok'};
@@ -6371,9 +6446,43 @@ function agendaHTML(){
   const tabsHTML = `
   <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
     <button class="btn ${AGENDA_TAB==='general'?'':'secondary'}" data-agenda-tab="general" style="padding:8px 16px;">General</button>
+    <button class="btn ${AGENDA_TAB==='calendario'?'':'secondary'}" data-agenda-tab="calendario" style="padding:8px 16px;">Calendario</button>
     <button class="btn ${AGENDA_TAB==='asesorias'?'':'secondary'}" data-agenda-tab="asesorias" style="padding:8px 16px;">Asesorías</button>
     <button class="btn ${AGENDA_TAB==='ia'?'':'secondary'}" data-agenda-tab="ia" style="padding:8px 16px;">Seguimiento IA</button>
   </div>`;
+
+  if(AGENDA_TAB === 'calendario'){
+    return tabsHTML + `
+    ${isAdmin ? `
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="panel-head"><h3>Pendientes por socio</h3><span class="count">${Object.keys(resumenPorSocio).length}</span></div>
+      <div class="panel-body" style="padding:0;">
+        <table><thead><tr><th>Socio</th><th>Vencidas</th><th>Próximas</th><th></th></tr></thead><tbody>
+          <tr data-agenda-socio="todos" style="cursor:pointer; ${AGENDA_SOCIO==='todos'?'background:var(--parchment);':''}">
+            <td><strong>Todos</strong></td>
+            <td>${totalesSinDuplicar.vencidas}</td>
+            <td>${totalesSinDuplicar.proximas}</td>
+            <td></td>
+          </tr>
+          ${Object.keys(resumenPorSocio).sort((a,b)=>resumenPorSocio[b].vencidas-resumenPorSocio[a].vencidas).map(n=>`
+          <tr data-agenda-socio="${escapeHTML(n)}" style="cursor:pointer; ${AGENDA_SOCIO===n?'background:var(--parchment);':''}">
+            <td>${escapeHTML(n)}</td>
+            <td style="color:${resumenPorSocio[n].vencidas>0?'var(--red)':'inherit'}; font-weight:${resumenPorSocio[n].vencidas>0?'700':'400'};">${resumenPorSocio[n].vencidas}</td>
+            <td>${resumenPorSocio[n].proximas}</td>
+            <td><button class="btn secondary" data-agenda-socio="${escapeHTML(n)}" style="padding:5px 10px; font-size:11px;">Ver</button></td>
+          </tr>`).join("")}
+        </tbody></table>
+      </div>
+    </div>` : ""}
+    ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%; margin-bottom:16px;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
+    <div class="panel">
+      <div class="panel-body" style="padding:16px 20px;">
+        ${calendarioMesHTML(all)}
+      </div>
+    </div>
+    <div class="notice" style="margin-top:12px; max-width:100%;">Clic en cualquier pendiente del calendario abre el expediente directo. &#9888; marca choque de horario con otro socio en la misma fecha y hora.</div>
+    `;
+  }
 
   if(AGENDA_TAB === 'asesorias'){
     return tabsHTML + citasPanelHTML(true) + disponibilidadPanelHTML();
@@ -6938,6 +7047,21 @@ function bindViewBody(){
   document.querySelectorAll('[data-agenda-socio]').forEach(el=>{
     el.addEventListener('click', ()=>{
       AGENDA_SOCIO = el.dataset.agendaSocio;
+      renderViewBody();
+    });
+  });
+  document.querySelectorAll('[data-cal-nav]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const dir = parseInt(el.dataset.calNav, 10);
+      if(dir === 0){
+        const hoy = new Date();
+        AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
+      } else if(AGENDA_CAL_MES){
+        let {y, m} = AGENDA_CAL_MES;
+        m += dir;
+        if(m < 0){ m = 11; y--; } else if(m > 11){ m = 0; y++; }
+        AGENDA_CAL_MES = {y, m};
+      }
       renderViewBody();
     });
   });
@@ -8555,6 +8679,20 @@ function bindModalTabEvents(){
         await loadDocumentos(ACTIVE_CASE.id);
         renderModal();
       }catch(err){ alert('No se pudo eliminar: ' + err.message); }
+    });
+  });
+  // Confirmar la categoría que la IA sugirió al analizar el documento (11
+  // nov 2026) -- siempre requiere este tap, nunca se aplica sola (ver
+  // documentos_recategorizar.php).
+  document.querySelectorAll('[data-documento-recategorizar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = parseInt(btn.dataset.documentoRecategorizar);
+      btn.disabled = true;
+      try{
+        await api('POST', 'documentos_recategorizar.php', {id});
+        await loadDocumentos(ACTIVE_CASE.id);
+        renderModal();
+      }catch(err){ alert('No se pudo actualizar la categoría: ' + err.message); btn.disabled = false; }
     });
   });
   const exportarCalculoBtn = document.getElementById('exportarCalculoBtn');
