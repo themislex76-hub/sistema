@@ -1294,6 +1294,24 @@ function proximaAudiencia(kase){
   return candidatas[0] || null;
 }
 
+// TODAS las audiencias/citatorios con fecha agendada, SIN excluir las ya
+// celebradas (a diferencia de proximaAudiencia(), que solo busca "la
+// próxima pendiente" para el resto del sistema -- mensajes de WhatsApp al
+// cliente, etc.). Uso exclusivo del calendario visual (11 nov 2026,
+// pedido explícito del usuario: "aunque ya se haya celebrado quiero que
+// se muestren en agenda" -- el calendario se comporta como Google
+// Calendar, un registro de lo agendado, no solo lo pendiente).
+function audienciasParaCalendario(kase){
+  const meta = getMeta(kase.id);
+  return ['audiencia_preliminar','audiencia_juicio','conciliacion_primer_citatorio','conciliacion_segundo_citatorio']
+    .map(key=>{
+      const e = meta.etapas[key];
+      if(!e || !e.fecha_programada) return null;
+      return {key, fecha: e.fecha_programada, hora: e.hora || null, label: AUDIENCIA_LABEL_CLIENTE[key]};
+    })
+    .filter(Boolean);
+}
+
 // Revisa si hay un pago de convenio programado que todavía no se cobra, para
 // avisarle al trabajador (y al abogado) con anticipación.
 // ---------------------------------------------------------------
@@ -5263,8 +5281,26 @@ let CAL_POPOVER_ITEMS = [];
 // calendario no tiene espacio para mostrar bien). Pedido explícito del
 // usuario (11 nov 2026). Compartido entre las 3 vistas (mes/semana/día).
 function calendarioItemsPorDia(all){
-  const TIPOS_CALENDARIO = ['audiencia', 'pago', 'prescripcion', 'amparo'];
-  let itemsCalendario = all.filter(e => TIPOS_CALENDARIO.includes(e.tipo));
+  const TIPOS_CALENDARIO_SIN_AUDIENCIA = ['pago', 'prescripcion', 'amparo'];
+  let itemsCalendario = all.filter(e => TIPOS_CALENDARIO_SIN_AUDIENCIA.includes(e.tipo));
+
+  // Audiencias/citatorios: el calendario muestra TODAS las que tengan
+  // fecha agendada, se hayan celebrado o no -- a propósito NO se sacan de
+  // `all` (que solo trae, vía proximaAudiencia(), la "próxima pendiente"
+  // de cada caso para la lista "General") sino de
+  // audienciasParaCalendario(), que no excluye nada. Mismo filtro de
+  // socio/concluidos que ya usa el resto de Agenda general.
+  const isAdmin = CURRENT_USER.role === 'Administrador';
+  let casesAudiencias = visibleCases().filter(k=>!estaConcluido(k));
+  if(isAdmin && AGENDA_SOCIO !== 'todos'){
+    casesAudiencias = casesAudiencias.filter(k => (assignedLawyers(k).length ? assignedLawyers(k) : ['Sin asignar']).includes(AGENDA_SOCIO));
+  }
+  casesAudiencias.forEach(k=>{
+    audienciasParaCalendario(k).forEach(a=>{
+      itemsCalendario.push({tipo:'audiencia', fecha:a.fecha, hora:a.hora, k, label:a.label});
+    });
+  });
+
   // Prescripción/amparo: además del día exacto del vencimiento, se duplica
   // un aviso "Vence mañana" un día antes -- mismo principio que ya usa el
   // push diario (cron_recordatorio_abogado.php avisa justo 1 día antes),

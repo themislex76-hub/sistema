@@ -913,9 +913,45 @@ semanal con horas, o "+N más" clicable) y eligió las primeras 2.
   que sigue siendo mes/año para la vista Mes) -- los botones ‹/›/Hoy
   mueven 7/1 días en Semana/Día, o el mes completo en Mes, según la
   pestaña activa. `app.js?v=138`.
-- **Sin probar en vivo todavía** las vistas Semana/Día (el arreglo del
-  popover transparente sí quedó confirmado por el usuario al reportarlo
-  con capturas reales).
+- **Bug real encontrado por el usuario al probar en vivo (11 nov 2026,
+  mismo día)**: la audiencia de conciliación de Verónica Gabriela
+  (agendada hoy 11 nov, confirmada visible en Google Calendar) NO
+  aparecía en el calendario del sistema. Causa real confirmada revisando
+  "Etapas del juicio": la etapa "Conciliación prejudicial (Segundo
+  citatorio)" ya tenía "Fecha en que se celebró" = 11/11/2026 (dato viejo
+  de antes de que se separaran los 2 campos esta mañana), además de
+  "Fecha agendada" = 11/11/2026 12:30pm (la que acababa de llenar sola el
+  Google Calendar). `proximaAudiencia()` -- la función que alimenta la
+  lista "General" y, hasta ahora, también el calendario -- excluye a
+  propósito cualquier etapa que ya tenga algo en "Fecha en que se
+  celebró" (la trata como "ya pasó, nada que agendar"), así que nunca
+  llegaba a mostrarse aunque la fecha agendada fuera correcta.
+  - **Decisión de diseño explícita del usuario**: "aunque ya se haya
+    celebrado quiero que se muestren en agenda" -- el calendario debe
+    comportarse como Google Calendar (un registro de lo agendado, pasado
+    o futuro), no solo mostrar "la próxima pendiente" como sí debe seguir
+    haciendo la lista "General" (ahí si importa solo lo pendiente, para
+    no inflar el conteo de cosas por resolver) y los mensajes de WhatsApp
+    al cliente (ahí decirle "tu próxima audiencia es..." de algo que ya
+    pasó sería confuso). Por eso NO se tocó `proximaAudiencia()` --
+    sigue igual, la usan esos 2 lugares sin cambio.
+  - **Arreglado con una función nueva, exclusiva del calendario**:
+    `audienciasParaCalendario(kase)` -- mismas 4 claves que
+    `proximaAudiencia()` (preliminar/juicio/conciliación 1º/2º
+    citatorio), pero devuelve TODAS las que tengan "Fecha agendada" sin
+    excluir las que ya tengan también "Fecha en que se celebró", y sin
+    quedarse solo con la más próxima (devuelve el arreglo completo, no
+    un solo candidato). `calendarioItemsPorDia()` ahora arma sus propias
+    entradas tipo 'audiencia' a partir de esta función (con el mismo
+    filtro de socio/concluidos que ya aplicaba el resto de Agenda
+    general) en vez de tomarlas de `all` (que solo trae lo que
+    `buildAgendaEntries()` ya filtró vía `proximaAudiencia()`). `pago`/
+    `prescripcion`/`amparo` del calendario siguen saliendo de `all` sin
+    cambio. `app.js?v=139`.
+- **Sin probar en vivo todavía**: ni las vistas Semana/Día (el arreglo del
+  popover transparente sí quedó confirmado con capturas reales), ni este
+  último arreglo de audiencias ya celebradas -- confirmar que la
+  conciliación de Verónica Gabriela ya aparezca en el calendario de hoy.
 
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
