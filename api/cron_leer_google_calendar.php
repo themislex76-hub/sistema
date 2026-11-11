@@ -74,9 +74,9 @@ foreach ($calendarios as $cal) {
     // status no indica cierre).
     $expStmt = $pdo->prepare(
         "SELECT id, actor, demandado, exp, status FROM expedientes
-         WHERE concluido_manual = 0 AND (abogado_id = :aid OR abogado_id_2 = :aid)"
+         WHERE concluido_manual = 0 AND (abogado_id = :aid1 OR abogado_id_2 = :aid2)"
     );
-    $expStmt->execute([':aid' => $cal['abogado_id']]);
+    $expStmt->execute([':aid1' => $cal['abogado_id'], ':aid2' => $cal['abogado_id']]);
     $expedientes = array_values(array_filter($expStmt->fetchAll(), function ($r) {
         $s = strtolower((string)($r['status'] ?? ''));
         return strpos($s, 'pagado') === false && strpos($s, 'ya no quiso') === false;
