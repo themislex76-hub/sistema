@@ -953,6 +953,34 @@ semanal con horas, o "+N más" clicable) y eligió las primeras 2.
   último arreglo de audiencias ya celebradas -- confirmar que la
   conciliación de Verónica Gabriela ya aparezca en el calendario de hoy.
 
+## Panel "Actividad de la IA" para monitorear llenados/rechazos automáticos (11 nov 2026, `app.js?v=140`)
+Pedido explícito del usuario: "¿crees que debemos poner una sección donde
+podamos ver los cambios que ha hecho la IA para monitorear lo que está
+haciendo?" -- con 5 mecanismos ya llenando etapas solas (acuerdos de
+boletín, documentos subidos, auditoría integral, Google Calendar, y el
+script de reprocesamiento legacy), la única forma de revisarlo era entrar
+al "Historial de cambios" de cada expediente uno por uno.
+- **Nuevo endpoint `api/ia_actividad_list.php`** (solo Administrador):
+  junta en una sola lista, ordenada por más reciente (últimos 30 días por
+  default, máx 300 filas), todas las entradas de `expediente_historial`
+  donde `usuario_id IS NULL` -- ese es justo el criterio que ya usan
+  `log_historial()` cuando la llama uno de los 5 mecanismos automáticos
+  (`['id'=>null, 'nombre'=>'IA (...)']`), a diferencia de las acciones que
+  SÍ pasan por un tap de confirmación humana primero (responder al
+  supervisor, confirmar un evento de Google Calendar, recategorizar un
+  documento), que quedan con el usuario_id real de quien confirmó y por
+  eso no entran aquí -- esas ya las revisó un humano antes de aplicarse,
+  no es la misma urgencia de supervisión.
+- Panel nuevo en **"Equipo"** (entre "Calendarios de Google vigilados" y
+  "Respaldo de toda la información"): tabla con fecha, expediente
+  (clicable, abre el expediente directo) y qué hizo -- con una insignia
+  "✓ aplicado" o "✗ rechazado" (detecta rechazos por el patrón
+  `_rechazo_` en el nombre del campo, ej. `calendario_ia_rechazo_<etapa>`/
+  `auditoria_ia_rechazo_<etapa>`).
+- Sin cambios de base de datos (solo lee `expediente_historial`, que ya
+  existía). No se tocó `mergeTags()`/tags de demanda -- no aplica
+  `verificar_tags.js`. **Sin probar en vivo todavía**.
+
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
 Mercado) que el Informe Ejecutivo con IA seguía diciendo "aún no se ha

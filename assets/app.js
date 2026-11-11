@@ -2357,6 +2357,16 @@ async function loadGoogleCalendariosMapeo(){
     GOOGLE_CALENDARIOS_MAPEO = d.mapeo;
   }catch(e){ GOOGLE_CALENDARIOS_MAPEO = []; }
 }
+// Panel de monitoreo "Actividad de la IA" (11 nov 2026, pedido explícito
+// del usuario: "una sección donde podamos ver los cambios que ha hecho
+// la IA para monitorear lo que está haciendo") -- ver api/ia_actividad_list.php.
+let IA_ACTIVIDAD = [];
+async function loadIaActividad(){
+  try{
+    const d = await api('GET', 'ia_actividad_list.php');
+    IA_ACTIVIDAD = d.actividad;
+  }catch(e){ IA_ACTIVIDAD = []; }
+}
 // Se abrió el sistema desde el push de una pregunta nueva (ver
 // cron_generar_preguntas_supervisor.php) -- lleva a "Preguntas al
 // abogado" y marca cuál enfocar; bindViewBody() hace el scroll/foco real
@@ -2799,6 +2809,7 @@ async function refreshBootstrap(){
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadUsuariosAdmin();
     await loadGoogleCalendariosMapeo();
+    await loadIaActividad();
   }
   await loadDiasInhabiles();
   syncAvisosAbogado(); // en segundo plano, no bloquea la carga
@@ -7023,6 +7034,24 @@ function equipoHTML(){
         </div>`;
       }).join("") : (GOOGLE_CALENDARIOS_DISPONIBLES && !GOOGLE_CALENDARIOS_DISPONIBLES.length ? '<div class="empty">Sin calendarios encontrados en esa cuenta de Google.</div>' : '')}
     </div>
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Actividad de la IA (últimos 30 días)</div>
+    <div class="notice" style="margin-bottom:14px;">Cada vez que la IA llena una etapa sola (acuerdos de boletín, documentos subidos, auditoría integral, Google Calendar) o rechaza una sugerencia por romper el orden cronológico, queda aquí -- para poder confirmar rápido que está haciendo lo correcto, sin tener que entrar expediente por expediente. Las acciones que un abogado confirmó con un tap (responder al supervisor, confirmar un evento de calendario) no cuentan aquí -- esas ya las revisó un humano antes de aplicarse.</div>
+    ${IA_ACTIVIDAD.length ? `
+    <table><thead><tr><th>Fecha</th><th>Expediente</th><th>Qué hizo</th></tr></thead><tbody>
+      ${IA_ACTIVIDAD.map(a=>{
+        const esRechazo = a.campo.includes('_rechazo_');
+        return `<tr>
+          <td style="white-space:nowrap; font-size:12px;">${new Date(a.creado_en).toLocaleString('es-MX',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+          <td data-id="${a.expediente_id}" style="cursor:pointer; font-size:12.5px;">${escapeHTML(a.expediente_actor||'—')} <span style="color:var(--gray);">vs</span> ${escapeHTML(truncate(a.expediente_demandado||'—',24))}</td>
+          <td style="font-size:12.5px;">
+            <span class="badge ${esRechazo?'crit':'ok'}" style="margin-right:6px;">${esRechazo?'✗ rechazado':'✓ aplicado'}</span>
+            ${escapeHTML(a.despues||'')}
+          </td>
+        </tr>`;
+      }).join("")}
+    </tbody></table>` : '<div class="empty">Sin actividad autónoma de la IA en los últimos 30 días.</div>'}
   </div></div>
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Respaldo de toda la información</div>
