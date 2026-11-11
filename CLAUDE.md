@@ -865,6 +865,32 @@ distinto: un calendario visual en vez de solo lista.
   aplica `verificar_tags.js`. **Sin probar en vivo todavía** ninguna de las
   dos piezas (ni el calendario ni la sugerencia de categoría).
 
+## Calendario: tarjetas más pulidas + detalle flotante (11 nov 2026, `app.js?v=137`)
+Pedido del usuario viendo el calendario visual en vivo: "¿crees que se
+pueda dar el mismo efecto visual que Google Calendar?" -- se le preguntó
+qué parte específica (tarjetas pulidas, ver detalle sin salir, vista
+semanal con horas, o "+N más" clicable) y eligió las primeras 2.
+- **Tarjetas pulidas**: cada pendiente del calendario ahora es una
+  "pill" con barra de color a la izquierda (en vez de fondo plano de
+  color), texto en negro para mejor contraste, la hora en negrita, y una
+  sombra sutil -- mismo look de chip que usa Google Calendar.
+- **Detalle sin salir del calendario**: dar clic en un pendiente YA NO
+  salta directo al expediente -- abre una ventana flotante (anclada junto
+  al chip, se ajusta sola si no cabe en la pantalla) con tipo, fecha en
+  formato legible ("lunes 9 de noviembre"), hora, actor vs demandado y
+  número de expediente, más un botón "Abrir expediente" para quien sí
+  quiera entrar. Se cierra sola al dar clic fuera o al usar ese botón.
+  Nuevas funciones `abrirCalPopover()`/`cerrarCalPopover()`; el estado
+  `CAL_POPOVER_ITEMS` guarda el detalle completo de cada chip del render
+  actual (el HTML del chip solo lleva un índice, no todo el texto, para
+  no complicar el escapado de comillas/caracteres).
+- Las otras 2 opciones que el usuario NO eligió (vista semanal con horas,
+  "+N más" clicable) quedan pendientes por si las pide después -- no se
+  tocó nada de eso.
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de
+  demanda -- no aplica `verificar_tags.js`. **Sin probar en vivo
+  todavía**.
+
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
 Mercado) que el Informe Ejecutivo con IA seguía diciendo "aún no se ha

@@ -3510,6 +3510,7 @@ function highlightNav(){
 function renderViewBody(){
   const el = document.getElementById('viewBody');
   if(!el) return;
+  cerrarCalPopover(); // el popover del calendario vive fuera de #viewBody -- se limpia en cada render para no dejarlo flotando con datos viejos
   if(VIEW==='tablero') el.innerHTML = tableroHTML();
   else if(VIEW==='expedientes') el.innerHTML = expedientesHTML();
   else if(VIEW==='alertas') el.innerHTML = alertasHTML();
@@ -5238,6 +5239,13 @@ let AGENDA_TAB = 'general';
 // que calendarioMesHTML() lo inicializa al mes actual.
 let AGENDA_CAL_MES = null;
 const AGENDA_CAL_DIAS = ['L','M','M','J','V','S','D']; // lunes-primero, solo para la cuadrícula del calendario
+// Datos completos de cada chip del calendario visual (11 nov 2026, pedido
+// explícito del usuario: "mismo efecto visual que Google Calendar" --
+// tarjetas más pulidas + ver el detalle sin salir del calendario). Se
+// llena en cada render de calendarioMesHTML(); el chip solo guarda su
+// índice aquí (data-cal-idx) porque meter todo el detalle en atributos
+// HTML sería más frágil (comillas, texto largo, etc.).
+let CAL_POPOVER_ITEMS = [];
 // `all` ya viene filtrada (abogado solo ve lo suyo vía visibleCases(), y
 // el Administrador ya aplicó el selector de socio) -- aquí solo se agrupa
 // por fecha y se pinta la cuadrícula del mes. Reutiliza AGENDA_TIPO para
@@ -5292,6 +5300,7 @@ function calendarioMesHTML(all){
   for(let d=1; d<=diasEnMes; d++) celdas.push(d);
   while(celdas.length % 7 !== 0) celdas.push(null);
 
+  CAL_POPOVER_ITEMS = [];
   const MAX_VISIBLES = 3;
   const celdaHTML = (d)=>{
     if(d===null) return `<div style="min-height:92px; background:transparent;"></div>`;
@@ -5300,14 +5309,15 @@ function calendarioMesHTML(all){
     const esHoy = fechaISO === todayISO;
     const visibles = items.slice(0, MAX_VISIBLES);
     const resto = items.length - visibles.length;
-    return `<div style="min-height:92px; border-radius:6px; border:1px solid var(--border); padding:6px; background:${esHoy?'#fdf3e0':'var(--card)'};">
+    return `<div style="min-height:92px; border-radius:8px; border:1px solid var(--border); padding:6px; background:${esHoy?'#fdf3e0':'var(--card)'};">
       <div style="font-size:11px; font-weight:${esHoy?'700':'400'}; color:${esHoy?'var(--brass)':'var(--gray)'}; margin-bottom:4px;">${d}${esHoy?' &middot; hoy':''}</div>
       ${visibles.map(e=>{
         const t = AGENDA_TIPO[e.tipo];
-        const tituloTip = `${e.label} — ${e.k.actor} vs ${truncate(e.k.demandado,30)}`;
-        return `<div data-id="${e.k.id}" style="cursor:pointer; font-size:10.5px; background:${t.color}1a; color:${t.color}; border-radius:4px; padding:2px 5px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; ${e.avisoAnticipado?'border:1px dashed '+t.color+';':''}" title="${escapeHTML(tituloTip)}">${e.avisoAnticipado?'⏰ ':''}${e.hora? escapeHTML(e.hora.slice(0,5))+' ' : ''}${escapeHTML(truncate(e.k.actor,14))}${e.chocaCon?' &#9888;':''}</div>`;
+        const idx = CAL_POPOVER_ITEMS.length;
+        CAL_POPOVER_ITEMS.push(e);
+        return `<div data-cal-idx="${idx}" style="cursor:pointer; font-size:10.5px; background:${t.color}14; color:var(--ink); border-left:3px solid ${t.color}; border-radius:4px; padding:3px 6px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; box-shadow:0 1px 1px rgba(0,0,0,.04); ${e.avisoAnticipado?'border-style:dashed;':''}">${e.avisoAnticipado?'⏰ ':''}${e.hora? `<strong>${escapeHTML(e.hora.slice(0,5))}</strong> ` : ''}${escapeHTML(truncate(e.k.actor,14))}${e.chocaCon?' &#9888;':''}</div>`;
       }).join("")}
-      ${resto>0 ? `<div style="font-size:10px; color:var(--gray);">+${resto} más</div>` : ''}
+      ${resto>0 ? `<div style="font-size:10px; color:var(--gray); font-weight:600; padding-left:3px;">+${resto} más</div>` : ''}
     </div>`;
   };
 
@@ -5326,6 +5336,60 @@ function calendarioMesHTML(all){
   <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px;">
     ${celdas.map(celdaHTML).join("")}
   </div>`;
+}
+
+// Ventana flotante con el detalle de un pendiente del calendario (11 nov
+// 2026, pedido explícito del usuario: ver el detalle sin saltar directo
+// al expediente, como hace Google Calendar). Se cierra sola al dar clic
+// fuera, o al usar el botón "Abrir expediente".
+function cerrarCalPopover(){
+  const existente = document.getElementById('calPopover');
+  if(existente) existente.remove();
+  document.removeEventListener('click', calPopoverClickFuera, true);
+}
+function calPopoverClickFuera(ev){
+  const pop = document.getElementById('calPopover');
+  if(pop && !pop.contains(ev.target) && !ev.target.closest('[data-cal-idx]')) cerrarCalPopover();
+}
+function abrirCalPopover(idx, anchorEl){
+  cerrarCalPopover();
+  const e = CAL_POPOVER_ITEMS[idx];
+  if(!e) return;
+  const t = AGENDA_TIPO[e.tipo];
+  const fechaLegible = (()=>{
+    const d = parseDate(e.fecha);
+    return d ? d.toLocaleDateString('es-MX', {weekday:'long', day:'numeric', month:'long'}) : e.fecha;
+  })();
+  const pop = document.createElement('div');
+  pop.id = 'calPopover';
+  pop.style.cssText = 'position:fixed; z-index:300; background:var(--card); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.2); padding:14px; width:260px; font-size:13px;';
+  pop.innerHTML = `
+    <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+      <span style="width:9px; height:9px; border-radius:50%; background:${t.color}; display:inline-block; flex-shrink:0;"></span>
+      <strong style="color:${t.color}; font-size:11px; text-transform:uppercase; letter-spacing:.03em;">${escapeHTML(t.label||e.tipo)}</strong>
+    </div>
+    <div style="font-weight:700; margin-bottom:3px; line-height:1.3;">${escapeHTML(e.label)}</div>
+    <div style="color:var(--gray); margin-bottom:8px; text-transform:capitalize;">${escapeHTML(fechaLegible)}${e.hora?' &middot; '+escapeHTML(e.hora.slice(0,5))+' hrs':''}</div>
+    <div style="margin-bottom:12px; padding-top:8px; border-top:1px solid var(--border);">${escapeHTML(e.k.actor)} <span style="color:var(--gray);">vs</span> ${escapeHTML(truncate(e.k.demandado||'—',40))}${e.k.exp?`<br><span style="color:var(--gray); font-size:12px;">Exp. ${escapeHTML(e.k.exp)}</span>`:''}</div>
+    <button class="btn" id="calPopoverAbrir" style="width:100%; padding:7px;">Abrir expediente</button>
+  `;
+  document.body.appendChild(pop);
+
+  const r = anchorEl.getBoundingClientRect();
+  const popRect = pop.getBoundingClientRect();
+  let left = Math.min(r.left, window.innerWidth - popRect.width - 10);
+  left = Math.max(10, left);
+  let top = r.bottom + 6;
+  if(top + popRect.height > window.innerHeight - 10) top = Math.max(10, r.top - popRect.height - 6);
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+
+  document.getElementById('calPopoverAbrir').addEventListener('click', ()=>{
+    cerrarCalPopover();
+    const k = findCase(e.k.id);
+    if(k) openModal(k);
+  });
+  setTimeout(()=>document.addEventListener('click', calPopoverClickFuera, true), 0);
 }
 
 const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
@@ -7178,6 +7242,12 @@ function bindViewBody(){
         AGENDA_CAL_MES = {y, m};
       }
       renderViewBody();
+    });
+  });
+  document.querySelectorAll('[data-cal-idx]').forEach(el=>{
+    el.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      abrirCalPopover(parseInt(el.dataset.calIdx, 10), el);
     });
   });
   const toggleDisponibilidad = document.querySelector('[data-toggle-disponibilidad]');
