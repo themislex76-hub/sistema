@@ -765,14 +765,28 @@ Google, nunca al revés).
     2 botones) que escribir una migración de limpieza para un lote
     tan chico -- de ahí en adelante, con eventos genuinamente nuevos, ya
     corre completo el flujo automático.
-  - **Pendiente de confirmar todavía**: correr el cron de nuevo (con
-    eventos nuevos, no reprocesa los ya vistos) y ver en vivo que una
-    etapa se llene sola sin pedir tap, y que el candado de orden
-    cronológico rechace algo real si llega a romper la secuencia. También
-    falta mapear los demás calendarios vistos (Audiencias Mariana,
-    Audiencias Christian, Audiencias Rubén, Audiencias Junta Federal) al
-    abogado que corresponda a cada uno -- por ahora solo "Audiencias
-    linsday" está vigilado.
+  - **Confirmado funcionando en vivo (11 nov 2026)**: se corrió
+    `api/_una_vez_reprocesar_calendario_legacy.php` (migración 068 ya
+    aplicada primero) y resolvió las 5 sugerencias legacy -- "5
+    sugerencia(s) aplicada(s) sola(s), 0 rechazada(s) por orden
+    cronológico, 0 dejada(s) pendiente(s) por conflicto real". Confirma
+    que ninguna de las 5 era un conflicto de verdad (como se esperaba) y
+    que el candado de orden cronológico no bloqueó nada indebido. El
+    script ya cumplió su función -- el usuario puede borrarlo del
+    servidor.
+  - **Pendiente de confirmar todavía**: revisar en algún expediente real
+    (ej. Verónica Gabriela) que "Fecha agendada" en Etapas del juicio
+    haya quedado bien llenada, y que el panel "Conflictos de fecha en tu
+    Google Calendar" ya esté vacío. También correr el cron de nuevo más
+    adelante con eventos GENUINAMENTE nuevos (no reprocesa los ya
+    vistos) para confirmar el flujo automático de punta a punta en un
+    caso que no sea legacy. Falta mapear los demás calendarios vistos
+    (Audiencias Mariana, Audiencias Christian, Audiencias Rubén,
+    Audiencias Junta Federal) al abogado que corresponda a cada uno --
+    por ahora solo "Audiencias linsday" está vigilado. Pendiente también
+    la respuesta del usuario sobre si el criterio de "nunca auto-elegir
+    la fecha más reciente en un conflicto real, siempre pedir un tap" le
+    parece bien (se lo pregunté explícitamente, sin respuesta todavía).
 
 ## Calendario: bug de citatorios de conciliación + alcance limitado a fechas puntuales (11 nov 2026, `app.js?v=134`)
 Pedido/bug real del usuario al probar el calendario nuevo: "la abogada tiene un pago de Francisco agendado y una audiencia de conciliación de Veronica Gabriela" que no aparecían.
