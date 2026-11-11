@@ -347,13 +347,19 @@ const EDITABLE_FIELDS = [
   {key:'quien_despidio', label:'Nombre de quien despidió', scope:'Demanda (despido / prestaciones)'},
   {key:'puesto_despidio', label:'Puesto de quien despidió', scope:'Demanda (despido / prestaciones)'},
   {key:'hora_despido', label:'Hora del despido', scope:'Demanda (despido / prestaciones)'},
-  {key:'hora_entrada', label:'Horario — hora de entrada', type:'time'},
-  {key:'hora_salida', label:'Horario — hora de salida real (incluyendo tiempo extra)', type:'time'},
-  {key:'comida_inicio', label:'Horario — comida, hora de inicio (opcional, déjalo vacío para no especificar)', type:'time'},
-  {key:'comida_fin', label:'Horario — comida, hora de fin (opcional, déjalo vacío para no especificar)', type:'time'},
-  {key:'dias_laborados', label:'Horario — días que laboraba, en texto (ej. "lunes a sábado")'},
-  {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number'},
-  {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta']},
+  // Horario/jornada: lo reutiliza Rescisión Art. 51 para su checkbox de
+  // "Horas extras" (ver PRESTACIONES_RESCISION_OPCIONES, horas_entrada/
+  // salida/comida/dias_laborados) -- confirmado por código. Prima de
+  // antigüedad es un trámite administrativo puntual (RH/CFDI/pericial
+  // caligráfica) sin ninguna referencia a jornada ni horas extra, así que
+  // se oculta ahí.
+  {key:'hora_entrada', label:'Horario — hora de entrada', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'hora_salida', label:'Horario — hora de salida real (incluyendo tiempo extra)', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'comida_inicio', label:'Horario — comida, hora de inicio (opcional, déjalo vacío para no especificar)', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'comida_fin', label:'Horario — comida, hora de fin (opcional, déjalo vacío para no especificar)', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'dias_laborados', label:'Horario — días que laboraba, en texto (ej. "lunes a sábado")', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta'], scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
   // Rescisión Art. 51 (ver "Otras plantillas de escritos" → Rescisión Art. 51).
   // El "motivo breve" de la prestación A) se arma solo a partir de la
   // fracción elegida -- ver FRACCION_51 más abajo. Solo se muestran en
@@ -385,8 +391,10 @@ const EDITABLE_FIELDS = [
   {key:'fecha_hoja_servicios', label:'Prima antigüedad — fecha de la Hoja Única de Servicios', type:'date', scope:'Prima de antigüedad'},
   {key:'numero_documento_fump', label:'Prima antigüedad — número de documento del Formato Único de Movimientos de Personal', scope:'Prima de antigüedad'},
   {key:'fecha_documento_fump', label:'Prima antigüedad — fecha de elaboración de ese documento', type:'date', scope:'Prima de antigüedad'},
-  {key:'testigos', label:'Nombre de los testigos'},
-  {key:'dom_testigos', label:'Domicilios de los testigos'},
+  // Prima de antigüedad usa pericial caligráfica y verificación de CFDI
+  // como pruebas (sin testigos) -- confirmado con el usuario (11 nov 2026).
+  {key:'testigos', label:'Nombre de los testigos', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'dom_testigos', label:'Domicilios de los testigos', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
   {key:'ultima_nota', label:'Última actuación / nota'},
   {key:'aguinaldo_dias_pactados', label:'Aguinaldo — días pactados (solo si es mayor al mínimo de 15)', type:'number'},
   {key:'dias_salarios_devengados', label:'Salarios devengados pendientes — días sin pagar', type:'number'},
@@ -8217,8 +8225,14 @@ function modalTabContent(k,p,meta){
     <div class="notice" style="margin-bottom:14px;">Todo lo que captures aquí sobrescribe el dato importado (si lo había) y queda registrado en el Historial de cambios. Déjalo en blanco para conservar el valor original.</div>
     <div class="notice" style="margin-bottom:14px;">Elige primero el <strong>Tipo de demanda a presentar</strong> -- el resto de los campos de Rescisión Art. 51 o Prima de antigüedad solo aparecen una vez que elijas ese tipo.</div>
     <div class="grid2">
-      ${EDITABLE_FIELDS.map(f=>`
-        <div class="field" ${f.scope?`data-tipo-demanda-scope="${escapeHTML(f.scope)}" style="${f.scope!==k.tipo_demanda?'display:none;':''}"`:''}>
+      ${EDITABLE_FIELDS.map(f=>{
+        // f.scope puede ser un string (un solo tipo) o un arreglo (varios
+        // tipos aplican, ej. horario/jornada sirve para Demanda normal Y
+        // Rescisión Art. 51, pero no para Prima de antigüedad).
+        const scopeList = Array.isArray(f.scope) ? f.scope : (f.scope ? [f.scope] : null);
+        const atributoScope = scopeList ? `data-tipo-demanda-scope="${escapeHTML(scopeList.join('|'))}" style="${!scopeList.includes(k.tipo_demanda)?'display:none;':''}"` : '';
+        return `
+        <div class="field" ${atributoScope}>
           <label>${escapeHTML(f.label)}</label>
           ${f.type==='date' ?
             `<input type="date" class="edit-field" data-field="${f.key}" value="${k[f.key]||''}">` :
@@ -8254,7 +8268,8 @@ function modalTabContent(k,p,meta){
             `<textarea class="edit-field" id="edit-field-${f.key}" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>${dictadoBotonHTML('edit-field-' + f.key)}` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
           }
-        </div>`).join("")}
+        </div>`;
+      }).join("")}
     </div>
     <div style="margin-top:18px;"><button class="btn" id="saveCamposBtn">Guardar datos del expediente</button></div>
     `;
@@ -8728,7 +8743,7 @@ function bindModalTabEvents(){
     tipoDemandaSelect.addEventListener('change', ()=>{
       const actual = tipoDemandaSelect.value;
       document.querySelectorAll('[data-tipo-demanda-scope]').forEach(div=>{
-        div.style.display = (div.dataset.tipoDemandaScope === actual) ? '' : 'none';
+        div.style.display = div.dataset.tipoDemandaScope.split('|').includes(actual) ? '' : 'none';
       });
     });
   }

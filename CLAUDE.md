@@ -586,9 +586,40 @@ Demanda normal + Rescisión Art. 51 + Prima de antigüedad de un jalón).
   opcionales (`PRESTACIONES_RESCISION_OPCIONES`), así que esconderlos a
   ciegas podría romper eso. Pedirle al usuario que confirme cuál de los 3
   tipos los necesita antes de tocarlos, no adivinar.
-- **Sin probar en vivo todavía** la Rescisión Art. 51 simplificada en sí
-  (sin cuentas bancarias, hecho manual) -- falta generar un documento real
-  para confirmarlo.
+- **Revisión completa campo por campo (11 nov 2026, pedido explícito del
+  usuario: "revisa bien", no solo los 3 que él encontró)**. `scope` ahora
+  también acepta un arreglo (antes solo un string) para campos que
+  aplican a 2 de los 3 tipos pero no a los 3 -- el filtro y el listener de
+  `tipo_demanda` lo soportan (`data-tipo-demanda-scope` guarda la lista
+  separada por `|`). Decisiones, confirmadas con el usuario cuando no
+  había evidencia de código suficiente para decidir solo:
+  - **Horario/jornada** (hora_entrada/salida, comida, días laborados,
+    tipo_jornada): `scope:['Demanda (despido / prestaciones)','Rescisión
+    Art. 51']` -- Rescisión los reutiliza de verdad (checkbox "Horas
+    extras" de `PRESTACIONES_RESCISION_OPCIONES`), Prima de antigüedad no
+    tiene ninguna referencia a jornada/horas extra en ningún lado.
+  - **Testigos y sus domicilios**: mismo scope -- confirmado con el
+    usuario, Prima de antigüedad usa pericial caligráfica + verificación
+    de CFDI como pruebas, no testigos.
+  - **Fecha de baja/despido**: se queda COMÚN a los 3 (confirmado con el
+    usuario) -- la usa el Cálculo de liquidación independientemente del
+    tipo de demanda elegido, así que ocultarla en Prima de antigüedad
+    hubiera dejado esa otra pestaña sin el dato.
+  - **Aguinaldo pactado / salarios devengados / vacaciones anteriores
+    reclamadas / prima vacacional pactada**: también se quedan COMUNES a
+    los 3 (confirmado con el usuario), mismo motivo -- alimentan el
+    Cálculo de liquidación aparte del tipo de demanda, y Rescisión además
+    los reutiliza en su panel de prestaciones opcionales.
+  - El resto (actor, demandado, domicilios, fechas de ingreso, salarios,
+    instancia/tribunal/exp/status, notas) se quedó común a propósito --
+    son datos de identificación/trámite que cualquier demanda necesita,
+    sin evidencia de código que sugiera lo contrario.
+  `app.js?v=133`.
+- **Sin probar en vivo todavía** ninguna de las 3 entregas de esta pieza
+  (filtro inicial, el bug de los 3 campos de despido, ni esta revisión
+  completa) -- falta confirmar con un expediente real, los 3 tipos, y
+  generar un documento de Rescisión Art. 51 real para ver cómo sale en
+  Word sin las cuentas bancarias y con el hecho manual.
 
 ## Calendario visual en Agenda general + IA sugiere categoría de documento (11 nov 2026, `app.js?v=130`)
 Pedido del usuario tras una lluvia de ideas sobre autonomía del sistema
