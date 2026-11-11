@@ -56,7 +56,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**Última migración aplicada por el usuario: `063_cdmx_buzon_credenciales.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 10 nov 2026** (la 062 y la 063 también están corridas -- confirmado por el usuario el 10 nov 2026).
+**Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
@@ -692,9 +692,52 @@ Google, nunca al revés).
   -- sin esto el cron no tiene nada que vigilar todavía. Después correr
   `cron_leer_google_calendar.php` a mano (mismo patrón que los demás
   crons, abrir la URL directo) para la primera prueba real.
-- **Sin probar en vivo todavía** ninguna pieza de esto -- ni listar
-  calendarios, ni el match de la IA, ni el candado de duplicados, ni el
-  push con link.
+- **2 bugs reales encontrados y corregidos al probar en vivo por primera
+  vez (11 nov 2026)**:
+  1. **El scope de OAuth pedido (`calendar.events`) no alcanzaba para
+     listar los calendarios** -- `calendarList.list` de la API de Google
+     es un endpoint aparte que `calendar.events` no cubre (solo cubre
+     eventos, no la lista de calendarios); por eso "Cargar calendarios
+     disponibles" en Equipo devolvía "Sin calendarios encontrados" aunque
+     sí había varios. Corregido agregando
+     `calendar.calendarlist.readonly` al scope en
+     `api/google_oauth_start.php` (ahora pide los 2 scopes juntos,
+     separados por espacio). **Requiere reconectar**: el Administrador
+     tuvo que volver a autorizar desde el botón "Conectar con Google
+     Calendar" (en Agenda general, no en "Mi cuenta" -- ojo, ahí es donde
+     vive este botón) para que el permiso nuevo quedara en su
+     refresh_token -- como ya tenía `prompt=consent`, no hizo falta
+     desconectar primero (eso habría borrado los eventos que el sync de
+     salida ya había creado en su Google Calendar).
+  2. **`SQLSTATE[HY093]: Invalid parameter number`** en
+     `cron_leer_google_calendar.php` -- la consulta de expedientes activos
+     repetía el parámetro con nombre `:aid` dos veces
+     (`abogado_id = :aid OR abogado_id_2 = :aid`); con
+     `PDO::ATTR_EMULATE_PREPARES => false` (como usa este sistema, ver
+     `api/db.php`), MySQL con prepares nativos NO permite reutilizar el
+     mismo placeholder con nombre dos veces en una sola consulta --
+     causaba el Error 500 real. Corregido separando en `:aid1`/`:aid2`
+     (mismo valor, dos placeholders). Si en el futuro aparece este mismo
+     error en cualquier cron/endpoint nuevo, revisar primero si algún
+     placeholder con nombre se repite en la misma consulta -- no es la
+     primera vez que se puede caer en esto al copiar un patrón de SQL con
+     `OR` sobre 2 columnas.
+  - **Confirmado funcionando de punta a punta en vivo (11 nov 2026,
+     cuenta `themislex76@gmail.com`, calendario "Audiencias linsday"
+     mapeado a Lic. Lindsay Luna Maldonado)**: primera corrida real del
+     cron reportó "14 evento(s) revisado(s), 5 sugerencia(s) nueva(s) con
+     match, 9 sin match claro, 0 fallido(s)". Confirma lectura de Google
+     Calendar + match de la IA + candado de duplicados funcionando juntos
+     por primera vez.
+  - **Pendiente de confirmar todavía**: que el panel "📅 Eventos de tu
+    Google Calendar por confirmar" en "Preguntas al abogado" muestre bien
+    las 5 sugerencias con match, que el tap "Sí, es esta" llene la etapa
+    correctamente, y que el push con link (`?pregunta_calendario=1`)
+    llegue al celular de Lindsay. También falta mapear los demás
+    calendarios vistos (Audiencias Mariana, Audiencias Christian,
+    Audiencias Rubén, Audiencias Junta Federal) al abogado que
+    corresponda a cada uno -- por ahora solo "Audiencias linsday" está
+    vigilado.
 
 ## Calendario: bug de citatorios de conciliación + alcance limitado a fechas puntuales (11 nov 2026, `app.js?v=134`)
 Pedido/bug real del usuario al probar el calendario nuevo: "la abogada tiene un pago de Francisco agendado y una audiencia de conciliación de Veronica Gabriela" que no aparecían.

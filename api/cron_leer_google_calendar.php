@@ -23,16 +23,6 @@ declare(strict_types=1);
 // Config del Cron Job: comando "php /ruta/completa/a/este/archivo.php",
 // frecuencia: 1-2 veces al día.
 
-// Diagnóstico temporal (11 nov 2026): primera corrida real dio Error 500
-// sin más detalle visible -- sin acceso al servidor/log de PHP desde aquí,
-// se envuelve todo en un try/catch que imprime el error real en pantalla
-// en vez de la página genérica de Apache. Quitar una vez confirmado que
-// corre limpio varias veces.
-error_reporting(E_ALL);
-ini_set('display_errors', '1');
-
-try {
-
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/helpers.php';
 require_once __DIR__ . '/expediente_helpers.php';
@@ -139,8 +129,3 @@ foreach ($calendarios as $cal) {
 
 echo "$eventosRevisados evento(s) revisado(s), $sugerenciasNuevas sugerencia(s) nueva(s) con match, "
     . "$sinMatch sin match claro (quedan registrados, no se vuelven a procesar), $fallidos fallido(s) (se reintentan después).\n";
-
-} catch (\Throwable $e) {
-    echo "ERROR REAL (diagnóstico temporal): " . $e->getMessage()
-        . " -- archivo: " . $e->getFile() . ":" . $e->getLine() . "\n";
-}
