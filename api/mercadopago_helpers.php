@@ -92,6 +92,17 @@ function mercadopago_token(): ?string
 // de meses atrás que ya no corresponde al precio vigente.
 const MERCADOPAGO_DIAS_VIGENCIA_COTIZACION = 14;
 
+// Hasta cuándo pudo cotizarse de verdad cada precio viejo: la fecha en que
+// subió al siguiente precio (commits c9df4d4 del 2-sep y d839b96 del
+// 5-oct-2026), con ~2 días de margen por lo que tarda en subirse el
+// archivo al servidor. Un "$299"/"$399" escrito DESPUÉS de esa fecha no es
+// una promesa del despacho, es el bot repitiendo un precio viejo del
+// historial por error (ver bug real de nov-2026 en la función de abajo).
+const MERCADOPAGO_PRECIOS_VIEJOS_COTIZABLES_HASTA = [
+    399 => '2026-10-07 00:00:00',
+    299 => '2026-09-04 00:00:00',
+];
+
 /**
  * Cuánto se le debe cobrar a este teléfono: normalmente el precio vigente
  * (MERCADOPAGO_MONTO_ASESORIA), salvo que el bot ya le haya cotizado el
@@ -138,6 +149,14 @@ const MERCADOPAGO_DIAS_VIGENCIA_COTIZACION = 14;
  * la función nunca revisaba qué tan vieja era la cotización, solo si
  * existía en algún punto del historial completo. De ahí la ventana de
  * MERCADOPAGO_DIAS_VIGENCIA_COTIZACION días.
+ *
+ * Bug real detectado en producción (10-nov-2026): un cliente cotizado en
+ * $299 en agosto volvió a escribir, y el bot, leyendo el historial, le
+ * repitió "la asesoría de $299" ese mismo día. Esta función encontró ese
+ * mensaje de minutos antes, lo tomó como cotización vigente y generó el
+ * link por $299 en vez de $499. Ahora solo cuenta un mensaje escrito
+ * mientras ese precio de verdad estaba vigente
+ * (MERCADOPAGO_PRECIOS_VIEJOS_COTIZABLES_HASTA); los posteriores se ignoran.
  */
 function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): array
 {
@@ -168,9 +187,13 @@ function mercadopago_monto_asesoria_a_respetar(PDO $pdo, string $telefono): arra
             "SELECT creado_en FROM whatsapp_conversaciones
              WHERE telefono = :t AND direccion = 'saliente'
                AND texto REGEXP '\\\\$" . (int)$precioViejo . "{$noDecimal}' AND {$anclaAsesoria}
+               AND creado_en < :hasta
              ORDER BY creado_en DESC LIMIT 1"
         );
-        $stmt->execute([':t' => $telefono]);
+        $stmt->execute([
+            ':t' => $telefono,
+            ':hasta' => MERCADOPAGO_PRECIOS_VIEJOS_COTIZABLES_HASTA[(int)$precioViejo],
+        ]);
         $cotizadoEn = $stmt->fetchColumn();
         if ($cotizadoEn === false) {
             continue;

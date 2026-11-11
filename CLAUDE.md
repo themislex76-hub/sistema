@@ -1113,6 +1113,21 @@ exacto que ya existía para Edomex:
   truene en la primera corrida real — pedir el error completo de la
   terminal si pasa).
 
+## Precio de la asesoría: no respetar $299/$399 repetidos por el bot (11 nov 2026, conversación "chats")
+- Bug real: a un cliente cotizado en $299 en agosto, el bot le volvió a
+  escribir "la asesoría de $299" el 10-nov (copiado del historial), y
+  `mercadopago_monto_asesoria_a_respetar()` tomó ese mensaje de minutos
+  antes como cotización vigente y cobró $299. El despacho decidió
+  respetarle ese precio a ese cliente.
+- Arreglo: constante `MERCADOPAGO_PRECIOS_VIEJOS_COTIZABLES_HASTA` en
+  `api/mercadopago_helpers.php` -- un "$299"/"$399" solo cuenta si se
+  escribió mientras ese precio estaba vigente (hasta 4-sep / 7-oct-2026,
+  fechas de los commits que subieron el precio + 2 días de margen). Más
+  una REGLA DURA en el prompt (`api/ia_helpers.php`): nunca copiar un
+  precio del historial, siempre el vigente. Probado con SQLite (el caso
+  real pasa de $299 a $499 con aviso de cambio de precio). Sin migración,
+  sin cambio de `app.js`.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
