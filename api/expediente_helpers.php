@@ -27,7 +27,7 @@ function guard_expediente_access(PDO $pdo, array $user, int $id): array
 // pueden derivar solo de esos datos (aguinaldo pactado por contrato,
 // salarios devengados pendientes, vacaciones de años anteriores).
 const EDITABLE_CAMPOS = [
-    'tipo_asunto','actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
+    'tipo_asunto','tipo_demanda','actor','curp','telefono','correo','demandado','giro_empresa','dom_demandado','puesto',
     'fecha_ingreso','fecha_baja','salario_mensual','salario_diario','sdi','instancia','junta',
     'tribunal','exp','status','quien_despidio','puesto_despidio','hora_despido','testigos',
     'dom_testigos','ultima_nota','aguinaldo_dias_pactados','dias_salarios_devengados',
@@ -36,9 +36,11 @@ const EDITABLE_CAMPOS = [
     // Jornada y horas extra (para la demanda) -- ver mergeTags()/calcularJornada() en app.js.
     'hora_entrada','hora_salida','comida_inicio','comida_fin','dias_laborados','dias_laborados_num','tipo_jornada',
     // Rescisión Art. 51 y Prima de antigüedad (ver "Otras plantillas de escritos").
+    // banco1/2/3_{nombre,cuenta} se quitaron del todo (11 nov 2026, pedido
+    // explícito del usuario) -- las columnas siguen en la base (datos
+    // viejos, si los había, no se borraron) pero ya no son editables aquí.
     'rescision_fraccion','rescision_motivo_breve','fecha_rescision','hecho_causa_narrativa',
     'periodo_vacaciones_anterior','periodo_vacaciones_actual',
-    'banco1_nombre','banco1_cuenta','banco2_nombre','banco2_cuenta','banco3_nombre','banco3_cuenta',
     'inspeccion_extremos_texto',
     'monto_prima_antiguedad','fecha_solicitud_interna','hora_solicitud_interna','folio_solicitud_interna',
     'funcionario_rh_nombre','funcionario_rh_puesto','numero_oficio_respuesta','fecha_oficio_respuesta',

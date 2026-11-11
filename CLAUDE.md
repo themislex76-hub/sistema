@@ -518,6 +518,64 @@ falta seguimiento):
      normal -- confirma que el candado bloquea lo malo sin bloquear lo
      bueno.
 
+## "Editar datos" filtra campos por tipo de demanda + Rescisión Art. 51 simplificada (11 nov 2026, `app.js?v=131`, migración 066)
+Pedido explícito del usuario: que "Editar datos" muestre solo los campos
+que corresponden al formato de demanda que se va a presentar, ocultando
+los de las otras acciones (hoy el tab mezclaba TODOS los campos de
+Demanda normal + Rescisión Art. 51 + Prima de antigüedad de un jalón).
+- **Campo nuevo `tipo_demanda`** ("Tipo de demanda a presentar": Demanda
+  (despido/prestaciones) / Rescisión Art. 51 / Prima de antigüedad),
+  guardado en el expediente (migración **066_tipo_demanda.sql**).
+  **Deliberadamente SEPARADO** del campo ya existente `tipo_asunto`
+  (Despido/Prestaciones/Otro) -- ese solo calcula el plazo de
+  prescripción, son conceptos legales distintos y reutilizarlo hubiera
+  arriesgado romper ese cálculo. El usuario lo confirmó explícitamente
+  tras preguntarle si reutilizaba el campo existente o hacía uno nuevo.
+- Cada campo de `EDITABLE_FIELDS` que ya traía el prefijo "Rescisión —"
+  o "Prima antigüedad —" en su label se etiquetó con `scope` (el valor
+  exacto de `tipo_demanda` al que pertenece); los campos sin `scope`
+  (actor, fechas, salario, etc.) son comunes a cualquier demanda y
+  siempre se muestran. **Nunca se quitan del DOM** -- se renderizan
+  TODOS pero los que no aplican quedan con `display:none`, y un listener
+  en el `<select>` de `tipo_demanda` alterna esa visibilidad al vuelo
+  (`[data-tipo-demanda-scope]`) sin re-renderizar el tab completo -- a
+  propósito, para no arriesgar perder algo que el abogado ya haya escrito
+  sin guardar en otro campo visible.
+- **Simplificación de Rescisión Art. 51** (3 pedidos explícitos del
+  usuario en el mismo mensaje):
+  1. **Se quitaron los 6 campos de cuentas bancarias** (`banco1/2/3_
+     {nombre,cuenta}`) de "Editar datos" y de `EDITABLE_CAMPOS` (whitelist
+     del servidor) -- las columnas de la base NO se borraron (mismo
+     criterio de siempre con datos viejos), solo dejaron de ser editables.
+  2. **Se quitó la prueba de "informe bancario"** que `construirPruebas
+     AdicionalesTexto()` armaba por cada banco capturado (la que el
+     usuario describe como la del "informe de la Comisión Nacional
+     Bancaria y de Valores" -- no existe ningún otro texto de CNBV en el
+     código, esta es la única prueba relacionada con bancos que había).
+     La numeración de pruebas adicionales ahora arranca fija en 5
+     (Inspección Judicial) / 6 (Testimonial), sin depender de bancos.
+  3. **El "hecho" de la causal ahora lo redacta el abogado por completo**,
+     a mano, en el mismo campo `hecho_causa_narrativa` (antes era un
+     "detalle adicional" opcional que se agregaba DESPUÉS de un párrafo
+     que el sistema armaba solo según la fracción elegida). Se quitó
+     `construirHechoCausaAuto()` y el catálogo de 9 frases automáticas por
+     fracción (`FRACCION_51[...].inicio()`, que ya no se invoca en
+     ningún lado, queda como dato muerto sin usar). El selector de
+     fracción (`rescision_fraccion`) se queda igual -- sigue alimentando
+     `rescision_motivo_breve` (prestación A) -- pero ya no dispara ningún
+     texto automático del hecho. `tags.hecho_causa_auto` se deja vacío a
+     propósito (por si la plantilla .docx subida todavía tiene ambos tags
+     uno junto al otro, para no imprimir "undefined" ni duplicar nada).
+- `node scripts/verificar_tags.js` corrido y actualizado (las pruebas
+  viejas que esperaban `hecho_causa_auto` con texto y numeración variable
+  por bancos ya no aplicaban con el diseño nuevo -- se reescribieron para
+  reflejar el comportamiento correcto) -- pasa limpio.
+- **Sin probar en vivo todavía** -- ninguna de las 2 piezas (filtro por
+  tipo_demanda, ni la Rescisión simplificada). Falta confirmar con un
+  expediente real: que el selector muestre/oculte los campos correctos al
+  cambiarlo sin guardar, y que un documento de Rescisión Art. 51 generado
+  con el hecho manual y sin pruebas bancarias se vea bien en Word.
+
 ## Calendario visual en Agenda general + IA sugiere categoría de documento (11 nov 2026, `app.js?v=130`)
 Pedido del usuario tras una lluvia de ideas sobre autonomía del sistema
 ("que mas se te ocurre"): de 4 propuestas, aceptó 1 (categoría sugerida),
