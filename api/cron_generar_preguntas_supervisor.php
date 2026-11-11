@@ -10,9 +10,12 @@ declare(strict_types=1);
 // no tenga una pregunta generada, le pide a la IA que redacte UNA
 // pregunta concreta para el abogado a cargo -- sin dar clases de
 // derecho, buscando el dato que falta (normalmente una fecha) para
-// poder seguir el plazo legal. SIN notificación push a propósito (pedido
-// del usuario): la pregunta solo aparece cuando el abogado entra al
-// sistema, no le manda nada a su celular.
+// poder seguir el plazo legal. Al principio se pidió explícitamente SIN
+// push (que la pregunta solo apareciera al entrar al sistema) -- el
+// usuario cambió de opinión el 10 nov 2026: ahora cada pregunta nueva
+// manda un push al abogado a cargo del expediente, con un link que abre
+// el sistema directo en esa pregunta lista para contestar (ver
+// abrirPreguntaDesdeNotificacion() en assets/app.js).
 //
 // Config del Cron Job: comando "php /ruta/completa/a/este/archivo.php",
 // frecuencia: una vez al día (por ejemplo junto con cron_recordatorio_abogado.php).
@@ -20,6 +23,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/expediente_helpers.php';
 require_once __DIR__ . '/ia_helpers.php';
+require_once __DIR__ . '/push_helpers.php';
 
 const LOTE_MAXIMO = 15;
 
@@ -87,7 +91,22 @@ foreach ($atrasos as $atraso) {
         ':etapa' => $etapaKey,
         ':pregunta' => $pregunta,
     ]);
+    $preguntaId = (int)$pdo->lastInsertId();
     $generadas++;
+
+    // Push al abogado (o a los 2, si el expediente tiene segundo abogado
+    // asignado) con link directo a contestar esta pregunta -- pedido
+    // explícito del usuario el 10 nov 2026, revirtiendo la decisión
+    // original de "sin push". El link lo abre abrirPreguntaDesdeNotificacion()
+    // en assets/app.js.
+    $caso = trim(($expediente['actor'] ?? '') . ' vs ' . ($expediente['demandado'] ?? ''), ' vs');
+    $abogadosDestino = array_filter([(int)($expediente['abogado_id'] ?? 0), (int)($expediente['abogado_id_2'] ?? 0)]);
+    foreach (array_unique($abogadosDestino) as $abogadoId) {
+        push_enviar_a_usuario(
+            $pdo, $abogadoId, '🧑‍⚖️ Pregunta del supervisor',
+            "$caso: $pregunta", '/sistema/?pregunta=' . $preguntaId
+        );
+    }
 }
 
 echo count($atrasos) . " atraso(s) revisado(s), " . $generadas . " pregunta(s) nueva(s) generada(s), "

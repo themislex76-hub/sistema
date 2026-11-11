@@ -56,7 +56,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**Última migración aplicada por el usuario: `061_supervisor_preguntas.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 9 nov 2026.**
+**Última migración aplicada por el usuario: `063_cdmx_buzon_credenciales.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 10 nov 2026** (la 062 y la 063 también están corridas -- confirmado por el usuario el 10 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
@@ -205,13 +205,26 @@ falta seguimiento):
    ignorando uno de estos, TAMBIÉN se le avisa al Administrador (tabla
    nueva `agenda_escalaciones_enviadas`, dedupe aparte de
    `agenda_avisos_enviados` para que no choque si el admin también es
-   abogado con sus propios pendientes). `app.js?v=117`. **Sin probar en
-   vivo todavía** (nadie ha visto llegar el push de un atraso real ni la
-   escalación al admin) -- confirmar en cuanto el cron corra de nuevo
-   con asuntos atorados reales.
+   abogado con sus propios pendientes). `app.js?v=117`.
+   - **Bug real encontrado y corregido (10 nov 2026)**: el push nunca
+     llegaba, sin error visible para nadie. Causa real (encontrada vía
+     un log de diagnóstico nuevo, `api/push_debug.log`, agregado porque
+     el servidor no tiene un `error_log` fácil de encontrar en cPanel):
+     "Size of payload must not be greater than 4078 octets" -- el
+     protocolo de notificaciones push tiene un límite de tamaño, y con
+     muchos asuntos atorados juntos en un solo mensaje (59 en la
+     escalación al Administrador, confirmado real) se rebasaba por
+     mucho; la excepción se atrapaba y se perdía en silencio. Nueva
+     función `push_armar_cuerpo()` (`api/push_helpers.php`) arma el
+     mensaje línea por línea hasta acercarse al límite y corta el resto
+     con "…y N más — entra al sistema para verlos todos" en vez de
+     intentar mandarlo completo. Confirmado que es el único lugar del
+     sistema con este patrón de mensaje-lista-larga.
+   - **Confirmado funcionando de punta a punta en vivo (10 nov 2026)**:
+     tras el arreglo, el usuario recibió el push real en su celular.
 2. **IA lee el contenido real de los acuerdos de boletín -- HECHO (9 nov
-   2026), migración 060 pendiente de correr, y FALTA DAR DE ALTA EL CRON
-   NUEVO.** Antes el resumen guardado era genérico ("Acuerdo No. X del
+   2026), migración 060 y cron ya corridos/dados de alta (confirmado por
+   el usuario el 10 nov 2026).** Antes el resumen guardado era genérico ("Acuerdo No. X del
    expediente Y, de fecha Z"), sin que nadie (ni la IA) supiera qué decía
    el acuerdo de verdad. Ahora `ia_analizar_acuerdo_boletin()`
    (`api/ia_helpers.php`) le manda a Claude el PDF real (como documento
@@ -243,22 +256,26 @@ falta seguimiento):
      Boletín del expediente), y si llenó una etapa sola aparece una
      insignia "✓ etapa actualizada sola: [nombre de la etapa]" --
      `app.js?v=118`.
-   - **Sin probar en vivo todavía** (nunca se ha corrido contra un PDF
-     real desde que se escribió esto -- ni el formato exacto de
-     respuesta de la IA, ni el `document` content block de la API de
-     Anthropic con PDF real, se han confirmado funcionando aquí). Probar
-     primero con uno de los 8 acuerdos de amparo reales ya subidos
-     (expediente de prueba Emmanuel Rodriguez Ojeda, Exp. 269-2025) antes
-     de asumir que funciona con cualquier PDF.
-   - **Falta dar de alta el Cron Job en cPanel**: comando
-     `php /ruta/completa/a/api/cron_analizar_acuerdos_ia.php`, frecuencia
-     cada 15-30 minutos (igual patrón que los demás `cron_*.php`, ver
-     sección "Robots locales" más abajo para cómo se programan estas
-     tareas, aunque esta corre en el servidor, no en la máquina del
-     usuario).
+   - Migración y cron confirmados corridos/dados de alta por el usuario
+     el 10 nov 2026, junto con los de las piezas 3 y 4 -- si alguna vez
+     se ve un aviso con documento adjunto sin `ia_resumen` después de
+     20-30 min, revisar primero que el Cron Job siga activo en cPanel
+     antes de asumir que el código falló.
+   - **Confirmado funcionando con casos reales (10 nov 2026)**: revisando
+     `avisos_boletin` se encontraron 10 acuerdos ya analizados con
+     resúmenes específicos de verdad (no genéricos) -- los 9 acuerdos de
+     amparo de Emmanuel Rodríguez Ojeda (Federal, ej. "El Tribunal
+     Colegiado negó el amparo...", "El Tribunal Colegiado admitió la
+     demanda de amparo...") y el acuerdo de Zeltzin Monserrat Flores Cruz
+     (robot del Buzón CDMX nuevo de hoy, "El Tribunal admite a trámite la
+     demanda laboral en..."). Confirma que `ia_analizar_acuerdo_boletin()`
+     lee el PDF real y lo resume bien, sin necesidad de forzar una
+     corrida de prueba.
 3. **Supervisor que pregunta al abogado por asuntos atorados -- HECHO (9
-   nov 2026), migración 061 pendiente de correr, y FALTA DAR DE ALTA EL
-   CRON NUEVO.** Pensado originalmente como "por WhatsApp" (ver el
+   nov 2026), migración 061 y cron ya corridos/dados de alta (confirmado
+   el mismo 9 nov 2026 -- ver nota al principio del archivo, el cron
+   corrió limpio: 15 atrasos revisados, 15 preguntas generadas, 0
+   fallidas).** Pensado originalmente como "por WhatsApp" (ver el
    ejemplo real del usuario abajo), pero se construyó como push + tarjeta
    DENTRO del sistema -- el usuario lo pidió así explícitamente ("haber
    hazlo sin el pussh" más tarde se aclaró en "sin push" del todo, ni
@@ -312,20 +329,69 @@ falta seguimiento):
      normal: nuevo atraso → nueva pregunta del supervisor) queda cubierto
      de punta a punta con este diseño, reutilizando toda la maquinaria de
      plazos que ya existía.
-   - **Sin probar en vivo todavía** -- nunca se ha corrido el cron
-     nuevo, ni se ha confirmado que la IA redacte preguntas útiles con un
-     caso real, ni que `ia_interpretar_respuesta_supervisor()` extraiga
-     bien una fecha de una respuesta real en lenguaje natural. Probar
-     primero con un expediente real que ya tenga un "posible atraso"
-     visible en el Tablero.
-   - **Falta dar de alta el Cron Job en cPanel**: comando
-     `php /ruta/completa/a/api/cron_generar_preguntas_supervisor.php`,
-     frecuencia una vez al día (puede ir junto con
-     `cron_recordatorio_abogado.php`).
-   - `app.js?v=121`.
+   - **Confirmado funcionando en vivo (9 nov 2026)**: el cron generó 15
+     preguntas reales sin fallar. Pendiente real todavía (no se ha
+     verificado por separado): confirmar que `ia_interpretar_respuesta_
+     supervisor()` extraiga bien una fecha de una respuesta real en
+     lenguaje natural cuando un abogado conteste una de esas preguntas.
+   - `app.js?v=121` (ver más abajo: promovido a sección propia del menú
+     en `app.js?v=123`).
+   - **Cambio de opinión del usuario (10 nov 2026)**: revirtió la
+     decisión original de "sin push del todo" -- ahora cada pregunta
+     nueva manda un push al abogado a cargo con link directo a
+     contestarla (`?pregunta=<id>` -> `abrirPreguntaDesdeNotificacion()`
+     en assets/app.js, mismo patrón ya usado para abrir una conversación
+     de WhatsApp desde notificación). También se agregó un botón
+     "🎤 Dictar" junto al textarea de respuesta (Web Speech API nativa del
+     navegador, gratis, sin mandar audio a ningún servidor -- se omite
+     solo si el navegador no lo soporta, ej. Safari/iPhone). `app.js?v=128`.
+     **Dictado por voz confirmado funcionando en vivo (10 nov 2026)**.
+     El push con link directo (`?pregunta=<id>`) todavía sin confirmar --
+     el cron (`cron_generar_preguntas_supervisor.php`, ya reemplazado en
+     el servidor) solo manda push cuando INSERTA una pregunta nueva, y al
+     correrlo a mano el mismo día no encontró ningún atraso sin pregunta
+     todavía (las 20 pendientes visibles ya eran de antes de este
+     cambio) -- queda pendiente de confirmar la próxima vez que surja un
+     atraso genuinamente nuevo (corrida diaria programada, o una corrida
+     a mano futura que si encuentre uno).
+   - **Push confirmado saliendo bien del servidor, pendiente de llegar al
+     celular (10 nov 2026)**: se forzó una prueba real borrando una
+     `supervisor_preguntas` ya generada y volviendo a correr el cron a
+     mano -- regeneró la pregunta y `api/push_debug.log` confirma
+     `OK -- https://web.push.apple.com/...` (abogada con iPhone). No le
+     llegó al celular. El código del lado del servidor queda descartado
+     como causa (mandó bien, Apple lo aceptó) -- pendiente de que ella
+     pruebe el botón "Probar notificación" de "Mi cuenta" para aislar si
+     es configuración de su iPhone (típicamente: el sistema no agregado a
+     la pantalla de inicio, o notificaciones desactivadas para esa "app"
+     en Ajustes) o algo más puntual de esta pregunta.
+   - **Dictado por voz generalizado a TODO el sistema (11 nov 2026)**,
+     pedido explícito del usuario tras confirmar que el de "Preguntas al
+     abogado" funcionaba bien: se sacó la lógica de Web Speech API de ahí
+     (antes vivía solo en el handler de ese botón) a un helper reutilizable
+     -- `dictadoBotonHTML(targetId)` pinta el botón "🎤 Dictar" junto a
+     cualquier `<textarea>` (se omite solo si el navegador no lo soporta),
+     y un único listener delegado al final de `assets/app.js`
+     (`document.addEventListener('click', ...)` sobre `.btn-dictar`)
+     maneja el reconocimiento de voz sin tener que re-enganchar nada cada
+     vez que un modal se vuelve a renderizar. Conectado en los 6 lugares
+     del sistema donde se escribe texto libre: respuesta al supervisor
+     (ya existía, solo se migró al helper), nota de seguimiento del
+     expediente (`nuevaNotaTexto`), "¿Qué encontraste?" al registrar una
+     revisión de boletín (`avisoResumen`), notas internas del despacho
+     (`notasInternas`), descripción de hechos en "Consultar
+     jurisprudencia" (`jurisprudenciaPreguntaInput`), y el campo
+     `textarea` genérico de "Editar datos" (cubre `hecho_causa_narrativa`
+     de Rescisión Art. 51, `ultima_nota`, y cualquier campo futuro de
+     `EDITABLE_FIELDS` marcado `type:'textarea'`, sin tener que tocar
+     nada cuando se agregue uno nuevo). `app.js?v=129`. Sin cambios de
+     base de datos. No se tocó `mergeTags()`/`calcularJornada()`/tags de
+     formato de demanda -- no aplica `verificar_tags.js`. **Sin probar en
+     vivo todavía** ninguno de estos 5 lugares nuevos (el de supervisor ya
+     estaba confirmado desde antes de generalizarse).
 4. **IA lee documentos/fotos que sube el abogado -- HECHO (9 nov 2026),
-   migración 062 pendiente de correr, y FALTA DAR DE ALTA EL CRON NUEVO.**
-   Pedido explícito del usuario: "sería excelente que en documentos se
+   migración 062 y cron ya corridos/dados de alta (confirmado por el
+   usuario el 10 nov 2026).** Pedido explícito del usuario: "sería excelente que en documentos se
    agregue un resumen del documento a un lado para ver de qué se trata".
    Mismo principio que el punto 2, pero para CUALQUIER documento que el
    abogado suba a mano en la pestaña "Documentos" (constancias, convenios,
@@ -359,17 +425,120 @@ falta seguimiento):
      archivo en la tabla de la pestaña "Documentos" (mismo estilo que ya
      usan los avisos de boletín), con la misma insignia "✓ etapa
      actualizada sola" cuando aplica. `app.js?v=124`.
-   - **Sin probar en vivo todavía** -- recién construido, nunca se ha
-     corrido el cron nuevo ni confirmado que lea bien una foto/PDF real
-     subido a mano (el mecanismo de PDF ya está confirmado por el punto 2,
-     pero el de imagen/foto es nuevo, sin probar). Probar primero con un
-     documento real ya subido a algún expediente (ideal: uno con una
-     fecha clara, para confirmar también el llenado automático de etapa).
-   - **Falta dar de alta el Cron Job en cPanel**: comando
-     `php /ruta/completa/a/api/cron_analizar_documentos_ia.php`,
-     frecuencia cada 15-30 minutos.
+   - **Confirmado funcionando en vivo (10 nov 2026)**: el cron corrió
+     limpio sobre un lote real ("15 documento(s) en el lote, 15
+     analizado(s) con IA... 1 etapa(s) llenada(s) sola(s)") -- confirma
+     tanto el mecanismo de PDF como el de imagen/foto.
+5. **Auditoría integral del expediente -- HECHO (10 nov 2026), migración
+   064 y cron ya corridos/dados de alta (confirmado por el usuario el 10
+   nov 2026, cron a las 8:00 am diario, una hora después del de
+   "Preguntas al abogado").** Pedido
+   explícito del usuario tras ver un caso real (informe ejecutivo de
+   Margarita Reyna Ramírez Mercado desactualizado -- ver pieza aparte más
+   abajo sobre ese bug puntual, ya corregido): "la ia tiene que leer toda
+   la info del expediente y modificar todo... acuerdate que la intencion
+   es que el sistema sea lo mas autosuficiente posible". Las piezas 2-4 ya
+   llenan una etapa sola, pero cada una mira SOLO la pieza de información
+   que acaba de llegar (un acuerdo, un documento, una respuesta) -- nadie
+   hacía una pasada que viera el expediente COMPLETO junto, para detectar
+   algo que cruzando varias fuentes sí se puede concluir pero que ningún
+   disparador puntual alcanza a ver por sí solo.
+   - Nueva función `ia_auditar_expediente()` (`api/ia_helpers.php`):
+     recibe TODO el contexto ya guardado de un expediente (bitácora de
+     etapas completa, documentos+resúmenes, avisos de boletín+resúmenes,
+     preguntas del supervisor ya respondidas) y, SOLO para las etapas que
+     siguen sin fecha, busca si esa información ya junta menciona
+     LITERALMENTE cuándo pasó algo (mismo principio de siempre: nunca
+     calcula ni infiere un plazo). Devuelve una lista de sugerencias con
+     motivo citando de dónde sale cada fecha. Usa Haiku (mismo modelo que
+     el resumen ejecutivo y las preguntas del supervisor) -- es pura
+     síntesis de texto ya resumido, no lee PDF/imagen directo aquí.
+   - Nuevo cron **`api/cron_auditoria_expediente_ia.php`** (correr una
+     vez al día, puede ir junto con
+     `cron_generar_preguntas_supervisor.php`): candidatos = expedientes
+     activos con al menos una etapa ya registrada (si no tiene ninguna
+     sigue siendo pre-demanda, nada que auditar) que cambiaron desde la
+     última auditoría. Columna nueva `expedientes.ultima_auditoria_ia`
+     (migración 064) -- mismo patrón de "no re-pagar si no cambió nada"
+     que ya usa `resumen_ejecutivo_generado_en`; se marca al mismo tiempo
+     que `actualizado_en` cuando sí se llena algo (mismo `NOW()` en la
+     misma sentencia, para que la comparación de la siguiente corrida dé
+     exactamente "no stale"). Cada fill llena la etapa (nunca sobrescribe
+     una que ya tiene fecha, doble-checado contra la base justo antes de
+     escribir, no solo confiando en lo que diga la IA) y queda en
+     `log_historial` como "IA (auditoría integral)" con el motivo citado.
+   - **Efecto en cadena gratis, sin tocar nada más**: al llenar una etapa
+     esto ya bumpea `actualizado_en`, que es justo lo que el Informe
+     Ejecutivo revisa (ver el arreglo del mismo día, un poco más abajo)
+     para regenerarse solo la próxima vez que se abra -- y Agenda general
+     ya lee las fechas de `expediente_etapas` directo, así que una etapa
+     con fecha nueva aparece en la agenda sin tener que "agendar" nada
+     aparte.
+   - **Confirmado funcionando en vivo (10 nov 2026)**: el usuario corrió
+     el cron a mano abriendo la URL directo en el navegador (mismo patrón
+     que `reporte_monitoreo_faltante.php` -- el script no exige sesión).
+     Primera corrida real: "20 expediente(s) candidato(s), 20
+     auditado(s) con IA, 2 etapa(s) llenada(s) sola(s), 0 fallido(s)" --
+     ambas llenadas en el mismo expediente (id 13, Mir Castro Ma Claudia
+     vs Servicio Postal Mexicano, Exp. 242/2026): `conciliacion_prejudicial`
+     (2026-05-18) y `objeciones_replica` (2026-06-12).
+   - **Bug real encontrado por el usuario al revisar esos 2 llenados**: la
+     fecha de `objeciones_replica` (2026-06-12) es ANTERIOR a
+     `contestacion_recibida` (2026-07-26) -- imposible por ley (Art.
+     873-B LFT, las objeciones/réplica solo pueden pasar DESPUÉS de que
+     se reciba la contestación). La IA sí vio una fecha real en el
+     contexto del expediente, pero la atribuyó a la etapa equivocada.
+     `conciliacion_prejudicial` (2026-05-18) sí es consistente (es
+     anterior a todo lo demás, que tiene fecha 2026-07-26 en bloque --
+     parece una importación masiva el mismo día).
+   - **Corregido (10 nov 2026)**: nueva función
+     `etapa_fecha_es_consistente()` (`api/expediente_helpers.php`) usa el
+     orden real de `ETAPA_KEYS` para rechazar cualquier fecha nueva que
+     rompa la secuencia cronológica contra las etapas YA registradas de
+     ese expediente. Se conectó en los 4 mecanismos que llenan una etapa
+     sola (no solo la auditoría -- el mismo riesgo existía desde las
+     piezas 2-4): `cron_auditoria_expediente_ia.php`,
+     `cron_analizar_acuerdos_ia.php`, `cron_analizar_documentos_ia.php` y
+     `supervisor_pregunta_responder.php`. Los rechazos quedan en
+     `log_historial` (`auditoria_ia_rechazo_<etapa>`, sin el prefijo
+     `etapa_` para no contarse como avance real en el resumen semanal).
+   - **Corregido a mano por el usuario** -- la fecha equivocada de
+     `objeciones_replica` del expediente 13 ya se borró desde "Etapas del
+     juicio".
+   - **Candado confirmado funcionando en vivo el mismo día**: en la
+     siguiente corrida del cron (10 candidatos, 10 auditados, 5 etapas
+     llenadas, 0 fallidos) se vio un rechazo real:
+     `auditoria_ia_rechazo_amparo_directo` en el expediente 12 -- la IA
+     quiso llenar esa etapa con una fecha que rompía el orden
+     cronológico, y el candado lo bloqueó solo en vez de aplicarlo a
+     ciegas. Las otras 5 etapas que sí llenó esa corrida (expedientes 16:
+     `conciliacion_prejudicial`+`emplazamiento`, expediente 2:
+     `emplazamiento`+`prevencion`, expediente 11:
+     `contestacion_recibida`) no violaban el orden, así que se aplicaron
+     normal -- confirma que el candado bloquea lo malo sin bloquear lo
+     bueno.
 
-Principio de diseño acordado con el usuario para las piezas 2-4: los
+## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
+El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
+Mercado) que el Informe Ejecutivo con IA seguía diciendo "aún no se ha
+registrado el resultado de la conciliación", generado el 19 oct, aunque
+el abogado ya había marcado "Constancia de no conciliación recibida" el
+9 nov -- el informe nunca se enteró. El backend
+(`expediente_resumen_ejecutivo.php`) ya comparaba `actualizado_en` contra
+`resumen_ejecutivo_generado_en` para decidir si regenerar, y
+`expedientes_update_etapas.php` ya actualizaba `actualizado_en` al
+guardar una etapa (a propósito, para esto) -- pero el frontend solo
+llamaba al endpoint si `!k.resumen_ejecutivo`, así que un informe ya
+generado una vez nunca volvía a pedirle al backend que revisara si
+seguía vigente. Se quitó esa condición en los 2 lugares que abren la
+pestaña "Informe del juicio" (`abrirCaso()` y el click handler de
+`.modal-tabs`); para no tapar el texto ya visible con el indicador de
+carga cada vez que se abre, la revisión es silenciosa cuando ya había un
+resumen mostrado (solo se ve "cargando" si no hay nada todavía o si se
+fuerza con el botón "Actualizar"). `app.js?v=127`. Sin cambios de base de
+datos.
+
+Principio de diseño acordado con el usuario para las piezas 2-5: los
 DATOS DUROS (fechas, etapas) siguen siendo estructurados -- de ahí sale
 el cálculo automático de plazos que ya existe y funciona (prescripción,
 amparo). Lo que se vuelve IA es el CRITERIO de qué preguntar/proponer y
@@ -449,6 +618,176 @@ completo"):
     come como respuesta y se hace bola.
 - Primera corrida de cada robot: recordar `npm install` +
   `npx playwright install chromium` en su carpeta antes de correrlo.
+
+## Robot nuevo: Buzón Electrónico Laboral CDMX (`robots/cdmx_buzon/`, 9-10 nov 2026)
+Pedido del usuario después de notar "muchos asuntos... que evidentemente
+tienen acuerdos en los tribunales federales y en el estado de méxico" que
+el sistema no reportaba -- se construyó `api/reporte_monitoreo_faltante.php`
+(script de diagnóstico, abrir directo en el navegador logueado como
+Administrador) que reusa la MISMA lógica de reconocimiento de los robots
+(`/FEDERAL/i`, `/ciudad de méxico|cdmx/i`, `/tlalnepantla/i`) para listar,
+por categoría, qué expedientes activos quedan fuera y por qué. Confirmado
+con datos reales del despacho: la causa dominante (35 de 37 casos) es
+simplemente **Tribunal sin capturar** -- no un bug de reconocimiento. Sí se
+encontraron 2 casos reales con el Tribunal capturado SIN la palabra
+"Federal" (ej. "Noveno Tribunal Laboral de Asuntos Individuales con sede en
+la Ciudad de México" en vez de "...Laboral **Federal** de Asuntos
+Individuales..."), causando que el sistema los trate como CDMX local en vez
+de Federal -- hay que volver a capturar su Tribunal desde el catálogo
+(nunca a mano) para que diga "Federal". **Pendiente**: armar algo que
+sugiera el Tribunal a partir del prefijo del número de expediente (`CDMX`,
+`ECA`, `Tlalne1`, `MEXOAE`...) para los 35 casos sin nada capturado, una vez
+que el usuario confirme si esos prefijos sí indican la jurisdicción de
+forma consistente.
+
+Mientras se investigaba esto, el usuario mandó la liga de un portal que no
+se conocía antes: **Buzón Electrónico Laboral del PJCDMX**
+(`buzonelectronicolaboral.poderjudicialcdmx.gob.mx:2083`) -- confirmado
+real con capturas de pantalla en vivo: cada cuenta (correo + contraseña,
+**una por abogado**, confirmado explícitamente por el usuario) ve en
+"Consulta de expedientes" → "LISTA DE BUZONES" TODOS los expedientes donde
+ese abogado está dado de alta como apoderado, con un botón "Ver Acuerdos"
+por expediente que abre la lista completa (fecha, número de acuerdo tipo
+"774/2025-3", liga "Ver acuerdo" con el PDF real) -- mucho más confiable
+que el boletín público viejo, mismo nivel que el correo de Edomex o el
+portal del PJF. Se construyó TODA la infraestructura, mismo patrón
+exacto que ya existía para Edomex:
+- Migración **`sql/migraciones/063_cdmx_buzon_credenciales.sql`**
+  (confirmada corrida por el usuario el 10 nov 2026) -- agrega
+  `cdmx_buzon_usuario`/`cdmx_buzon_password_enc`/
+  `cdmx_buzon_actualizado_en` a `usuarios`.
+- Endpoints `api/cdmx_buzon_credenciales_{set,get,listar}.php` (copia
+  exacta del patrón de `edomex_correo_credenciales_*.php`, contraseña
+  cifrada con `pjf_encrypt()`/`pjf_decrypt()`).
+- Sección nueva en "Mi cuenta" (`cdmxBuzonCredencialesHTML()`,
+  `app.js?v=125`) para que cada abogado guarde su correo/contraseña del
+  Buzón.
+- Robot nuevo **`robots/cdmx_buzon/cdmx_buzon.js`** -- login por cuenta,
+  pagina "LISTA DE BUZONES" (paginación por iconos -- ver más abajo cómo
+  se resolvió de verdad, costó varias vueltas), por cada expediente que
+  haga match (comparando solo el último tramo `NNN/AAAA` del número de
+  expediente -- NO hace falta que el Tribunal esté capturado, a
+  diferencia de los otros 2 robots de CDMX/Edomex) abre "Ver Acuerdos" y
+  descarga el PDF de cada acuerdo nuevo (`descargarPdfDesdeLink()`,
+  escucha pestaña nueva O descarga directa -- confirmado real que
+  funciona de punta a punta, sin apuntar cuál de las 2 rutas fue la que
+  disparó en la corrida real). Sube todo por la MISMA infraestructura ya existente
+  (`documentos_subir_robot.php`, `avisos_ingest.php` con
+  `fuente:'cdmx_local'`) -- así que automáticamente hereda el resumen de
+  IA (`cron_analizar_acuerdos_ia.php`), el push al abogado/Administrador,
+  y el llenado automático de etapas, sin tocar nada de eso.
+- **Complementa, NO reemplaza** al robot de boletín viejo
+  (`robots/cdmx/cdmx.js`) -- pedido explícito del usuario ("el que ya
+  tenemos se queda"), corren los dos en paralelo.
+- **Primeras corridas reales (10 nov 2026)** -- 2 bugs reales encontrados
+  y corregidos antes de llegar a ver un acuerdo de verdad:
+  1. `expedientes_monitorear.php` excluía cualquier expediente sin
+     Tribunal/Junta/amparo capturado -- ni siquiera le llegaba al robot
+     intentar el match aunque tuviera `exp`. Corregido ampliando el WHERE.
+  2. `page.goto()` directo a "Consulta de expedientes" después del login
+     perdía la sesión de forma intermitente ("Error 102 Por favor inicie
+     sesión", confirmado real con captura) -- la app parece guardar la
+     sesión en memoria del navegador, y una navegación completa la
+     reinicia. Corregido: ahora navega dándole clic al menú, y espera a
+     que el número de filas de "LISTA DE BUZONES" se estabilice antes de
+     leerla (había un error de JS real de la librería de la tabla al
+     leerla demasiado pronto).
+  - **Match ahora exige Tribunal + expediente, no solo expediente** --
+    pedido explícito del usuario: el número de expediente solo es único
+    DENTRO de cada tribunal, no en todo CDMX, así que dos tribunales
+    distintos podrían compartir número por coincidencia.
+    `extraerOrdinal()` saca el número ordinal del Tribunal de ambos lados
+    (del Buzón y del capturado en el sistema, acepta dígito o palabra
+    "Sexto"/"SEXTO") y exige que coincidan; si no, se omite y se explica
+    por qué en el log (no se adivina ni se aplica un match dudoso). El
+    usuario se encarga de que los expedientes tengan Tribunal y número
+    bien capturados.
+  - **Hueco real destapado de paso**: `TRIBUNALES_LOCALES_MX` no tenía
+    NINGUNA entrada para "Ciudad de México" (sí tenía los tribunales
+    "...Federal..." en `TRIBUNALES_FEDERALES_MX`, que es un sistema
+    aparte) -- por eso el selector de Tribunal solo ofrecía "Otro" para
+    los Tribunales Laborales LOCALES de la CDMX, lo que explica los 2
+    casos mal capturados (sin la palabra "Federal") del reporte de ayer.
+    Se agregó con el formato confirmado real por captura del Buzón ("4/6/
+    7/8 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX"); el 1/2/3/5/9 se
+    completaron por la numeración secuencial oficial (9 Tribunales
+    Laborales de Asuntos Individuales, organigrama TSJCDMX 2024) **sin
+    captura real de esos 5** -- si alguno no coincide exacto con lo que
+    se ve en el Buzón, avisar para corregirlo. `app.js?v=126`.
+  - **Sesión activa bloqueando el login (10 nov 2026, encontrado y
+    arreglado en vivo esa misma noche)**: tras varias corridas seguidas
+    en poco tiempo, el login empezó a fallar siempre ("no se encontró el
+    menú 'Consulta de expedientes'"). Confirmado con captura real: el
+    portal muestra un aviso rojo "No puede ingresar por que cuenta con
+    una sesion activa..." con un link **"Romper sesión"** -- aparece YA
+    en la carga inicial de la página (depende de la cookie/sesión que
+    quedó viva de la corrida anterior, NO de enviar el formulario de
+    login), y cerrar el navegador del lado de Playwright no cierra esa
+    sesión del lado del servidor. El robot ahora revisa esto justo al
+    entrar a la página (antes de llenar usuario/contraseña), le da clic
+    solo si aparece, recarga, confirma que ya no sigue bloqueado, y
+    reintenta el login completo hasta 5 veces con pausas de por medio.
+    Si el usuario ve este mismo aviso corriendo el robot varias veces
+    seguidas en poco tiempo (normal en pruebas), es justo este caso --
+    si el arreglo automático no alcanza (puede pasar si se acumulan
+    varias sesiones "zombie" de muchas corridas de prueba seguidas),
+    entrar manual con esa cuenta en un navegador normal, romper sesión
+    ahí, y cerrar sesión bien (buscar un botón "Cerrar sesión"/"Salir")
+    antes de volver a correr el robot.
+  - **Paginación: confirmado con F12 que los iconos de paginación
+    («/‹/›/») son enlaces `<a class="page-link">`, NO `<button>`** --
+    con nombre de accesibilidad en INGLÉS aunque el resto de la pantalla
+    esté en español ("Next" para ›, "Last" para »), por eso las
+    versiones que subían por los contenedores padres buscando `button`
+    siempre encontraban 0. Además hay **2 elementos** con ese mismo
+    nombre de accesibilidad en el DOM (confirmado real) -- el primero
+    visible no necesariamente es el que mueve la tabla (clic sin error,
+    pero sin efecto real); el robot ahora prueba cada candidato visible
+    en orden hasta que uno sí cambie el texto "Página X de Y".
+  - **Confirmado funcionando de punta a punta por primera vez (10 nov
+    2026, cuenta `maluli200499@hotmail.com`)**: con los 2 arreglos de
+    arriba, una corrida real avanzó de la página 1 a la página 2 de
+    "LISTA DE BUZONES", encontró ahí el expediente de prueba confirmado
+    (**Zeltzin Monserrat Flores Cruz vs Institufacil, S.A. de C.V., exp.
+    1139/2026, Tribunal "5 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX"**),
+    hizo match por Tribunal+expediente, y abrió "Ver Acuerdos" sin error
+    -- esa primera corrida reportó 0 avisos porque el conteo de filas de
+    acuerdos también se leía demasiado pronto (ver siguiente punto).
+  - **El modal "LISTA DE ACUERDOS" tiene la misma carrera de carga que la
+    lista principal**: el usuario confirmó con captura real que el
+    expediente 1139/2026 SÍ tenía un acuerdo (1139/2026-1, 2026-05-20),
+    pero el robot contaba los links "Ver acuerdo" antes de que la tabla
+    terminara de cargar y veía 0. Se agregó la misma espera de
+    estabilización que ya tenía la lista principal.
+  - **Causa real de que el login fallara intermitentemente** (la pieza
+    que más costó encontrar): "Romper sesión" dispara un `confirm()`
+    nativo del navegador ("¿Esta seguro de romper la sesión?") y, al
+    aceptarlo, un `alert()` de confirmación -- confirmado en vivo por el
+    usuario con capturas reales de ambos cuadros. Playwright **cancela
+    estos diálogos solos** si nadie los atiende (un `confirm()` sin
+    manejador devuelve `false`), así que el robot "clicaba" el link sin
+    error pero nunca rompía la sesión de verdad -- por eso parecía fallar
+    al azar. Se agregó un listener `page.on('dialog', ...)` que los
+    acepta automáticamente. Además, el aviso de "sesión activa" no
+    aparece al instante tras cargar la página (la app revisa la sesión
+    del lado del cliente y redirige a una URL con `?error=1001...`
+    después) -- se agregó un margen fijo de 2.5s antes de revisarlo.
+  - **Confirmado funcionando de punta a punta por primera vez de verdad
+    (10 nov 2026)**: con todos los arreglos de arriba, una corrida real
+    completa reportó **"1 aviso(s) nuevo(s)"** para el expediente
+    1139/2026 -- el usuario confirmó en el sistema que el PDF real
+    (`Acuerdo_1139-2026-1.pdf`, 646 KB, 8 páginas, "AUTO DE RADICACIÓN"
+    del Quinto Tribunal Laboral de Asuntos Individuales de la CDMX) se
+    subió correctamente a la pestaña Documentos del expediente. Con esto
+    el mecanismo completo (login, romper sesión, paginación, match,
+    lista de acuerdos, descarga, subida, aviso) queda confirmado real de
+    punta a punta por primera vez.
+  - **Programado en el Task Scheduler de Windows (10 nov 2026)**:
+    `robots/cdmx_buzon/run_diario.bat` (mismo patrón que los otros 4
+    robots) a las **6:00 am todos los días** -- hora pedida explícitamente
+    por el usuario para que no choque con la abogada usando su propia
+    cuenta del Buzón en horario de oficina (el portal solo permite una
+    sesión activa por cuenta).
 
 ## Robot de boletín CDMX (`robots/cdmx/cdmx.js`)
 - Bug real detectado y corregido (8 nov 2026): cuando el número de

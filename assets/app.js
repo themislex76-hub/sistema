@@ -465,6 +465,29 @@ const TRIBUNALES_LOCALES_MX = {
     "Tribunal Laboral — Delicias",
     "Tribunal Laboral — Ciudad Juárez",
   ],
+  // Tribunales Laborales LOCALES de la Ciudad de México (Poder Judicial de
+  // la CDMX, post-reforma laboral 2022) -- NO confundir con los
+  // "...FEDERAL..." de TRIBUNALES_FEDERALES_MX, que son un sistema
+  // completamente distinto (Poder Judicial de la Federación) aunque
+  // también tengan sede física en la CDMX. Formato confirmado real
+  // (capturas de pantalla del Buzón Electrónico Laboral del PJCDMX, 10 nov
+  // 2026: "4 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX", "6 LABORAL...",
+  // "7 LABORAL...", "8 LABORAL..." -- el 1/2/3/5/9 se completaron por ser
+  // la misma numeración secuencial, confirmada por fuente oficial (9
+  // Tribunales Laborales de Asuntos Individuales según el organigrama
+  // 2024 del TSJCDMX) pero SIN captura real de esos 5 -- si alguno no
+  // coincide exacto con lo que se ve en el Buzón, avisar para corregirlo.
+  "Ciudad de México": [
+    "1 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "2 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "3 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "4 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "5 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "6 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "7 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "8 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "9 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+  ],
   "Coahuila de Zaragoza": [
     "Tribunal Laboral del Distrito Judicial de Saltillo",
     "Tribunal Laboral del Distrito Judicial de Torreón",
@@ -2153,6 +2176,18 @@ async function loadEdomexCorreoCredenciales(){
   }catch(e){ EDOMEX_CORREO_CREDENCIALES = null; }
 }
 
+// Igual que EDOMEX_CORREO_CREDENCIALES pero para el Buzón Electrónico
+// Laboral del PJCDMX (buzonelectronicolaboral.poderjudicialcdmx.gob.mx) --
+// el robot nuevo (robots/cdmx_buzon) usa las cuentas guardadas por cada
+// abogado.
+let CDMX_BUZON_CREDENCIALES = null;
+async function loadCdmxBuzonCredenciales(){
+  try{
+    const d = await api('GET', 'cdmx_buzon_credenciales_get.php');
+    CDMX_BUZON_CREDENCIALES = d;
+  }catch(e){ CDMX_BUZON_CREDENCIALES = null; }
+}
+
 // Avisos de boletín/lista de acuerdos por expediente — registrados a mano
 // o encontrados por los robots de monitoreo automático (Federal, CDMX,
 // Edomex). Ver api/avisos_*.php.
@@ -2242,14 +2277,34 @@ async function loadAvisosBoletin(){
 
 // Preguntas del supervisor de IA (ver cron_generar_preguntas_supervisor.php):
 // por cada "posible atraso" (buildAgendaEntries(), tipo 'atraso') sin
-// resolver, la IA ya redactó una pregunta concreta -- aparecen aquí sin
-// mandar ningún push (pedido del usuario), solo al entrar al sistema.
+// resolver, la IA ya redactó una pregunta concreta. Al principio se pidió
+// explícitamente SIN push (que solo aparecieran al entrar al sistema) --
+// el usuario cambió de opinión el 10 nov 2026 y pidió que cada pregunta
+// nueva sí mande un push con link directo a contestarla (ver
+// abrirPreguntaDesdeNotificacion() y el push que manda
+// cron_generar_preguntas_supervisor.php).
 let SUPERVISOR_PREGUNTAS = [];
+// Id de una pregunta a la que hay que llevar la vista y enfocar su
+// textarea en cuanto se renderice "preguntas_abogado" (viene de abrir el
+// sistema desde el push de una pregunta nueva) -- se limpia solo después
+// de usarse una vez, para no volver a hacer scroll en renders futuros.
+let PREGUNTA_ENFOCAR = null;
 async function loadSupervisorPreguntas(){
   try{
     const d = await api('GET', 'supervisor_preguntas_list.php');
     SUPERVISOR_PREGUNTAS = d.preguntas;
   }catch(e){ SUPERVISOR_PREGUNTAS = []; }
+}
+// Se abrió el sistema desde el push de una pregunta nueva (ver
+// cron_generar_preguntas_supervisor.php) -- lleva a "Preguntas al
+// abogado" y marca cuál enfocar; bindViewBody() hace el scroll/foco real
+// una vez que esa vista ya tiene el HTML en el DOM.
+async function abrirPreguntaDesdeNotificacion(preguntaId){
+  if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
+  if(!SUPERVISOR_PREGUNTAS.length) await loadSupervisorPreguntas();
+  PREGUNTA_ENFOCAR = parseInt(preguntaId, 10) || null;
+  VIEW = 'preguntas_abogado';
+  render();
 }
 function supervisorPreguntasPendientesCount(){ return SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente').length; }
 function supervisorPreguntaCardHTML(p){
@@ -2262,7 +2317,10 @@ function supervisorPreguntaCardHTML(p){
           </div>
         </div>
         <div class="aviso-resumen">${escapeHTML(p.pregunta)}</div>
-        <div class="field" style="margin-top:10px;"><textarea class="supervisor-respuesta-input" placeholder="Escribe tu respuesta aquí..." style="min-height:50px;"></textarea></div>
+        <div class="field" style="margin-top:10px;">
+          <textarea class="supervisor-respuesta-input" id="sup-respuesta-${p.id}" placeholder="Escribe tu respuesta aquí, o dale a 'Dictar' y habla..." style="min-height:50px;"></textarea>
+          ${dictadoBotonHTML('sup-respuesta-' + p.id)}
+        </div>
         <div class="field" style="margin-top:6px;">
           <label style="font-size:11.5px; color:var(--gray); display:block; margin-bottom:4px;">Adjuntar foto o documento (opcional — ej. cédula de notificación, constancia):</label>
           <input type="file" class="supervisor-respuesta-archivo" accept=".pdf,.jpg,.jpeg,.png">
@@ -2689,6 +2747,7 @@ async function refreshBootstrap(){
   await loadSupervisorPreguntas();
   await loadPjfCredenciales();
   await loadEdomexCorreoCredenciales();
+  await loadCdmxBuzonCredenciales();
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
     await loadProspectos();
     await loadDisponibilidad();
@@ -3587,6 +3646,19 @@ function alertRowHTML(k, p, lvl){
 function dateToISO(d){ if(!d) return ""; return d.toISOString().slice(0,10); }
 function truncate(s,n){ if(!s) return ""; return s.length>n? s.slice(0,n-1)+"…" : s; }
 function escapeHTML(s){ if(s===null||s===undefined) return ""; return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+// Botón de dictado por voz reutilizable (11 nov 2026) -- pedido explícito
+// del usuario: "en todos lados donde se escriba texto". Antes solo vivía
+// en la respuesta al supervisor (10 nov 2026); se generalizó para
+// cualquier <textarea> del sistema en vez de reimplementar el Web Speech
+// API en cada lugar. targetId debe ser el id de ese <textarea> -- el
+// manejador de clic real es un solo listener delegado al final del
+// archivo (ver '.btn-dictar' en document.addEventListener('click', ...)),
+// así que aquí solo hace falta pintar el botón donde haga falta. Se omite
+// solo si el navegador no soporta reconocimiento de voz (ej. Safari/iPhone).
+function dictadoBotonHTML(targetId){
+  if(!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) return '';
+  return `<button type="button" class="btn secondary btn-dictar" data-dictar-target="${targetId}" style="margin-top:6px; padding:4px 10px; font-size:11.5px;">🎤 Dictar</button>`;
+}
 // Hallazgo real: el panel "Pausados con algo sin contestar" se llenaba de
 // casos donde el último mensaje del cliente era solo un cierre ("Gracias",
 // "Listo", "Sale. Gracias", "Ok mil gracias"), que no necesita ninguna
@@ -5770,6 +5842,7 @@ function jurisprudenciaHTML(){
     <div class="panel-body" style="padding:20px 24px;">
       <div class="notice" style="margin-bottom:14px;">Describe los hechos concretos de tu caso (quién es el patrón, qué prestación o problema hay, qué pasó) — evita preguntas muy generales, entre más específico mejor. Solo cita tesis reales de esta biblioteca, nunca inventa una.</div>
       <textarea id="jurisprudenciaPreguntaInput" placeholder="Describe los hechos de tu caso, entre más detalle mejor (ej. &quot;el trabajador fue despedido pero el patrón argumenta que ya no se presentó a trabajar, sin haberle dado ningún aviso de rescisión por escrito&quot;)..." style="width:100%; min-height:110px; padding:11px 13px; border:1px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; resize:vertical;">${escapeHTML(JURISPRUDENCIA_PREGUNTA)}</textarea>
+      ${dictadoBotonHTML('jurisprudenciaPreguntaInput')}
       <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:10px;">
         <span style="font-size:11.5px; color:var(--gray);">Ctrl+Enter para buscar</span>
         <button class="btn" id="jurisprudenciaBuscarBtn" ${JURISPRUDENCIA_CARGANDO?'disabled':''}>${JURISPRUDENCIA_CARGANDO ? 'Buscando <span class="loading-dots"><span></span><span></span><span></span></span>' : 'Buscar'}</button>
@@ -6591,7 +6664,8 @@ function miCuentaHTML(){
       ${configurado ? `<button class="btn secondary" id="borrarPjfCredencialesBtn">Quitar cuenta guardada</button>` : ''}
     </div>
   </div></div>
-  ${edomexCorreoCredencialesHTML()}`;
+  ${edomexCorreoCredencialesHTML()}
+  ${cdmxBuzonCredencialesHTML()}`;
 }
 
 function edomexCorreoCredencialesHTML(){
@@ -6609,6 +6683,25 @@ function edomexCorreoCredencialesHTML(){
     <div style="margin-top:12px; display:flex; gap:10px;">
       <button class="btn" id="saveEdomexCorreoCredencialesBtn">Guardar</button>
       ${configurado ? `<button class="btn secondary" id="borrarEdomexCorreoCredencialesBtn">Quitar cuenta guardada</button>` : ''}
+    </div>
+  </div></div>`;
+}
+
+function cdmxBuzonCredencialesHTML(){
+  const c = CDMX_BUZON_CREDENCIALES;
+  const configurado = c && c.configurado;
+  return `
+  <div class="notice" style="margin:18px 0;">El Poder Judicial de la Ciudad de México notifica los acuerdos de tus juicios laborales por el Buzón Electrónico Laboral (buzonelectronicolaboral.poderjudicialcdmx.gob.mx) -- se consulta entrando a esa página con tu correo y contraseña. Guárdalos aquí para que el robot revise tu buzón por ti y reporte los acuerdos solo. Tu contraseña se guarda cifrada — nadie del despacho puede verla, ni siquiera un administrador.</div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:10px;">Buzón Electrónico Laboral (CDMX)</div>
+    ${configurado ? `<div class="notice" style="margin-bottom:14px; background:var(--amber-bg,#fdf6e3);">Ya tienes guardado el usuario <strong>${escapeHTML(c.cdmx_buzon_usuario)}</strong>${c.actualizado_en ? ' (actualizado el '+new Date(c.actualizado_en).toLocaleDateString('es-MX')+')' : ''}. Para cambiarlo, captura los datos de nuevo abajo.</div>` : ''}
+    <form id="cdmxBuzonCredencialesForm" class="grid2">
+      <div class="field"><label>Correo del Buzón</label><input type="text" id="cdmxBuzonUsuarioInput" placeholder="Tu correo de buzonelectronicolaboral.poderjudicialcdmx.gob.mx" value="${configurado ? escapeHTML(c.cdmx_buzon_usuario) : ''}"></div>
+      <div class="field"><label>Contraseña del Buzón</label><input type="password" id="cdmxBuzonPasswordInput" placeholder="Tu contraseña (siempre hay que volver a escribirla para guardar)"></div>
+    </form>
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button class="btn" id="saveCdmxBuzonCredencialesBtn">Guardar</button>
+      ${configurado ? `<button class="btn secondary" id="borrarCdmxBuzonCredencialesBtn">Quitar cuenta guardada</button>` : ''}
     </div>
   </div></div>`;
 }
@@ -7073,6 +7166,20 @@ function bindViewBody(){
       }
     });
   });
+  // Se abrió el sistema desde el push de una pregunta nueva
+  // (abrirPreguntaDesdeNotificacion()) -- ya se renderizó "Preguntas al
+  // abogado" con el HTML en el DOM, así que recién aquí se puede hacer
+  // scroll y enfocar la tarjeta correcta. Se limpia después de usarse una
+  // sola vez.
+  if(PREGUNTA_ENFOCAR && VIEW === 'preguntas_abogado'){
+    const card = document.querySelector(`[data-supervisor-pregunta-id="${PREGUNTA_ENFOCAR}"]`);
+    if(card){
+      card.scrollIntoView({behavior:'smooth', block:'center'});
+      const textarea = card.querySelector('.supervisor-respuesta-input');
+      if(textarea) textarea.focus();
+    }
+    PREGUNTA_ENFOCAR = null;
+  }
   document.querySelectorAll('[data-prospecto-abrir]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const id = parseInt(el.dataset.prospectoAbrir);
@@ -7393,6 +7500,32 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo quitar: ' + err.message); }
     });
   }
+  const saveCdmxBuzonCredencialesBtn = document.getElementById('saveCdmxBuzonCredencialesBtn');
+  if(saveCdmxBuzonCredencialesBtn){
+    saveCdmxBuzonCredencialesBtn.addEventListener('click', async ()=>{
+      const cdmx_buzon_usuario = document.getElementById('cdmxBuzonUsuarioInput').value.trim();
+      const cdmx_buzon_password = document.getElementById('cdmxBuzonPasswordInput').value;
+      if(!cdmx_buzon_usuario || !cdmx_buzon_password){ alert('Escribe tu correo y tu contraseña del Buzón Electrónico Laboral.'); return; }
+      saveCdmxBuzonCredencialesBtn.disabled = true;
+      try{
+        await api('POST', 'cdmx_buzon_credenciales_set.php', {cdmx_buzon_usuario, cdmx_buzon_password});
+        await loadCdmxBuzonCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+      finally{ saveCdmxBuzonCredencialesBtn.disabled = false; }
+    });
+  }
+  const borrarCdmxBuzonCredencialesBtn = document.getElementById('borrarCdmxBuzonCredencialesBtn');
+  if(borrarCdmxBuzonCredencialesBtn){
+    borrarCdmxBuzonCredencialesBtn.addEventListener('click', async ()=>{
+      if(!confirm('¿Quitar tu cuenta guardada del Buzón Electrónico Laboral? El robot dejará de revisar tu buzón hasta que la vuelvas a capturar.')) return;
+      try{
+        await api('POST', 'cdmx_buzon_credenciales_set.php', {borrar: true});
+        await loadCdmxBuzonCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); }
+    });
+  }
 }
 
 // ---------------------------------------------------------------
@@ -7405,17 +7538,27 @@ async function openModal(k, tab){
   ARCHIVO_CROP_QUEUE = [];
   ACTIVE_CASE = k; MODAL_TAB = tab || "resumen";
   if(MODAL_TAB === 'documentos') await loadDocumentos(k.id);
-  if(MODAL_TAB === 'resumen' && !k.resumen_ejecutivo && !(INFORME_EJECUTIVO_STATE[k.id]||{}).cargando) cargarInformeEjecutivo(k.id, false);
+  if(MODAL_TAB === 'resumen' && !(INFORME_EJECUTIVO_STATE[k.id]||{}).cargando) cargarInformeEjecutivo(k.id, false);
   renderModal();
   document.getElementById('modalOverlay').classList.add('show');
 }
 // Pide (o regenera) el informe ejecutivo con IA de un expediente. El backend
 // cachea el resultado y solo vuelve a llamar a la IA si el expediente cambió
 // desde la última vez -- por eso es seguro llamar esto sin forzar cada vez
-// que se abre la pestaña "Informe del juicio".
+// que se abre la pestaña "Informe del juicio" (confirmado real, 10 nov 2026:
+// antes los 2 lugares que llamaban a esta función solo lo hacían si
+// `!k.resumen_ejecutivo`, así que un informe generado una sola vez se
+// quedaba congelado para siempre -- el chequeo de "¿cambió el expediente?"
+// del backend nunca llegaba a correr de nuevo). Si ya había un resumen
+// mostrado, la revisión es silenciosa (no se tapa el texto con el
+// indicador de carga) -- solo se ve el "cargando" cuando no hay nada
+// todavía o cuando se fuerza a mano con el botón "Actualizar".
 async function cargarInformeEjecutivo(caseId, forzar){
-  INFORME_EJECUTIVO_STATE[caseId] = {cargando:true, error:null};
-  if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
+  const yaHabiaResumen = !!(findCase(caseId) || {}).resumen_ejecutivo;
+  if(!yaHabiaResumen || forzar){
+    INFORME_EJECUTIVO_STATE[caseId] = {cargando:true, error:null};
+    if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
+  }
   try{
     const r = await api('POST', 'expediente_resumen_ejecutivo.php', {id: caseId, forzar: !!forzar});
     const kc = findCase(caseId);
@@ -7494,7 +7637,7 @@ function renderModal(){
       if(b.dataset.t !== 'documentos'){ detenerCamara(); CROP_PENDING = null; ARCHIVO_CROP_QUEUE = []; } // no dejar la cámara prendida ni una cola de recorte a medias al salir de la pestaña
       MODAL_TAB = b.dataset.t;
       if(MODAL_TAB === 'documentos') await loadDocumentos(ACTIVE_CASE.id);
-      if(MODAL_TAB === 'resumen' && !ACTIVE_CASE.resumen_ejecutivo && !(INFORME_EJECUTIVO_STATE[ACTIVE_CASE.id]||{}).cargando) cargarInformeEjecutivo(ACTIVE_CASE.id, false);
+      if(MODAL_TAB === 'resumen' && !(INFORME_EJECUTIVO_STATE[ACTIVE_CASE.id]||{}).cargando) cargarInformeEjecutivo(ACTIVE_CASE.id, false);
       renderModal();
     });
   });
@@ -7748,6 +7891,7 @@ function modalTabContent(k,p,meta){
     </div>
     <div style="margin-top:10px;">
       <textarea id="nuevaNotaTexto" placeholder="Agregar una nueva nota de seguimiento..." style="width:100%; min-height:70px; border:1px solid var(--border); border-radius:8px; padding:9px 11px; font-size:13px; font-family:var(--sans); background:var(--parchment);"></textarea>
+      ${dictadoBotonHTML('nuevaNotaTexto')}
       <button class="btn" id="agregarNotaBtn" style="margin-top:8px;">+ Agregar nota (con fecha automática)</button>
     </div>
   `;
@@ -7913,7 +8057,7 @@ function modalTabContent(k,p,meta){
       </div>
       <div class="field"><label>Fecha del boletín revisado</label><input type="date" id="avisoFecha" value="${dateToISO(new Date())}"></div>
     </div>
-    <div class="field" style="margin-top:6px;"><label>¿Qué encontraste? (o "sin novedades" si no había nada nuevo)</label><textarea id="avisoResumen" placeholder="Ej. Se dictó auto admitiendo pruebas; próxima audiencia el..."></textarea></div>
+    <div class="field" style="margin-top:6px;"><label>¿Qué encontraste? (o "sin novedades" si no había nada nuevo)</label><textarea id="avisoResumen" placeholder="Ej. Se dictó auto admitiendo pruebas; próxima audiencia el..."></textarea>${dictadoBotonHTML('avisoResumen')}</div>
     <div class="field" style="margin-top:6px;"><label>Enlace de verificación (opcional)</label><input type="text" id="avisoUrl" placeholder="https://..."></div>
     <div style="margin-top:12px;"><button class="btn" id="addAvisoBtn">Registrar revisión</button></div>
     <div class="divider"></div>
@@ -7975,7 +8119,7 @@ function modalTabContent(k,p,meta){
             // que sí existe, solo que bajo el nombre de columna anterior.
             tribunalFieldHTML(f, (k[f.key] || (f.key==='tribunal' ? k.junta : '') || '') + '') :
             (f.key==='ultima_nota' || f.type==='textarea') ?
-            `<textarea class="edit-field" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>` :
+            `<textarea class="edit-field" id="edit-field-${f.key}" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>${dictadoBotonHTML('edit-field-' + f.key)}` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
           }
         </div>`).join("")}
@@ -8119,6 +8263,7 @@ function modalTabContent(k,p,meta){
     <div class="field" style="margin-top:14px;">
       <label>Notas internas del despacho</label>
       <textarea id="notasInternas" placeholder="Notas de seguimiento, acuerdos, pendientes...">${escapeHTML(meta.notas||'')}</textarea>
+      ${dictadoBotonHTML('notasInternas')}
     </div>
     <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-size:12.5px; color:var(--ink);">
       <input type="checkbox" id="cobroPendiente" ${meta.cobro_pendiente?'checked':''}> Convenio pagado pendiente de cobro / seguimiento de pago
@@ -9049,6 +9194,14 @@ async function init(){
     history.replaceState(null, '', location.pathname);
     abrirConversacionDesdeNotificacion(abrirParam);
   }
+
+  // Igual, pero para el push de "pregunta nueva del supervisor" (10 nov
+  // 2026) -- lleva directo a "Preguntas al abogado" y enfoca esa pregunta.
+  const preguntaParam = new URLSearchParams(location.search).get('pregunta');
+  if(preguntaParam){
+    history.replaceState(null, '', location.pathname);
+    abrirPreguntaDesdeNotificacion(preguntaParam);
+  }
 }
 init();
 
@@ -9058,9 +9211,46 @@ init();
 if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('message', (event)=>{
     if(event.data && event.data.type === 'abrir-conversacion' && event.data.url){
-      const telefono = new URL(event.data.url, location.origin).searchParams.get('abrir');
+      const urlNotificacion = new URL(event.data.url, location.origin);
+      const telefono = urlNotificacion.searchParams.get('abrir');
+      const preguntaId = urlNotificacion.searchParams.get('pregunta');
       if(telefono) abrirConversacionDesdeNotificacion(telefono);
+      if(preguntaId) abrirPreguntaDesdeNotificacion(preguntaId);
     }
   });
 }
+
+// Dictado por voz genérico (11 nov 2026, ver dictadoBotonHTML()) -- un
+// solo listener delegado para CUALQUIER botón "🎤 Dictar" del sistema, sin
+// importar en qué modal/pestaña se pinte ni cuántas veces se vuelva a
+// renderizar esa vista. Reconocimiento de voz nativo del navegador (Web
+// Speech API), gratis y sin mandar nada a ningún servidor de
+// transcripción.
+document.addEventListener('click', (ev)=>{
+  const btn = ev.target.closest('.btn-dictar');
+  if(!btn) return;
+  ev.stopPropagation();
+  const textarea = document.getElementById(btn.dataset.dictarTarget);
+  if(!textarea) return;
+  if(btn.dataset.grabando === '1'){ if(window.__dictadoActivo) window.__dictadoActivo.stop(); return; }
+  if(window.__dictadoActivo) window.__dictadoActivo.stop(); // solo un dictado activo a la vez
+
+  const Reconocedor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recog = new Reconocedor();
+  recog.lang = 'es-MX';
+  recog.interimResults = false;
+  recog.continuous = true;
+  const textoBase = textarea.value;
+  recog.onresult = (ev2)=>{
+    let textoNuevo = '';
+    for(let i = ev2.resultIndex; i < ev2.results.length; i++) textoNuevo += ev2.results[i][0].transcript;
+    textarea.value = (textoBase + ' ' + textoNuevo).trim();
+  };
+  recog.onerror = ()=>{ alert('No se pudo escuchar — revisa que le diste permiso de micrófono al navegador.'); };
+  recog.onend = ()=>{ btn.dataset.grabando = '0'; btn.textContent = '🎤 Dictar'; window.__dictadoActivo = null; };
+  window.__dictadoActivo = recog;
+  btn.dataset.grabando = '1';
+  btn.textContent = '⏹️ Detener';
+  recog.start();
+});
 

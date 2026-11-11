@@ -55,6 +55,38 @@ const ETAPA_KEYS = [
     'manifestaciones_3dias','audiencia_preliminar','audiencia_juicio','sentencia','amparo_directo',
 ];
 
+// Confirmado real (10 nov 2026): la auditoría integral con IA llenó una
+// vez "Objeciones y réplica del actor" con una fecha ANTERIOR a
+// "Contestación de demanda recibida" -- imposible, porque esa etapa por
+// ley (Art. 873-B LFT) solo puede pasar DESPUÉS de que se reciba la
+// contestación. La IA sí vio una fecha real en el contexto, pero la
+// atribuyó a la etapa equivocada. Esta función es el candado que faltaba
+// en los mecanismos que llenan una etapa sola (acuerdos de boletín,
+// documentos subidos, respuesta del abogado al supervisor, auditoría
+// integral): ETAPA_KEYS ya trae el orden real del trámite, así que basta
+// comparar la fecha nueva contra las de las demás etapas YA registradas
+// -- si una etapa ANTERIOR en el orden tiene una fecha más tardía, o una
+// POSTERIOR tiene una más temprana, algo está mal y no se aplica.
+function etapa_fecha_es_consistente(string $etapaKey, string $fecha, array $etapas): bool
+{
+    $idx = array_search($etapaKey, ETAPA_KEYS, true);
+    if ($idx === false) return true; // clave desconocida -- no es este candado el que debe atraparlo
+
+    $porKey = [];
+    foreach ($etapas as $e) {
+        if (!empty($e['etapa_key']) && !empty($e['fecha']) && $e['fecha'] !== '0000-00-00') {
+            $porKey[$e['etapa_key']] = $e['fecha'];
+        }
+    }
+    foreach (ETAPA_KEYS as $i => $key) {
+        if (!isset($porKey[$key])) continue;
+        $otraFecha = $porKey[$key];
+        if ($i < $idx && $otraFecha > $fecha) return false;
+        if ($i > $idx && $otraFecha < $fecha) return false;
+    }
+    return true;
+}
+
 // Texto corto para el historial de cambios (log_historial) cuando se
 // guarda una etapa -- null si la etapa quedó vacía (para que
 // log_historial no registre nada en ese caso, ya trae su propio guard de
