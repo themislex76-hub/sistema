@@ -992,11 +992,11 @@ mejor que mencionarla en cada respuesta.
   de $499 de este prompt, y NUNCA un número que tú mismo "recuerdes" de un
   precio anterior del despacho (como $299 o $399) sin haberlo consultado
   -- esa cifra puede estar mal y contradecir el link real que sí se
-  generó. El link de pago real puede ser por un monto distinto al precio
-  de lista vigente SOLO si a esa persona se le había cotizado un precio
-  anterior en esta misma conversación antes de un cambio de precio (el
-  sistema lo respeta automáticamente) -- eso también lo confirma
-  consultar_cita_pago, nunca lo asumas. Dos bugs reales ya ocurridos por
+  generó. Los links nuevos siempre salen por el precio vigente ($499),
+  aunque antes se le haya cotizado otro precio (decisión del despacho,
+  11-nov-2026: ya no se respetan precios anteriores); solo un link
+  generado ANTES de ese cambio podría ser por otro monto -- por eso
+  siempre confirma con consultar_cita_pago, nunca lo asumas. Dos bugs reales ya ocurridos por
   esto, en direcciones opuestas: (1) el bot le insistió a una clienta que
   el precio correcto era $499 cuando su link de verdad era de $399 (el
   que se le había cotizado antes), haciéndola dudar de algo en lo que
@@ -1023,9 +1023,13 @@ mejor que mencionarla en cada respuesta.
   de este prompt ($499 MXN). NUNCA copies un precio que aparezca en
   mensajes anteriores de la conversación ($299, $399 o cualquier otro),
   aunque tú mismo lo hayas escrito antes -- esos mensajes pueden ser de
-  meses atrás, de antes de un cambio de precio. Si a la persona se le
-  cotizó antes otro precio y pregunta, explícale con naturalidad que se
-  actualizó a $499 en octubre de 2026 (ver regla anterior). Bug real
+  meses atrás, de antes de un cambio de precio. El despacho ya NO
+  respeta precios anteriores: si la persona dice que antes le ofrecieron
+  o le cotizaron un precio menor, explícale con amabilidad que la
+  asesoría se actualizó a $499 en octubre de 2026 y que ese es el precio
+  actual (ver regla anterior) -- no le prometas el precio viejo ni
+  escales a un humano solo por eso. Si confirmar_horario_asesoria te
+  regresa "aviso_cambio_precio", explícaselo junto con el link. Bug real
   detectado en producción (10-nov-2026): un cliente al que se le había
   cotizado $299 en agosto volvió a escribir, y el bot le ofreció otra vez
   "la asesoría de $299" copiándolo del historial -- el sistema tomó ese
@@ -2344,9 +2348,10 @@ function ia_resultado_consultar_cita_pago(PDO $pdo, string $telefono): string
     $pendiente = $stmt->fetch();
     if ($pendiente) {
         // Bug real detectado en producción: a una clienta se le había
-        // cotizado $399 (precio anterior a la subida de octubre 2026,
-        // respetado por mercadopago_monto_asesoria_a_respetar() al generar
-        // SU link de pago real), pero cuando preguntó "¿cuánto cuesta?" el
+        // cotizado $399 (precio anterior a la subida de octubre 2026, que
+        // en ese entonces se respetaba al generar SU link de pago real --
+        // desde el 11-nov-2026 ya no se respeta, ver
+        // mercadopago_monto_asesoria_a_respetar()), pero cuando preguntó "¿cuánto cuesta?" el
         // bot le contestó el precio de lista actual ($499) porque esa cifra
         // está fija en el prompt -- terminó insistiéndole que estaba
         // equivocada cuando en realidad el link sí era de $399, una

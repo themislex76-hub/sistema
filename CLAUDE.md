@@ -1113,20 +1113,24 @@ exacto que ya existía para Edomex:
   truene en la primera corrida real — pedir el error completo de la
   terminal si pasa).
 
-## Precio de la asesoría: no respetar $299/$399 repetidos por el bot (11 nov 2026, conversación "chats")
-- Bug real: a un cliente cotizado en $299 en agosto, el bot le volvió a
-  escribir "la asesoría de $299" el 10-nov (copiado del historial), y
-  `mercadopago_monto_asesoria_a_respetar()` tomó ese mensaje de minutos
-  antes como cotización vigente y cobró $299. El despacho decidió
-  respetarle ese precio a ese cliente.
-- Arreglo: constante `MERCADOPAGO_PRECIOS_VIEJOS_COTIZABLES_HASTA` en
-  `api/mercadopago_helpers.php` -- un "$299"/"$399" solo cuenta si se
-  escribió mientras ese precio estaba vigente (hasta 4-sep / 7-oct-2026,
-  fechas de los commits que subieron el precio + 2 días de margen). Más
-  una REGLA DURA en el prompt (`api/ia_helpers.php`): nunca copiar un
-  precio del historial, siempre el vigente. Probado con SQLite (el caso
-  real pasa de $299 a $499 con aviso de cambio de precio). Sin migración,
-  sin cambio de `app.js`.
+## Precio de la asesoría: SIEMPRE el vigente, ya no se respetan precios viejos (11 nov 2026, conversación "chats")
+- Decisión del despacho: el bot maneja siempre el precio actual ($499).
+  Si el cliente dice que antes le ofrecieron un precio menor, se le
+  explica que la asesoría subió en octubre de 2026 -- no se le respeta el
+  precio viejo.
+- Bug que lo detonó: a un cliente cotizado en $299 en agosto, el bot le
+  volvió a escribir "la asesoría de $299" el 10-nov (copiado del
+  historial), y `mercadopago_monto_asesoria_a_respetar()` lo tomó como
+  cotización vigente (ventana de 14 días) y cobró $299. A ESE cliente sí
+  se le respetó (ya había pagado).
+- Arreglo: `mercadopago_monto_asesoria_a_respetar()` (`api/mercadopago_helpers.php`,
+  se dejó el nombre por sus 5 llamadores) ahora siempre regresa
+  `MERCADOPAGO_MONTO_ASESORIA`; si en el chat se mencionó $299/$399,
+  regresa `aviso_cambio_precio` para que el bot explique el aumento. Se
+  quitaron `MERCADOPAGO_DIAS_VIGENCIA_COTIZACION` y la ventana de 14 días.
+  Prompt (`api/ia_helpers.php`): regla dura de nunca copiar precios del
+  historial y de explicar el aumento en vez de prometer el precio viejo.
+  Probado con SQLite (5 casos). Sin migración, sin cambio de `app.js`.
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
