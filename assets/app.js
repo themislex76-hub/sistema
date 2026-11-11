@@ -6455,10 +6455,10 @@ function googleCalendarioSugerenciaCardHTML(s){
             <div class="aviso-fuente">${escapeHTML(s.nombre_calendario||'Google Calendar')} &middot; ${etapaLabelPorKey(s.etapa_key)}</div>
           </div>
         </div>
-        <div class="aviso-resumen">📅 "${escapeHTML(s.titulo_evento)}" — ${fmtDate(s.fecha)}${s.hora? ' '+escapeHTML(s.hora.slice(0,5))+' hrs':''}</div>
+        <div class="aviso-resumen">⚠️ Conflicto de fecha — "${escapeHTML(s.titulo_evento)}" dice ${fmtDate(s.fecha)}${s.hora? ' '+escapeHTML(s.hora.slice(0,5))+' hrs':''}, pero esta etapa ya tenía agendado ${s.fecha_actual_programada? fmtDate(s.fecha_actual_programada):'otra fecha'}. ¿Cuál vale?</div>
         <div class="aviso-actions">
-          <button class="btn" data-calendario-sugerencia-aplicar="${s.id}" style="padding:6px 12px; font-size:11.5px;">Sí, es esta — aplicar</button>
-          <button class="btn secondary" data-calendario-sugerencia-descartar="${s.id}" style="padding:6px 12px; font-size:11.5px;">No es esta</button>
+          <button class="btn" data-calendario-sugerencia-aplicar="${s.id}" style="padding:6px 12px; font-size:11.5px;">Usar la de Google Calendar</button>
+          <button class="btn secondary" data-calendario-sugerencia-descartar="${s.id}" style="padding:6px 12px; font-size:11.5px;">Dejar la que ya tenía</button>
         </div>
       </div>`;
 }
@@ -6469,7 +6469,7 @@ function preguntasAbogadoHTML(){
   <div class="notice" style="margin-bottom:16px; max-width:100%;">Preguntas que el supervisor de IA le hace al abogado a cargo cuando detecta un posible atraso, buscando el dato concreto que falta para seguir el plazo legal — normalmente una fecha. Puedes contestar con texto, o adjuntar una foto/documento (ej. una cédula de notificación) para que la IA lo lea y, si confirma una fecha, llene sola la etapa correspondiente.</div>
   ${GOOGLE_CALENDARIO_SUGERENCIAS.length ? `
   <div class="panel">
-    <div class="panel-head"><h3>📅 Eventos de tu Google Calendar por confirmar</h3><span class="count">${GOOGLE_CALENDARIO_SUGERENCIAS.length}</span></div>
+    <div class="panel-head"><h3>📅 Conflictos de fecha en tu Google Calendar</h3><span class="count">${GOOGLE_CALENDARIO_SUGERENCIAS.length}</span></div>
     <div class="panel-body" style="padding:16px 20px;">${GOOGLE_CALENDARIO_SUGERENCIAS.map(googleCalendarioSugerenciaCardHTML).join("")}</div>
   </div>` : ''}
   ${pendientes.length ? `

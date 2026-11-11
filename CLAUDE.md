@@ -729,15 +729,50 @@ Google, nunca al revés).
      match, 9 sin match claro, 0 fallido(s)". Confirma lectura de Google
      Calendar + match de la IA + candado de duplicados funcionando juntos
      por primera vez.
-  - **Pendiente de confirmar todavía**: que el panel "📅 Eventos de tu
-    Google Calendar por confirmar" en "Preguntas al abogado" muestre bien
-    las 5 sugerencias con match, que el tap "Sí, es esta" llene la etapa
-    correctamente, y que el push con link (`?pregunta_calendario=1`)
-    llegue al celular de Lindsay. También falta mapear los demás
-    calendarios vistos (Audiencias Mariana, Audiencias Christian,
-    Audiencias Rubén, Audiencias Junta Federal) al abogado que
-    corresponda a cada uno -- por ahora solo "Audiencias linsday" está
-    vigilado.
+  - **Cambio a autónomo (11 nov 2026, mismo día, pedido explícito del
+    usuario tras ver el panel de confirmación)**: "no quiero que tenga que
+    estar confirmando... que esta sea una entrada de información más para
+    que la IA actualice el sistema". Se quitó el tap de confirmación para
+    el caso normal -- ahora, si la IA da un match claro (expediente+etapa,
+    nunca adivina entre candidatos ambiguos) y esa etapa no tenía ya una
+    fecha agendada distinta, `cron_leer_google_calendar.php` llena sola
+    `fecha_programada`/`hora` directo, igual que ya hacían
+    `cron_analizar_acuerdos_ia.php`/`cron_analizar_documentos_ia.php`/
+    `cron_auditoria_expediente_ia.php` -- queda en `log_historial` como
+    "llenado automático desde Google Calendar" (auditable/corregible a
+    mano) y pasa por el mismo candado de orden cronológico
+    (`etapa_fecha_es_consistente()`): si lo rompe, se rechaza solo y
+    queda registrado como `calendario_ia_rechazo_<etapa>` (estado nuevo
+    `rechazada` en el ENUM, migración **068_google_calendario_estado_
+    rechazada.sql**).
+    El único caso que SIGUE pidiendo un tap humano (panel renombrado a
+    "📅 Conflictos de fecha en tu Google Calendar" en "Preguntas al
+    abogado", estado `pendiente`): la etapa ya tenía una fecha agendada
+    DISTINTA a la del evento -- ahí no se sabe si es un reagendamiento
+    real o un match equivocado, así que no se sobrescribe en silencio
+    (mismo principio de "nunca sobrescribe una fecha que ya tenía" que
+    usa el resto del sistema). `google_calendario_sugerencias_list.php`
+    ahora también manda `fecha_actual_programada` (vía LEFT JOIN a
+    `expediente_etapas`) para que la tarjeta de conflicto muestre las 2
+    fechas en pugna. `app.js?v=136`.
+  - **Nota sobre las 5 sugerencias de la primera corrida**: esas 5 ya
+    quedaron guardadas como `pendiente` con el código VIEJO (antes de
+    quitar el tap) -- el candado de duplicados hace que no se
+    re-procesen solas con la lógica nueva. Van a seguir apareciendo en
+    "Conflictos de fecha" aunque la mayoría probablemente no sea un
+    conflicto real (solo eran la primera vez que se veía esa etapa). Más
+    simple resolver esas 5 a mano una sola vez (tap en cualquiera de los
+    2 botones) que escribir una migración de limpieza para un lote
+    tan chico -- de ahí en adelante, con eventos genuinamente nuevos, ya
+    corre completo el flujo automático.
+  - **Pendiente de confirmar todavía**: correr el cron de nuevo (con
+    eventos nuevos, no reprocesa los ya vistos) y ver en vivo que una
+    etapa se llene sola sin pedir tap, y que el candado de orden
+    cronológico rechace algo real si llega a romper la secuencia. También
+    falta mapear los demás calendarios vistos (Audiencias Mariana,
+    Audiencias Christian, Audiencias Rubén, Audiencias Junta Federal) al
+    abogado que corresponda a cada uno -- por ahora solo "Audiencias
+    linsday" está vigilado.
 
 ## Calendario: bug de citatorios de conciliación + alcance limitado a fechas puntuales (11 nov 2026, `app.js?v=134`)
 Pedido/bug real del usuario al probar el calendario nuevo: "la abogada tiene un pago de Francisco agendado y una audiencia de conciliación de Veronica Gabriela" que no aparecían.
