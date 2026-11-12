@@ -1,5 +1,39 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Informe ejecutivo: Junta/Tribunal invertido + "Prevención" tratada como paso seguro (12 nov 2026, commit `279ff23`)
+Reportado por el usuario viendo el Informe del juicio de **Yazmin González
+Román vs Servicio Automotriz Xola**: decía "la demanda se presentó ante la
+**Junta 8** Laboral..." (debía decir Tribunal) y "el asunto está en etapa de
+**prevención**... 27 días sin registro de la resolución" cuando en realidad
+el Tribunal todavía no dictaba NINGÚN acuerdo (ni prevención ni admisión) --
+"estamos en espera del acuerdo que dicte el juez ya sea previniendo la
+demanda o admitiéndola", como aclaró el usuario.
+- **Bug 1 (dato, no alucinación de la IA)**: `ia_generar_resumen_expediente()`
+  en `api/ia_helpers.php` leía `$expediente['junta'] ?? $expediente['tribunal']`
+  -- orden INVERTIDO respecto a la decisión del 9 nov 2026 de que `tribunal`
+  es el campo vigente y `junta` solo respaldo de datos viejos (`mergeTags()`
+  en app.js ya tenía el orden correcto, este quedó sin corregir en esa
+  ocasión). Si un expediente tiene AMBOS campos capturados (dato viejo en
+  `junta` + el nuevo en `tribunal`), este `??` siempre ganaba el viejo.
+  Corregido: ahora `tribunal` primero.
+- **Bug 2 (lógica del prompt)**: la línea "Siguiente etapa esperada,
+  TODAVÍA SIN REGISTRAR: Prevención" se construía solo con el orden lineal
+  de `ETAPA_KEYS`, sin avisarle a la IA que "Prevención" y "Demanda
+  admitida" son 2 resultados ALTERNATIVOS del mismo primer acuerdo del
+  Tribunal (Art. 873 LFT) -- no un paso seguro tras "Demanda presentada".
+  Nueva función compartida `ia_siguiente_etapa_esperada_texto()`
+  (`api/ia_helpers.php`) centraliza este cálculo (ya existía una excepción
+  parecida para Convenio/Constancia de no conciliación, también
+  alternativos) y se usa en los 2 lugares que antes duplicaban la lógica
+  sin esta protección (resumen ejecutivo Y análisis de acuerdos/documentos
+  -- el 2º ni siquiera tenía la excepción de Convenio, hueco latente
+  cerrado de paso).
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda --
+  no aplica `verificar_tags.js`. **Pendiente**: pedirle al usuario que
+  entre al expediente de Yazmin González y le dé "Actualizar" en "Informe
+  del juicio" para confirmar que el texto nuevo ya no dice "Junta" ni
+  asume que estamos en prevención.
+
 ## ⚠️ Bug real de integridad de datos: auditoría integral IA calculaba plazos (12 nov 2026, URGENTE)
 Reportado por Lic. Lindsay Luna Maldonado vía WhatsApp: el expediente **Alan
 Jonathan Campuzano Brito vs Protectora Buro de Seguridad Privada y
