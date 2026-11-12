@@ -2433,13 +2433,17 @@ async function loadPlantillasLib(){
 }
 
 // ---------------------------------------------------------------
-// Sincronización de un solo sentido con Google Calendar: audiencias, pagos,
-// prescripción y amparo se empujan como eventos de todo el día al calendario
-// de Google del socio conectado. Nunca al revés — un cambio hecho directo en
-// Google Calendar no se refleja aquí. Ver api/google_*.php.
+// Sincronización de un solo sentido con Google Calendar: TODO lo que
+// buildAgendaEntries() arma para Agenda general (audiencias, pagos,
+// prescripción, amparo, pendientes manuales, posibles atrasos y
+// sugerencias de IA) se empuja como eventos de todo el día al calendario
+// de Google del socio conectado -- pedido explícito del usuario (12 nov
+// 2026): "todo lo que esta en nuestra agenda general se vaya a google
+// calendar". Nunca al revés — un cambio hecho directo en Google Calendar
+// no se refleja aquí. Ver api/google_*.php.
 // ---------------------------------------------------------------
 let GOOGLE_STATUS = {conectado:false, email:null};
-const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo'];
+const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','accion_ia'];
 
 async function loadGoogleStatus(){
   try{ GOOGLE_STATUS = await api('GET', 'google_status.php'); }
@@ -9341,6 +9345,7 @@ function bindModalTabEvents(){
         savePendBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(savePendBtn) savePendBtn.textContent = "Guardar pendientes"; }, 1600);
         await refreshBootstrap();
+        syncGoogleIfConnected();
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         renderModal();
         renderViewBody();

@@ -1021,8 +1021,35 @@ decidió ampliarlo: "eso también debe estar en calendario".
   chip para esos 2 tipos en vez de solo agregarlos a la lista de tipos
   incluidos.
 - Sin cambios de base de datos. No se tocó `mergeTags()`/tags de
-  demanda -- no aplica `verificar_tags.js`. **Sin probar en vivo
-  todavía**.
+  demanda -- no aplica `verificar_tags.js`.
+- **Ampliado el mismo día, pedido explícito del usuario**: "todo lo que
+  esta en nuestra agenda general se vaya a google calendar". Se
+  encontraron y corrigieron 2 cosas reales en el sync de salida
+  (sistema → Google Calendar, el que ya existía):
+  1. `GOOGLE_TIPOS_SINCRONIZABLES` solo tenía
+     `['audiencia','pago','prescripcion','amparo']` -- se amplió a los 7
+     tipos que arma `buildAgendaEntries()`: se agregaron `pendiente`,
+     `atraso` y `accion_ia`. Como `sincronizarGoogleCalendar()` ya
+     arma el `summary`/`description` de forma genérica a partir de
+     `AGENDA_TIPO[e.tipo].label` y `e.label`, no hizo falta tocar nada
+     más ahí -- cualquier tipo nuevo que se agregue a Agenda general en
+     el futuro se sincroniza solo con solo agregarlo a esta lista.
+  2. **Bug real encontrado**: el botón "Guardar pendientes" (pestaña
+     Pendientes del expediente) nunca llamaba a `syncGoogleIfConnected()`
+     -- a diferencia de TODOS los demás botones de guardar (Etapas,
+     Editar datos, Cobros, Amparo), así que un pendiente manual nunca se
+     sincronizaba aunque ya estuviera en la lista de tipos. Corregido.
+  - Nota de diseño: `atraso`/`accion_ia` son fechas CALCULADAS (un límite
+    vencido, una sugerencia de urgencia) y no tienen un botón de "guardar"
+    propio -- se sincronizan solos la próxima vez que cualquier OTRO
+    guardado dispare `syncGoogleIfConnected()` (Etapas, Editar datos,
+    Cobros, Pendientes, Amparo), o con el botón "Sincronizar ahora" en
+    Agenda general → General. Si en la práctica esto llena el Google
+    Calendar de el usuario con demasiado ruido (son fechas que ya
+    vencieron, no compromisos futuros), avisar para quitarlos de la
+    lista otra vez.
+  `app.js?v=142`. **Sin probar en vivo todavía** ninguna de las 2 piezas
+  (pendientes, ni atraso/accion_ia) de este día.
 
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
