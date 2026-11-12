@@ -2725,6 +2725,62 @@ const ETAPA_LABELS = [
     'amparo_directo' => 'Amparo directo presentado',
 ];
 
+// Calcula la línea "Siguiente etapa esperada..." que se le da a la IA en
+// varios prompts (resumen ejecutivo, análisis de acuerdos/documentos) --
+// centralizada aquí (12 nov 2026) para no duplicar 2 casos especiales donde
+// el orden lineal de ETAPA_KEYS no basta por sí solo:
+// - "Convenio" y "Constancia de no conciliación" son resultados
+//   ALTERNATIVOS de la conciliación (o se llega a un acuerdo, o se agota
+//   sin él), nunca un paso seguido del otro.
+// - Después de "Demanda presentada", "Prevención" NO es un paso seguro --
+//   es UN RESULTADO POSIBLE del primer acuerdo del Tribunal (puede
+//   prevenir por defectos u omisiones, Art. 873 LFT, o admitir la demanda
+//   directamente sin prevención). Confirmado real (12 nov 2026, expediente
+//   de Yazmin González Román): un informe ejecutivo afirmó "el asunto está
+//   en etapa de prevención... 27 días sin registro de la resolución" --
+//   pero el Tribunal todavía no dictaba NINGÚN acuerdo (ni prevención ni
+//   admisión). Decirle a la IA "siguiente etapa esperada: Prevención" sin
+//   aclarar que es solo una de 2 salidas posibles la hizo escribir como si
+//   ya estuviéramos en esa etapa esperando que el abogado resolviera algo.
+// Devuelve null si el trámite ya está completo o no hay nada que esperar.
+function ia_siguiente_etapa_esperada_texto(array $etapas): ?string
+{
+    $ordenEtapas = defined('ETAPA_KEYS') ? ETAPA_KEYS : [];
+    $porKey = [];
+    foreach ($etapas as $e) {
+        if (!empty($e['etapa_key'])) $porKey[$e['etapa_key']] = $e;
+    }
+    $ultimaEtapaIdx = null;
+    foreach ($ordenEtapas as $idx => $key) {
+        $fecha = $porKey[$key]['fecha'] ?? null;
+        if ($fecha && $fecha !== '0000-00-00') $ultimaEtapaIdx = $idx;
+    }
+    if ($ultimaEtapaIdx === null || $ultimaEtapaIdx >= count($ordenEtapas) - 1) return null;
+
+    $ultimaEtapaKey = $ordenEtapas[$ultimaEtapaIdx];
+    if ($ultimaEtapaKey === 'conciliacion_convenio') return null; // resultado final alternativo, no sigue nada
+
+    $fechaUltima = null;
+    for ($i = $ultimaEtapaIdx; $i >= 0; $i--) {
+        $f = $porKey[$ordenEtapas[$i]]['fecha'] ?? null;
+        if ($f && $f !== '0000-00-00') { $fechaUltima = $f; break; }
+    }
+    $diasDesde = $fechaUltima ? (int)round((time() - strtotime($fechaUltima)) / 86400) : null;
+    $sufijoDias = $diasDesde !== null ? " (han pasado $diasDesde día(s) desde la última etapa registrada)" : '';
+
+    $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
+
+    if ($ultimaEtapaKey === 'demanda_presentada' && $siguienteKey === 'prevencion') {
+        return 'El Tribunal TODAVÍA no dicta ningún acuerdo sobre la demanda -- "Prevención" y "Demanda '
+            . 'admitida" son dos resultados ALTERNATIVOS de ese primer acuerdo (puede prevenir por defectos u '
+            . 'omisiones, Art. 873 LFT, o admitir la demanda directamente sin prevención), nunca uno seguido '
+            . 'del otro. NO redactes esto como si ya estuviéramos "en etapa de prevención" -- estamos '
+            . "esperando el primer acuerdo del Tribunal, sea cual sea.{$sufijoDias}";
+    }
+
+    return 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey) . $sufijoDias;
+}
+
 // Devuelve null si falló, o ['resumen'=>string, 'accion'=>?string, 'urgencia'=>?'alta'|'media'|'baja'].
 // $etapas: filas de expediente_etapas (etapa_key, fecha, fecha_programada) en
 // CUALQUIER orden -- se reordenan aquí según ETAPA_LABELS. Sin esto, la IA
@@ -2754,7 +2810,16 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
     $agregar('Tipo de asunto', $expediente['tipo_asunto'] ?? null);
     $agregar('Status', $expediente['status'] ?? null);
     $agregar('Instancia', $expediente['instancia'] ?? null);
-    $agregar('Junta/Tribunal', $expediente['junta'] ?? $expediente['tribunal'] ?? null);
+    // Orden de prioridad CORREGIDO (12 nov 2026) -- estaba al revés
+    // (`junta` primero, `tribunal` como respaldo), justo lo opuesto a la
+    // decisión del 9 nov 2026 de que `tribunal` es el campo vigente y
+    // `junta` solo un respaldo para datos viejos (ver mergeTags() en
+    // app.js, que ya tenía el orden bueno). Confirmado real: el informe
+    // ejecutivo del expediente de Yazmin González Román decía "Junta 8
+    // Laboral de Asuntos Individuales" en vez de "Octavo Tribunal..." --
+    // el expediente sí tenía `tribunal` bien capturado, pero este
+    // `?? ` leía `junta` (dato viejo) primero porque no estaba vacío.
+    $agregar('Tribunal', $expediente['tribunal'] ?? $expediente['junta'] ?? null);
     $agregar('Puesto del trabajador', $expediente['puesto'] ?? null);
     $agregar('Fecha de ingreso', $expediente['fecha_ingreso'] ?? null);
     $agregar('Fecha de baja/despido', $expediente['fecha_baja'] ?? null);
@@ -2796,24 +2861,8 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
     }
     if ($registradas) {
         $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
-        // "Convenio" y "Constancia de no conciliación" son dos resultados
-        // ALTERNATIVOS y excluyentes de la conciliación (o se llega a un
-        // acuerdo, o se agota sin él) -- nunca un paso seguido del otro.
-        // Sin este corte, se le decía a la IA que la Constancia era la
-        // siguiente etapa esperada después de un Convenio ya alcanzado, lo
-        // cual no aplica y generaba informes contradictorios.
-        $ultimaEtapaKey = $ultimaEtapaIdx !== null ? $ordenEtapas[$ultimaEtapaIdx] : null;
-        if ($ultimaEtapaIdx !== null && $ultimaEtapaIdx < count($ordenEtapas) - 1 && $ultimaEtapaKey !== 'conciliacion_convenio') {
-            $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
-            $fechaUltima = null;
-            for ($i = $ultimaEtapaIdx; $i >= 0; $i--) {
-                $f = $porKey[$ordenEtapas[$i]]['fecha'] ?? null;
-                if ($f && $f !== '0000-00-00') { $fechaUltima = $f; break; }
-            }
-            $diasDesde = $fechaUltima ? (int)round((time() - strtotime($fechaUltima)) / 86400) : null;
-            $lineas[] = 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey)
-                . ($diasDesde !== null ? " (han pasado $diasDesde día(s) desde la última etapa registrada)" : '');
-        }
+        $siguienteTexto = ia_siguiente_etapa_esperada_texto($etapas);
+        if ($siguienteTexto !== null) $lineas[] = $siguienteTexto;
     }
 
     if (!$lineas) return null;
@@ -2975,7 +3024,6 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
         if (!empty($e['etapa_key'])) $porKey[$e['etapa_key']] = $e;
     }
     $registradas = [];
-    $siguienteKey = null;
     $ultimaEtapaIdx = null;
     foreach ($ordenEtapas as $idx => $key) {
         $fecha = $porKey[$key]['fecha'] ?? null;
@@ -2984,10 +3032,10 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
             $ultimaEtapaIdx = $idx;
         }
     }
-    if ($registradas) $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
-    if ($ultimaEtapaIdx !== null && $ultimaEtapaIdx < count($ordenEtapas) - 1) {
-        $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
-        $lineas[] = 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey);
+    if ($registradas) {
+        $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
+        $siguienteTexto = ia_siguiente_etapa_esperada_texto($etapas);
+        if ($siguienteTexto !== null) $lineas[] = $siguienteTexto;
     }
 
     $vocabularioEtapas = implode(', ', array_map(fn($k) => "$k (" . (ETAPA_LABELS[$k] ?? $k) . ')', $ordenEtapas));
