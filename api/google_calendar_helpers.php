@@ -115,3 +115,76 @@ function google_sincronizar_cita_pagada(PDO $pdo, array $cita, string $horarioTe
         error_log('google_sincronizar_cita_pagada falló: ' . $e->getMessage());
     }
 }
+
+/**
+ * Lista los calendarios visibles para la cuenta de Google conectada (11 nov
+ * 2026, pedido explícito del usuario -- lectura de Google Calendar hacia el
+ * sistema, al revés del sync de arriba). Devuelve [] si falla o no hay
+ * cuenta conectada -- nunca truena, el admin solo ve una lista vacía y
+ * puede reintentar.
+ */
+function google_listar_calendarios(string $accessToken): array
+{
+    $ch = curl_init('https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=250');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 15,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $accessToken],
+    ]);
+    $respuesta = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status !== 200 || !$respuesta) return [];
+    $data = json_decode($respuesta, true);
+    $items = $data['items'] ?? [];
+    return array_map(fn($c) => ['id' => $c['id'], 'nombre' => $c['summary'] ?? $c['id']], $items);
+}
+
+/**
+ * Eventos próximos (desde hoy hasta $diasAdelante) de un calendario
+ * específico -- usado por cron_leer_google_calendar.php. singleEvents=true
+ * expande recurrencias a instancias concretas (si algún día se agenda un
+ * evento recurrente, cada ocurrencia llega por separado con su propia
+ * fecha, en vez de un solo bloque RRULE que habría que interpretar aparte).
+ */
+function google_listar_eventos(string $accessToken, string $calendarId, int $diasAdelante = 60): array
+{
+    $timeMin = (new DateTime('today'))->format('c');
+    $timeMax = (new DateTime('today'))->modify("+{$diasAdelante} days")->format('c');
+    $params = http_build_query([
+        'timeMin' => $timeMin,
+        'timeMax' => $timeMax,
+        'singleEvents' => 'true',
+        'orderBy' => 'startTime',
+        'maxResults' => 250,
+    ]);
+    $ch = curl_init('https://www.googleapis.com/calendar/v3/calendars/' . rawurlencode($calendarId) . '/events?' . $params);
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT => 20,
+        CURLOPT_HTTPHEADER => ['Authorization: Bearer ' . $accessToken],
+    ]);
+    $respuesta = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    if ($status !== 200 || !$respuesta) return [];
+    $data = json_decode($respuesta, true);
+    $items = $data['items'] ?? [];
+    $eventos = [];
+    foreach ($items as $it) {
+        if (($it['status'] ?? '') === 'cancelled') continue; // evento borrado en Google -- no procesar
+        $start = $it['start']['dateTime'] ?? $it['start']['date'] ?? null;
+        if (!$start) continue;
+        $fecha = substr($start, 0, 10);
+        $hora = isset($it['start']['dateTime']) ? substr($it['start']['dateTime'], 11, 5) : null;
+        $eventos[] = [
+            'google_event_id' => $it['id'],
+            'titulo' => $it['summary'] ?? '(sin título)',
+            'descripcion' => $it['description'] ?? null,
+            'fecha' => $fecha,
+            'hora' => $hora,
+            'updated' => $it['updated'] ?? date('c'),
+        ];
+    }
+    return $eventos;
+}

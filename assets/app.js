@@ -311,8 +311,17 @@ const FRACCION_51 = {
 };
 const FRACCION_51_SELECT_OPTIONS = Object.keys(FRACCION_51).map(code => ({value: code, label: FRACCION_51[code].label}));
 
+// Valores exactos que guarda `tipo_demanda` -- un campo nuevo (11 nov
+// 2026, pedido explícito del usuario), SEPARADO de `tipo_asunto` (ese
+// solo calcula el plazo de prescripción, Despido/Prestaciones/Otro -- no
+// debía reutilizarse para esto, son conceptos legales distintos). Define
+// qué formato de demanda se va a presentar y, con eso, "Editar datos"
+// muestra solo los campos que ese formato necesita (ver el filtro de
+// EDITABLE_FIELDS por f.scope más abajo en MODAL_TAB==='editar').
+const TIPO_DEMANDA_OPCIONES = ['Demanda (despido / prestaciones)', 'Rescisión Art. 51', 'Prima de antigüedad'];
 const EDITABLE_FIELDS = [
   {key:'tipo_asunto', label:'Tipo de asunto', type:'tipo_asunto'},
+  {key:'tipo_demanda', label:'Tipo de demanda a presentar', type:'select', options:TIPO_DEMANDA_OPCIONES},
   {key:'actor', label:'Nombre del actor (trabajador)'},
   {key:'curp', label:'CURP del actor'},
   {key:'telefono', label:'Teléfono'},
@@ -330,53 +339,62 @@ const EDITABLE_FIELDS = [
   {key:'tribunal', label:'Tribunal', type:'tribunal'},
   {key:'exp', label:'Número de expediente'},
   {key:'status', label:'Estatus', type:'select', options:STATUS_OPCIONES},
-  {key:'quien_despidio', label:'Nombre de quien despidió'},
-  {key:'puesto_despidio', label:'Puesto de quien despidió'},
-  {key:'hora_despido', label:'Hora del despido'},
-  {key:'hora_entrada', label:'Horario — hora de entrada', type:'time'},
-  {key:'hora_salida', label:'Horario — hora de salida real (incluyendo tiempo extra)', type:'time'},
-  {key:'comida_inicio', label:'Horario — comida, hora de inicio (opcional, déjalo vacío para no especificar)', type:'time'},
-  {key:'comida_fin', label:'Horario — comida, hora de fin (opcional, déjalo vacío para no especificar)', type:'time'},
-  {key:'dias_laborados', label:'Horario — días que laboraba, en texto (ej. "lunes a sábado")'},
-  {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number'},
-  {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta']},
+  // Solo aplican a una demanda por despido clásico -- no a Rescisión
+  // Art. 51 (ahí es el trabajador quien decide irse, no hay "quien
+  // despidió") ni a Prima de antigüedad (reclamo puntual de jubilación,
+  // sin despido de por medio). Confirmado en vivo por el usuario (11 nov
+  // 2026): se veían sin querer al elegir Prima de antigüedad.
+  {key:'quien_despidio', label:'Nombre de quien despidió', scope:'Demanda (despido / prestaciones)'},
+  {key:'puesto_despidio', label:'Puesto de quien despidió', scope:'Demanda (despido / prestaciones)'},
+  {key:'hora_despido', label:'Hora del despido', scope:'Demanda (despido / prestaciones)'},
+  // Horario/jornada: lo reutiliza Rescisión Art. 51 para su checkbox de
+  // "Horas extras" (ver PRESTACIONES_RESCISION_OPCIONES, horas_entrada/
+  // salida/comida/dias_laborados) -- confirmado por código. Prima de
+  // antigüedad es un trámite administrativo puntual (RH/CFDI/pericial
+  // caligráfica) sin ninguna referencia a jornada ni horas extra, así que
+  // se oculta ahí.
+  {key:'hora_entrada', label:'Horario — hora de entrada', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'hora_salida', label:'Horario — hora de salida real (incluyendo tiempo extra)', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'comida_inicio', label:'Horario — comida, hora de inicio (opcional, déjalo vacío para no especificar)', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'comida_fin', label:'Horario — comida, hora de fin (opcional, déjalo vacío para no especificar)', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'dias_laborados', label:'Horario — días que laboraba, en texto (ej. "lunes a sábado")', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta'], scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
   // Rescisión Art. 51 (ver "Otras plantillas de escritos" → Rescisión Art. 51).
-  // El hecho 4 y el "motivo breve" de la prestación A) se arman solos a
-  // partir de estos 3 datos + la fracción elegida -- ver FRACCION_51 más
-  // abajo. No hay párrafo en blanco que redactar.
-  {key:'rescision_fraccion', label:'Rescisión — causa (fracción del art. 51 LFT)', type:'select', options:FRACCION_51_SELECT_OPTIONS},
-  {key:'fecha_rescision', label:'Rescisión — fecha en que el actor decidió rescindir', type:'date'},
-  {key:'fecha_desde_incumplimiento', label:'Rescisión — fecha desde la que ocurre el incumplimiento/causa', type:'date'},
-  {key:'persona_responsable_incumplimiento', label:'Rescisión — nombre de quien incurrió en la causa (si no es la empresa en general)'},
-  {key:'hecho_causa_narrativa', label:'Rescisión — detalle adicional del hecho (opcional; se agrega después del párrafo que ya arma el sistema)', type:'textarea'},
-  {key:'banco1_nombre', label:'Rescisión — banco 1, institución'},
-  {key:'banco1_cuenta', label:'Rescisión — banco 1, número de cuenta'},
-  {key:'banco2_nombre', label:'Rescisión — banco 2, institución'},
-  {key:'banco2_cuenta', label:'Rescisión — banco 2, número de cuenta'},
-  {key:'banco3_nombre', label:'Rescisión — banco 3, institución'},
-  {key:'banco3_cuenta', label:'Rescisión — banco 3, número de cuenta'},
-  // Prima de antigüedad (estilo jubilación / apartado B) -- ver "Otras plantillas de escritos".
-  {key:'monto_prima_antiguedad', label:'Prima antigüedad — monto reclamado', type:'number'},
-  {key:'fecha_solicitud_interna', label:'Prima antigüedad — fecha de la solicitud interna de pago', type:'date'},
-  {key:'hora_solicitud_interna', label:'Prima antigüedad — hora de la solicitud interna', type:'time'},
-  {key:'folio_solicitud_interna', label:'Prima antigüedad — folio asignado a la solicitud'},
-  {key:'funcionario_rh_nombre', label:'Prima antigüedad — nombre del funcionario de RH que recibió la solicitud'},
-  {key:'funcionario_rh_puesto', label:'Prima antigüedad — puesto de ese funcionario'},
-  {key:'numero_oficio_respuesta', label:'Prima antigüedad — número de oficio de respuesta (negativa)'},
-  {key:'fecha_oficio_respuesta', label:'Prima antigüedad — fecha del oficio de respuesta', type:'date'},
-  {key:'director_firma_nombre', label:'Prima antigüedad — nombre de quien firma el oficio de negativa'},
-  {key:'coordinador_archivo_nombre', label:'Prima antigüedad — nombre del Coordinador de Archivo (verificó)'},
-  {key:'gerente_gestion_nombre', label:'Prima antigüedad — nombre del Gerente de Gestión y Servicios al Personal (autorizó)'},
-  {key:'folio_fiscal_cfdi', label:'Prima antigüedad — folio fiscal del CFDI/recibo de nómina ofrecido'},
-  {key:'periodo_recibo_desde', label:'Prima antigüedad — periodo del recibo CFDI, desde', type:'date'},
-  {key:'periodo_recibo_hasta', label:'Prima antigüedad — periodo del recibo CFDI, hasta', type:'date'},
-  {key:'salario_quincenal_num', label:'Prima antigüedad — salario quincenal', type:'number'},
-  {key:'rfc_emisor_demandado', label:'Prima antigüedad — RFC de la demandada (emisor del CFDI)'},
-  {key:'fecha_hoja_servicios', label:'Prima antigüedad — fecha de la Hoja Única de Servicios', type:'date'},
-  {key:'numero_documento_fump', label:'Prima antigüedad — número de documento del Formato Único de Movimientos de Personal'},
-  {key:'fecha_documento_fump', label:'Prima antigüedad — fecha de elaboración de ese documento', type:'date'},
-  {key:'testigos', label:'Nombre de los testigos'},
-  {key:'dom_testigos', label:'Domicilios de los testigos'},
+  // El "motivo breve" de la prestación A) se arma solo a partir de la
+  // fracción elegida -- ver FRACCION_51 más abajo. Solo se muestran en
+  // "Editar datos" cuando tipo_demanda = 'Rescisión Art. 51' (scope).
+  {key:'rescision_fraccion', label:'Rescisión — causa (fracción del art. 51 LFT)', type:'select', options:FRACCION_51_SELECT_OPTIONS, scope:'Rescisión Art. 51'},
+  {key:'fecha_rescision', label:'Rescisión — fecha en que el actor decidió rescindir', type:'date', scope:'Rescisión Art. 51'},
+  {key:'fecha_desde_incumplimiento', label:'Rescisión — fecha desde la que ocurre el incumplimiento/causa', type:'date', scope:'Rescisión Art. 51'},
+  {key:'persona_responsable_incumplimiento', label:'Rescisión — nombre de quien incurrió en la causa (si no es la empresa en general)', scope:'Rescisión Art. 51'},
+  {key:'hecho_causa_narrativa', label:'Rescisión — hecho de la causal (redáctalo completo, el sistema ya no arma ningún párrafo automático)', type:'textarea', scope:'Rescisión Art. 51'},
+  // Prima de antigüedad (estilo jubilación / apartado B) -- ver "Otras
+  // plantillas de escritos". Solo se muestran cuando tipo_demanda =
+  // 'Prima de antigüedad' (scope).
+  {key:'monto_prima_antiguedad', label:'Prima antigüedad — monto reclamado', type:'number', scope:'Prima de antigüedad'},
+  {key:'fecha_solicitud_interna', label:'Prima antigüedad — fecha de la solicitud interna de pago', type:'date', scope:'Prima de antigüedad'},
+  {key:'hora_solicitud_interna', label:'Prima antigüedad — hora de la solicitud interna', type:'time', scope:'Prima de antigüedad'},
+  {key:'folio_solicitud_interna', label:'Prima antigüedad — folio asignado a la solicitud', scope:'Prima de antigüedad'},
+  {key:'funcionario_rh_nombre', label:'Prima antigüedad — nombre del funcionario de RH que recibió la solicitud', scope:'Prima de antigüedad'},
+  {key:'funcionario_rh_puesto', label:'Prima antigüedad — puesto de ese funcionario', scope:'Prima de antigüedad'},
+  {key:'numero_oficio_respuesta', label:'Prima antigüedad — número de oficio de respuesta (negativa)', scope:'Prima de antigüedad'},
+  {key:'fecha_oficio_respuesta', label:'Prima antigüedad — fecha del oficio de respuesta', type:'date', scope:'Prima de antigüedad'},
+  {key:'director_firma_nombre', label:'Prima antigüedad — nombre de quien firma el oficio de negativa', scope:'Prima de antigüedad'},
+  {key:'coordinador_archivo_nombre', label:'Prima antigüedad — nombre del Coordinador de Archivo (verificó)', scope:'Prima de antigüedad'},
+  {key:'gerente_gestion_nombre', label:'Prima antigüedad — nombre del Gerente de Gestión y Servicios al Personal (autorizó)', scope:'Prima de antigüedad'},
+  {key:'folio_fiscal_cfdi', label:'Prima antigüedad — folio fiscal del CFDI/recibo de nómina ofrecido', scope:'Prima de antigüedad'},
+  {key:'periodo_recibo_desde', label:'Prima antigüedad — periodo del recibo CFDI, desde', type:'date', scope:'Prima de antigüedad'},
+  {key:'periodo_recibo_hasta', label:'Prima antigüedad — periodo del recibo CFDI, hasta', type:'date', scope:'Prima de antigüedad'},
+  {key:'salario_quincenal_num', label:'Prima antigüedad — salario quincenal', type:'number', scope:'Prima de antigüedad'},
+  {key:'rfc_emisor_demandado', label:'Prima antigüedad — RFC de la demandada (emisor del CFDI)', scope:'Prima de antigüedad'},
+  {key:'fecha_hoja_servicios', label:'Prima antigüedad — fecha de la Hoja Única de Servicios', type:'date', scope:'Prima de antigüedad'},
+  {key:'numero_documento_fump', label:'Prima antigüedad — número de documento del Formato Único de Movimientos de Personal', scope:'Prima de antigüedad'},
+  {key:'fecha_documento_fump', label:'Prima antigüedad — fecha de elaboración de ese documento', type:'date', scope:'Prima de antigüedad'},
+  // Prima de antigüedad usa pericial caligráfica y verificación de CFDI
+  // como pruebas (sin testigos) -- confirmado con el usuario (11 nov 2026).
+  {key:'testigos', label:'Nombre de los testigos', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'dom_testigos', label:'Domicilios de los testigos', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
   {key:'ultima_nota', label:'Última actuación / nota'},
   {key:'aguinaldo_dias_pactados', label:'Aguinaldo — días pactados (solo si es mayor al mínimo de 15)', type:'number'},
   {key:'dias_salarios_devengados', label:'Salarios devengados pendientes — días sin pagar', type:'number'},
@@ -1250,13 +1268,22 @@ function etapaExpectedDeadline(def, fechaAnterior){
 const AUDIENCIA_LABEL_CLIENTE = {
   audiencia_preliminar: 'Audiencia preliminar — donde se organiza tu caso y se admiten las pruebas',
   audiencia_juicio: 'Audiencia de juicio — donde se presentan las pruebas',
+  // Bug real encontrado por el usuario (11 nov 2026): un citatorio de
+  // conciliación agendado (ej. "audiencia de conciliación" de Veronica
+  // Gabriela) nunca aparecía en ningún lado de Agenda -- proximaAudiencia()
+  // solo revisaba audiencia_preliminar/juicio, y "Etapas del juicio" ni
+  // siquiera ofrecía un campo de "Fecha agendada" para estos 2 (ver
+  // esAudiencia más abajo), solo la fecha en que ya se celebró.
+  conciliacion_primer_citatorio: 'Conciliación prejudicial — primer citatorio',
+  conciliacion_segundo_citatorio: 'Conciliación prejudicial — segundo citatorio',
 };
 
-// Revisa si hay una audiencia (preliminar o de juicio) agendada que todavía
-// no se ha celebrado, para avisarle al cliente y al abogado con anticipación.
+// Revisa si hay una audiencia o citatorio de conciliación agendado que
+// todavía no se ha celebrado, para avisarle al cliente y al abogado con
+// anticipación.
 function proximaAudiencia(kase){
   const meta = getMeta(kase.id);
-  const candidatas = ['audiencia_preliminar','audiencia_juicio']
+  const candidatas = ['audiencia_preliminar','audiencia_juicio','conciliacion_primer_citatorio','conciliacion_segundo_citatorio']
     .map(key=>{
       const e = meta.etapas[key];
       if(!e || e.fecha || !e.fecha_programada) return null; // ya celebrada, o sin fecha agendada
@@ -1265,6 +1292,24 @@ function proximaAudiencia(kase){
     .filter(Boolean)
     .sort((a,b)=> a.fecha.localeCompare(b.fecha));
   return candidatas[0] || null;
+}
+
+// TODAS las audiencias/citatorios con fecha agendada, SIN excluir las ya
+// celebradas (a diferencia de proximaAudiencia(), que solo busca "la
+// próxima pendiente" para el resto del sistema -- mensajes de WhatsApp al
+// cliente, etc.). Uso exclusivo del calendario visual (11 nov 2026,
+// pedido explícito del usuario: "aunque ya se haya celebrado quiero que
+// se muestren en agenda" -- el calendario se comporta como Google
+// Calendar, un registro de lo agendado, no solo lo pendiente).
+function audienciasParaCalendario(kase){
+  const meta = getMeta(kase.id);
+  return ['audiencia_preliminar','audiencia_juicio','conciliacion_primer_citatorio','conciliacion_segundo_citatorio']
+    .map(key=>{
+      const e = meta.etapas[key];
+      if(!e || !e.fecha_programada) return null;
+      return {key, fecha: e.fecha_programada, hora: e.hora || null, label: AUDIENCIA_LABEL_CLIENTE[key]};
+    })
+    .filter(Boolean);
 }
 
 // Revisa si hay un pago de convenio programado que todavía no se cobra, para
@@ -1554,9 +1599,15 @@ function mergeTags(k){
     fecha_rescision_letra: fechaLetras(k.fecha_rescision),
     fecha_desde_incumplimiento_letra: fechaLetras(k.fecha_desde_incumplimiento),
     persona_responsable_incumplimiento: k.persona_responsable_incumplimiento || 'una persona que actuaba a nombre de la demandada',
-    // Párrafo adicional OPCIONAL -- si se deja vacío, el hecho 4 queda
-    // completo solo con hecho_causa_auto (ver abajo) y aquí no se agrega nada.
-    hecho_causa_narrativa: k.hecho_causa_narrativa || '',
+    // 11 nov 2026, pedido explícito del usuario: el hecho 4 completo lo
+    // redacta el abogado a mano (antes se armaba solo a partir de la
+    // fracción elegida, ver construirHechoCausaAuto() más abajo -- ya
+    // quitada). hecho_causa_auto se deja vacío a propósito -- si la
+    // plantilla .docx de Rescisión Art. 51 todavía tiene ambos tags uno
+    // detrás del otro, esto evita que aparezca "undefined" o el párrafo
+    // viejo duplicado.
+    hecho_causa_auto: '',
+    hecho_causa_narrativa: k.hecho_causa_narrativa || '________________',
     // Prima de antigüedad (estilo jubilación / apartado B).
     monto_prima_antiguedad_num: k.monto_prima_antiguedad!=null ? Number(k.monto_prima_antiguedad).toFixed(2) : '____________',
     monto_prima_antiguedad_letra: k.monto_prima_antiguedad!=null ? pesosEnLetras(k.monto_prima_antiguedad) : '____________',
@@ -1581,24 +1632,11 @@ function mergeTags(k){
     numero_documento_fump: k.numero_documento_fump || '____',
     fecha_documento_fump_letra: fechaLetras(k.fecha_documento_fump),
   };
-  tags.hecho_causa_auto = construirHechoCausaAuto(tags, k);
   const periodos = calcularPeriodosVacacionesRescision(k);
   tags.periodo_vacaciones_anterior = periodos.anterior;
   tags.periodo_vacaciones_actual = periodos.actual;
   tags.pruebas_adicionales = construirPruebasAdicionalesTexto(k, tags);
   return tags;
-}
-
-// Arma solo el hecho 4 completo (sin que el abogado redacte nada) a partir
-// de la fracción del art. 51 elegida + la fecha desde la que ocurre + (si
-// aplica) quién incurrió en ella. Si todavía no se eligió fracción, deja un
-// párrafo genérico editable, igual que el resto de los campos sin capturar.
-function construirHechoCausaAuto(tags, k){
-  const f = FRACCION_51[k.rescision_fraccion];
-  if(!f){
-    return `Es el caso que, ante el incumplimiento de la demandada respecto de sus obligaciones laborales, la suscrita decidió rescindir la relación laboral por causa imputable al patrón, separándome de mis labores el día ${tags.fecha_rescision_letra}, al considerar que la conducta patronal actualizaba la causa prevista en el artículo 51, fracción ____, de la Ley Federal del Trabajo.`;
-  }
-  return `${f.inicio(tags,k)}, por lo que ante dicho incumplimiento, la suscrita decidió rescindir la relación laboral por causa imputable al patrón, separándome de mis labores el día ${tags.fecha_rescision_letra}, al considerar que la conducta patronal actualizaba la causa prevista en el artículo 51, fracción ${k.rescision_fraccion}, de la Ley Federal del Trabajo.`;
 }
 
 // Periodo de vacaciones (anterior y actual, "YYYY-YYYY") a partir del
@@ -1625,16 +1663,11 @@ function calcularPeriodosVacacionesRescision(k){
 // función al armar el tag {{pruebas_adicionales}}).
 function construirPruebasAdicionalesTexto(k, tags){
   const bloques = [];
-  const bancos = [
-    {nombre: k.banco1_nombre, cuenta: k.banco1_cuenta},
-    {nombre: k.banco2_nombre, cuenta: k.banco2_cuenta},
-    {nombre: k.banco3_nombre, cuenta: k.banco3_cuenta},
-  ].filter(b => b.nombre && b.cuenta);
+  // La prueba de informe bancario (bancos 1-3 + oficio a la institución)
+  // se quitó a propósito (11 nov 2026, pedido explícito del usuario) --
+  // los campos banco1/2/3 ya no existen en "Editar datos". La numeración
+  // de las pruebas de aquí en adelante arranca directo en 5.
   let n = 5;
-  bancos.forEach(b=>{
-    bloques.push(`${n}.- EL INFORME que se sirva rendir la institución bancaria ${b.nombre}, con relación a la moral demandada, por el periodo comprendido entre la fecha de ingreso y la fecha de baja de la parte actora, para lo cual solicito a esta H. Autoridad se sirva girar oficio correspondiente a efecto de que informe si la cuenta número ${b.cuenta} pertenece a la parte actora, los estados de cuenta mensuales de dicho periodo, y si dicha cuenta recibió depósitos y/o transferencias por parte de la moral demandada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada, así como el incumplimiento por parte de la demandada respecto a sus obligaciones.`);
-    n++;
-  });
   bloques.push(`${n}.- LA INSPECCIÓN JUDICIAL, que se realice por conducto del C. Actuario en el local de este H. Tribunal en los siguientes documentos que se encuentran en la empresa demandada ${tags.demandado} en el domicilio ubicado en calle ${tags.dom_demandado}: 1) Contrato individual y/o colectivo de trabajo; 2) Listas de raya; 3) Recibos de pago de salarios, de vacaciones, de prima vacacional y de aguinaldo; 4) Tarjetas o controles de asistencia. Documentos que el demandado tiene obligación de conservar y exhibir en juicio de conformidad con lo establecido en los artículos 784 y 804 de la Ley Federal del Trabajo y que se ofrecen para acreditar los siguientes extremos:\n\na) Que la parte actora ingresó a prestar sus servicios para la demandada, a partir del ${tags.fecha_ingreso_letra}.\nb) Que la demandada pagó a la parte actora por la prestación de sus servicios la cantidad de $${tags.salario_mensual_num} pesos mensuales.\nc) Que la parte actora laboró al servicio de la empresa demandada en un horario comprendido de las ${tags.hora_entrada} horas a las ${tags.hora_salida} horas ${tags.dias_laborados}.\nd) Que la demandada dejó de cumplir con sus obligaciones laborales a partir del ${tags.fecha_desde_incumplimiento_letra}, tal como se precisa en el capítulo de hechos.\n\nPara el desahogo de esta prueba de INSPECCIÓN deberá apercibirse a la demandada que para el caso de no exhibir la totalidad de la documentación base para tal efecto se tendrán por presuntivamente ciertos los extremos a acreditar con fundamento en lo dispuesto por los artículos 805, 827 y 828 de la Ley Federal del Trabajo en relación con el artículo 804 y demás relativos y aplicables de la ley citada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.`);
   n++;
   bloques.push(`${n}.- LA TESTIMONIAL a cargo de los CC. ${tags.testigos}, quienes tienen sus domicilios en ${tags.dom_testigos} respectivamente y a quienes me comprometo a presentar el día y hora que esta H. Autoridad determine la audiencia para su celebración, testigos que declararan sobre los hechos del escrito inicial de demanda como de sus aclaraciones y modificaciones a la misma.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.\n\nTestigos que declararan sobre los hechos ocurridos el día ${tags.fecha_rescision_letra}.`);
@@ -2301,6 +2334,50 @@ async function loadSupervisorPreguntas(){
     SUPERVISOR_PREGUNTAS = d.preguntas;
   }catch(e){ SUPERVISOR_PREGUNTAS = []; }
 }
+// Sugerencias de Google Calendar por confirmar (11 nov 2026, ver
+// cron_leer_google_calendar.php) -- mismo panel que "Preguntas al
+// abogado", nunca se aplican solas (texto libre de un evento, puede haber
+// tocayos/errores de dedo).
+let GOOGLE_CALENDARIO_SUGERENCIAS = [];
+async function loadGoogleCalendarioSugerencias(){
+  try{
+    const d = await api('GET', 'google_calendario_sugerencias_list.php');
+    GOOGLE_CALENDARIO_SUGERENCIAS = d.sugerencias;
+  }catch(e){ GOOGLE_CALENDARIO_SUGERENCIAS = []; }
+}
+// Panel "Posibles irregularidades" (12 nov 2026, cron_qa_irregularidades.php,
+// corre 1 vez por semana) -- mismo panel que "Preguntas al abogado", nunca
+// se corrigen solas: "Corregir" solo navega a Etapas del juicio, "Está
+// bien, no es error" descarta.
+let IRREGULARIDADES = [];
+async function loadIrregularidades(){
+  try{
+    const d = await api('GET', 'qa_irregularidades_list.php');
+    IRREGULARIDADES = d.irregularidades;
+  }catch(e){ IRREGULARIDADES = []; }
+}
+// Mapeo de sub-calendarios de Google → abogado (11 nov 2026, solo
+// Administrador, ver "Equipo"). GOOGLE_CALENDARIOS_DISPONIBLES solo se
+// carga bajo demanda (botón) -- llamar a la API de Google en cada render
+// sería lento e innecesario.
+let GOOGLE_CALENDARIOS_MAPEO = [];
+let GOOGLE_CALENDARIOS_DISPONIBLES = null; // null = todavía no se ha pedido la lista
+async function loadGoogleCalendariosMapeo(){
+  try{
+    const d = await api('GET', 'google_calendarios_mapeo_listar.php');
+    GOOGLE_CALENDARIOS_MAPEO = d.mapeo;
+  }catch(e){ GOOGLE_CALENDARIOS_MAPEO = []; }
+}
+// Panel de monitoreo "Actividad de la IA" (11 nov 2026, pedido explícito
+// del usuario: "una sección donde podamos ver los cambios que ha hecho
+// la IA para monitorear lo que está haciendo") -- ver api/ia_actividad_list.php.
+let IA_ACTIVIDAD = [];
+async function loadIaActividad(){
+  try{
+    const d = await api('GET', 'ia_actividad_list.php');
+    IA_ACTIVIDAD = d.actividad;
+  }catch(e){ IA_ACTIVIDAD = []; }
+}
 // Se abrió el sistema desde el push de una pregunta nueva (ver
 // cron_generar_preguntas_supervisor.php) -- lleva a "Preguntas al
 // abogado" y marca cuál enfocar; bindViewBody() hace el scroll/foco real
@@ -2313,6 +2390,12 @@ async function abrirPreguntaDesdeNotificacion(preguntaId){
   render();
 }
 function supervisorPreguntasPendientesCount(){ return SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente').length; }
+// Badge de "Preguntas al abogado" (12 nov 2026): se amplió para sumar
+// también las irregularidades detectadas -- antes solo contaba preguntas
+// del supervisor, las sugerencias de Google Calendar ya listadas en
+// GOOGLE_CALENDARIO_SUGERENCIAS (siempre pendientes, el endpoint solo trae
+// esas) se quedaban sin reflejarse en el badge.
+function preguntasAbogadoBadgeCount(){ return supervisorPreguntasPendientesCount() + GOOGLE_CALENDARIO_SUGERENCIAS.length + IRREGULARIDADES.length; }
 function supervisorPreguntaCardHTML(p){
   return `
       <div class="aviso-card" data-supervisor-pregunta-id="${p.id}">
@@ -2367,13 +2450,17 @@ async function loadPlantillasLib(){
 }
 
 // ---------------------------------------------------------------
-// Sincronización de un solo sentido con Google Calendar: audiencias, pagos,
-// prescripción y amparo se empujan como eventos de todo el día al calendario
-// de Google del socio conectado. Nunca al revés — un cambio hecho directo en
-// Google Calendar no se refleja aquí. Ver api/google_*.php.
+// Sincronización de un solo sentido con Google Calendar: TODO lo que
+// buildAgendaEntries() arma para Agenda general (audiencias, pagos,
+// prescripción, amparo, pendientes manuales, posibles atrasos y
+// sugerencias de IA) se empuja como eventos de todo el día al calendario
+// de Google del socio conectado -- pedido explícito del usuario (12 nov
+// 2026): "todo lo que esta en nuestra agenda general se vaya a google
+// calendar". Nunca al revés — un cambio hecho directo en Google Calendar
+// no se refleja aquí. Ver api/google_*.php.
 // ---------------------------------------------------------------
 let GOOGLE_STATUS = {conectado:false, email:null};
-const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo'];
+const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','accion_ia'];
 
 async function loadGoogleStatus(){
   try{ GOOGLE_STATUS = await api('GET', 'google_status.php'); }
@@ -2407,24 +2494,53 @@ async function googlePushEvent(base, headers, id, body){
 }
 
 async function sincronizarGoogleCalendar(onProgress){
-  const tok = await api('GET', 'google_access_token.php');
-  const accessToken = tok.access_token;
+  // Primero intenta la cuenta de Google COMPARTIDA (la que ya se conectó
+  // desde "Equipo" para vigilar los sub-calendarios de audiencias) -- así
+  // cada evento se puede mandar al sub-calendario del abogado asignado al
+  // caso, en vez de siempre al calendario principal de quien dé clic en
+  // "Sincronizar ahora" (12 nov 2026, pedido explícito del usuario: "se
+  // debe ir a la agenda del abogado asignado... a la agenda compartida").
+  // Si no hay ninguna cuenta compartida configurada todavía, cae de
+  // regreso a la cuenta PROPIA de quien tenga la sesión abierta (el
+  // comportamiento de siempre, útil si nadie ha configurado Equipo aún).
+  let accessToken, tokenCompartido = false;
+  try{
+    const tokC = await api('GET', 'google_access_token_compartido.php');
+    accessToken = tokC.access_token;
+    tokenCompartido = true;
+  }catch(e){
+    const tok = await api('GET', 'google_access_token.php');
+    accessToken = tok.access_token;
+  }
+  let mapaAbogados = {};
+  if(tokenCompartido){
+    try{ const m = await api('GET', 'google_calendarios_mapeo_por_abogado.php'); mapaAbogados = m.mapa; }catch(e){}
+  }
+  const calendarIdPara = (kase)=>{
+    if(!tokenCompartido) return 'primary';
+    return mapaAbogados[kase.abogado_id] || mapaAbogados[kase.abogado_id_2] || 'primary';
+  };
+
   const entries = buildAgendaEntries().filter(e => GOOGLE_TIPOS_SINCRONIZABLES.includes(e.tipo));
   // Las asesorías de pago ya confirmadas (pagadas) también se agendan solas
   // en el calendario — con hora exacta, a diferencia de audiencias/pagos/
   // etc. que son de todo el día, porque aquí sí importa la hora exacta de
-  // la llamada.
+  // la llamada. Siempre al calendario principal (no están ligadas a un
+  // abogado asignado de un expediente).
   const citas = CITAS.filter(c => c.estado === 'confirmada');
   const total = entries.length + citas.length;
   const headers = {'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json'};
-  const base = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
-  const idsActuales = [];
+  const eventosUrl = (calendarId)=> `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+  const idsActuales = []; // [{id, calendarId}]
+  const calendariosUsados = new Set(['primary']);
   let fallos = 0;
   let hechos = 0;
 
   for(const e of entries){
     const id = await googleEventId(CURRENT_USER.id, e);
-    idsActuales.push(id);
+    const calendarId = calendarIdPara(e.k);
+    calendariosUsados.add(calendarId);
+    idsActuales.push({id, calendarId});
     // Si la audiencia trae hora capturada, se manda como evento con horario
     // exacto (igual que las citas de asesoría) en vez de todo el día — así
     // Google Calendar también puede avisar de un choque de horario.
@@ -2435,36 +2551,42 @@ async function sincronizarGoogleCalendar(onProgress){
       start: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
       end: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
     };
-    try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
+    try{ if(!(await googlePushEvent(eventosUrl(calendarId), headers, id, body))) fallos++; }catch(err){ fallos++; }
     hechos++;
     if(onProgress) onProgress(hechos, total);
   }
 
   for(const c of citas){
     const id = await googleCitaEventId(CURRENT_USER.id, c.id);
-    idsActuales.push(id);
+    idsActuales.push({id, calendarId:'primary'});
     const body = {
       summary: `[Asesoría] ${c.nombre_cliente || c.telefono}`,
       description: `Llamada telefónica de la asesoría pagada ($${c.monto.toFixed(0)} MXN). Teléfono: ${c.telefono}.\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.`,
       start: {dateTime: `${c.fecha}T${c.hora_inicio}:00`, timeZone: 'America/Mexico_City'},
       end: {dateTime: `${c.fecha}T${c.hora_fin}:00`, timeZone: 'America/Mexico_City'},
     };
-    try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
+    try{ if(!(await googlePushEvent(eventosUrl('primary'), headers, id, body))) fallos++; }catch(err){ fallos++; }
     hechos++;
     if(onProgress) onProgress(hechos, total);
   }
 
   // Borra del calendario lo que ya no aplica (pago cobrado, prescripción
   // resuelta, cita cancelada/expirada, etc.) comparando contra lo que se
-  // sincronizó la vez anterior.
+  // sincronizó la vez anterior. Se prueba en cada calendario tocado en esta
+  // corrida -- un evento viejo pudo haberse creado en un calendario distinto
+  // al de hoy (ej. el abogado asignado cambió), así que no basta con
+  // probar solo el calendario "actual" de ese caso.
   let previos = [];
   try{ const st = await api('GET', 'google_sync_state.php'); previos = st.evento_ids; }catch(e){}
-  const obsoletos = previos.filter(id => !idsActuales.includes(id));
+  const idsActualesFlat = idsActuales.map(x=>x.id);
+  const obsoletos = previos.filter(id => !idsActualesFlat.includes(id));
   for(const id of obsoletos){
-    try{ await fetch(base + '/' + id, {method:'DELETE', headers}); }catch(e){}
+    for(const calendarId of calendariosUsados){
+      try{ await fetch(eventosUrl(calendarId) + '/' + id, {method:'DELETE', headers}); }catch(e){}
+    }
   }
 
-  await api('POST', 'google_sync_state.php', {evento_ids: idsActuales});
+  await api('POST', 'google_sync_state.php', {evento_ids: idsActualesFlat});
   return {sincronizados: total, borrados: obsoletos.length, fallos};
 }
 
@@ -2742,6 +2864,8 @@ async function refreshBootstrap(){
   EQUIPO = data.equipo.map(u => ({id:u.id, name:u.nombre, role:mapRol(u.rol)}));
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadUsuariosAdmin();
+    await loadGoogleCalendariosMapeo();
+    await loadIaActividad();
   }
   await loadDiasInhabiles();
   syncAvisosAbogado(); // en segundo plano, no bloquea la carga
@@ -2751,6 +2875,8 @@ async function refreshBootstrap(){
   await loadTribunalesCustom();
   await loadAvisosBoletin();
   await loadSupervisorPreguntas();
+  await loadGoogleCalendarioSugerencias();
+  await loadIrregularidades();
   await loadPjfCredenciales();
   await loadEdomexCorreoCredenciales();
   await loadCdmxBuzonCredenciales();
@@ -3301,7 +3427,7 @@ function shellHTML(){
         <button data-v="tablero" class="${VIEW==='tablero'?'active':''}"><span class="ico">${ICONS.tablero}</span> Tablero</button>
         <button data-v="expedientes" class="${VIEW==='expedientes'?'active':''}"><span class="ico">${ICONS.expedientes}</span> Expedientes</button>
         <button data-v="alertas" class="${VIEW==='alertas'?'active':''}"><span class="ico">${ICONS.alertas}</span> Alertas de prescripción</button>
-        <button data-v="preguntas_abogado" class="${VIEW==='preguntas_abogado'?'active':''}"><span class="ico">🧑‍⚖️</span> Preguntas al abogado ${supervisorPreguntasPendientesCount()>0?`<span class="nav-badge">${supervisorPreguntasPendientesCount()}</span>`:""}</button>
+        <button data-v="preguntas_abogado" class="${VIEW==='preguntas_abogado'?'active':''}"><span class="ico">🧑‍⚖️</span> Preguntas al abogado ${preguntasAbogadoBadgeCount()>0?`<span class="nav-badge">${preguntasAbogadoBadgeCount()}</span>`:""}</button>
         <button data-v="cobros" class="${VIEW==='cobros'?'active':''}"><span class="ico">&#128176;</span> Cobros de convenios</button>
         ${isAdmin ? `<button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>` : ""}
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
@@ -3470,6 +3596,7 @@ function highlightNav(){
 function renderViewBody(){
   const el = document.getElementById('viewBody');
   if(!el) return;
+  cerrarCalPopover(); // el popover del calendario vive fuera de #viewBody -- se limpia en cada render para no dejarlo flotando con datos viejos
   if(VIEW==='tablero') el.innerHTML = tableroHTML();
   else if(VIEW==='expedientes') el.innerHTML = expedientesHTML();
   else if(VIEW==='alertas') el.innerHTML = alertasHTML();
@@ -5197,25 +5324,122 @@ let AGENDA_TAB = 'general';
 // que ya usan las demás pestañas). null hasta el primer render, momento en
 // que calendarioMesHTML() lo inicializa al mes actual.
 let AGENDA_CAL_MES = null;
+// Ancla (fecha ISO) para las vistas Semana/Día -- comparten una sola
+// variable porque navegar en cualquiera de las 2 mueve la misma fecha de
+// referencia; Mes sigue usando AGENDA_CAL_MES por separado (mes/año, no
+// un día puntual). null hasta el primer render, se inicializa a hoy.
+let AGENDA_CAL_DIA = null;
+// Vista activa del calendario: 'mes' | 'semana' | 'dia' (11 nov 2026,
+// pedido explícito del usuario: "que se pueda ver por semana y dia").
+let AGENDA_CAL_VISTA = 'mes';
 const AGENDA_CAL_DIAS = ['L','M','M','J','V','S','D']; // lunes-primero, solo para la cuadrícula del calendario
-// `all` ya viene filtrada (abogado solo ve lo suyo vía visibleCases(), y
-// el Administrador ya aplicó el selector de socio) -- aquí solo se agrupa
-// por fecha y se pinta la cuadrícula del mes. Reutiliza AGENDA_TIPO para
-// los mismos colores por tipo que ya usa la vista de lista, y e.chocaCon
-// (marcarChoquesDeAgenda()) para marcar el mismo choque de horario.
-function calendarioMesHTML(all){
+// Datos completos de cada chip del calendario visual (11 nov 2026, pedido
+// explícito del usuario: "mismo efecto visual que Google Calendar" --
+// tarjetas más pulidas + ver el detalle sin salir del calendario). Se
+// llena en cada render de calendarioHTML(); el chip solo guarda su
+// índice aquí (data-cal-idx) porque meter todo el detalle en atributos
+// HTML sería más frágil (comillas, texto largo, etc.).
+let CAL_POPOVER_ITEMS = [];
+
+// El calendario muestra fechas puntuales del calendario del abogado --
+// audiencias/citatorios agendados, pagos de convenio, vencimientos de
+// plazo (prescripción/amparo), y pendientes manuales con fecha propia
+// (ej. "Firma de demanda") -- pedido explícito del usuario (12 nov 2026,
+// tras ver que un pendiente manual no aparecía ahí). "Posibles atrasos"/
+// sugerencias de IA (tipo 'atraso'/'accion_ia') se quedan solo en la
+// lista de "General" -- esos no tienen una fecha "agendada" propia (son
+// una fecha límite calculada o una sugerencia de urgencia, no algo que
+// el abogado programó), y su botón de acción sigue sin caber bien en una
+// celda del calendario. Compartido entre las 3 vistas (mes/semana/día).
+function calendarioItemsPorDia(all){
+  const TIPOS_CALENDARIO_SIN_AUDIENCIA = ['pago', 'prescripcion', 'amparo', 'pendiente'];
+  let itemsCalendario = all.filter(e => TIPOS_CALENDARIO_SIN_AUDIENCIA.includes(e.tipo));
+
+  // Audiencias/citatorios: el calendario muestra TODAS las que tengan
+  // fecha agendada, se hayan celebrado o no -- a propósito NO se sacan de
+  // `all` (que solo trae, vía proximaAudiencia(), la "próxima pendiente"
+  // de cada caso para la lista "General") sino de
+  // audienciasParaCalendario(), que no excluye nada. Mismo filtro de
+  // socio/concluidos que ya usa el resto de Agenda general.
+  const isAdmin = CURRENT_USER.role === 'Administrador';
+  let casesAudiencias = visibleCases().filter(k=>!estaConcluido(k));
+  if(isAdmin && AGENDA_SOCIO !== 'todos'){
+    casesAudiencias = casesAudiencias.filter(k => (assignedLawyers(k).length ? assignedLawyers(k) : ['Sin asignar']).includes(AGENDA_SOCIO));
+  }
+  casesAudiencias.forEach(k=>{
+    audienciasParaCalendario(k).forEach(a=>{
+      itemsCalendario.push({tipo:'audiencia', fecha:a.fecha, hora:a.hora, k, label:a.label});
+    });
+  });
+
+  // Prescripción/amparo: además del día exacto del vencimiento, se duplica
+  // un aviso "Vence mañana" un día antes -- mismo principio que ya usa el
+  // push diario (cron_recordatorio_abogado.php avisa justo 1 día antes),
+  // pedido explícito del usuario para que también se vea así en el
+  // calendario visual, no solo el día del vencimiento.
+  const avisosUnDiaAntes = itemsCalendario
+    .filter(e => e.tipo === 'prescripcion' || e.tipo === 'amparo')
+    .map(e => {
+      const fechaAntes = parseDate(e.fecha);
+      if(!fechaAntes) return null;
+      return Object.assign({}, e, {
+        fecha: dateToISO(addDaysDate(fechaAntes, -1)),
+        label: '¡Vence mañana! ' + e.label,
+        avisoAnticipado: true,
+      });
+    })
+    .filter(Boolean);
+  itemsCalendario = itemsCalendario.concat(avisosUnDiaAntes);
+
+  const porDia = {};
+  itemsCalendario.forEach(e=>{ (porDia[e.fecha] = porDia[e.fecha] || []).push(e); });
+  Object.values(porDia).forEach(list=>list.sort((a,b)=>(a.hora||'99:99').localeCompare(b.hora||'99:99')));
+  return porDia;
+}
+
+// Punto de entrada del calendario -- pestañas Mes/Semana/Día + despacha a
+// la vista activa. `all` ya viene filtrada (abogado solo ve lo suyo vía
+// visibleCases(), y el Administrador ya aplicó el selector de socio).
+function calendarioHTML(all){
   if(!AGENDA_CAL_MES){
     const hoy = new Date();
     AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
   }
+  if(!AGENDA_CAL_DIA) AGENDA_CAL_DIA = dateToISO(new Date());
+
+  const porDia = calendarioItemsPorDia(all);
+  CAL_POPOVER_ITEMS = [];
+
+  const tabsHTML = `
+  <div style="display:flex; gap:6px; margin-bottom:14px;">
+    <button class="btn ${AGENDA_CAL_VISTA==='mes'?'':'secondary'}" data-cal-vista="mes" style="padding:5px 14px; font-size:12px;">Mes</button>
+    <button class="btn ${AGENDA_CAL_VISTA==='semana'?'':'secondary'}" data-cal-vista="semana" style="padding:5px 14px; font-size:12px;">Semana</button>
+    <button class="btn ${AGENDA_CAL_VISTA==='dia'?'':'secondary'}" data-cal-vista="dia" style="padding:5px 14px; font-size:12px;">Día</button>
+  </div>`;
+
+  if(AGENDA_CAL_VISTA === 'semana') return tabsHTML + calendarioSemanaHTML(porDia);
+  if(AGENDA_CAL_VISTA === 'dia') return tabsHTML + calendarioDiaHTML(porDia);
+  return tabsHTML + calendarioMesHTML(porDia);
+}
+
+// Reutilizada por las 3 vistas, para el mismo look de tarjeta pulida y el
+// mismo popover de detalle al dar clic (ver abrirCalPopover()).
+function calCeldaChip(e, grande){
+  const t = AGENDA_TIPO[e.tipo];
+  const idx = CAL_POPOVER_ITEMS.length;
+  CAL_POPOVER_ITEMS.push(e);
+  const tam = grande ? 'font-size:13px; padding:8px 10px;' : 'font-size:10.5px; padding:3px 6px;';
+  return `<div data-cal-idx="${idx}" style="cursor:pointer; ${tam} background:${t.color}26; color:var(--ink); border-left:3px solid ${t.color}; border-radius:5px; margin-bottom:4px; white-space:${grande?'normal':'nowrap'}; overflow:hidden; text-overflow:ellipsis; box-shadow:0 1px 1px rgba(0,0,0,.06); ${e.avisoAnticipado?'border-style:dashed;':''}">${e.avisoAnticipado?'⏰ ':''}${e.hora? `<strong>${escapeHTML(e.hora.slice(0,5))}</strong> ` : ''}${escapeHTML(truncate(e.k.actor, grande?60:14))}${e.chocaCon?' &#9888;':''}</div>`;
+}
+
+// Reutiliza AGENDA_TIPO para los mismos colores por tipo que ya usa la
+// vista de lista, y e.chocaCon (marcarChoquesDeAgenda()) para marcar el
+// mismo choque de horario.
+function calendarioMesHTML(porDia){
   const {y, m} = AGENDA_CAL_MES;
   const hoy = new Date(); hoy.setHours(0,0,0,0);
   const todayISO = dateToISO(hoy);
   const nombreMes = new Date(y, m, 1).toLocaleDateString('es-MX', {month:'long', year:'numeric'});
-
-  const porDia = {};
-  all.forEach(e=>{ (porDia[e.fecha] = porDia[e.fecha] || []).push(e); });
-  Object.values(porDia).forEach(list=>list.sort((a,b)=>(a.hora||'99:99').localeCompare(b.hora||'99:99')));
 
   const primerDiaSemana = (new Date(y, m, 1).getDay() + 6) % 7; // 0 = lunes
   const diasEnMes = new Date(y, m+1, 0).getDate();
@@ -5232,14 +5456,10 @@ function calendarioMesHTML(all){
     const esHoy = fechaISO === todayISO;
     const visibles = items.slice(0, MAX_VISIBLES);
     const resto = items.length - visibles.length;
-    return `<div style="min-height:92px; border-radius:6px; border:1px solid var(--border); padding:6px; background:${esHoy?'#fdf3e0':'var(--card)'};">
+    return `<div style="min-height:92px; border-radius:8px; border:1px solid var(--border); padding:6px; background:${esHoy?'#fdf3e0':'var(--paper)'};">
       <div style="font-size:11px; font-weight:${esHoy?'700':'400'}; color:${esHoy?'var(--brass)':'var(--gray)'}; margin-bottom:4px;">${d}${esHoy?' &middot; hoy':''}</div>
-      ${visibles.map(e=>{
-        const t = AGENDA_TIPO[e.tipo];
-        const tituloTip = `${e.label} — ${e.k.actor} vs ${truncate(e.k.demandado,30)}`;
-        return `<div data-id="${e.k.id}" style="cursor:pointer; font-size:10.5px; background:${t.color}1a; color:${t.color}; border-radius:4px; padding:2px 5px; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;" title="${escapeHTML(tituloTip)}">${e.hora? escapeHTML(e.hora.slice(0,5))+' ' : ''}${escapeHTML(truncate(e.k.actor,14))}${e.chocaCon?' &#9888;':''}</div>`;
-      }).join("")}
-      ${resto>0 ? `<div style="font-size:10px; color:var(--gray);">+${resto} más</div>` : ''}
+      ${visibles.map(e=>calCeldaChip(e,false)).join("")}
+      ${resto>0 ? `<div style="font-size:10px; color:var(--gray); font-weight:600; padding-left:3px;">+${resto} más</div>` : ''}
     </div>`;
   };
 
@@ -5258,6 +5478,120 @@ function calendarioMesHTML(all){
   <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px;">
     ${celdas.map(celdaHTML).join("")}
   </div>`;
+}
+
+// Vista Semana (11 nov 2026, pedido explícito del usuario: "que se pueda
+// ver por semana y dia") -- 7 columnas (lunes-primero) con los pendientes
+// de cada día apilados por hora, sin intentar un grid de horas absoluto
+// (con pocos pendientes por día, una lista simple se lee mejor y es más
+// robusta que calcular posiciones por minuto).
+function calendarioSemanaHTML(porDia){
+  const ancla = parseDate(AGENDA_CAL_DIA) || new Date();
+  const diaSemana = (ancla.getDay() + 6) % 7; // 0 = lunes
+  const lunes = addDaysDate(ancla, -diaSemana);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const todayISO = dateToISO(hoy);
+  const dias = [];
+  for(let i=0;i<7;i++) dias.push(addDaysDate(lunes, i));
+  const rangoTexto = `${dias[0].toLocaleDateString('es-MX',{day:'numeric', month:'short'})} – ${dias[6].toLocaleDateString('es-MX',{day:'numeric', month:'short', year:'numeric'})}`;
+
+  return `
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn secondary" data-cal-nav="-1" style="padding:5px 10px;">&#8249;</button>
+      <div style="font-family:var(--serif); font-size:15px; font-weight:700; min-width:200px; text-align:center;">${rangoTexto}</div>
+      <button class="btn secondary" data-cal-nav="1" style="padding:5px 10px;">&#8250;</button>
+    </div>
+    <button class="btn secondary" data-cal-nav="0" style="padding:5px 10px;">Hoy</button>
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:8px;">
+    ${dias.map(d=>{
+      const fechaISO = dateToISO(d);
+      const esHoy = fechaISO === todayISO;
+      const items = porDia[fechaISO] || [];
+      return `<div style="min-height:170px; border-radius:8px; border:1px solid var(--border); padding:8px; background:${esHoy?'#fdf3e0':'var(--paper)'};">
+        <div style="font-size:11px; font-weight:700; color:${esHoy?'var(--brass)':'var(--ink)'}; margin-bottom:6px; text-align:center; text-transform:capitalize;">${d.toLocaleDateString('es-MX',{weekday:'short'})}<br><span style="font-size:16px;">${d.getDate()}</span></div>
+        ${items.length ? items.map(e=>calCeldaChip(e,false)).join("") : `<div style="font-size:11px; color:var(--gray); text-align:center; padding-top:10px;">—</div>`}
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+// Vista Día -- misma fecha ancla que Semana, un solo día en grande con el
+// detalle completo (sin truncar el nombre del actor).
+function calendarioDiaHTML(porDia){
+  const d = parseDate(AGENDA_CAL_DIA) || new Date();
+  const fechaISO = dateToISO(d);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const esHoy = fechaISO === dateToISO(hoy);
+  const items = porDia[fechaISO] || [];
+  const fechaLegible = d.toLocaleDateString('es-MX', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+
+  return `
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn secondary" data-cal-nav="-1" style="padding:5px 10px;">&#8249;</button>
+      <div style="font-family:var(--serif); font-size:15px; font-weight:700; min-width:230px; text-align:center; text-transform:capitalize; color:${esHoy?'var(--brass)':'var(--ink)'};">${escapeHTML(fechaLegible)}${esHoy?' &middot; hoy':''}</div>
+      <button class="btn secondary" data-cal-nav="1" style="padding:5px 10px;">&#8250;</button>
+    </div>
+    <button class="btn secondary" data-cal-nav="0" style="padding:5px 10px;">Hoy</button>
+  </div>
+  <div style="border-radius:8px; border:1px solid var(--border); padding:14px; background:${esHoy?'#fdf3e0':'var(--paper)'}; min-height:160px;">
+    ${items.length ? items.map(e=>calCeldaChip(e,true)).join("") : `<div class="empty">Sin audiencias, pagos ni vencimientos este día.</div>`}
+  </div>`;
+}
+
+// Ventana flotante con el detalle de un pendiente del calendario (11 nov
+// 2026, pedido explícito del usuario: ver el detalle sin saltar directo
+// al expediente, como hace Google Calendar). Se cierra sola al dar clic
+// fuera, o al usar el botón "Abrir expediente".
+function cerrarCalPopover(){
+  const existente = document.getElementById('calPopover');
+  if(existente) existente.remove();
+  document.removeEventListener('click', calPopoverClickFuera, true);
+}
+function calPopoverClickFuera(ev){
+  const pop = document.getElementById('calPopover');
+  if(pop && !pop.contains(ev.target) && !ev.target.closest('[data-cal-idx]')) cerrarCalPopover();
+}
+function abrirCalPopover(idx, anchorEl){
+  cerrarCalPopover();
+  const e = CAL_POPOVER_ITEMS[idx];
+  if(!e) return;
+  const t = AGENDA_TIPO[e.tipo];
+  const fechaLegible = (()=>{
+    const d = parseDate(e.fecha);
+    return d ? d.toLocaleDateString('es-MX', {weekday:'long', day:'numeric', month:'long'}) : e.fecha;
+  })();
+  const pop = document.createElement('div');
+  pop.id = 'calPopover';
+  pop.style.cssText = `position:fixed; z-index:300; background:var(--paper); border:1px solid var(--border); border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.25); width:270px; font-size:13px; overflow:hidden;`;
+  pop.innerHTML = `
+    <div style="background:${t.color}; color:#fff; padding:10px 14px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;">${escapeHTML(t.label||e.tipo)}</div>
+    <div style="padding:14px;">
+      <div style="font-weight:700; margin-bottom:3px; line-height:1.3; color:var(--ink);">${escapeHTML(e.label)}</div>
+      <div style="color:var(--gray); margin-bottom:8px; text-transform:capitalize;">${escapeHTML(fechaLegible)}${e.hora?' &middot; '+escapeHTML(e.hora.slice(0,5))+' hrs':''}</div>
+      <div style="margin-bottom:12px; padding-top:8px; border-top:1px solid var(--border); color:var(--ink);">${escapeHTML(e.k.actor)} <span style="color:var(--gray);">vs</span> ${escapeHTML(truncate(e.k.demandado||'—',40))}${e.k.exp?`<br><span style="color:var(--gray); font-size:12px;">Exp. ${escapeHTML(e.k.exp)}</span>`:''}</div>
+      <button class="btn" id="calPopoverAbrir" style="width:100%; padding:7px;">Abrir expediente</button>
+    </div>
+  `;
+  document.body.appendChild(pop);
+
+  const r = anchorEl.getBoundingClientRect();
+  const popRect = pop.getBoundingClientRect();
+  let left = Math.min(r.left, window.innerWidth - popRect.width - 10);
+  left = Math.max(10, left);
+  let top = r.bottom + 6;
+  if(top + popRect.height > window.innerHeight - 10) top = Math.max(10, r.top - popRect.height - 6);
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+
+  document.getElementById('calPopoverAbrir').addEventListener('click', ()=>{
+    cerrarCalPopover();
+    const k = findCase(e.k.id);
+    if(k) openModal(k);
+  });
+  setTimeout(()=>document.addEventListener('click', calPopoverClickFuera, true), 0);
 }
 
 const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
@@ -6378,11 +6712,54 @@ function disponibilidadPanelHTML(){
   </div>`;
 }
 
+function googleCalendarioSugerenciaCardHTML(s){
+  return `
+      <div class="aviso-card" data-calendario-sugerencia-id="${s.id}">
+        <div class="aviso-head">
+          <div data-id="${s.expediente_id}" data-tab="etapas" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(s.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(s.expediente_demandado||'—',30))} ${s.expediente_exp? `&middot; Exp. ${escapeHTML(s.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">${escapeHTML(s.nombre_calendario||'Google Calendar')} &middot; ${etapaLabelPorKey(s.etapa_key)}</div>
+          </div>
+        </div>
+        <div class="aviso-resumen">⚠️ Conflicto de fecha — "${escapeHTML(s.titulo_evento)}" dice ${fmtDate(s.fecha)}${s.hora? ' '+escapeHTML(s.hora.slice(0,5))+' hrs':''}, pero esta etapa ya tenía agendado ${s.fecha_actual_programada? fmtDate(s.fecha_actual_programada):'otra fecha'}. ¿Cuál vale?</div>
+        <div class="aviso-actions">
+          <button class="btn" data-calendario-sugerencia-aplicar="${s.id}" style="padding:6px 12px; font-size:11.5px;">Usar la de Google Calendar</button>
+          <button class="btn secondary" data-calendario-sugerencia-descartar="${s.id}" style="padding:6px 12px; font-size:11.5px;">Dejar la que ya tenía</button>
+        </div>
+      </div>`;
+}
+function irregularidadCardHTML(i){
+  const tipoIcono = i.tipo === 'orden_cronologico' ? '📅' : '🔎';
+  return `
+      <div class="aviso-card" data-irregularidad-id="${i.id}">
+        <div class="aviso-head">
+          <div data-id="${i.expediente_id}" data-tab="etapas" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(i.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(i.expediente_demandado||'—',30))} ${i.expediente_exp? `&middot; Exp. ${escapeHTML(i.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">${i.etapa_key ? escapeHTML(etapaLabelPorKey(i.etapa_key)) : ''}</div>
+          </div>
+        </div>
+        <div class="aviso-resumen">${tipoIcono} ${escapeHTML(i.motivo)}</div>
+        <div class="aviso-actions">
+          <button class="btn" data-id="${i.expediente_id}" data-tab="etapas" style="padding:6px 12px; font-size:11.5px;">Corregir</button>
+          <button class="btn secondary" data-irregularidad-descartar="${i.id}" style="padding:6px 12px; font-size:11.5px;">Está bien, no es error</button>
+        </div>
+      </div>`;
+}
 function preguntasAbogadoHTML(){
   const pendientes = SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente');
   const historial = SUPERVISOR_PREGUNTAS.filter(p=>p.estado!=='pendiente');
   return `
   <div class="notice" style="margin-bottom:16px; max-width:100%;">Preguntas que el supervisor de IA le hace al abogado a cargo cuando detecta un posible atraso, buscando el dato concreto que falta para seguir el plazo legal — normalmente una fecha. Puedes contestar con texto, o adjuntar una foto/documento (ej. una cédula de notificación) para que la IA lo lea y, si confirma una fecha, llene sola la etapa correspondiente.</div>
+  ${IRREGULARIDADES.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>⚠️ Posibles irregularidades</h3><span class="count">${IRREGULARIDADES.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${IRREGULARIDADES.map(irregularidadCardHTML).join("")}</div>
+  </div>` : ''}
+  ${GOOGLE_CALENDARIO_SUGERENCIAS.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>📅 Conflictos de fecha en tu Google Calendar</h3><span class="count">${GOOGLE_CALENDARIO_SUGERENCIAS.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${GOOGLE_CALENDARIO_SUGERENCIAS.map(googleCalendarioSugerenciaCardHTML).join("")}</div>
+  </div>` : ''}
   ${pendientes.length ? `
   <div class="panel">
     <div class="panel-head"><h3>Pendientes</h3><span class="count">${pendientes.length}</span></div>
@@ -6477,10 +6854,10 @@ function agendaHTML(){
     ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%; margin-bottom:16px;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
     <div class="panel">
       <div class="panel-body" style="padding:16px 20px;">
-        ${calendarioMesHTML(all)}
+        ${calendarioHTML(all)}
       </div>
     </div>
-    <div class="notice" style="margin-top:12px; max-width:100%;">Clic en cualquier pendiente del calendario abre el expediente directo. &#9888; marca choque de horario con otro socio en la misma fecha y hora.</div>
+    <div class="notice" style="margin-top:12px; max-width:100%;">Clic en cualquier pendiente del calendario abre el expediente directo. &#9888; marca choque de horario con otro socio en la misma fecha y hora. ⏰ marca un aviso de "vence mañana" (prescripción/amparo) -- el vencimiento real sigue marcado también el día exacto.</div>
     `;
   }
 
@@ -6713,6 +7090,50 @@ function equipoHTML(){
       <div class="field" style="margin:0;"><label>Mixta (horas)</label><input type="text" id="jornadaMixtaInput" value="${JORNADA_MAXIMA.mixta}" style="max-width:100px;"></div>
       <button type="submit" class="btn">Guardar</button>
     </form>
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Calendarios de Google vigilados</div>
+    <div class="notice" style="margin-bottom:14px;">Cada abogado agenda sus audiencias/citatorios directo en su propio sub-calendario de Google (ej. "Audiencias Lindsay") -- liga aquí cuál corresponde a cuál abogado para que el sistema los lea solo y sugiera a qué expediente corresponde cada evento (nunca lo aplica solo -- siempre pide confirmar con un tap en "Preguntas al abogado"). Usa la MISMA cuenta de Google que ya conectaste en "Mi cuenta" (tiene que ver todos esos sub-calendarios en su "Mis calendarios").</div>
+    ${GOOGLE_CALENDARIOS_MAPEO.length ? `
+    <table style="margin-bottom:14px;"><thead><tr><th>Calendario</th><th>Abogado</th><th></th></tr></thead><tbody>
+      ${GOOGLE_CALENDARIOS_MAPEO.map(m=>`<tr>
+        <td>${escapeHTML(m.nombre_calendario)}</td>
+        <td>${escapeHTML(m.abogado_nombre)}</td>
+        <td><button class="btn secondary" data-calendario-mapeo-quitar="${m.id}" style="padding:5px 10px; font-size:11px;">Quitar</button></td>
+      </tr>`).join("")}
+    </tbody></table>` : ''}
+    <button class="btn secondary" id="cargarCalendariosGoogleBtn">${GOOGLE_CALENDARIOS_DISPONIBLES===null ? 'Cargar calendarios disponibles' : 'Actualizar lista'}</button>
+    <div id="calendariosGoogleDisponiblesWrap" style="margin-top:12px;">
+      ${GOOGLE_CALENDARIOS_DISPONIBLES && GOOGLE_CALENDARIOS_DISPONIBLES.length ? GOOGLE_CALENDARIOS_DISPONIBLES.map(c=>{
+        const yaMapeado = GOOGLE_CALENDARIOS_MAPEO.find(m=>m.calendar_id===c.id);
+        return `<div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); flex-wrap:wrap;">
+          <div style="flex:1; min-width:180px; font-size:13px;">${escapeHTML(c.nombre)}</div>
+          <select class="calendario-google-abogado-select" data-calendar-id="${escapeHTML(c.id)}" data-calendar-nombre="${escapeHTML(c.nombre)}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12.5px;">
+            <option value="">— No vigilar —</option>
+            ${EQUIPO.map(u=>`<option value="${u.id}" ${yaMapeado && yaMapeado.abogado_id===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+          </select>
+          <button class="btn secondary" data-calendario-mapeo-guardar style="padding:5px 10px; font-size:11px;">Guardar</button>
+        </div>`;
+      }).join("") : (GOOGLE_CALENDARIOS_DISPONIBLES && !GOOGLE_CALENDARIOS_DISPONIBLES.length ? '<div class="empty">Sin calendarios encontrados en esa cuenta de Google.</div>' : '')}
+    </div>
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Actividad de la IA (últimos 30 días)</div>
+    <div class="notice" style="margin-bottom:14px;">Cada vez que la IA llena una etapa sola (acuerdos de boletín, documentos subidos, auditoría integral, Google Calendar) o rechaza una sugerencia por romper el orden cronológico, queda aquí -- para poder confirmar rápido que está haciendo lo correcto, sin tener que entrar expediente por expediente. Las acciones que un abogado confirmó con un tap (responder al supervisor, confirmar un evento de calendario) no cuentan aquí -- esas ya las revisó un humano antes de aplicarse.</div>
+    ${IA_ACTIVIDAD.length ? `
+    <table><thead><tr><th>Fecha</th><th>Expediente</th><th>Qué hizo</th></tr></thead><tbody>
+      ${IA_ACTIVIDAD.map(a=>{
+        const esRechazo = a.campo.includes('_rechazo_');
+        return `<tr>
+          <td style="white-space:nowrap; font-size:12px;">${new Date(a.creado_en).toLocaleString('es-MX',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+          <td data-id="${a.expediente_id}" style="cursor:pointer; font-size:12.5px;">${escapeHTML(a.expediente_actor||'—')} <span style="color:var(--gray);">vs</span> ${escapeHTML(truncate(a.expediente_demandado||'—',24))}</td>
+          <td style="font-size:12.5px;">
+            <span class="badge ${esRechazo?'crit':'ok'}" style="margin-right:6px;">${esRechazo?'✗ rechazado':'✓ aplicado'}</span>
+            ${escapeHTML(a.despues||'')}
+          </td>
+        </tr>`;
+      }).join("")}
+    </tbody></table>` : '<div class="empty">Sin actividad autónoma de la IA en los últimos 30 días.</div>'}
   </div></div>
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Respaldo de toda la información</div>
@@ -7053,16 +7474,40 @@ function bindViewBody(){
   document.querySelectorAll('[data-cal-nav]').forEach(el=>{
     el.addEventListener('click', ()=>{
       const dir = parseInt(el.dataset.calNav, 10);
-      if(dir === 0){
-        const hoy = new Date();
-        AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
-      } else if(AGENDA_CAL_MES){
-        let {y, m} = AGENDA_CAL_MES;
-        m += dir;
-        if(m < 0){ m = 11; y--; } else if(m > 11){ m = 0; y++; }
-        AGENDA_CAL_MES = {y, m};
+      if(AGENDA_CAL_VISTA === 'mes'){
+        if(dir === 0){
+          const hoy = new Date();
+          AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
+        } else if(AGENDA_CAL_MES){
+          let {y, m} = AGENDA_CAL_MES;
+          m += dir;
+          if(m < 0){ m = 11; y--; } else if(m > 11){ m = 0; y++; }
+          AGENDA_CAL_MES = {y, m};
+        }
+      } else {
+        // Semana/Día comparten la misma ancla -- navegar de 7 en 7 días o
+        // de 1 en 1 según la vista activa.
+        if(dir === 0){
+          AGENDA_CAL_DIA = dateToISO(new Date());
+        } else {
+          const paso = AGENDA_CAL_VISTA === 'semana' ? 7 : 1;
+          const base = parseDate(AGENDA_CAL_DIA) || new Date();
+          AGENDA_CAL_DIA = dateToISO(addDaysDate(base, dir * paso));
+        }
       }
       renderViewBody();
+    });
+  });
+  document.querySelectorAll('[data-cal-vista]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      AGENDA_CAL_VISTA = el.dataset.calVista;
+      renderViewBody();
+    });
+  });
+  document.querySelectorAll('[data-cal-idx]').forEach(el=>{
+    el.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      abrirCalPopover(parseInt(el.dataset.calIdx, 10), el);
     });
   });
   const toggleDisponibilidad = document.querySelector('[data-toggle-disponibilidad]');
@@ -7290,6 +7735,36 @@ function bindViewBody(){
       }
     });
   });
+  // Confirmar/descartar una sugerencia de Google Calendar (11 nov 2026) --
+  // siempre requiere este tap, nunca se aplica sola.
+  document.querySelectorAll('[data-calendario-sugerencia-aplicar], [data-calendario-sugerencia-descartar]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const aplicar = btn.hasAttribute('data-calendario-sugerencia-aplicar');
+      const id = parseInt(aplicar ? btn.dataset.calendarioSugerenciaAplicar : btn.dataset.calendarioSugerenciaDescartar);
+      btn.disabled = true;
+      try{
+        await api('POST', 'google_calendario_sugerencia_resolver.php', {id, aplicar});
+        await loadGoogleCalendarioSugerencias();
+        if(ACTIVE_CASE){ ACTIVE_CASE = findCase(ACTIVE_CASE.id); renderModal(); }
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); btn.disabled = false; }
+    });
+  });
+  // Descartar una irregularidad (12 nov 2026) -- "Corregir" no pasa por
+  // aquí, es solo el [data-id] genérico que abre el expediente.
+  document.querySelectorAll('[data-irregularidad-descartar]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const id = parseInt(btn.dataset.irregularidadDescartar);
+      btn.disabled = true;
+      try{
+        await api('POST', 'qa_irregularidad_resolver.php', {id});
+        await loadIrregularidades();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); btn.disabled = false; }
+    });
+  });
   // Se abrió el sistema desde el push de una pregunta nueva
   // (abrirPreguntaDesdeNotificacion()) -- ya se renderizó "Preguntas al
   // abogado" con el HTML en el DOM, así que recién aquí se puede hacer
@@ -7500,6 +7975,46 @@ function bindViewBody(){
   if(reporteEjecutivoBtn) reporteEjecutivoBtn.addEventListener('click', abrirReporteEjecutivoPDF);
   const descargarRespaldoBtn = document.getElementById('descargarRespaldoBtn');
   if(descargarRespaldoBtn) descargarRespaldoBtn.addEventListener('click', exportarRespaldo);
+  const cargarCalendariosGoogleBtn = document.getElementById('cargarCalendariosGoogleBtn');
+  if(cargarCalendariosGoogleBtn){
+    cargarCalendariosGoogleBtn.addEventListener('click', async ()=>{
+      cargarCalendariosGoogleBtn.disabled = true;
+      cargarCalendariosGoogleBtn.textContent = 'Cargando...';
+      try{
+        const d = await api('GET', 'google_calendarios_disponibles.php');
+        GOOGLE_CALENDARIOS_DISPONIBLES = d.calendarios;
+        renderViewBody();
+      }catch(err){ alert('No se pudo cargar: ' + err.message); }
+      finally{ cargarCalendariosGoogleBtn.disabled = false; cargarCalendariosGoogleBtn.textContent = 'Actualizar lista'; }
+    });
+  }
+  document.querySelectorAll('[data-calendario-mapeo-guardar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const sel = btn.previousElementSibling;
+      if(!sel || !sel.classList.contains('calendario-google-abogado-select')) return;
+      const calendarId = sel.dataset.calendarId;
+      const nombreCalendario = sel.dataset.calendarNombre;
+      const abogadoId = parseInt(sel.value);
+      if(!abogadoId){ alert('Elige a qué abogado corresponde este calendario primero.'); return; }
+      btn.disabled = true;
+      try{
+        await api('POST', 'google_calendarios_mapeo_set.php', {calendar_id: calendarId, nombre_calendario: nombreCalendario, abogado_id: abogadoId});
+        await loadGoogleCalendariosMapeo();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-calendario-mapeo-quitar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('¿Dejar de vigilar este calendario? Las sugerencias ya aplicadas no se tocan.')) return;
+      btn.disabled = true;
+      try{
+        await api('POST', 'google_calendarios_mapeo_delete.php', {id: parseInt(btn.dataset.calendarioMapeoQuitar)});
+        await loadGoogleCalendariosMapeo();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); btn.disabled = false; }
+    });
+  });
   const addBtn = document.getElementById('addLawyerBtn2');
   if(addBtn) addBtn.addEventListener('click', async ()=>{
     const name = prompt("Nombre completo del socio/a a agregar:");
@@ -8206,11 +8721,27 @@ function modalTabContent(k,p,meta){
     `;
   }
   if(MODAL_TAB==='editar'){
+    // Mostrar/ocultar por tipo de demanda (11 nov 2026, pedido explícito
+    // del usuario): un campo sin `scope` es común a cualquier demanda
+    // (actor, fechas, salario...) y siempre se muestra; uno con `scope`
+    // (los de Rescisión Art. 51 / Prima de antigüedad) se oculta si no
+    // coincide con `tipo_demanda`. Se renderizan TODOS los campos (nunca
+    // se quitan del DOM) y el selector de tipo_demanda solo alterna
+    // data-scope con CSS al cambiar (ver el listener en bindModalEvents())
+    // -- así cambiar de tipo sin guardar primero no arriesga perder lo que
+    // ya se haya escrito en otro campo visible.
     return `
     <div class="notice" style="margin-bottom:14px;">Todo lo que captures aquí sobrescribe el dato importado (si lo había) y queda registrado en el Historial de cambios. Déjalo en blanco para conservar el valor original.</div>
+    <div class="notice" style="margin-bottom:14px;">Elige primero el <strong>Tipo de demanda a presentar</strong> -- el resto de los campos de Rescisión Art. 51 o Prima de antigüedad solo aparecen una vez que elijas ese tipo.</div>
     <div class="grid2">
-      ${EDITABLE_FIELDS.map(f=>`
-        <div class="field">
+      ${EDITABLE_FIELDS.map(f=>{
+        // f.scope puede ser un string (un solo tipo) o un arreglo (varios
+        // tipos aplican, ej. horario/jornada sirve para Demanda normal Y
+        // Rescisión Art. 51, pero no para Prima de antigüedad).
+        const scopeList = Array.isArray(f.scope) ? f.scope : (f.scope ? [f.scope] : null);
+        const atributoScope = scopeList ? `data-tipo-demanda-scope="${escapeHTML(scopeList.join('|'))}" style="${!scopeList.includes(k.tipo_demanda)?'display:none;':''}"` : '';
+        return `
+        <div class="field" ${atributoScope}>
           <label>${escapeHTML(f.label)}</label>
           ${f.type==='date' ?
             `<input type="date" class="edit-field" data-field="${f.key}" value="${k[f.key]||''}">` :
@@ -8246,7 +8777,8 @@ function modalTabContent(k,p,meta){
             `<textarea class="edit-field" id="edit-field-${f.key}" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>${dictadoBotonHTML('edit-field-' + f.key)}` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
           }
-        </div>`).join("")}
+        </div>`;
+      }).join("")}
     </div>
     <div style="margin-top:18px;"><button class="btn" id="saveCamposBtn">Guardar datos del expediente</button></div>
     `;
@@ -8417,7 +8949,13 @@ function modalTabContent(k,p,meta){
     <div class="notice" style="margin-bottom:14px;">Marca cada etapa conforme vaya ocurriendo. Al registrar "Demanda presentada" el sistema deja de contar la prescripción de este asunto automáticamente. En las audiencias puedes capturar la fecha en que están agendadas aunque todavía no se celebren — eso es lo que le aparece a tu cliente como "próxima audiencia".</div>
     ${ETAPAS_DEF.map(def=>{
       const val = k_etapa_valor(meta, def.key);
-      const esAudiencia = def.key==='audiencia_preliminar' || def.key==='audiencia_juicio';
+      // Los citatorios de conciliación también se agendan con anticipación
+      // (igual que una audiencia) -- antes solo tenían un campo de fecha
+      // ambiguo ("¿ya pasó o está agendado?"), así que nunca aparecían en
+      // Agenda como pendientes (11 nov 2026, bug real reportado por el
+      // usuario: un citatorio agendado no se veía en ningún lado).
+      const esAudiencia = def.key==='audiencia_preliminar' || def.key==='audiencia_juicio'
+        || def.key==='conciliacion_primer_citatorio' || def.key==='conciliacion_segundo_citatorio';
       const esSentencia = def.key==='sentencia';
       const programada = (meta.etapas[def.key] && meta.etapas[def.key].fecha_programada) || '';
       const resultado = (meta.etapas[def.key] && meta.etapas[def.key].resultado) || '';
@@ -8710,6 +9248,20 @@ function bindModalTabEvents(){
     escritoPlantillaSelect.addEventListener('change', togglePanel);
     togglePanel();
   }
+  // Mostrar/ocultar en vivo los campos de Rescisión Art. 51 / Prima de
+  // antigüedad en "Editar datos" según el "Tipo de demanda a presentar"
+  // (11 nov 2026) -- nunca se re-renderiza el tab entero aquí (eso
+  // perdería cualquier dato sin guardar que ya esté escrito en otro
+  // campo visible), solo se alterna CSS sobre lo que ya está en el DOM.
+  const tipoDemandaSelect = document.querySelector('[data-field="tipo_demanda"]');
+  if(tipoDemandaSelect){
+    tipoDemandaSelect.addEventListener('change', ()=>{
+      const actual = tipoDemandaSelect.value;
+      document.querySelectorAll('[data-tipo-demanda-scope]').forEach(div=>{
+        div.style.display = div.dataset.tipoDemandaScope.split('|').includes(actual) ? '' : 'none';
+      });
+    });
+  }
   const genDemandaBtn = document.getElementById('genDemandaBtn');
   if(genDemandaBtn){
     genDemandaBtn.addEventListener('click', async ()=>{
@@ -8882,6 +9434,7 @@ function bindModalTabEvents(){
         savePendBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(savePendBtn) savePendBtn.textContent = "Guardar pendientes"; }, 1600);
         await refreshBootstrap();
+        syncGoogleIfConnected();
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         renderModal();
         renderViewBody();
@@ -9339,6 +9892,24 @@ async function init(){
   if(preguntaParam){
     history.replaceState(null, '', location.pathname);
     abrirPreguntaDesdeNotificacion(preguntaParam);
+  }
+
+  // Push de "evento de calendario por confirmar" (ver
+  // cron_leer_google_calendar.php, 11 nov 2026) -- lleva directo a
+  // "Preguntas al abogado", donde vive el panel de sugerencias.
+  const pregCalParam = new URLSearchParams(location.search).get('pregunta_calendario');
+  if(pregCalParam){
+    history.replaceState(null, '', location.pathname);
+    if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){ VIEW = 'preguntas_abogado'; render(); }
+  }
+
+  // Push de "posible irregularidad detectada" (ver
+  // cron_qa_irregularidades.php, 12 nov 2026) -- lleva directo a
+  // "Preguntas al abogado", donde vive el panel nuevo.
+  const irregularidadParam = new URLSearchParams(location.search).get('irregularidad');
+  if(irregularidadParam){
+    history.replaceState(null, '', location.pathname);
+    if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){ VIEW = 'preguntas_abogado'; render(); }
   }
 }
 init();

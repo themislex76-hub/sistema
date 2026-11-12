@@ -134,6 +134,20 @@ foreach ($candidatos as $c) {
             continue;
         }
 
+        // Candado nuevo (12 nov 2026, ver motivo_sugiere_fecha_calculada()):
+        // confirmado real que la IA calculó un vencimiento de plazo o
+        // atribuyó la fecha de un evento distinto (despido) a otra etapa,
+        // y el candado de orden cronológico no lo atrapó porque la fecha sí
+        // quedaba en orden válido. Se rechaza por el mismo texto del motivo.
+        if (motivo_sugiere_fecha_calculada($s['motivo'])) {
+            log_historial(
+                $pdo, (int)$c['id'], ['id' => null, 'nombre' => 'IA (auditoría integral)'],
+                'auditoria_ia_rechazo_' . $s['etapa_key'], null,
+                "fecha sugerida {$s['fecha']} rechazada: el motivo de la IA sugiere un plazo calculado o un evento distinto, no una confirmación literal" . ($s['motivo'] !== '' ? " (motivo de la IA: {$s['motivo']})" : '')
+            );
+            continue;
+        }
+
         $pdo->prepare(
             'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha)
              VALUES (:eid, :key, :fecha)

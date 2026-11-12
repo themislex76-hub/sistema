@@ -2742,6 +2742,62 @@ const ETAPA_LABELS = [
     'amparo_directo' => 'Amparo directo presentado',
 ];
 
+// Calcula la línea "Siguiente etapa esperada..." que se le da a la IA en
+// varios prompts (resumen ejecutivo, análisis de acuerdos/documentos) --
+// centralizada aquí (12 nov 2026) para no duplicar 2 casos especiales donde
+// el orden lineal de ETAPA_KEYS no basta por sí solo:
+// - "Convenio" y "Constancia de no conciliación" son resultados
+//   ALTERNATIVOS de la conciliación (o se llega a un acuerdo, o se agota
+//   sin él), nunca un paso seguido del otro.
+// - Después de "Demanda presentada", "Prevención" NO es un paso seguro --
+//   es UN RESULTADO POSIBLE del primer acuerdo del Tribunal (puede
+//   prevenir por defectos u omisiones, Art. 873 LFT, o admitir la demanda
+//   directamente sin prevención). Confirmado real (12 nov 2026, expediente
+//   de Yazmin González Román): un informe ejecutivo afirmó "el asunto está
+//   en etapa de prevención... 27 días sin registro de la resolución" --
+//   pero el Tribunal todavía no dictaba NINGÚN acuerdo (ni prevención ni
+//   admisión). Decirle a la IA "siguiente etapa esperada: Prevención" sin
+//   aclarar que es solo una de 2 salidas posibles la hizo escribir como si
+//   ya estuviéramos en esa etapa esperando que el abogado resolviera algo.
+// Devuelve null si el trámite ya está completo o no hay nada que esperar.
+function ia_siguiente_etapa_esperada_texto(array $etapas): ?string
+{
+    $ordenEtapas = defined('ETAPA_KEYS') ? ETAPA_KEYS : [];
+    $porKey = [];
+    foreach ($etapas as $e) {
+        if (!empty($e['etapa_key'])) $porKey[$e['etapa_key']] = $e;
+    }
+    $ultimaEtapaIdx = null;
+    foreach ($ordenEtapas as $idx => $key) {
+        $fecha = $porKey[$key]['fecha'] ?? null;
+        if ($fecha && $fecha !== '0000-00-00') $ultimaEtapaIdx = $idx;
+    }
+    if ($ultimaEtapaIdx === null || $ultimaEtapaIdx >= count($ordenEtapas) - 1) return null;
+
+    $ultimaEtapaKey = $ordenEtapas[$ultimaEtapaIdx];
+    if ($ultimaEtapaKey === 'conciliacion_convenio') return null; // resultado final alternativo, no sigue nada
+
+    $fechaUltima = null;
+    for ($i = $ultimaEtapaIdx; $i >= 0; $i--) {
+        $f = $porKey[$ordenEtapas[$i]]['fecha'] ?? null;
+        if ($f && $f !== '0000-00-00') { $fechaUltima = $f; break; }
+    }
+    $diasDesde = $fechaUltima ? (int)round((time() - strtotime($fechaUltima)) / 86400) : null;
+    $sufijoDias = $diasDesde !== null ? " (han pasado $diasDesde día(s) desde la última etapa registrada)" : '';
+
+    $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
+
+    if ($ultimaEtapaKey === 'demanda_presentada' && $siguienteKey === 'prevencion') {
+        return 'El Tribunal TODAVÍA no dicta ningún acuerdo sobre la demanda -- "Prevención" y "Demanda '
+            . 'admitida" son dos resultados ALTERNATIVOS de ese primer acuerdo (puede prevenir por defectos u '
+            . 'omisiones, Art. 873 LFT, o admitir la demanda directamente sin prevención), nunca uno seguido '
+            . 'del otro. NO redactes esto como si ya estuviéramos "en etapa de prevención" -- estamos '
+            . "esperando el primer acuerdo del Tribunal, sea cual sea.{$sufijoDias}";
+    }
+
+    return 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey) . $sufijoDias;
+}
+
 // Devuelve null si falló, o ['resumen'=>string, 'accion'=>?string, 'urgencia'=>?'alta'|'media'|'baja'].
 // $etapas: filas de expediente_etapas (etapa_key, fecha, fecha_programada) en
 // CUALQUIER orden -- se reordenan aquí según ETAPA_LABELS. Sin esto, la IA
@@ -2771,7 +2827,16 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
     $agregar('Tipo de asunto', $expediente['tipo_asunto'] ?? null);
     $agregar('Status', $expediente['status'] ?? null);
     $agregar('Instancia', $expediente['instancia'] ?? null);
-    $agregar('Junta/Tribunal', $expediente['junta'] ?? $expediente['tribunal'] ?? null);
+    // Orden de prioridad CORREGIDO (12 nov 2026) -- estaba al revés
+    // (`junta` primero, `tribunal` como respaldo), justo lo opuesto a la
+    // decisión del 9 nov 2026 de que `tribunal` es el campo vigente y
+    // `junta` solo un respaldo para datos viejos (ver mergeTags() en
+    // app.js, que ya tenía el orden bueno). Confirmado real: el informe
+    // ejecutivo del expediente de Yazmin González Román decía "Junta 8
+    // Laboral de Asuntos Individuales" en vez de "Octavo Tribunal..." --
+    // el expediente sí tenía `tribunal` bien capturado, pero este
+    // `?? ` leía `junta` (dato viejo) primero porque no estaba vacío.
+    $agregar('Tribunal', $expediente['tribunal'] ?? $expediente['junta'] ?? null);
     $agregar('Puesto del trabajador', $expediente['puesto'] ?? null);
     $agregar('Fecha de ingreso', $expediente['fecha_ingreso'] ?? null);
     $agregar('Fecha de baja/despido', $expediente['fecha_baja'] ?? null);
@@ -2813,24 +2878,8 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
     }
     if ($registradas) {
         $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
-        // "Convenio" y "Constancia de no conciliación" son dos resultados
-        // ALTERNATIVOS y excluyentes de la conciliación (o se llega a un
-        // acuerdo, o se agota sin él) -- nunca un paso seguido del otro.
-        // Sin este corte, se le decía a la IA que la Constancia era la
-        // siguiente etapa esperada después de un Convenio ya alcanzado, lo
-        // cual no aplica y generaba informes contradictorios.
-        $ultimaEtapaKey = $ultimaEtapaIdx !== null ? $ordenEtapas[$ultimaEtapaIdx] : null;
-        if ($ultimaEtapaIdx !== null && $ultimaEtapaIdx < count($ordenEtapas) - 1 && $ultimaEtapaKey !== 'conciliacion_convenio') {
-            $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
-            $fechaUltima = null;
-            for ($i = $ultimaEtapaIdx; $i >= 0; $i--) {
-                $f = $porKey[$ordenEtapas[$i]]['fecha'] ?? null;
-                if ($f && $f !== '0000-00-00') { $fechaUltima = $f; break; }
-            }
-            $diasDesde = $fechaUltima ? (int)round((time() - strtotime($fechaUltima)) / 86400) : null;
-            $lineas[] = 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey)
-                . ($diasDesde !== null ? " (han pasado $diasDesde día(s) desde la última etapa registrada)" : '');
-        }
+        $siguienteTexto = ia_siguiente_etapa_esperada_texto($etapas);
+        if ($siguienteTexto !== null) $lineas[] = $siguienteTexto;
     }
 
     if (!$lineas) return null;
@@ -2992,7 +3041,6 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
         if (!empty($e['etapa_key'])) $porKey[$e['etapa_key']] = $e;
     }
     $registradas = [];
-    $siguienteKey = null;
     $ultimaEtapaIdx = null;
     foreach ($ordenEtapas as $idx => $key) {
         $fecha = $porKey[$key]['fecha'] ?? null;
@@ -3001,10 +3049,10 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
             $ultimaEtapaIdx = $idx;
         }
     }
-    if ($registradas) $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
-    if ($ultimaEtapaIdx !== null && $ultimaEtapaIdx < count($ordenEtapas) - 1) {
-        $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
-        $lineas[] = 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey);
+    if ($registradas) {
+        $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
+        $siguienteTexto = ia_siguiente_etapa_esperada_texto($etapas);
+        if ($siguienteTexto !== null) $lineas[] = $siguienteTexto;
     }
 
     $vocabularioEtapas = implode(', ', array_map(fn($k) => "$k (" . (ETAPA_LABELS[$k] ?? $k) . ')', $ordenEtapas));
@@ -3399,7 +3447,16 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
     }
 
     $payload = [
-        'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
+        // Usa el modelo grande, no Haiku (12 nov 2026) -- confirmado real en
+        // un expediente de producción que Haiku ignoró la instrucción
+        // explícita de "nunca calcular un plazo" y de todos modos reportó
+        // una fecha de vencimiento calculada, y por separado atribuyó la
+        // fecha del despido a la etapa de conciliación prejudicial (evento
+        // distinto). Mismo criterio ya usado en IA_MODELO_BUSQUEDA: cuando
+        // Haiku demuestra no seguir bien una regla dura explícita, el costo
+        // extra de Sonnet es preferible al riesgo de datos legales mal
+        // llenados solos.
+        'model' => IA_MODELO_ANALIZAR_ACUERDO,
         'max_tokens' => 600,
         'thinking' => ['type' => 'disabled'],
         'system' => 'Eres el supervisor interno de un despacho de derecho laboral en México, haciendo una '
@@ -3413,6 +3470,20 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
             . 'nunca una suposición razonable), repórtala. Si no encuentras evidencia clara y literal para '
             . 'ninguna etapa, no reportes nada -- es preferible no decir nada a adivinar mal en un expediente '
             . 'legal real.'
+            . "\n\nDOS ERRORES REALES ya detectados que NUNCA debes repetir:\n"
+            . "1. Un documento dice \"se concede al demandado 15 días para contestar a partir del emplazamiento "
+            . "realizado el 2026-06-15\" -- NUNCA calcules que eso \"vence\" el 2026-06-30 y lo reportes como la "
+            . "fecha de \"Contestación de demanda recibida\". Esa cuenta es un PLAZO, no una confirmación de que "
+            . "la contestación de verdad se recibió. Si ningún documento dice literalmente que la contestación ya "
+            . "se recibió (o se tuvo por no contestada), NO reportes esa etapa, aunque puedas hacer la cuenta.\n"
+            . "2. La demanda menciona que \"el despido injustificado ocurrió el 30/01/2026\" -- esa es la fecha "
+            . "del DESPIDO, un evento distinto. NUNCA la uses para \"Conciliación prejudicial\" ni para ninguna "
+            . "otra etapa que no sea, literalmente, la del despido. Cada etapa necesita su PROPIA fecha, "
+            . "mencionada como tal -- una fecha de un evento no sirve de evidencia para una etapa distinta solo "
+            . "porque es la única fecha disponible en el contexto.\n"
+            . "En general: una fecha solo cuenta si el texto confirma que ESE evento específico (el que nombra la "
+            . "etapa) ya ocurrió en esa fecha -- una orden de hacer algo (\"se ordena notificar\", \"se le "
+            . "concede un plazo\") no es evidencia de que ya se hizo."
             . "\n\nResponde ÚNICAMENTE con bloques en este formato, uno por cada etapa donde sí tengas evidencia "
             . "(sin nada más antes o después):\n\nETAPA: <clave exacta de la lista>\nFECHA: YYYY-MM-DD\nMOTIVO: "
             . "<de dónde sale la fecha, 1 línea>\n---\n\nSi no hay ninguna, responde exactamente: (ninguna)",
@@ -3471,6 +3542,136 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
         ];
     }
     return $sugerencias;
+}
+
+// Panel "Posibles irregularidades" (12 nov 2026, pedido explícito del
+// usuario: "tenemos que hacer que la ia sea muy efectiva revisando los
+// juicios para detectar irregularidades"). A diferencia de
+// ia_auditar_expediente() (que busca fechas para etapas SIN registrar),
+// esta función es la "segunda opinión": revisa una etapa que un mecanismo
+// de IA YA llenó sola (viene de expediente_historial, usuario_id NULL) con
+// TODO el contexto actual del expediente, y responde si el motivo
+// original sigue viéndose como una confirmación literal genuina o si, bajo
+// las mismas 2 reglas que se reforzaron hoy (nunca un plazo calculado,
+// nunca el evento de una etapa distinta), hay motivo real para dudar.
+// Deliberadamente conservadora: el objetivo NO es reabrir cualquier cosa
+// sin "documento de respaldo" en el sistema (muchas etapas se capturan a
+// mano desde el expediente físico/digital sin subir nada) -- solo marca
+// cuando el propio motivo original, o el contexto, da una señal CLARA de
+// error (igual que los 2 casos reales de hoy). Devuelve
+// ['sospechosa'=>bool, 'motivo'=>?string] o null si falló la llamada.
+function ia_verificar_fecha_etapa_llenada_sola(
+    string $etapaKey, string $fecha, string $motivoOriginal, array $expediente, array $etapas,
+    array $documentosRecientes = [], array $avisosRecientes = [], array $preguntasRecientes = []
+): ?array {
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $lineas = [];
+    $agregar = function (string $etiqueta, $valor) use (&$lineas) {
+        if ($valor === null || $valor === '') return;
+        $lineas[] = $etiqueta . ': ' . $valor;
+    };
+    $agregar('Actor', $expediente['actor'] ?? null);
+    $agregar('Demandado', $expediente['demandado'] ?? null);
+    $agregar('Expediente', $expediente['exp'] ?? null);
+
+    $ordenEtapas = defined('ETAPA_KEYS') ? ETAPA_KEYS : [];
+    $registradas = [];
+    foreach ($ordenEtapas as $key) {
+        foreach ($etapas as $e) {
+            if (($e['etapa_key'] ?? null) === $key && !empty($e['fecha']) && $e['fecha'] !== '0000-00-00') {
+                $registradas[] = (ETAPA_LABELS[$key] ?? $key) . ': ' . $e['fecha'];
+            }
+        }
+    }
+    if ($registradas) $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
+
+    if ($documentosRecientes) {
+        $lineas[] = "Documentos guardados en el expediente y su resumen de IA:\n" . implode("\n", array_map(
+            fn($d) => '- [' . ($d['categoria'] ?? '?') . '] ' . ($d['nombre_archivo'] ?? '?') . ': ' . ($d['ia_resumen'] ?? '(sin resumen)'),
+            $documentosRecientes
+        ));
+    }
+    if ($avisosRecientes) {
+        $lineas[] = "Avisos de boletín del expediente y su resumen de IA:\n" . implode("\n", array_map(
+            fn($a) => '- (' . ($a['creado_en'] ?? '?') . ') ' . ($a['ia_resumen'] ?? $a['resumen'] ?? ''),
+            $avisosRecientes
+        ));
+    }
+    if ($preguntasRecientes) {
+        $lineas[] = "Preguntas del supervisor y lo que contestó el abogado:\n" . implode("\n\n", array_map(
+            fn($p) => 'P: ' . $p['pregunta'] . "\nR: " . ($p['respuesta'] ?? '(sin contestar)'),
+            $preguntasRecientes
+        ));
+    }
+
+    $lineas[] = 'Etapa a revisar: ' . (ETAPA_LABELS[$etapaKey] ?? $etapaKey) . " = $fecha";
+    $lineas[] = 'Motivo que dio la IA cuando la llenó sola: ' . $motivoOriginal;
+
+    $payload = [
+        'model' => IA_MODELO_ANALIZAR_ACUERDO,
+        'max_tokens' => 400,
+        'thinking' => ['type' => 'disabled'],
+        'system' => 'Eres el supervisor interno de un despacho de derecho laboral en México, haciendo una '
+            . 'segunda revisión de una fecha que OTRO proceso de IA ya llenó solo en el expediente, con más '
+            . 'contexto del que tuvo esa vez. Tu trabajo es decidir si el "motivo" que dio esa vez sigue '
+            . 'viéndose como una confirmación LITERAL genuina de que ese evento específico ya ocurrió en esa '
+            . 'fecha, o si hay una señal clara de error. Marca SOSPECHOSA solo si el motivo, leído con cuidado, '
+            . 'cae en alguno de estos 2 errores reales ya confirmados en este despacho: '
+            . '(1) la fecha es un PLAZO/VENCIMIENTO calculado (ej. "se conceden 15 días... lo que vence el...") '
+            . 'en vez de una confirmación de que el evento ya pasó, o '
+            . '(2) la fecha pertenece a un evento DISTINTO al que nombra la etapa (ej. la fecha del despido '
+            . 'usada para una etapa procesal que no es el despido), o el motivo describe una ORDEN de hacer algo '
+            . '("se ordena notificar", "se concede un plazo para") sin confirmar que ya se hizo. '
+            . 'Si el motivo describe una confirmación directa de que el evento ya pasó (un acuerdo que dice '
+            . 'literalmente que algo se hizo/se recibió/se celebró en esa fecha), NO la marques, aunque hoy no '
+            . 'haya ningún documento adicional que la respalde -- muchas etapas se capturan a mano desde el '
+            . 'expediente físico sin subir nada al sistema, eso NO es un error. Ante la duda genuina (no hay '
+            . 'señal clara de ninguno de los 2 errores), responde (ninguna) -- el objetivo es atrapar errores '
+            . 'reales, no generarle trabajo de revisión al abogado por algo que probablemente está bien.'
+            . "\n\nResponde ÚNICAMENTE, sin nada más: si no hay motivo de duda, la palabra (ninguna). Si sí, "
+            . "2 líneas:\nSOSPECHOSA: si\nMOTIVO: <explica en 1 línea cuál de los 2 errores aplica>",
+        'messages' => [['role' => 'user', 'content' => implode("\n\n", $lineas)]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 40,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [verificar_fecha_etapa] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+    if ($texto === '' || stripos($texto, '(ninguna)') !== false) return ['sospechosa' => false, 'motivo' => null];
+
+    preg_match('/MOTIVO:\s*(.+)/is', $texto, $mMotivo);
+    return ['sospechosa' => true, 'motivo' => isset($mMotivo[1]) ? trim($mMotivo[1]) : 'La IA marcó esta fecha como sospechosa sin dar motivo.'];
 }
 
 // Usa el mismo modelo que el bot de WhatsApp (Sonnet, no Haiku como el resto
@@ -3706,3 +3907,107 @@ function ia_generar_resumen_semanal(array $metricas): ?string
     return $texto !== '' ? $texto : null;
 }
 
+
+// Google Calendar → sistema (11 nov 2026, pedido explícito del usuario):
+// cada abogado agenda sus audiencias/citatorios directo en su sub-
+// calendario de Google ("Audiencias Lindsay", etc.) en vez de capturarlas
+// en el sistema -- esto lee esos eventos (ver cron_leer_google_calendar.php)
+// e intenta decir a qué expediente corresponden y qué etapa representan.
+// El texto de un evento de calendario es libre (ej. "Conciliación Verónica
+// Gabriela") -- puede haber tocayos, apellidos distintos, errores de dedo
+// -- así que esto NUNCA llena nada solo: solo sugiere, y el abogado
+// confirma con un tap (ver google_calendario_sugerencia_resolver.php).
+// Si no hay un match claro, responde (ninguno) en vez de forzar una
+// adivinanza.
+const ETAPA_CALENDARIO_KEYS = ['conciliacion_primer_citatorio', 'conciliacion_segundo_citatorio', 'audiencia_preliminar', 'audiencia_juicio'];
+
+function ia_matchear_evento_calendario(string $tituloEvento, ?string $descripcionEvento, string $fechaEvento, array $expedientesCandidatos): ?array
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    if (!$expedientesCandidatos) return ['expediente_id' => null, 'etapa_key' => null];
+
+    $listaExpedientes = implode("\n", array_map(
+        fn($e) => "id={$e['id']}: {$e['actor']} vs " . ($e['demandado'] ?: '(sin demandado)') . ($e['exp'] ? ", Exp. {$e['exp']}" : ''),
+        $expedientesCandidatos
+    ));
+    $vocabularioEtapas = implode(', ', array_map(fn($k) => "$k (" . (ETAPA_LABELS[$k] ?? $k) . ')', ETAPA_CALENDARIO_KEYS));
+
+    $instrucciones = 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Un abogado '
+        . 'agenda sus audiencias y citatorios de conciliación directo en su Google Calendar, con texto libre (puede '
+        . 'traer solo el nombre del trabajador, con errores de dedo o apellidos incompletos). Te doy el evento real '
+        . "y la lista de expedientes activos de ese mismo abogado. Tu tarea tiene dos partes.\n\n"
+        . 'PARTE 1 -- expediente: si el evento corresponde CLARAMENTE a uno de los expedientes de la lista (el '
+        . 'nombre coincide, aunque tenga errores de dedo o esté incompleto), responde su id exacto. Si hay duda '
+        . 'real entre 2 o más expedientes, o el nombre no se parece a ninguno, responde (ninguno) -- NUNCA '
+        . 'adivines entre candidatos ambiguos.'
+        . "\n\n"
+        . 'PARTE 2 -- etapa: si el título/descripción del evento deja claro de qué trámite se trata, responde su '
+        . "clave exacta. Vocabulario: $vocabularioEtapas. Una \"conciliación\" sin especificar primer/segundo "
+        . 'citatorio -- usa el sentido común del título (ej. si dice "segundo citatorio" o "2a cita", usa esa '
+        . 'clave; si no hay forma de distinguir, usa conciliacion_primer_citatorio). "Audiencia" a secas, sin decir '
+        . 'si es preliminar o de juicio -- responde (ninguna), no adivines cuál de las dos. Si el evento es otra '
+        . 'cosa (un pago, una cita que no es de tribunal, etc.), responde (ninguna).'
+        . "\n\n"
+        . "Responde EXACTAMENTE en este formato (las líneas en mayúsculas son literales):\n\n"
+        . "EXPEDIENTE_ID: [id exacto, o (ninguno)]\nETAPA: [clave exacta, o (ninguna)]";
+
+    $contexto = "Evento del calendario:\nTítulo: $tituloEvento\n"
+        . ($descripcionEvento ? "Descripción: $descripcionEvento\n" : '')
+        . "Fecha: $fechaEvento\n\nExpedientes activos de este abogado:\n$listaExpedientes";
+
+    $payload = [
+        'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
+        'max_tokens' => 150,
+        'thinking' => ['type' => 'disabled'],
+        'messages' => [['role' => 'user', 'content' => $instrucciones . "\n\n" . $contexto]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 30,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [matchear_evento_calendario] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+    if ($texto === '') return null;
+
+    $idsValidos = array_map(fn($e) => (int)$e['id'], $expedientesCandidatos);
+    $expedienteId = null;
+    $etapaKey = null;
+    if (preg_match('/EXPEDIENTE_ID:\s*(\d+)/', $texto, $m) && in_array((int)$m[1], $idsValidos, true)) {
+        $expedienteId = (int)$m[1];
+    }
+    if (preg_match('/ETAPA:\s*([a-z_]+)/i', $texto, $m) && in_array($m[1], ETAPA_CALENDARIO_KEYS, true)) {
+        $etapaKey = $m[1];
+    }
+
+    return ['expediente_id' => $expedienteId, 'etapa_key' => $etapaKey];
+}
