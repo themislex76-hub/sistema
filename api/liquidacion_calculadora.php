@@ -264,23 +264,28 @@ function calcular_estimado_liquidacion(
     }
 
     // Indemnización — depende del modo:
-    // - despido injustificado (Art. 48 LFT): 90 días de SDI. Más 20 días
-    //   por año (Art. 50-II) SOLO si es trabajador/a de confianza (Art.
-    //   9/49-II LFT) -- la ley le niega el derecho a exigir reinstalación,
-    //   así que automáticamente le corresponde el paquete del Art. 50,
-    //   igual que en rescisión (ver REGLA DURA del prompt de la IA: nunca
-    //   marcar esto true solo porque el puesto "suena" a confianza, solo
-    //   si se confirmaron las funciones reales con la persona).
+    // - despido injustificado (Art. 48 LFT): 90 días de SDI, NUNCA los 20
+    //   días por año, ni siquiera siendo de confianza. Corrección del
+    //   despacho (12-nov-2026): antes se sumaban "automáticamente" a un
+    //   trabajador de confianza, como si la ley le negara la reinstalación
+    //   -- falso: es el PATRÓN quien puede eximirse de reinstalarlo pagando
+    //   lo del Art. 50 (Art. 49-III), y eso solo se sabe ya en juicio. Caso
+    //   real: a una coordinadora de producción con 20 años se le dijo que
+    //   podía recuperar ~$571,000, de los cuales ~$309,000 eran estos 20
+    //   días -- falsa expectativa. Para confianza solo se informa ese monto
+    //   como escenario aparte (indemnizacion_20_dias_si_patron_no_reinstala),
+    //   fuera del total.
     // - renuncia voluntaria: no hay indemnización.
     // - rescisión por causa imputable al patrón, ejercida dentro de los 30
     //   días (Arts. 51/52 LFT): 20 días por año de servicio (Art. 50-II)
     //   más 90 días de SDI (Art. 50-III), igual que un despido injustificado.
     $indemnizacion20 = 0.0;
     $indemnizacion90 = 0.0;
+    $indemnizacion20Escenario = 0.0;
     if ($modo === 'despido' && $tipo === 'injustificado') {
         $indemnizacion90 = 90 * $sdi;
         if ($trabajadorConfianza) {
-            $indemnizacion20 = 20 * $aniosDec * $sdi;
+            $indemnizacion20Escenario = 20 * $aniosDec * $sdi;
         }
     } elseif ($modo === 'rescision') {
         $indemnizacion20 = 20 * $aniosDec * $sdi;
@@ -306,6 +311,11 @@ function calcular_estimado_liquidacion(
         'salarios_devengados_monto' => round($salariosDevengadosMonto, 2),
         'total_finiquito' => round($totalFiniquito, 2),
         'indemnizacion_20_dias_monto' => round($indemnizacion20, 2),
+        // NO está en total_estimado: solo existe si el patrón, ya en
+        // juicio, decide no reinstalar a un trabajador de confianza (Art.
+        // 49-III/50) -- nunca se le presenta al cliente como parte de lo
+        // que va a recuperar.
+        'indemnizacion_20_dias_si_patron_no_reinstala' => round($indemnizacion20Escenario, 2),
         'indemnizacion_90_dias_monto' => round($indemnizacion90, 2),
         'total_estimado' => round($total, 2),
         'tipo_despido' => $tipo,

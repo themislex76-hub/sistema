@@ -311,8 +311,17 @@ const FRACCION_51 = {
 };
 const FRACCION_51_SELECT_OPTIONS = Object.keys(FRACCION_51).map(code => ({value: code, label: FRACCION_51[code].label}));
 
+// Valores exactos que guarda `tipo_demanda` -- un campo nuevo (11 nov
+// 2026, pedido explícito del usuario), SEPARADO de `tipo_asunto` (ese
+// solo calcula el plazo de prescripción, Despido/Prestaciones/Otro -- no
+// debía reutilizarse para esto, son conceptos legales distintos). Define
+// qué formato de demanda se va a presentar y, con eso, "Editar datos"
+// muestra solo los campos que ese formato necesita (ver el filtro de
+// EDITABLE_FIELDS por f.scope más abajo en MODAL_TAB==='editar').
+const TIPO_DEMANDA_OPCIONES = ['Demanda (despido / prestaciones)', 'Rescisión Art. 51', 'Prima de antigüedad'];
 const EDITABLE_FIELDS = [
   {key:'tipo_asunto', label:'Tipo de asunto', type:'tipo_asunto'},
+  {key:'tipo_demanda', label:'Tipo de demanda a presentar', type:'select', options:TIPO_DEMANDA_OPCIONES},
   {key:'actor', label:'Nombre del actor (trabajador)'},
   {key:'curp', label:'CURP del actor'},
   {key:'telefono', label:'Teléfono'},
@@ -326,58 +335,66 @@ const EDITABLE_FIELDS = [
   {key:'salario_mensual', label:'Salario mensual', type:'number'},
   {key:'salario_diario', label:'Salario diario', type:'number'},
   {key:'sdi', label:'Salario diario integrado', type:'number'},
-  {key:'instancia', label:'Centro de Conciliación / Instancia'},
-  {key:'junta', label:'Tribunal / Junta competente', type:'tribunal'},
-  {key:'tribunal', label:'Tribunal (si ya está radicado)', type:'tribunal'},
-  {key:'exp', label:'Número de expediente o registro'},
+  {key:'instancia', label:'Centro de Conciliación (mientras el asunto no pase a Tribunal)'},
+  {key:'tribunal', label:'Tribunal', type:'tribunal'},
+  {key:'exp', label:'Número de expediente'},
   {key:'status', label:'Estatus', type:'select', options:STATUS_OPCIONES},
-  {key:'quien_despidio', label:'Nombre de quien despidió'},
-  {key:'puesto_despidio', label:'Puesto de quien despidió'},
-  {key:'hora_despido', label:'Hora del despido'},
-  {key:'hora_entrada', label:'Horario — hora de entrada', type:'time'},
-  {key:'hora_salida', label:'Horario — hora de salida real (incluyendo tiempo extra)', type:'time'},
-  {key:'comida_inicio', label:'Horario — comida, hora de inicio (opcional, déjalo vacío para no especificar)', type:'time'},
-  {key:'comida_fin', label:'Horario — comida, hora de fin (opcional, déjalo vacío para no especificar)', type:'time'},
-  {key:'dias_laborados', label:'Horario — días que laboraba, en texto (ej. "lunes a sábado")'},
-  {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number'},
-  {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta']},
+  // Solo aplican a una demanda por despido clásico -- no a Rescisión
+  // Art. 51 (ahí es el trabajador quien decide irse, no hay "quien
+  // despidió") ni a Prima de antigüedad (reclamo puntual de jubilación,
+  // sin despido de por medio). Confirmado en vivo por el usuario (11 nov
+  // 2026): se veían sin querer al elegir Prima de antigüedad.
+  {key:'quien_despidio', label:'Nombre de quien despidió', scope:'Demanda (despido / prestaciones)'},
+  {key:'puesto_despidio', label:'Puesto de quien despidió', scope:'Demanda (despido / prestaciones)'},
+  {key:'hora_despido', label:'Hora del despido', scope:'Demanda (despido / prestaciones)'},
+  // Horario/jornada: lo reutiliza Rescisión Art. 51 para su checkbox de
+  // "Horas extras" (ver PRESTACIONES_RESCISION_OPCIONES, horas_entrada/
+  // salida/comida/dias_laborados) -- confirmado por código. Prima de
+  // antigüedad es un trámite administrativo puntual (RH/CFDI/pericial
+  // caligráfica) sin ninguna referencia a jornada ni horas extra, así que
+  // se oculta ahí.
+  {key:'hora_entrada', label:'Horario — hora de entrada', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'hora_salida', label:'Horario — hora de salida real (incluyendo tiempo extra)', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'comida_inicio', label:'Horario — comida, hora de inicio (opcional, déjalo vacío para no especificar)', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'comida_fin', label:'Horario — comida, hora de fin (opcional, déjalo vacío para no especificar)', type:'time', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'dias_laborados', label:'Horario — días que laboraba, en texto (ej. "lunes a sábado")', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'dias_laborados_num', label:'Horario — cuántos días laboraba por semana (para calcular las horas extra semanales)', type:'number', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'tipo_jornada', label:'Horario — tipo de jornada', type:'select', options:['Diurna','Nocturna','Mixta'], scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
   // Rescisión Art. 51 (ver "Otras plantillas de escritos" → Rescisión Art. 51).
-  // El hecho 4 y el "motivo breve" de la prestación A) se arman solos a
-  // partir de estos 3 datos + la fracción elegida -- ver FRACCION_51 más
-  // abajo. No hay párrafo en blanco que redactar.
-  {key:'rescision_fraccion', label:'Rescisión — causa (fracción del art. 51 LFT)', type:'select', options:FRACCION_51_SELECT_OPTIONS},
-  {key:'fecha_rescision', label:'Rescisión — fecha en que el actor decidió rescindir', type:'date'},
-  {key:'fecha_desde_incumplimiento', label:'Rescisión — fecha desde la que ocurre el incumplimiento/causa', type:'date'},
-  {key:'persona_responsable_incumplimiento', label:'Rescisión — nombre de quien incurrió en la causa (si no es la empresa en general)'},
-  {key:'hecho_causa_narrativa', label:'Rescisión — detalle adicional del hecho (opcional; se agrega después del párrafo que ya arma el sistema)', type:'textarea'},
-  {key:'banco1_nombre', label:'Rescisión — banco 1, institución'},
-  {key:'banco1_cuenta', label:'Rescisión — banco 1, número de cuenta'},
-  {key:'banco2_nombre', label:'Rescisión — banco 2, institución'},
-  {key:'banco2_cuenta', label:'Rescisión — banco 2, número de cuenta'},
-  {key:'banco3_nombre', label:'Rescisión — banco 3, institución'},
-  {key:'banco3_cuenta', label:'Rescisión — banco 3, número de cuenta'},
-  // Prima de antigüedad (estilo jubilación / apartado B) -- ver "Otras plantillas de escritos".
-  {key:'monto_prima_antiguedad', label:'Prima antigüedad — monto reclamado', type:'number'},
-  {key:'fecha_solicitud_interna', label:'Prima antigüedad — fecha de la solicitud interna de pago', type:'date'},
-  {key:'hora_solicitud_interna', label:'Prima antigüedad — hora de la solicitud interna', type:'time'},
-  {key:'folio_solicitud_interna', label:'Prima antigüedad — folio asignado a la solicitud'},
-  {key:'funcionario_rh_nombre', label:'Prima antigüedad — nombre del funcionario de RH que recibió la solicitud'},
-  {key:'funcionario_rh_puesto', label:'Prima antigüedad — puesto de ese funcionario'},
-  {key:'numero_oficio_respuesta', label:'Prima antigüedad — número de oficio de respuesta (negativa)'},
-  {key:'fecha_oficio_respuesta', label:'Prima antigüedad — fecha del oficio de respuesta', type:'date'},
-  {key:'director_firma_nombre', label:'Prima antigüedad — nombre de quien firma el oficio de negativa'},
-  {key:'coordinador_archivo_nombre', label:'Prima antigüedad — nombre del Coordinador de Archivo (verificó)'},
-  {key:'gerente_gestion_nombre', label:'Prima antigüedad — nombre del Gerente de Gestión y Servicios al Personal (autorizó)'},
-  {key:'folio_fiscal_cfdi', label:'Prima antigüedad — folio fiscal del CFDI/recibo de nómina ofrecido'},
-  {key:'periodo_recibo_desde', label:'Prima antigüedad — periodo del recibo CFDI, desde', type:'date'},
-  {key:'periodo_recibo_hasta', label:'Prima antigüedad — periodo del recibo CFDI, hasta', type:'date'},
-  {key:'salario_quincenal_num', label:'Prima antigüedad — salario quincenal', type:'number'},
-  {key:'rfc_emisor_demandado', label:'Prima antigüedad — RFC de la demandada (emisor del CFDI)'},
-  {key:'fecha_hoja_servicios', label:'Prima antigüedad — fecha de la Hoja Única de Servicios', type:'date'},
-  {key:'numero_documento_fump', label:'Prima antigüedad — número de documento del Formato Único de Movimientos de Personal'},
-  {key:'fecha_documento_fump', label:'Prima antigüedad — fecha de elaboración de ese documento', type:'date'},
-  {key:'testigos', label:'Nombre de los testigos'},
-  {key:'dom_testigos', label:'Domicilios de los testigos'},
+  // El "motivo breve" de la prestación A) se arma solo a partir de la
+  // fracción elegida -- ver FRACCION_51 más abajo. Solo se muestran en
+  // "Editar datos" cuando tipo_demanda = 'Rescisión Art. 51' (scope).
+  {key:'rescision_fraccion', label:'Rescisión — causa (fracción del art. 51 LFT)', type:'select', options:FRACCION_51_SELECT_OPTIONS, scope:'Rescisión Art. 51'},
+  {key:'fecha_rescision', label:'Rescisión — fecha en que el actor decidió rescindir', type:'date', scope:'Rescisión Art. 51'},
+  {key:'fecha_desde_incumplimiento', label:'Rescisión — fecha desde la que ocurre el incumplimiento/causa', type:'date', scope:'Rescisión Art. 51'},
+  {key:'persona_responsable_incumplimiento', label:'Rescisión — nombre de quien incurrió en la causa (si no es la empresa en general)', scope:'Rescisión Art. 51'},
+  {key:'hecho_causa_narrativa', label:'Rescisión — hecho de la causal (redáctalo completo, el sistema ya no arma ningún párrafo automático)', type:'textarea', scope:'Rescisión Art. 51'},
+  // Prima de antigüedad (estilo jubilación / apartado B) -- ver "Otras
+  // plantillas de escritos". Solo se muestran cuando tipo_demanda =
+  // 'Prima de antigüedad' (scope).
+  {key:'monto_prima_antiguedad', label:'Prima antigüedad — monto reclamado', type:'number', scope:'Prima de antigüedad'},
+  {key:'fecha_solicitud_interna', label:'Prima antigüedad — fecha de la solicitud interna de pago', type:'date', scope:'Prima de antigüedad'},
+  {key:'hora_solicitud_interna', label:'Prima antigüedad — hora de la solicitud interna', type:'time', scope:'Prima de antigüedad'},
+  {key:'folio_solicitud_interna', label:'Prima antigüedad — folio asignado a la solicitud', scope:'Prima de antigüedad'},
+  {key:'funcionario_rh_nombre', label:'Prima antigüedad — nombre del funcionario de RH que recibió la solicitud', scope:'Prima de antigüedad'},
+  {key:'funcionario_rh_puesto', label:'Prima antigüedad — puesto de ese funcionario', scope:'Prima de antigüedad'},
+  {key:'numero_oficio_respuesta', label:'Prima antigüedad — número de oficio de respuesta (negativa)', scope:'Prima de antigüedad'},
+  {key:'fecha_oficio_respuesta', label:'Prima antigüedad — fecha del oficio de respuesta', type:'date', scope:'Prima de antigüedad'},
+  {key:'director_firma_nombre', label:'Prima antigüedad — nombre de quien firma el oficio de negativa', scope:'Prima de antigüedad'},
+  {key:'coordinador_archivo_nombre', label:'Prima antigüedad — nombre del Coordinador de Archivo (verificó)', scope:'Prima de antigüedad'},
+  {key:'gerente_gestion_nombre', label:'Prima antigüedad — nombre del Gerente de Gestión y Servicios al Personal (autorizó)', scope:'Prima de antigüedad'},
+  {key:'folio_fiscal_cfdi', label:'Prima antigüedad — folio fiscal del CFDI/recibo de nómina ofrecido', scope:'Prima de antigüedad'},
+  {key:'periodo_recibo_desde', label:'Prima antigüedad — periodo del recibo CFDI, desde', type:'date', scope:'Prima de antigüedad'},
+  {key:'periodo_recibo_hasta', label:'Prima antigüedad — periodo del recibo CFDI, hasta', type:'date', scope:'Prima de antigüedad'},
+  {key:'salario_quincenal_num', label:'Prima antigüedad — salario quincenal', type:'number', scope:'Prima de antigüedad'},
+  {key:'rfc_emisor_demandado', label:'Prima antigüedad — RFC de la demandada (emisor del CFDI)', scope:'Prima de antigüedad'},
+  {key:'fecha_hoja_servicios', label:'Prima antigüedad — fecha de la Hoja Única de Servicios', type:'date', scope:'Prima de antigüedad'},
+  {key:'numero_documento_fump', label:'Prima antigüedad — número de documento del Formato Único de Movimientos de Personal', scope:'Prima de antigüedad'},
+  {key:'fecha_documento_fump', label:'Prima antigüedad — fecha de elaboración de ese documento', type:'date', scope:'Prima de antigüedad'},
+  // Prima de antigüedad usa pericial caligráfica y verificación de CFDI
+  // como pruebas (sin testigos) -- confirmado con el usuario (11 nov 2026).
+  {key:'testigos', label:'Nombre de los testigos', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
+  {key:'dom_testigos', label:'Domicilios de los testigos', scope:['Demanda (despido / prestaciones)','Rescisión Art. 51']},
   {key:'ultima_nota', label:'Última actuación / nota'},
   {key:'aguinaldo_dias_pactados', label:'Aguinaldo — días pactados (solo si es mayor al mínimo de 15)', type:'number'},
   {key:'dias_salarios_devengados', label:'Salarios devengados pendientes — días sin pagar', type:'number'},
@@ -465,6 +482,29 @@ const TRIBUNALES_LOCALES_MX = {
     "Tribunal Laboral — Chihuahua (capital)",
     "Tribunal Laboral — Delicias",
     "Tribunal Laboral — Ciudad Juárez",
+  ],
+  // Tribunales Laborales LOCALES de la Ciudad de México (Poder Judicial de
+  // la CDMX, post-reforma laboral 2022) -- NO confundir con los
+  // "...FEDERAL..." de TRIBUNALES_FEDERALES_MX, que son un sistema
+  // completamente distinto (Poder Judicial de la Federación) aunque
+  // también tengan sede física en la CDMX. Formato confirmado real
+  // (capturas de pantalla del Buzón Electrónico Laboral del PJCDMX, 10 nov
+  // 2026: "4 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX", "6 LABORAL...",
+  // "7 LABORAL...", "8 LABORAL..." -- el 1/2/3/5/9 se completaron por ser
+  // la misma numeración secuencial, confirmada por fuente oficial (9
+  // Tribunales Laborales de Asuntos Individuales según el organigrama
+  // 2024 del TSJCDMX) pero SIN captura real de esos 5 -- si alguno no
+  // coincide exacto con lo que se ve en el Buzón, avisar para corregirlo.
+  "Ciudad de México": [
+    "1 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "2 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "3 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "4 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "5 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "6 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "7 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "8 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
+    "9 LABORAL DE ASUNTOS INDIVIDUALES DE LA CDMX",
   ],
   "Coahuila de Zaragoza": [
     "Tribunal Laboral del Distrito Judicial de Saltillo",
@@ -774,11 +814,17 @@ const TRIBUNALES_FEDERALES_MX = {
 };
 // ---------------------------------------------------------------
 // Selector de Tribunal (estado -> tribunal, con "Otro (especificar)") — ver
-// EDITABLE_FIELDS ('junta' y 'tribunal', type:'tribunal'), TRIBUNALES_MX y
+// EDITABLE_FIELDS ('tribunal', type:'tribunal'), TRIBUNALES_MX y
 // TRIBUNALES_CUSTOM. El valor final sigue siendo un solo string plano (igual
 // que antes, para no romper los datos ya capturados) — el widget de dos
 // selects + texto libre es solo una ayuda para construirlo, guardado en un
 // <input type="hidden" class="edit-field"> que el save genérico ya lee.
+// (9 nov 2026: se quitó el campo 'junta' por separado -- las Juntas de
+// Conciliación y Arbitraje ya no reciben asuntos nuevos desde la reforma
+// laboral, así que un solo campo "Tribunal" basta. El campo 'junta' de la
+// base de datos NO se borró -- expedientes viejos capturados ahí lo siguen
+// usando de respaldo en todos los lugares que leen el tribunal (ver
+// "k.tribunal || k.junta || ...").
 // ---------------------------------------------------------------
 function findTribunalEstado(nombre){
   if(!nombre) return '';
@@ -1222,13 +1268,22 @@ function etapaExpectedDeadline(def, fechaAnterior){
 const AUDIENCIA_LABEL_CLIENTE = {
   audiencia_preliminar: 'Audiencia preliminar — donde se organiza tu caso y se admiten las pruebas',
   audiencia_juicio: 'Audiencia de juicio — donde se presentan las pruebas',
+  // Bug real encontrado por el usuario (11 nov 2026): un citatorio de
+  // conciliación agendado (ej. "audiencia de conciliación" de Veronica
+  // Gabriela) nunca aparecía en ningún lado de Agenda -- proximaAudiencia()
+  // solo revisaba audiencia_preliminar/juicio, y "Etapas del juicio" ni
+  // siquiera ofrecía un campo de "Fecha agendada" para estos 2 (ver
+  // esAudiencia más abajo), solo la fecha en que ya se celebró.
+  conciliacion_primer_citatorio: 'Conciliación prejudicial — primer citatorio',
+  conciliacion_segundo_citatorio: 'Conciliación prejudicial — segundo citatorio',
 };
 
-// Revisa si hay una audiencia (preliminar o de juicio) agendada que todavía
-// no se ha celebrado, para avisarle al cliente y al abogado con anticipación.
+// Revisa si hay una audiencia o citatorio de conciliación agendado que
+// todavía no se ha celebrado, para avisarle al cliente y al abogado con
+// anticipación.
 function proximaAudiencia(kase){
   const meta = getMeta(kase.id);
-  const candidatas = ['audiencia_preliminar','audiencia_juicio']
+  const candidatas = ['audiencia_preliminar','audiencia_juicio','conciliacion_primer_citatorio','conciliacion_segundo_citatorio']
     .map(key=>{
       const e = meta.etapas[key];
       if(!e || e.fecha || !e.fecha_programada) return null; // ya celebrada, o sin fecha agendada
@@ -1237,6 +1292,24 @@ function proximaAudiencia(kase){
     .filter(Boolean)
     .sort((a,b)=> a.fecha.localeCompare(b.fecha));
   return candidatas[0] || null;
+}
+
+// TODAS las audiencias/citatorios con fecha agendada, SIN excluir las ya
+// celebradas (a diferencia de proximaAudiencia(), que solo busca "la
+// próxima pendiente" para el resto del sistema -- mensajes de WhatsApp al
+// cliente, etc.). Uso exclusivo del calendario visual (11 nov 2026,
+// pedido explícito del usuario: "aunque ya se haya celebrado quiero que
+// se muestren en agenda" -- el calendario se comporta como Google
+// Calendar, un registro de lo agendado, no solo lo pendiente).
+function audienciasParaCalendario(kase){
+  const meta = getMeta(kase.id);
+  return ['audiencia_preliminar','audiencia_juicio','conciliacion_primer_citatorio','conciliacion_segundo_citatorio']
+    .map(key=>{
+      const e = meta.etapas[key];
+      if(!e || !e.fecha_programada) return null;
+      return {key, fecha: e.fecha_programada, hora: e.hora || null, label: AUDIENCIA_LABEL_CLIENTE[key]};
+    })
+    .filter(Boolean);
 }
 
 // Revisa si hay un pago de convenio programado que todavía no se cobra, para
@@ -1340,7 +1413,7 @@ function estancadoInfo(kase){
   if(!expected) return null;
   const today = new Date(); today.setHours(0,0,0,0);
   if(today > expected){
-    return {ultima: ETAPAS_DEF[lastIdx].label, siguiente: next.label, expected, diasAtraso: daysBetween(expected, today)};
+    return {ultima: ETAPAS_DEF[lastIdx].label, siguiente: next.label, siguienteKey: next.key, expected, diasAtraso: daysBetween(expected, today)};
   }
   return null;
 }
@@ -1472,7 +1545,7 @@ function calcularJornada(k){
 }
 
 function mergeTags(k){
-  const junta = k.junta || k.instancia || '';
+  const junta = k.tribunal || k.instancia || '';
   const ciudad = /tlalnepantla/i.test(junta) ? 'Tlalnepantla de Baz, Estado de México' :
                  /ciudad de méxico|cdmx/i.test(junta) ? 'Ciudad de México' :
                  /naucalpan/i.test(junta) ? 'Naucalpan de Juárez, Estado de México' : 'Estado de México';
@@ -1498,7 +1571,7 @@ function mergeTags(k){
     salario_diario_num: k.salario_diario!=null ? Number(k.salario_diario).toFixed(2) : '________',
     salario_mensual_letra: k.salario_mensual!=null ? pesosEnLetras(k.salario_mensual) : '____________',
     curp: (k.curp || '________________').toLowerCase(),
-    instancia: k.instancia || k.junta || '________________',
+    instancia: k.instancia || k.tribunal || '________________',
     quien_despidio: k.quien_despidio || 'una persona que dijo representar a la empresa demandada',
     hora_despido: k.hora_despido || '____',
     testigos: k.testigos || '________________',
@@ -1526,9 +1599,15 @@ function mergeTags(k){
     fecha_rescision_letra: fechaLetras(k.fecha_rescision),
     fecha_desde_incumplimiento_letra: fechaLetras(k.fecha_desde_incumplimiento),
     persona_responsable_incumplimiento: k.persona_responsable_incumplimiento || 'una persona que actuaba a nombre de la demandada',
-    // Párrafo adicional OPCIONAL -- si se deja vacío, el hecho 4 queda
-    // completo solo con hecho_causa_auto (ver abajo) y aquí no se agrega nada.
-    hecho_causa_narrativa: k.hecho_causa_narrativa || '',
+    // 11 nov 2026, pedido explícito del usuario: el hecho 4 completo lo
+    // redacta el abogado a mano (antes se armaba solo a partir de la
+    // fracción elegida, ver construirHechoCausaAuto() más abajo -- ya
+    // quitada). hecho_causa_auto se deja vacío a propósito -- si la
+    // plantilla .docx de Rescisión Art. 51 todavía tiene ambos tags uno
+    // detrás del otro, esto evita que aparezca "undefined" o el párrafo
+    // viejo duplicado.
+    hecho_causa_auto: '',
+    hecho_causa_narrativa: k.hecho_causa_narrativa || '________________',
     // Prima de antigüedad (estilo jubilación / apartado B).
     monto_prima_antiguedad_num: k.monto_prima_antiguedad!=null ? Number(k.monto_prima_antiguedad).toFixed(2) : '____________',
     monto_prima_antiguedad_letra: k.monto_prima_antiguedad!=null ? pesosEnLetras(k.monto_prima_antiguedad) : '____________',
@@ -1553,24 +1632,11 @@ function mergeTags(k){
     numero_documento_fump: k.numero_documento_fump || '____',
     fecha_documento_fump_letra: fechaLetras(k.fecha_documento_fump),
   };
-  tags.hecho_causa_auto = construirHechoCausaAuto(tags, k);
   const periodos = calcularPeriodosVacacionesRescision(k);
   tags.periodo_vacaciones_anterior = periodos.anterior;
   tags.periodo_vacaciones_actual = periodos.actual;
   tags.pruebas_adicionales = construirPruebasAdicionalesTexto(k, tags);
   return tags;
-}
-
-// Arma solo el hecho 4 completo (sin que el abogado redacte nada) a partir
-// de la fracción del art. 51 elegida + la fecha desde la que ocurre + (si
-// aplica) quién incurrió en ella. Si todavía no se eligió fracción, deja un
-// párrafo genérico editable, igual que el resto de los campos sin capturar.
-function construirHechoCausaAuto(tags, k){
-  const f = FRACCION_51[k.rescision_fraccion];
-  if(!f){
-    return `Es el caso que, ante el incumplimiento de la demandada respecto de sus obligaciones laborales, la suscrita decidió rescindir la relación laboral por causa imputable al patrón, separándome de mis labores el día ${tags.fecha_rescision_letra}, al considerar que la conducta patronal actualizaba la causa prevista en el artículo 51, fracción ____, de la Ley Federal del Trabajo.`;
-  }
-  return `${f.inicio(tags,k)}, por lo que ante dicho incumplimiento, la suscrita decidió rescindir la relación laboral por causa imputable al patrón, separándome de mis labores el día ${tags.fecha_rescision_letra}, al considerar que la conducta patronal actualizaba la causa prevista en el artículo 51, fracción ${k.rescision_fraccion}, de la Ley Federal del Trabajo.`;
 }
 
 // Periodo de vacaciones (anterior y actual, "YYYY-YYYY") a partir del
@@ -1597,16 +1663,11 @@ function calcularPeriodosVacacionesRescision(k){
 // función al armar el tag {{pruebas_adicionales}}).
 function construirPruebasAdicionalesTexto(k, tags){
   const bloques = [];
-  const bancos = [
-    {nombre: k.banco1_nombre, cuenta: k.banco1_cuenta},
-    {nombre: k.banco2_nombre, cuenta: k.banco2_cuenta},
-    {nombre: k.banco3_nombre, cuenta: k.banco3_cuenta},
-  ].filter(b => b.nombre && b.cuenta);
+  // La prueba de informe bancario (bancos 1-3 + oficio a la institución)
+  // se quitó a propósito (11 nov 2026, pedido explícito del usuario) --
+  // los campos banco1/2/3 ya no existen en "Editar datos". La numeración
+  // de las pruebas de aquí en adelante arranca directo en 5.
   let n = 5;
-  bancos.forEach(b=>{
-    bloques.push(`${n}.- EL INFORME que se sirva rendir la institución bancaria ${b.nombre}, con relación a la moral demandada, por el periodo comprendido entre la fecha de ingreso y la fecha de baja de la parte actora, para lo cual solicito a esta H. Autoridad se sirva girar oficio correspondiente a efecto de que informe si la cuenta número ${b.cuenta} pertenece a la parte actora, los estados de cuenta mensuales de dicho periodo, y si dicha cuenta recibió depósitos y/o transferencias por parte de la moral demandada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada, así como el incumplimiento por parte de la demandada respecto a sus obligaciones.`);
-    n++;
-  });
   bloques.push(`${n}.- LA INSPECCIÓN JUDICIAL, que se realice por conducto del C. Actuario en el local de este H. Tribunal en los siguientes documentos que se encuentran en la empresa demandada ${tags.demandado} en el domicilio ubicado en calle ${tags.dom_demandado}: 1) Contrato individual y/o colectivo de trabajo; 2) Listas de raya; 3) Recibos de pago de salarios, de vacaciones, de prima vacacional y de aguinaldo; 4) Tarjetas o controles de asistencia. Documentos que el demandado tiene obligación de conservar y exhibir en juicio de conformidad con lo establecido en los artículos 784 y 804 de la Ley Federal del Trabajo y que se ofrecen para acreditar los siguientes extremos:\n\na) Que la parte actora ingresó a prestar sus servicios para la demandada, a partir del ${tags.fecha_ingreso_letra}.\nb) Que la demandada pagó a la parte actora por la prestación de sus servicios la cantidad de $${tags.salario_mensual_num} pesos mensuales.\nc) Que la parte actora laboró al servicio de la empresa demandada en un horario comprendido de las ${tags.hora_entrada} horas a las ${tags.hora_salida} horas ${tags.dias_laborados}.\nd) Que la demandada dejó de cumplir con sus obligaciones laborales a partir del ${tags.fecha_desde_incumplimiento_letra}, tal como se precisa en el capítulo de hechos.\n\nPara el desahogo de esta prueba de INSPECCIÓN deberá apercibirse a la demandada que para el caso de no exhibir la totalidad de la documentación base para tal efecto se tendrán por presuntivamente ciertos los extremos a acreditar con fundamento en lo dispuesto por los artículos 805, 827 y 828 de la Ley Federal del Trabajo en relación con el artículo 804 y demás relativos y aplicables de la ley citada.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.`);
   n++;
   bloques.push(`${n}.- LA TESTIMONIAL a cargo de los CC. ${tags.testigos}, quienes tienen sus domicilios en ${tags.dom_testigos} respectivamente y a quienes me comprometo a presentar el día y hora que esta H. Autoridad determine la audiencia para su celebración, testigos que declararan sobre los hechos del escrito inicial de demanda como de sus aclaraciones y modificaciones a la misma.\n\nEsta prueba se relaciona con la litis planteada, así como con todos y cada uno de los hechos y manifestaciones contenidos en el escrito de demanda, y se ofrece a efecto de acreditar los extremos de la acción intentada.\n\nTestigos que declararan sobre los hechos ocurridos el día ${tags.fecha_rescision_letra}.`);
@@ -2148,6 +2209,18 @@ async function loadEdomexCorreoCredenciales(){
   }catch(e){ EDOMEX_CORREO_CREDENCIALES = null; }
 }
 
+// Igual que EDOMEX_CORREO_CREDENCIALES pero para el Buzón Electrónico
+// Laboral del PJCDMX (buzonelectronicolaboral.poderjudicialcdmx.gob.mx) --
+// el robot nuevo (robots/cdmx_buzon) usa las cuentas guardadas por cada
+// abogado.
+let CDMX_BUZON_CREDENCIALES = null;
+async function loadCdmxBuzonCredenciales(){
+  try{
+    const d = await api('GET', 'cdmx_buzon_credenciales_get.php');
+    CDMX_BUZON_CREDENCIALES = d;
+  }catch(e){ CDMX_BUZON_CREDENCIALES = null; }
+}
+
 // Avisos de boletín/lista de acuerdos por expediente — registrados a mano
 // o encontrados por los robots de monitoreo automático (Federal, CDMX,
 // Edomex). Ver api/avisos_*.php.
@@ -2209,6 +2282,31 @@ function amparoTribunalOptionsHTML(circuito, tribunalActual){
 
 function avisosNuevosCount(){ return AVISOS_BOLETIN.filter(a=>a.estado==='nuevo').length; }
 function avisosDeExpediente(id){ return AVISOS_BOLETIN.filter(a=>a.expediente_id===id); }
+
+// Lo que la IA leyó del acuerdo real (ver ia_analizar_acuerdo_boletin() en
+// el servidor, cron_analizar_acuerdos_ia.php) -- aparece debajo del
+// resumen genérico del robot cuando ya se analizó. Si además la IA llenó
+// sola una etapa (ia_aplicado), lo marca con una insignia aparte para que
+// quede claro que fue automático y el abogado pueda corregirlo desde
+// "Etapas del juicio" si hiciera falta.
+function etapaLabelPorKey(key){
+  const def = ETAPAS_DEF.find(e=>e.key===key);
+  return def ? def.label : key;
+}
+function avisoIaHTML(a){
+  if(!a.ia_resumen) return '';
+  return `<div class="aviso-ia">🤖 ${escapeHTML(a.ia_resumen)}${a.ia_aplicado && a.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(a.ia_etapa_sugerida))}</span>` : ''}</div>`;
+}
+function documentoIaHTML(d){
+  if(!d.ia_resumen) return '';
+  // Sugerencia de categoría (11 nov 2026, pedido explícito del usuario) --
+  // a diferencia de una etapa llenada sola, esto SIEMPRE requiere un tap
+  // de confirmación (hoy no hay forma de deshacerlo desde la UI salvo
+  // borrando el documento) -- ver documentos_recategorizar.php.
+  const sugerenciaCategoria = d.ia_categoria_sugerida ? `
+    <div style="margin-top:4px; font-size:11.5px; color:var(--ink);">📁 ¿Categoría: <strong>${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[d.ia_categoria_sugerida] || d.ia_categoria_sugerida)}</strong>? <button class="btn secondary" data-documento-recategorizar="${d.id}" style="padding:2px 8px; font-size:11px; margin-left:4px;">Usar</button></div>` : '';
+  return `<div class="aviso-ia" style="margin-top:4px;">🤖 ${escapeHTML(d.ia_resumen)}${d.ia_aplicado && d.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(d.ia_etapa_sugerida))}</span>` : ''}${sugerenciaCategoria}</div>`;
+}
 async function loadAvisosBoletin(){
   try{
     const d = await api('GET', 'avisos_list.php');
@@ -2216,16 +2314,110 @@ async function loadAvisosBoletin(){
   }catch(e){ AVISOS_BOLETIN = []; }
 }
 
-// Captcha pendiente de Edomex — el robot que corre en la computadora del
-// despacho publica aquí la imagen cuando necesita que alguien lo resuelva.
-// Se revisa junto con el resto del bootstrap para que aparezca en Agenda
-// sin tener que entrar a buscarlo.
-let EDOMEX_CAPTCHA_PENDIENTE = null;
-async function loadEdomexCaptchaPendiente(){
+// Preguntas del supervisor de IA (ver cron_generar_preguntas_supervisor.php):
+// por cada "posible atraso" (buildAgendaEntries(), tipo 'atraso') sin
+// resolver, la IA ya redactó una pregunta concreta. Al principio se pidió
+// explícitamente SIN push (que solo aparecieran al entrar al sistema) --
+// el usuario cambió de opinión el 10 nov 2026 y pidió que cada pregunta
+// nueva sí mande un push con link directo a contestarla (ver
+// abrirPreguntaDesdeNotificacion() y el push que manda
+// cron_generar_preguntas_supervisor.php).
+let SUPERVISOR_PREGUNTAS = [];
+// Id de una pregunta a la que hay que llevar la vista y enfocar su
+// textarea en cuanto se renderice "preguntas_abogado" (viene de abrir el
+// sistema desde el push de una pregunta nueva) -- se limpia solo después
+// de usarse una vez, para no volver a hacer scroll en renders futuros.
+let PREGUNTA_ENFOCAR = null;
+async function loadSupervisorPreguntas(){
   try{
-    const d = await api('GET', 'edomex_captcha_pendiente.php');
-    EDOMEX_CAPTCHA_PENDIENTE = d.pendiente;
-  }catch(e){ EDOMEX_CAPTCHA_PENDIENTE = null; }
+    const d = await api('GET', 'supervisor_preguntas_list.php');
+    SUPERVISOR_PREGUNTAS = d.preguntas;
+  }catch(e){ SUPERVISOR_PREGUNTAS = []; }
+}
+// Sugerencias de Google Calendar por confirmar (11 nov 2026, ver
+// cron_leer_google_calendar.php) -- mismo panel que "Preguntas al
+// abogado", nunca se aplican solas (texto libre de un evento, puede haber
+// tocayos/errores de dedo).
+let GOOGLE_CALENDARIO_SUGERENCIAS = [];
+async function loadGoogleCalendarioSugerencias(){
+  try{
+    const d = await api('GET', 'google_calendario_sugerencias_list.php');
+    GOOGLE_CALENDARIO_SUGERENCIAS = d.sugerencias;
+  }catch(e){ GOOGLE_CALENDARIO_SUGERENCIAS = []; }
+}
+// Panel "Posibles irregularidades" (12 nov 2026, cron_qa_irregularidades.php,
+// corre 1 vez por semana) -- mismo panel que "Preguntas al abogado", nunca
+// se corrigen solas: "Corregir" solo navega a Etapas del juicio, "Está
+// bien, no es error" descarta.
+let IRREGULARIDADES = [];
+async function loadIrregularidades(){
+  try{
+    const d = await api('GET', 'qa_irregularidades_list.php');
+    IRREGULARIDADES = d.irregularidades;
+  }catch(e){ IRREGULARIDADES = []; }
+}
+// Mapeo de sub-calendarios de Google → abogado (11 nov 2026, solo
+// Administrador, ver "Equipo"). GOOGLE_CALENDARIOS_DISPONIBLES solo se
+// carga bajo demanda (botón) -- llamar a la API de Google en cada render
+// sería lento e innecesario.
+let GOOGLE_CALENDARIOS_MAPEO = [];
+let GOOGLE_CALENDARIOS_DISPONIBLES = null; // null = todavía no se ha pedido la lista
+async function loadGoogleCalendariosMapeo(){
+  try{
+    const d = await api('GET', 'google_calendarios_mapeo_listar.php');
+    GOOGLE_CALENDARIOS_MAPEO = d.mapeo;
+  }catch(e){ GOOGLE_CALENDARIOS_MAPEO = []; }
+}
+// Panel de monitoreo "Actividad de la IA" (11 nov 2026, pedido explícito
+// del usuario: "una sección donde podamos ver los cambios que ha hecho
+// la IA para monitorear lo que está haciendo") -- ver api/ia_actividad_list.php.
+let IA_ACTIVIDAD = [];
+async function loadIaActividad(){
+  try{
+    const d = await api('GET', 'ia_actividad_list.php');
+    IA_ACTIVIDAD = d.actividad;
+  }catch(e){ IA_ACTIVIDAD = []; }
+}
+// Se abrió el sistema desde el push de una pregunta nueva (ver
+// cron_generar_preguntas_supervisor.php) -- lleva a "Preguntas al
+// abogado" y marca cuál enfocar; bindViewBody() hace el scroll/foco real
+// una vez que esa vista ya tiene el HTML en el DOM.
+async function abrirPreguntaDesdeNotificacion(preguntaId){
+  if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
+  if(!SUPERVISOR_PREGUNTAS.length) await loadSupervisorPreguntas();
+  PREGUNTA_ENFOCAR = parseInt(preguntaId, 10) || null;
+  VIEW = 'preguntas_abogado';
+  render();
+}
+function supervisorPreguntasPendientesCount(){ return SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente').length; }
+// Badge de "Preguntas al abogado" (12 nov 2026): se amplió para sumar
+// también las irregularidades detectadas -- antes solo contaba preguntas
+// del supervisor, las sugerencias de Google Calendar ya listadas en
+// GOOGLE_CALENDARIO_SUGERENCIAS (siempre pendientes, el endpoint solo trae
+// esas) se quedaban sin reflejarse en el badge.
+function preguntasAbogadoBadgeCount(){ return supervisorPreguntasPendientesCount() + GOOGLE_CALENDARIO_SUGERENCIAS.length + IRREGULARIDADES.length; }
+function supervisorPreguntaCardHTML(p){
+  return `
+      <div class="aviso-card" data-supervisor-pregunta-id="${p.id}">
+        <div class="aviso-head">
+          <div data-id="${p.expediente_id}" data-tab="etapas" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(p.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(p.expediente_demandado||'—',30))} ${p.expediente_exp? `&middot; Exp. ${escapeHTML(p.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">Sobre: ${escapeHTML(etapaLabelPorKey(p.etapa_key))}</div>
+          </div>
+        </div>
+        <div class="aviso-resumen">${escapeHTML(p.pregunta)}</div>
+        <div class="field" style="margin-top:10px;">
+          <textarea class="supervisor-respuesta-input" id="sup-respuesta-${p.id}" placeholder="Escribe tu respuesta aquí, o dale a 'Dictar' y habla..." style="min-height:50px;"></textarea>
+          ${dictadoBotonHTML('sup-respuesta-' + p.id)}
+        </div>
+        <div class="field" style="margin-top:6px;">
+          <label style="font-size:11.5px; color:var(--gray); display:block; margin-bottom:4px;">Adjuntar foto o documento (opcional — ej. cédula de notificación, constancia):</label>
+          <input type="file" class="supervisor-respuesta-archivo" accept=".pdf,.jpg,.jpeg,.png">
+        </div>
+        <div class="aviso-actions">
+          <button class="btn" data-supervisor-responder="${p.id}" style="padding:6px 12px; font-size:11.5px;">Responder</button>
+        </div>
+      </div>`;
 }
 
 const AMBITO_INHABIL_LABEL = {
@@ -2236,6 +2428,7 @@ const AMBITO_INHABIL_LABEL = {
 };
 
 let DOCUMENTOS_ACTIVOS = []; // documentos del expediente actualmente abierto en el modal
+let DOCUMENTOS_SUBTAB = 'juicio'; // 'juicio' | 'amparo' -- separa la tabla de Documentos en dos, ver documentosDelSubtab()
 let CAMARA_STREAM = null; // MediaStream activo del visor de cámara (pestaña Documentos), o null si está cerrado
 let FOTOS_CAPTURADAS = []; // {blob, url, width, height} tomadas con la cámara, pendientes de armar el PDF
 // Foto recién tomada, en pantalla de recorte antes de agregarse a FOTOS_CAPTURADAS:
@@ -2257,13 +2450,17 @@ async function loadPlantillasLib(){
 }
 
 // ---------------------------------------------------------------
-// Sincronización de un solo sentido con Google Calendar: audiencias, pagos,
-// prescripción y amparo se empujan como eventos de todo el día al calendario
-// de Google del socio conectado. Nunca al revés — un cambio hecho directo en
-// Google Calendar no se refleja aquí. Ver api/google_*.php.
+// Sincronización de un solo sentido con Google Calendar: TODO lo que
+// buildAgendaEntries() arma para Agenda general (audiencias, pagos,
+// prescripción, amparo, pendientes manuales, posibles atrasos y
+// sugerencias de IA) se empuja como eventos de todo el día al calendario
+// de Google del socio conectado -- pedido explícito del usuario (12 nov
+// 2026): "todo lo que esta en nuestra agenda general se vaya a google
+// calendar". Nunca al revés — un cambio hecho directo en Google Calendar
+// no se refleja aquí. Ver api/google_*.php.
 // ---------------------------------------------------------------
 let GOOGLE_STATUS = {conectado:false, email:null};
-const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo'];
+const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','accion_ia'];
 
 async function loadGoogleStatus(){
   try{ GOOGLE_STATUS = await api('GET', 'google_status.php'); }
@@ -2297,24 +2494,53 @@ async function googlePushEvent(base, headers, id, body){
 }
 
 async function sincronizarGoogleCalendar(onProgress){
-  const tok = await api('GET', 'google_access_token.php');
-  const accessToken = tok.access_token;
+  // Primero intenta la cuenta de Google COMPARTIDA (la que ya se conectó
+  // desde "Equipo" para vigilar los sub-calendarios de audiencias) -- así
+  // cada evento se puede mandar al sub-calendario del abogado asignado al
+  // caso, en vez de siempre al calendario principal de quien dé clic en
+  // "Sincronizar ahora" (12 nov 2026, pedido explícito del usuario: "se
+  // debe ir a la agenda del abogado asignado... a la agenda compartida").
+  // Si no hay ninguna cuenta compartida configurada todavía, cae de
+  // regreso a la cuenta PROPIA de quien tenga la sesión abierta (el
+  // comportamiento de siempre, útil si nadie ha configurado Equipo aún).
+  let accessToken, tokenCompartido = false;
+  try{
+    const tokC = await api('GET', 'google_access_token_compartido.php');
+    accessToken = tokC.access_token;
+    tokenCompartido = true;
+  }catch(e){
+    const tok = await api('GET', 'google_access_token.php');
+    accessToken = tok.access_token;
+  }
+  let mapaAbogados = {};
+  if(tokenCompartido){
+    try{ const m = await api('GET', 'google_calendarios_mapeo_por_abogado.php'); mapaAbogados = m.mapa; }catch(e){}
+  }
+  const calendarIdPara = (kase)=>{
+    if(!tokenCompartido) return 'primary';
+    return mapaAbogados[kase.abogado_id] || mapaAbogados[kase.abogado_id_2] || 'primary';
+  };
+
   const entries = buildAgendaEntries().filter(e => GOOGLE_TIPOS_SINCRONIZABLES.includes(e.tipo));
   // Las asesorías de pago ya confirmadas (pagadas) también se agendan solas
   // en el calendario — con hora exacta, a diferencia de audiencias/pagos/
   // etc. que son de todo el día, porque aquí sí importa la hora exacta de
-  // la llamada.
+  // la llamada. Siempre al calendario principal (no están ligadas a un
+  // abogado asignado de un expediente).
   const citas = CITAS.filter(c => c.estado === 'confirmada');
   const total = entries.length + citas.length;
   const headers = {'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json'};
-  const base = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
-  const idsActuales = [];
+  const eventosUrl = (calendarId)=> `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+  const idsActuales = []; // [{id, calendarId}]
+  const calendariosUsados = new Set(['primary']);
   let fallos = 0;
   let hechos = 0;
 
   for(const e of entries){
     const id = await googleEventId(CURRENT_USER.id, e);
-    idsActuales.push(id);
+    const calendarId = calendarIdPara(e.k);
+    calendariosUsados.add(calendarId);
+    idsActuales.push({id, calendarId});
     // Si la audiencia trae hora capturada, se manda como evento con horario
     // exacto (igual que las citas de asesoría) en vez de todo el día — así
     // Google Calendar también puede avisar de un choque de horario.
@@ -2325,36 +2551,42 @@ async function sincronizarGoogleCalendar(onProgress){
       start: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
       end: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
     };
-    try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
+    try{ if(!(await googlePushEvent(eventosUrl(calendarId), headers, id, body))) fallos++; }catch(err){ fallos++; }
     hechos++;
     if(onProgress) onProgress(hechos, total);
   }
 
   for(const c of citas){
     const id = await googleCitaEventId(CURRENT_USER.id, c.id);
-    idsActuales.push(id);
+    idsActuales.push({id, calendarId:'primary'});
     const body = {
       summary: `[Asesoría] ${c.nombre_cliente || c.telefono}`,
       description: `Llamada telefónica de la asesoría pagada ($${c.monto.toFixed(0)} MXN). Teléfono: ${c.telefono}.\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.`,
       start: {dateTime: `${c.fecha}T${c.hora_inicio}:00`, timeZone: 'America/Mexico_City'},
       end: {dateTime: `${c.fecha}T${c.hora_fin}:00`, timeZone: 'America/Mexico_City'},
     };
-    try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
+    try{ if(!(await googlePushEvent(eventosUrl('primary'), headers, id, body))) fallos++; }catch(err){ fallos++; }
     hechos++;
     if(onProgress) onProgress(hechos, total);
   }
 
   // Borra del calendario lo que ya no aplica (pago cobrado, prescripción
   // resuelta, cita cancelada/expirada, etc.) comparando contra lo que se
-  // sincronizó la vez anterior.
+  // sincronizó la vez anterior. Se prueba en cada calendario tocado en esta
+  // corrida -- un evento viejo pudo haberse creado en un calendario distinto
+  // al de hoy (ej. el abogado asignado cambió), así que no basta con
+  // probar solo el calendario "actual" de ese caso.
   let previos = [];
   try{ const st = await api('GET', 'google_sync_state.php'); previos = st.evento_ids; }catch(e){}
-  const obsoletos = previos.filter(id => !idsActuales.includes(id));
+  const idsActualesFlat = idsActuales.map(x=>x.id);
+  const obsoletos = previos.filter(id => !idsActualesFlat.includes(id));
   for(const id of obsoletos){
-    try{ await fetch(base + '/' + id, {method:'DELETE', headers}); }catch(e){}
+    for(const calendarId of calendariosUsados){
+      try{ await fetch(eventosUrl(calendarId) + '/' + id, {method:'DELETE', headers}); }catch(e){}
+    }
   }
 
-  await api('POST', 'google_sync_state.php', {evento_ids: idsActuales});
+  await api('POST', 'google_sync_state.php', {evento_ids: idsActualesFlat});
   return {sincronizados: total, borrados: obsoletos.length, fallos};
 }
 
@@ -2366,6 +2598,10 @@ function syncGoogleIfConnected(){
   sincronizarGoogleCalendar().catch(()=>{});
 }
 
+// El ORDEN de las llaves aquí también define el orden de agrupación de la
+// tabla "Documentos subidos" (ver MODAL_TAB==='documentos') -- separar
+// 'acuerdo' (juicio laboral) de 'acuerdo_amparo' evita que ambos tipos de
+// acuerdo queden revueltos y los abogados se confundan de cuál es cuál.
 const CATEGORIA_DOCUMENTO_LABEL = {
   constancia_no_conciliacion: 'Constancia de no conciliación',
   demanda: 'Demanda',
@@ -2374,10 +2610,34 @@ const CATEGORIA_DOCUMENTO_LABEL = {
   actas: 'Actas de audiencia',
   convenio: 'Convenio',
   acuerdo: 'Acuerdo (boletín)',
+  acuerdo_amparo: 'Acuerdo (amparo)',
   otro: 'Otro',
 };
+const CATEGORIA_DOCUMENTO_ORDEN = Object.keys(CATEGORIA_DOCUMENTO_LABEL);
+
+// Agrupa por categoría (orden de CATEGORIA_DOCUMENTO_ORDEN) y, dentro de
+// cada grupo, lo más reciente primero -- sin esto la tabla de Documentos
+// solo venía en orden de subida y los acuerdos del juicio quedaban
+// revueltos con los del amparo (o con cualquier otra categoría).
+function documentosAgrupadosPorCategoria(documentos){
+  return [...documentos].sort((a,b)=>{
+    const oa = CATEGORIA_DOCUMENTO_ORDEN.indexOf(a.categoria);
+    const ob = CATEGORIA_DOCUMENTO_ORDEN.indexOf(b.categoria);
+    if(oa !== ob) return oa - ob;
+    return new Date(b.creado_en) - new Date(a.creado_en);
+  });
+}
+
+// Separa los documentos del juicio principal de los del amparo en dos
+// pestañas aparte dentro de "Documentos" -- pedido del usuario pensando en
+// que con el tiempo cada lado va a acumular bastantes documentos y, sin
+// esta separación, iban a quedar revueltos en una sola tabla larga.
+function documentosDelSubtab(documentos, subtab){
+  return documentos.filter(d => (d.categoria === 'acuerdo_amparo') === (subtab === 'amparo'));
+}
 
 async function loadDocumentos(expedienteId){
+  DOCUMENTOS_SUBTAB = 'juicio';
   try{
     const d = await api('GET', 'documentos_list.php?expediente_id=' + expedienteId);
     DOCUMENTOS_ACTIVOS = d.documentos;
@@ -2604,6 +2864,8 @@ async function refreshBootstrap(){
   EQUIPO = data.equipo.map(u => ({id:u.id, name:u.nombre, role:mapRol(u.rol)}));
   if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){
     await loadUsuariosAdmin();
+    await loadGoogleCalendariosMapeo();
+    await loadIaActividad();
   }
   await loadDiasInhabiles();
   syncAvisosAbogado(); // en segundo plano, no bloquea la carga
@@ -2612,9 +2874,12 @@ async function refreshBootstrap(){
   await loadGoogleStatus();
   await loadTribunalesCustom();
   await loadAvisosBoletin();
-  await loadEdomexCaptchaPendiente();
+  await loadSupervisorPreguntas();
+  await loadGoogleCalendarioSugerencias();
+  await loadIrregularidades();
   await loadPjfCredenciales();
   await loadEdomexCorreoCredenciales();
+  await loadCdmxBuzonCredenciales();
   if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){
     await loadProspectos();
     await loadDisponibilidad();
@@ -2815,18 +3080,6 @@ async function pollActualizaciones(){
       }
     }
 
-    // El robot de Edomex va publicando un captcha nuevo cada vez que
-    // termina uno (uno por juzgado) -- sin este poll, quien lo está
-    // resolviendo tenía que recargar la página (F5) a mano para ver el
-    // siguiente.
-    const captchaIdAntes = EDOMEX_CAPTCHA_PENDIENTE ? EDOMEX_CAPTCHA_PENDIENTE.id : null;
-    await loadEdomexCaptchaPendiente();
-    const captchaIdDespues = EDOMEX_CAPTCHA_PENDIENTE ? EDOMEX_CAPTCHA_PENDIENTE.id : null;
-    if(captchaIdDespues !== captchaIdAntes){
-      const y = window.scrollY;
-      render();
-      window.scrollTo(0, y);
-    }
   }catch(e){ /* silencioso: un hipo de red no debe interrumpir cada 8s */ }
 }
 
@@ -3174,11 +3427,12 @@ function shellHTML(){
         <button data-v="tablero" class="${VIEW==='tablero'?'active':''}"><span class="ico">${ICONS.tablero}</span> Tablero</button>
         <button data-v="expedientes" class="${VIEW==='expedientes'?'active':''}"><span class="ico">${ICONS.expedientes}</span> Expedientes</button>
         <button data-v="alertas" class="${VIEW==='alertas'?'active':''}"><span class="ico">${ICONS.alertas}</span> Alertas de prescripción</button>
+        <button data-v="preguntas_abogado" class="${VIEW==='preguntas_abogado'?'active':''}"><span class="ico">🧑‍⚖️</span> Preguntas al abogado ${preguntasAbogadoBadgeCount()>0?`<span class="nav-badge">${preguntasAbogadoBadgeCount()}</span>`:""}</button>
         <button data-v="cobros" class="${VIEW==='cobros'?'active':''}"><span class="ico">&#128176;</span> Cobros de convenios</button>
         ${isAdmin ? `<button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>` : ""}
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
-        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${(avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0))>0?`<span class="nav-badge">${avisosNuevosCount()+(EDOMEX_CAPTCHA_PENDIENTE?1:0)}</span>`:""}</button>
+        <button data-v="agenda" class="${VIEW==='agenda'?'active':''}"><span class="ico">&#128197;</span> Agenda general ${avisosNuevosCount()>0?`<span class="nav-badge">${avisosNuevosCount()}</span>`:""}</button>
         ${isAdmin ? `<button data-v="prospectos" class="${VIEW==='prospectos'?'active':''}"><span class="ico">&#128172;</span> Prospectos (WhatsApp) ${prospectosNuevosCount()>0?`<span class="nav-badge" id="navBadgeProspectos">${prospectosNuevosCount()}</span>`:""}</button>` : ""}
         ${isAdmin ? `<button data-v="conversaciones" class="${VIEW==='conversaciones'?'active':''}"><span class="ico">&#128269;</span> Conversaciones (WhatsApp)</button>` : ""}
         ${isAdmin ? `<button data-v="resumen_ejecutivo" class="${VIEW==='resumen_ejecutivo'?'active':''}"><span class="ico">&#128202;</span> Resumen ejecutivo (bot)</button>` : ""}
@@ -3230,7 +3484,8 @@ const VIEW_TITLES = {
   cliente_preview:["Vista previa del portal de cliente", "Así es como un cliente vería el estado de su asunto"],
   equipo:["Equipo del despacho", "Socios asignados y asuntos a cargo"],
   dias_inhabiles:["Días inhábiles", "Calendario usado para calcular automáticamente los vencimientos de términos en todo el sistema"],
-  mi_cuenta:["Mi cuenta", "Datos personales para el funcionamiento del sistema"]
+  mi_cuenta:["Mi cuenta", "Datos personales para el funcionamiento del sistema"],
+  preguntas_abogado:["Preguntas al abogado", "El supervisor de IA pregunta lo justo y necesario cuando detecta un posible atraso — contesta con texto o adjuntando una foto/documento para que la IA llene sola la etapa si confirma una fecha"]
 };
 
 function topBarHTML(){
@@ -3341,6 +3596,7 @@ function highlightNav(){
 function renderViewBody(){
   const el = document.getElementById('viewBody');
   if(!el) return;
+  cerrarCalPopover(); // el popover del calendario vive fuera de #viewBody -- se limpia en cada render para no dejarlo flotando con datos viejos
   if(VIEW==='tablero') el.innerHTML = tableroHTML();
   else if(VIEW==='expedientes') el.innerHTML = expedientesHTML();
   else if(VIEW==='alertas') el.innerHTML = alertasHTML();
@@ -3359,6 +3615,7 @@ function renderViewBody(){
   else if(VIEW==='equipo') el.innerHTML = equipoHTML();
   else if(VIEW==='dias_inhabiles') el.innerHTML = diasInhabilesHTML();
   else if(VIEW==='mi_cuenta') el.innerHTML = miCuentaHTML();
+  else if(VIEW==='preguntas_abogado') el.innerHTML = preguntasAbogadoHTML();
   bindViewBody();
 }
 
@@ -3522,6 +3779,19 @@ function alertRowHTML(k, p, lvl){
 function dateToISO(d){ if(!d) return ""; return d.toISOString().slice(0,10); }
 function truncate(s,n){ if(!s) return ""; return s.length>n? s.slice(0,n-1)+"…" : s; }
 function escapeHTML(s){ if(s===null||s===undefined) return ""; return String(s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+// Botón de dictado por voz reutilizable (11 nov 2026) -- pedido explícito
+// del usuario: "en todos lados donde se escriba texto". Antes solo vivía
+// en la respuesta al supervisor (10 nov 2026); se generalizó para
+// cualquier <textarea> del sistema en vez de reimplementar el Web Speech
+// API en cada lugar. targetId debe ser el id de ese <textarea> -- el
+// manejador de clic real es un solo listener delegado al final del
+// archivo (ver '.btn-dictar' en document.addEventListener('click', ...)),
+// así que aquí solo hace falta pintar el botón donde haga falta. Se omite
+// solo si el navegador no soporta reconocimiento de voz (ej. Safari/iPhone).
+function dictadoBotonHTML(targetId){
+  if(!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) return '';
+  return `<button type="button" class="btn secondary btn-dictar" data-dictar-target="${targetId}" style="margin-top:6px; padding:4px 10px; font-size:11.5px;">🎤 Dictar</button>`;
+}
 // Hallazgo real: el panel "Pausados con algo sin contestar" se llenaba de
 // casos donde el último mensaje del cliente era solo un cierre ("Gracias",
 // "Listo", "Sale. Gracias", "Ok mil gracias"), que no necesita ninguna
@@ -3633,7 +3903,7 @@ function resumenBusquedaCaso(k){
   // preguntas de "pagado"/"convenio pendiente de cobro"/"demanda
   // presentada", y adivinaba mal.
   add('Estatus del asunto (calculado, es el que se ve en la lista)', estatusCalculadoTexto(k));
-  const instanciaTexto = k.junta || k.tribunal || k.instancia || '';
+  const instanciaTexto = k.tribunal || k.junta || k.instancia || '';
   add('Instancia/Tribunal', instanciaTexto);
   // La IA no siempre distingue bien "local" vs "federal" leyendo el
   // nombre completo de la instancia (ej. "Séptimo Tribunal Laboral
@@ -3732,7 +4002,7 @@ function expedientesHTML(){
               <td><strong>${escapeHTML(k.actor)}</strong><div style="font-size:11px; color:${razonPorId[k.id]?'var(--brass)':'var(--gray)'}; font-style:${razonPorId[k.id]?'italic':'normal'};">${escapeHTML(razonPorId[k.id] || k.puesto||'')}</div></td>
               <td>${escapeHTML(truncate(k.demandado,32))}</td>
               <td class="exp-code">${escapeHTML(k.exp||'—')}</td>
-              <td>${escapeHTML(truncate(k.junta || k.instancia || '', 26))}</td>
+              <td>${escapeHTML(truncate(k.tribunal || k.junta || k.instancia || '', 26))}</td>
               <td class="abogado-tag">${escapeHTML(truncate(assignedLawyer(k),18))}</td>
               <td>${statusBadge(k)}</td>
               <td>${estaConcluido(k) ? '<span class="badge closed">Concluido</span>' : '<span class="badge ok">Activo</span>'}</td>
@@ -4688,7 +4958,7 @@ function buildAgendaEntries(){
   // Asuntos estancados (sin la siguiente etapa dentro del plazo legal esperado)
   cases.forEach(k=>{
     const est = estancadoInfo(k);
-    if(est) entries.push({tipo:'atraso', fecha: dateToISO(est.expected), k, label:`Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`, action:'abrir_etapas'});
+    if(est) entries.push({tipo:'atraso', fecha: dateToISO(est.expected), k, label:`Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`, action:'abrir_etapas', actionIdx: est.siguienteKey});
   });
 
   // Próxima acción sugerida por el informe ejecutivo con IA (ver
@@ -4722,7 +4992,19 @@ function buildAgendaEntries(){
 // en silencio, cada vez que alguien abre el sistema -- si nadie lo abre en
 // varios días el caché se queda desactualizado, pero es la misma
 // limitación que ya tiene la sincronización con Google Calendar.
-const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso'];
+const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','accion_ia'];
+// 'atraso' y 'accion_ia' son asuntos ESTANCADOS -- su fecha es cuándo
+// debió pasar algo (o cuándo venció el seguimiento que propuso la IA), no
+// una cita futura. Una vez que de verdad se atrasan, esa fecha se queda
+// en el pasado para siempre -- a diferencia de los demás tipos (que solo
+// tiene sentido avisar en una ventana de "próximos días"), estos se
+// siguen mandando mientras sigan sin resolverse, sin importar cuántos
+// días lleven atrás. Bug real confirmado (9 nov 2026): con el filtro
+// viejo (fecha >= hoy) estos NUNCA volvían a entrar a la ventana una vez
+// atrasados -- se calculaban bien y se veían en el Tablero, pero el push
+// diario (cron_recordatorio_abogado.php) jamás los mandaba. 40 asuntos
+// atorados que el sistema "sabía" pero nunca avisó a nadie.
+const AVISOS_ABOGADO_TIPOS_ABIERTOS = ['atraso', 'accion_ia'];
 async function syncAvisosAbogado(){
   if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
   const hoy = new Date(); hoy.setHours(0,0,0,0);
@@ -4730,15 +5012,22 @@ async function syncAvisosAbogado(){
   const limiteISO = dateToISO(addDaysDate(hoy, 3));
   try{
     const entries = buildAgendaEntries()
-      .filter(e => AVISOS_ABOGADO_TIPOS.includes(e.tipo) && e.fecha >= hoyISO && e.fecha <= limiteISO)
-      .map(e => ({
-        expediente_id: e.k.id,
-        clave: e.tipo + (e.actionIdx!=null ? ':'+e.actionIdx : ''),
-        tipo: e.tipo,
-        fecha: e.fecha,
-        hora: e.hora || null,
-        label: e.label,
-      }));
+      .filter(e => AVISOS_ABOGADO_TIPOS.includes(e.tipo)
+        && e.fecha <= limiteISO
+        && (AVISOS_ABOGADO_TIPOS_ABIERTOS.includes(e.tipo) || e.fecha >= hoyISO))
+      .map(e => {
+        const f = parseDate(e.fecha);
+        const diasAtraso = (AVISOS_ABOGADO_TIPOS_ABIERTOS.includes(e.tipo) && f && f < hoy) ? daysBetween(f, hoy) : 0;
+        return {
+          expediente_id: e.k.id,
+          clave: e.tipo + (e.actionIdx!=null ? ':'+e.actionIdx : ''),
+          tipo: e.tipo,
+          fecha: e.fecha,
+          hora: e.hora || null,
+          label: e.label,
+          dias_atraso: diasAtraso,
+        };
+      });
     await api('POST', 'agenda_sync_avisos.php', {entries, todos: CURRENT_USER.role === 'Administrador'});
   }catch(err){}
 }
@@ -5028,6 +5317,282 @@ function marcarChoquesDeAgenda(entries){
 
 let AGENDA_SOCIO = 'todos';
 let AGENDA_TAB = 'general';
+// Mes que se muestra en la pestaña "Calendario" de Agenda general (11 nov
+// 2026, pedido explícito del usuario: ver la agenda en calendario visual,
+// no solo como lista -- cada abogado ve la suya, el Administrador puede
+// ver "Todos" o un socio en particular con el mismo selector AGENDA_SOCIO
+// que ya usan las demás pestañas). null hasta el primer render, momento en
+// que calendarioMesHTML() lo inicializa al mes actual.
+let AGENDA_CAL_MES = null;
+// Ancla (fecha ISO) para las vistas Semana/Día -- comparten una sola
+// variable porque navegar en cualquiera de las 2 mueve la misma fecha de
+// referencia; Mes sigue usando AGENDA_CAL_MES por separado (mes/año, no
+// un día puntual). null hasta el primer render, se inicializa a hoy.
+let AGENDA_CAL_DIA = null;
+// Vista activa del calendario: 'mes' | 'semana' | 'dia' (11 nov 2026,
+// pedido explícito del usuario: "que se pueda ver por semana y dia").
+let AGENDA_CAL_VISTA = 'mes';
+const AGENDA_CAL_DIAS = ['L','M','M','J','V','S','D']; // lunes-primero, solo para la cuadrícula del calendario
+// Datos completos de cada chip del calendario visual (11 nov 2026, pedido
+// explícito del usuario: "mismo efecto visual que Google Calendar" --
+// tarjetas más pulidas + ver el detalle sin salir del calendario). Se
+// llena en cada render de calendarioHTML(); el chip solo guarda su
+// índice aquí (data-cal-idx) porque meter todo el detalle en atributos
+// HTML sería más frágil (comillas, texto largo, etc.).
+let CAL_POPOVER_ITEMS = [];
+
+// El calendario muestra fechas puntuales del calendario del abogado --
+// audiencias/citatorios agendados, pagos de convenio, vencimientos de
+// plazo (prescripción/amparo), y pendientes manuales con fecha propia
+// (ej. "Firma de demanda") -- pedido explícito del usuario (12 nov 2026,
+// tras ver que un pendiente manual no aparecía ahí). "Posibles atrasos"/
+// sugerencias de IA (tipo 'atraso'/'accion_ia') se quedan solo en la
+// lista de "General" -- esos no tienen una fecha "agendada" propia (son
+// una fecha límite calculada o una sugerencia de urgencia, no algo que
+// el abogado programó), y su botón de acción sigue sin caber bien en una
+// celda del calendario. Compartido entre las 3 vistas (mes/semana/día).
+function calendarioItemsPorDia(all){
+  const TIPOS_CALENDARIO_SIN_AUDIENCIA = ['pago', 'prescripcion', 'amparo', 'pendiente'];
+  let itemsCalendario = all.filter(e => TIPOS_CALENDARIO_SIN_AUDIENCIA.includes(e.tipo));
+
+  // Audiencias/citatorios: el calendario muestra TODAS las que tengan
+  // fecha agendada, se hayan celebrado o no -- a propósito NO se sacan de
+  // `all` (que solo trae, vía proximaAudiencia(), la "próxima pendiente"
+  // de cada caso para la lista "General") sino de
+  // audienciasParaCalendario(), que no excluye nada. Mismo filtro de
+  // socio/concluidos que ya usa el resto de Agenda general.
+  const isAdmin = CURRENT_USER.role === 'Administrador';
+  let casesAudiencias = visibleCases().filter(k=>!estaConcluido(k));
+  if(isAdmin && AGENDA_SOCIO !== 'todos'){
+    casesAudiencias = casesAudiencias.filter(k => (assignedLawyers(k).length ? assignedLawyers(k) : ['Sin asignar']).includes(AGENDA_SOCIO));
+  }
+  casesAudiencias.forEach(k=>{
+    audienciasParaCalendario(k).forEach(a=>{
+      itemsCalendario.push({tipo:'audiencia', fecha:a.fecha, hora:a.hora, k, label:a.label});
+    });
+  });
+
+  // Prescripción/amparo: además del día exacto del vencimiento, se duplica
+  // un aviso "Vence mañana" un día antes -- mismo principio que ya usa el
+  // push diario (cron_recordatorio_abogado.php avisa justo 1 día antes),
+  // pedido explícito del usuario para que también se vea así en el
+  // calendario visual, no solo el día del vencimiento.
+  const avisosUnDiaAntes = itemsCalendario
+    .filter(e => e.tipo === 'prescripcion' || e.tipo === 'amparo')
+    .map(e => {
+      const fechaAntes = parseDate(e.fecha);
+      if(!fechaAntes) return null;
+      return Object.assign({}, e, {
+        fecha: dateToISO(addDaysDate(fechaAntes, -1)),
+        label: '¡Vence mañana! ' + e.label,
+        avisoAnticipado: true,
+      });
+    })
+    .filter(Boolean);
+  itemsCalendario = itemsCalendario.concat(avisosUnDiaAntes);
+
+  const porDia = {};
+  itemsCalendario.forEach(e=>{ (porDia[e.fecha] = porDia[e.fecha] || []).push(e); });
+  Object.values(porDia).forEach(list=>list.sort((a,b)=>(a.hora||'99:99').localeCompare(b.hora||'99:99')));
+  return porDia;
+}
+
+// Punto de entrada del calendario -- pestañas Mes/Semana/Día + despacha a
+// la vista activa. `all` ya viene filtrada (abogado solo ve lo suyo vía
+// visibleCases(), y el Administrador ya aplicó el selector de socio).
+function calendarioHTML(all){
+  if(!AGENDA_CAL_MES){
+    const hoy = new Date();
+    AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
+  }
+  if(!AGENDA_CAL_DIA) AGENDA_CAL_DIA = dateToISO(new Date());
+
+  const porDia = calendarioItemsPorDia(all);
+  CAL_POPOVER_ITEMS = [];
+
+  const tabsHTML = `
+  <div style="display:flex; gap:6px; margin-bottom:14px;">
+    <button class="btn ${AGENDA_CAL_VISTA==='mes'?'':'secondary'}" data-cal-vista="mes" style="padding:5px 14px; font-size:12px;">Mes</button>
+    <button class="btn ${AGENDA_CAL_VISTA==='semana'?'':'secondary'}" data-cal-vista="semana" style="padding:5px 14px; font-size:12px;">Semana</button>
+    <button class="btn ${AGENDA_CAL_VISTA==='dia'?'':'secondary'}" data-cal-vista="dia" style="padding:5px 14px; font-size:12px;">Día</button>
+  </div>`;
+
+  if(AGENDA_CAL_VISTA === 'semana') return tabsHTML + calendarioSemanaHTML(porDia);
+  if(AGENDA_CAL_VISTA === 'dia') return tabsHTML + calendarioDiaHTML(porDia);
+  return tabsHTML + calendarioMesHTML(porDia);
+}
+
+// Reutilizada por las 3 vistas, para el mismo look de tarjeta pulida y el
+// mismo popover de detalle al dar clic (ver abrirCalPopover()).
+function calCeldaChip(e, grande){
+  const t = AGENDA_TIPO[e.tipo];
+  const idx = CAL_POPOVER_ITEMS.length;
+  CAL_POPOVER_ITEMS.push(e);
+  const tam = grande ? 'font-size:13px; padding:8px 10px;' : 'font-size:10.5px; padding:3px 6px;';
+  return `<div data-cal-idx="${idx}" style="cursor:pointer; ${tam} background:${t.color}26; color:var(--ink); border-left:3px solid ${t.color}; border-radius:5px; margin-bottom:4px; white-space:${grande?'normal':'nowrap'}; overflow:hidden; text-overflow:ellipsis; box-shadow:0 1px 1px rgba(0,0,0,.06); ${e.avisoAnticipado?'border-style:dashed;':''}">${e.avisoAnticipado?'⏰ ':''}${e.hora? `<strong>${escapeHTML(e.hora.slice(0,5))}</strong> ` : ''}${escapeHTML(truncate(e.k.actor, grande?60:14))}${e.chocaCon?' &#9888;':''}</div>`;
+}
+
+// Reutiliza AGENDA_TIPO para los mismos colores por tipo que ya usa la
+// vista de lista, y e.chocaCon (marcarChoquesDeAgenda()) para marcar el
+// mismo choque de horario.
+function calendarioMesHTML(porDia){
+  const {y, m} = AGENDA_CAL_MES;
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const todayISO = dateToISO(hoy);
+  const nombreMes = new Date(y, m, 1).toLocaleDateString('es-MX', {month:'long', year:'numeric'});
+
+  const primerDiaSemana = (new Date(y, m, 1).getDay() + 6) % 7; // 0 = lunes
+  const diasEnMes = new Date(y, m+1, 0).getDate();
+  const celdas = [];
+  for(let i=0;i<primerDiaSemana;i++) celdas.push(null);
+  for(let d=1; d<=diasEnMes; d++) celdas.push(d);
+  while(celdas.length % 7 !== 0) celdas.push(null);
+
+  const MAX_VISIBLES = 3;
+  const celdaHTML = (d)=>{
+    if(d===null) return `<div style="min-height:92px; background:transparent;"></div>`;
+    const fechaISO = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const items = porDia[fechaISO] || [];
+    const esHoy = fechaISO === todayISO;
+    const visibles = items.slice(0, MAX_VISIBLES);
+    const resto = items.length - visibles.length;
+    return `<div style="min-height:92px; border-radius:8px; border:1px solid var(--border); padding:6px; background:${esHoy?'#fdf3e0':'var(--paper)'};">
+      <div style="font-size:11px; font-weight:${esHoy?'700':'400'}; color:${esHoy?'var(--brass)':'var(--gray)'}; margin-bottom:4px;">${d}${esHoy?' &middot; hoy':''}</div>
+      ${visibles.map(e=>calCeldaChip(e,false)).join("")}
+      ${resto>0 ? `<div style="font-size:10px; color:var(--gray); font-weight:600; padding-left:3px;">+${resto} más</div>` : ''}
+    </div>`;
+  };
+
+  return `
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn secondary" data-cal-nav="-1" style="padding:5px 10px;">&#8249;</button>
+      <div style="font-family:var(--serif); font-size:16px; font-weight:700; text-transform:capitalize; min-width:170px; text-align:center;">${nombreMes}</div>
+      <button class="btn secondary" data-cal-nav="1" style="padding:5px 10px;">&#8250;</button>
+    </div>
+    <button class="btn secondary" data-cal-nav="0" style="padding:5px 10px;">Hoy</button>
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px; margin-bottom:4px;">
+    ${AGENDA_CAL_DIAS.map(d=>`<div style="text-align:center; font-size:11px; color:var(--gray); font-weight:700;">${d}</div>`).join("")}
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:6px;">
+    ${celdas.map(celdaHTML).join("")}
+  </div>`;
+}
+
+// Vista Semana (11 nov 2026, pedido explícito del usuario: "que se pueda
+// ver por semana y dia") -- 7 columnas (lunes-primero) con los pendientes
+// de cada día apilados por hora, sin intentar un grid de horas absoluto
+// (con pocos pendientes por día, una lista simple se lee mejor y es más
+// robusta que calcular posiciones por minuto).
+function calendarioSemanaHTML(porDia){
+  const ancla = parseDate(AGENDA_CAL_DIA) || new Date();
+  const diaSemana = (ancla.getDay() + 6) % 7; // 0 = lunes
+  const lunes = addDaysDate(ancla, -diaSemana);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const todayISO = dateToISO(hoy);
+  const dias = [];
+  for(let i=0;i<7;i++) dias.push(addDaysDate(lunes, i));
+  const rangoTexto = `${dias[0].toLocaleDateString('es-MX',{day:'numeric', month:'short'})} – ${dias[6].toLocaleDateString('es-MX',{day:'numeric', month:'short', year:'numeric'})}`;
+
+  return `
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn secondary" data-cal-nav="-1" style="padding:5px 10px;">&#8249;</button>
+      <div style="font-family:var(--serif); font-size:15px; font-weight:700; min-width:200px; text-align:center;">${rangoTexto}</div>
+      <button class="btn secondary" data-cal-nav="1" style="padding:5px 10px;">&#8250;</button>
+    </div>
+    <button class="btn secondary" data-cal-nav="0" style="padding:5px 10px;">Hoy</button>
+  </div>
+  <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:8px;">
+    ${dias.map(d=>{
+      const fechaISO = dateToISO(d);
+      const esHoy = fechaISO === todayISO;
+      const items = porDia[fechaISO] || [];
+      return `<div style="min-height:170px; border-radius:8px; border:1px solid var(--border); padding:8px; background:${esHoy?'#fdf3e0':'var(--paper)'};">
+        <div style="font-size:11px; font-weight:700; color:${esHoy?'var(--brass)':'var(--ink)'}; margin-bottom:6px; text-align:center; text-transform:capitalize;">${d.toLocaleDateString('es-MX',{weekday:'short'})}<br><span style="font-size:16px;">${d.getDate()}</span></div>
+        ${items.length ? items.map(e=>calCeldaChip(e,false)).join("") : `<div style="font-size:11px; color:var(--gray); text-align:center; padding-top:10px;">—</div>`}
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+// Vista Día -- misma fecha ancla que Semana, un solo día en grande con el
+// detalle completo (sin truncar el nombre del actor).
+function calendarioDiaHTML(porDia){
+  const d = parseDate(AGENDA_CAL_DIA) || new Date();
+  const fechaISO = dateToISO(d);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const esHoy = fechaISO === dateToISO(hoy);
+  const items = porDia[fechaISO] || [];
+  const fechaLegible = d.toLocaleDateString('es-MX', {weekday:'long', day:'numeric', month:'long', year:'numeric'});
+
+  return `
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn secondary" data-cal-nav="-1" style="padding:5px 10px;">&#8249;</button>
+      <div style="font-family:var(--serif); font-size:15px; font-weight:700; min-width:230px; text-align:center; text-transform:capitalize; color:${esHoy?'var(--brass)':'var(--ink)'};">${escapeHTML(fechaLegible)}${esHoy?' &middot; hoy':''}</div>
+      <button class="btn secondary" data-cal-nav="1" style="padding:5px 10px;">&#8250;</button>
+    </div>
+    <button class="btn secondary" data-cal-nav="0" style="padding:5px 10px;">Hoy</button>
+  </div>
+  <div style="border-radius:8px; border:1px solid var(--border); padding:14px; background:${esHoy?'#fdf3e0':'var(--paper)'}; min-height:160px;">
+    ${items.length ? items.map(e=>calCeldaChip(e,true)).join("") : `<div class="empty">Sin audiencias, pagos ni vencimientos este día.</div>`}
+  </div>`;
+}
+
+// Ventana flotante con el detalle de un pendiente del calendario (11 nov
+// 2026, pedido explícito del usuario: ver el detalle sin saltar directo
+// al expediente, como hace Google Calendar). Se cierra sola al dar clic
+// fuera, o al usar el botón "Abrir expediente".
+function cerrarCalPopover(){
+  const existente = document.getElementById('calPopover');
+  if(existente) existente.remove();
+  document.removeEventListener('click', calPopoverClickFuera, true);
+}
+function calPopoverClickFuera(ev){
+  const pop = document.getElementById('calPopover');
+  if(pop && !pop.contains(ev.target) && !ev.target.closest('[data-cal-idx]')) cerrarCalPopover();
+}
+function abrirCalPopover(idx, anchorEl){
+  cerrarCalPopover();
+  const e = CAL_POPOVER_ITEMS[idx];
+  if(!e) return;
+  const t = AGENDA_TIPO[e.tipo];
+  const fechaLegible = (()=>{
+    const d = parseDate(e.fecha);
+    return d ? d.toLocaleDateString('es-MX', {weekday:'long', day:'numeric', month:'long'}) : e.fecha;
+  })();
+  const pop = document.createElement('div');
+  pop.id = 'calPopover';
+  pop.style.cssText = `position:fixed; z-index:300; background:var(--paper); border:1px solid var(--border); border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.25); width:270px; font-size:13px; overflow:hidden;`;
+  pop.innerHTML = `
+    <div style="background:${t.color}; color:#fff; padding:10px 14px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em;">${escapeHTML(t.label||e.tipo)}</div>
+    <div style="padding:14px;">
+      <div style="font-weight:700; margin-bottom:3px; line-height:1.3; color:var(--ink);">${escapeHTML(e.label)}</div>
+      <div style="color:var(--gray); margin-bottom:8px; text-transform:capitalize;">${escapeHTML(fechaLegible)}${e.hora?' &middot; '+escapeHTML(e.hora.slice(0,5))+' hrs':''}</div>
+      <div style="margin-bottom:12px; padding-top:8px; border-top:1px solid var(--border); color:var(--ink);">${escapeHTML(e.k.actor)} <span style="color:var(--gray);">vs</span> ${escapeHTML(truncate(e.k.demandado||'—',40))}${e.k.exp?`<br><span style="color:var(--gray); font-size:12px;">Exp. ${escapeHTML(e.k.exp)}</span>`:''}</div>
+      <button class="btn" id="calPopoverAbrir" style="width:100%; padding:7px;">Abrir expediente</button>
+    </div>
+  `;
+  document.body.appendChild(pop);
+
+  const r = anchorEl.getBoundingClientRect();
+  const popRect = pop.getBoundingClientRect();
+  let left = Math.min(r.left, window.innerWidth - popRect.width - 10);
+  left = Math.max(10, left);
+  let top = r.bottom + 6;
+  if(top + popRect.height > window.innerHeight - 10) top = Math.max(10, r.top - popRect.height - 6);
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
+
+  document.getElementById('calPopoverAbrir').addEventListener('click', ()=>{
+    cerrarCalPopover();
+    const k = findCase(e.k.id);
+    if(k) openModal(k);
+  });
+  setTimeout(()=>document.addEventListener('click', calPopoverClickFuera, true), 0);
+}
 
 const PROSPECTO_ESTATUS_LABEL = {nuevo:'Nuevo', contactado:'Contactado', descartado:'Descartado', convertido:'Convertido'};
 const PROSPECTO_ESTATUS_BADGE = {nuevo:'crit', contactado:'warn', descartado:'closed', convertido:'ok'};
@@ -5686,6 +6251,7 @@ function jurisprudenciaHTML(){
     <div class="panel-body" style="padding:20px 24px;">
       <div class="notice" style="margin-bottom:14px;">Describe los hechos concretos de tu caso (quién es el patrón, qué prestación o problema hay, qué pasó) — evita preguntas muy generales, entre más específico mejor. Solo cita tesis reales de esta biblioteca, nunca inventa una.</div>
       <textarea id="jurisprudenciaPreguntaInput" placeholder="Describe los hechos de tu caso, entre más detalle mejor (ej. &quot;el trabajador fue despedido pero el patrón argumenta que ya no se presentó a trabajar, sin haberle dado ningún aviso de rescisión por escrito&quot;)..." style="width:100%; min-height:110px; padding:11px 13px; border:1px solid var(--border); border-radius:8px; font-size:14px; font-family:inherit; resize:vertical;">${escapeHTML(JURISPRUDENCIA_PREGUNTA)}</textarea>
+      ${dictadoBotonHTML('jurisprudenciaPreguntaInput')}
       <div style="display:flex; justify-content:flex-end; align-items:center; gap:10px; margin-top:10px;">
         <span style="font-size:11.5px; color:var(--gray);">Ctrl+Enter para buscar</span>
         <button class="btn" id="jurisprudenciaBuscarBtn" ${JURISPRUDENCIA_CARGANDO?'disabled':''}>${JURISPRUDENCIA_CARGANDO ? 'Buscando <span class="loading-dots"><span></span><span></span><span></span></span>' : 'Buscar'}</button>
@@ -6146,6 +6712,73 @@ function disponibilidadPanelHTML(){
   </div>`;
 }
 
+function googleCalendarioSugerenciaCardHTML(s){
+  return `
+      <div class="aviso-card" data-calendario-sugerencia-id="${s.id}">
+        <div class="aviso-head">
+          <div data-id="${s.expediente_id}" data-tab="etapas" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(s.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(s.expediente_demandado||'—',30))} ${s.expediente_exp? `&middot; Exp. ${escapeHTML(s.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">${escapeHTML(s.nombre_calendario||'Google Calendar')} &middot; ${etapaLabelPorKey(s.etapa_key)}</div>
+          </div>
+        </div>
+        <div class="aviso-resumen">⚠️ Conflicto de fecha — "${escapeHTML(s.titulo_evento)}" dice ${fmtDate(s.fecha)}${s.hora? ' '+escapeHTML(s.hora.slice(0,5))+' hrs':''}, pero esta etapa ya tenía agendado ${s.fecha_actual_programada? fmtDate(s.fecha_actual_programada):'otra fecha'}. ¿Cuál vale?</div>
+        <div class="aviso-actions">
+          <button class="btn" data-calendario-sugerencia-aplicar="${s.id}" style="padding:6px 12px; font-size:11.5px;">Usar la de Google Calendar</button>
+          <button class="btn secondary" data-calendario-sugerencia-descartar="${s.id}" style="padding:6px 12px; font-size:11.5px;">Dejar la que ya tenía</button>
+        </div>
+      </div>`;
+}
+function irregularidadCardHTML(i){
+  const tipoIcono = i.tipo === 'orden_cronologico' ? '📅' : '🔎';
+  return `
+      <div class="aviso-card" data-irregularidad-id="${i.id}">
+        <div class="aviso-head">
+          <div data-id="${i.expediente_id}" data-tab="etapas" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(i.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(i.expediente_demandado||'—',30))} ${i.expediente_exp? `&middot; Exp. ${escapeHTML(i.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">${i.etapa_key ? escapeHTML(etapaLabelPorKey(i.etapa_key)) : ''}</div>
+          </div>
+        </div>
+        <div class="aviso-resumen">${tipoIcono} ${escapeHTML(i.motivo)}</div>
+        <div class="aviso-actions">
+          <button class="btn" data-id="${i.expediente_id}" data-tab="etapas" style="padding:6px 12px; font-size:11.5px;">Corregir</button>
+          <button class="btn secondary" data-irregularidad-descartar="${i.id}" style="padding:6px 12px; font-size:11.5px;">Está bien, no es error</button>
+        </div>
+      </div>`;
+}
+function preguntasAbogadoHTML(){
+  const pendientes = SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente');
+  const historial = SUPERVISOR_PREGUNTAS.filter(p=>p.estado!=='pendiente');
+  return `
+  <div class="notice" style="margin-bottom:16px; max-width:100%;">Preguntas que el supervisor de IA le hace al abogado a cargo cuando detecta un posible atraso, buscando el dato concreto que falta para seguir el plazo legal — normalmente una fecha. Puedes contestar con texto, o adjuntar una foto/documento (ej. una cédula de notificación) para que la IA lo lea y, si confirma una fecha, llene sola la etapa correspondiente.</div>
+  ${IRREGULARIDADES.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>⚠️ Posibles irregularidades</h3><span class="count">${IRREGULARIDADES.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${IRREGULARIDADES.map(irregularidadCardHTML).join("")}</div>
+  </div>` : ''}
+  ${GOOGLE_CALENDARIO_SUGERENCIAS.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>📅 Conflictos de fecha en tu Google Calendar</h3><span class="count">${GOOGLE_CALENDARIO_SUGERENCIAS.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${GOOGLE_CALENDARIO_SUGERENCIAS.map(googleCalendarioSugerenciaCardHTML).join("")}</div>
+  </div>` : ''}
+  ${pendientes.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>Pendientes</h3><span class="count">${pendientes.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${pendientes.map(supervisorPreguntaCardHTML).join("")}</div>
+  </div>` : `<div class="panel"><div class="panel-body"><div class="empty">Sin preguntas pendientes por ahora.</div></div></div>`}
+  ${historial.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>Historial</h3><span class="count">${historial.length}</span></div>
+    <div class="panel-body" style="padding:0;">${historial.map(p=>`
+      <div style="padding:12px 20px; border-bottom:1px solid var(--border);">
+        <div class="aviso-caso">${escapeHTML(p.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(p.expediente_demandado||'—',30))} ${p.expediente_exp? `&middot; Exp. ${escapeHTML(p.expediente_exp)}`:''}</div>
+        <div class="aviso-fuente">Sobre: ${escapeHTML(etapaLabelPorKey(p.etapa_key))}</div>
+        <div class="aviso-resumen" style="margin-top:6px;">❓ ${escapeHTML(p.pregunta)}</div>
+        <div class="aviso-resumen">💬 ${escapeHTML(p.respuesta||'—')}</div>
+        <div class="aviso-meta">${p.estado==='aplicada'?`<span class="badge ok">✓ etapa actualizada sola${p.fecha_aplicada?': '+fmtDate(p.fecha_aplicada):''}</span>`:'Registrada, sin datos para actualizar nada solo'}${p.respondido_por_nombre?' &middot; Contestó '+escapeHTML(p.respondido_por_nombre):''}${p.respondido_en?' el '+new Date(p.respondido_en).toLocaleDateString('es-MX'):''}</div>
+      </div>`).join("")}</div>
+  </div>` : ''}`;
+}
+
 function agendaHTML(){
   const isAdmin = CURRENT_USER.role === 'Administrador';
   let all = marcarChoquesDeAgenda(buildAgendaEntries());
@@ -6188,11 +6821,45 @@ function agendaHTML(){
   const row = agendaRowHTML;
 
   const tabsHTML = `
-  <div style="display:flex; gap:8px; margin-bottom:16px;">
+  <div style="display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap;">
     <button class="btn ${AGENDA_TAB==='general'?'':'secondary'}" data-agenda-tab="general" style="padding:8px 16px;">General</button>
+    <button class="btn ${AGENDA_TAB==='calendario'?'':'secondary'}" data-agenda-tab="calendario" style="padding:8px 16px;">Calendario</button>
     <button class="btn ${AGENDA_TAB==='asesorias'?'':'secondary'}" data-agenda-tab="asesorias" style="padding:8px 16px;">Asesorías</button>
     <button class="btn ${AGENDA_TAB==='ia'?'':'secondary'}" data-agenda-tab="ia" style="padding:8px 16px;">Seguimiento IA</button>
   </div>`;
+
+  if(AGENDA_TAB === 'calendario'){
+    return tabsHTML + `
+    ${isAdmin ? `
+    <div class="panel" style="margin-bottom:16px;">
+      <div class="panel-head"><h3>Pendientes por socio</h3><span class="count">${Object.keys(resumenPorSocio).length}</span></div>
+      <div class="panel-body" style="padding:0;">
+        <table><thead><tr><th>Socio</th><th>Vencidas</th><th>Próximas</th><th></th></tr></thead><tbody>
+          <tr data-agenda-socio="todos" style="cursor:pointer; ${AGENDA_SOCIO==='todos'?'background:var(--parchment);':''}">
+            <td><strong>Todos</strong></td>
+            <td>${totalesSinDuplicar.vencidas}</td>
+            <td>${totalesSinDuplicar.proximas}</td>
+            <td></td>
+          </tr>
+          ${Object.keys(resumenPorSocio).sort((a,b)=>resumenPorSocio[b].vencidas-resumenPorSocio[a].vencidas).map(n=>`
+          <tr data-agenda-socio="${escapeHTML(n)}" style="cursor:pointer; ${AGENDA_SOCIO===n?'background:var(--parchment);':''}">
+            <td>${escapeHTML(n)}</td>
+            <td style="color:${resumenPorSocio[n].vencidas>0?'var(--red)':'inherit'}; font-weight:${resumenPorSocio[n].vencidas>0?'700':'400'};">${resumenPorSocio[n].vencidas}</td>
+            <td>${resumenPorSocio[n].proximas}</td>
+            <td><button class="btn secondary" data-agenda-socio="${escapeHTML(n)}" style="padding:5px 10px; font-size:11px;">Ver</button></td>
+          </tr>`).join("")}
+        </tbody></table>
+      </div>
+    </div>` : ""}
+    ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%; margin-bottom:16px;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
+    <div class="panel">
+      <div class="panel-body" style="padding:16px 20px;">
+        ${calendarioHTML(all)}
+      </div>
+    </div>
+    <div class="notice" style="margin-top:12px; max-width:100%;">Clic en cualquier pendiente del calendario abre el expediente directo. &#9888; marca choque de horario con otro socio en la misma fecha y hora. ⏰ marca un aviso de "vence mañana" (prescripción/amparo) -- el vencimiento real sigue marcado también el día exacto.</div>
+    `;
+  }
 
   if(AGENDA_TAB === 'asesorias'){
     return tabsHTML + citasPanelHTML(true) + disponibilidadPanelHTML();
@@ -6280,18 +6947,6 @@ function agendaHTML(){
     </div>
   </div>` : ""}
   ${isAdmin && AGENDA_SOCIO!=='todos' ? `<div class="notice" style="max-width:100%;">Mostrando solo lo de <strong>${escapeHTML(AGENDA_SOCIO)}</strong>. <button class="btn secondary" data-agenda-socio="todos" style="padding:4px 10px; font-size:11px; margin-left:6px;">Ver todos</button></div>` : ""}
-  ${EDOMEX_CAPTCHA_PENDIENTE? `
-  <div class="panel">
-    <div class="panel-head"><h3>&#128274; Captcha de Edomex pendiente de resolver</h3></div>
-    <div class="panel-body" style="padding:16px 20px;">
-      <div class="notice" style="margin-bottom:12px;">El robot que revisa el boletín de Edomex${EDOMEX_CAPTCHA_PENDIENTE.expediente_exp?` está consultando el expediente <strong>${escapeHTML(EDOMEX_CAPTCHA_PENDIENTE.expediente_exp)}</strong> y`:''} necesita que alguien escriba el código de la imagen para continuar.</div>
-      <img src="data:image/png;base64,${EDOMEX_CAPTCHA_PENDIENTE.imagen_base64}" alt="Captcha de Edomex" style="display:block; margin-bottom:10px; border:1px solid var(--border); border-radius:6px; max-width:260px;">
-      <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-        <input type="text" id="edomexCaptchaInput" placeholder="Código de la imagen" style="padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px; max-width:200px;">
-        <button class="btn" id="edomexCaptchaBtn">Enviar</button>
-      </div>
-    </div>
-  </div>` : ""}
   ${avisosNuevosCount()>0? `
   <div class="panel">
     <div class="panel-head"><h3>&#128276; Avisos de boletines por revisar</h3><span class="count">${avisosNuevosCount()}</span></div>
@@ -6305,6 +6960,7 @@ function agendaHTML(){
           <span class="badge warn" style="flex-shrink:0;">nuevo</span>
         </div>
         <div class="aviso-resumen">${escapeHTML(a.resumen)}</div>
+        ${avisoIaHTML(a)}
         <div class="aviso-meta">${a.fecha_publicacion? 'Fecha del boletín: '+fmtDate(a.fecha_publicacion)+' &middot; ':''}${a.origen==='manual'?'Registrado por '+escapeHTML(a.creado_por_nombre||'—')+' el ':'Encontrado el '}${new Date(a.creado_en).toLocaleDateString('es-MX')}${a.url_verificacion? ` &middot; <a href="${escapeHTML(a.url_verificacion)}" target="_blank" rel="noopener">ver fuente</a>`:''}</div>
         <div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
@@ -6436,6 +7092,50 @@ function equipoHTML(){
     </form>
   </div></div>
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Calendarios de Google vigilados</div>
+    <div class="notice" style="margin-bottom:14px;">Cada abogado agenda sus audiencias/citatorios directo en su propio sub-calendario de Google (ej. "Audiencias Lindsay") -- liga aquí cuál corresponde a cuál abogado para que el sistema los lea solo y sugiera a qué expediente corresponde cada evento (nunca lo aplica solo -- siempre pide confirmar con un tap en "Preguntas al abogado"). Usa la MISMA cuenta de Google que ya conectaste en "Mi cuenta" (tiene que ver todos esos sub-calendarios en su "Mis calendarios").</div>
+    ${GOOGLE_CALENDARIOS_MAPEO.length ? `
+    <table style="margin-bottom:14px;"><thead><tr><th>Calendario</th><th>Abogado</th><th></th></tr></thead><tbody>
+      ${GOOGLE_CALENDARIOS_MAPEO.map(m=>`<tr>
+        <td>${escapeHTML(m.nombre_calendario)}</td>
+        <td>${escapeHTML(m.abogado_nombre)}</td>
+        <td><button class="btn secondary" data-calendario-mapeo-quitar="${m.id}" style="padding:5px 10px; font-size:11px;">Quitar</button></td>
+      </tr>`).join("")}
+    </tbody></table>` : ''}
+    <button class="btn secondary" id="cargarCalendariosGoogleBtn">${GOOGLE_CALENDARIOS_DISPONIBLES===null ? 'Cargar calendarios disponibles' : 'Actualizar lista'}</button>
+    <div id="calendariosGoogleDisponiblesWrap" style="margin-top:12px;">
+      ${GOOGLE_CALENDARIOS_DISPONIBLES && GOOGLE_CALENDARIOS_DISPONIBLES.length ? GOOGLE_CALENDARIOS_DISPONIBLES.map(c=>{
+        const yaMapeado = GOOGLE_CALENDARIOS_MAPEO.find(m=>m.calendar_id===c.id);
+        return `<div style="display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); flex-wrap:wrap;">
+          <div style="flex:1; min-width:180px; font-size:13px;">${escapeHTML(c.nombre)}</div>
+          <select class="calendario-google-abogado-select" data-calendar-id="${escapeHTML(c.id)}" data-calendar-nombre="${escapeHTML(c.nombre)}" style="padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:12.5px;">
+            <option value="">— No vigilar —</option>
+            ${EQUIPO.map(u=>`<option value="${u.id}" ${yaMapeado && yaMapeado.abogado_id===u.id?'selected':''}>${escapeHTML(u.name)}</option>`).join("")}
+          </select>
+          <button class="btn secondary" data-calendario-mapeo-guardar style="padding:5px 10px; font-size:11px;">Guardar</button>
+        </div>`;
+      }).join("") : (GOOGLE_CALENDARIOS_DISPONIBLES && !GOOGLE_CALENDARIOS_DISPONIBLES.length ? '<div class="empty">Sin calendarios encontrados en esa cuenta de Google.</div>' : '')}
+    </div>
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Actividad de la IA (últimos 30 días)</div>
+    <div class="notice" style="margin-bottom:14px;">Cada vez que la IA llena una etapa sola (acuerdos de boletín, documentos subidos, auditoría integral, Google Calendar) o rechaza una sugerencia por romper el orden cronológico, queda aquí -- para poder confirmar rápido que está haciendo lo correcto, sin tener que entrar expediente por expediente. Las acciones que un abogado confirmó con un tap (responder al supervisor, confirmar un evento de calendario) no cuentan aquí -- esas ya las revisó un humano antes de aplicarse.</div>
+    ${IA_ACTIVIDAD.length ? `
+    <table><thead><tr><th>Fecha</th><th>Expediente</th><th>Qué hizo</th></tr></thead><tbody>
+      ${IA_ACTIVIDAD.map(a=>{
+        const esRechazo = a.campo.includes('_rechazo_');
+        return `<tr>
+          <td style="white-space:nowrap; font-size:12px;">${new Date(a.creado_en).toLocaleString('es-MX',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
+          <td data-id="${a.expediente_id}" style="cursor:pointer; font-size:12.5px;">${escapeHTML(a.expediente_actor||'—')} <span style="color:var(--gray);">vs</span> ${escapeHTML(truncate(a.expediente_demandado||'—',24))}</td>
+          <td style="font-size:12.5px;">
+            <span class="badge ${esRechazo?'crit':'ok'}" style="margin-right:6px;">${esRechazo?'✗ rechazado':'✓ aplicado'}</span>
+            ${escapeHTML(a.despues||'')}
+          </td>
+        </tr>`;
+      }).join("")}
+    </tbody></table>` : '<div class="empty">Sin actividad autónoma de la IA en los últimos 30 días.</div>'}
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Respaldo de toda la información</div>
     <div class="notice" style="margin-bottom:14px;">Toda la información (etapas, notas, convenios, pagos, historial) vive ahora en la base de datos MySQL de tu hosting — el respaldo más confiable es el de cPanel (phpMyAdmin &rarr; Exportar, o la herramienta de "Copias de seguridad" de cPanel). Este botón descarga además un respaldo en JSON como referencia rápida.</div>
     <button class="btn secondary" id="descargarRespaldoBtn">Descargar respaldo (.json)</button>
@@ -6494,7 +7194,8 @@ function miCuentaHTML(){
       ${configurado ? `<button class="btn secondary" id="borrarPjfCredencialesBtn">Quitar cuenta guardada</button>` : ''}
     </div>
   </div></div>
-  ${edomexCorreoCredencialesHTML()}`;
+  ${edomexCorreoCredencialesHTML()}
+  ${cdmxBuzonCredencialesHTML()}`;
 }
 
 function edomexCorreoCredencialesHTML(){
@@ -6512,6 +7213,25 @@ function edomexCorreoCredencialesHTML(){
     <div style="margin-top:12px; display:flex; gap:10px;">
       <button class="btn" id="saveEdomexCorreoCredencialesBtn">Guardar</button>
       ${configurado ? `<button class="btn secondary" id="borrarEdomexCorreoCredencialesBtn">Quitar cuenta guardada</button>` : ''}
+    </div>
+  </div></div>`;
+}
+
+function cdmxBuzonCredencialesHTML(){
+  const c = CDMX_BUZON_CREDENCIALES;
+  const configurado = c && c.configurado;
+  return `
+  <div class="notice" style="margin:18px 0;">El Poder Judicial de la Ciudad de México notifica los acuerdos de tus juicios laborales por el Buzón Electrónico Laboral (buzonelectronicolaboral.poderjudicialcdmx.gob.mx) -- se consulta entrando a esa página con tu correo y contraseña. Guárdalos aquí para que el robot revise tu buzón por ti y reporte los acuerdos solo. Tu contraseña se guarda cifrada — nadie del despacho puede verla, ni siquiera un administrador.</div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:10px;">Buzón Electrónico Laboral (CDMX)</div>
+    ${configurado ? `<div class="notice" style="margin-bottom:14px; background:var(--amber-bg,#fdf6e3);">Ya tienes guardado el usuario <strong>${escapeHTML(c.cdmx_buzon_usuario)}</strong>${c.actualizado_en ? ' (actualizado el '+new Date(c.actualizado_en).toLocaleDateString('es-MX')+')' : ''}. Para cambiarlo, captura los datos de nuevo abajo.</div>` : ''}
+    <form id="cdmxBuzonCredencialesForm" class="grid2">
+      <div class="field"><label>Correo del Buzón</label><input type="text" id="cdmxBuzonUsuarioInput" placeholder="Tu correo de buzonelectronicolaboral.poderjudicialcdmx.gob.mx" value="${configurado ? escapeHTML(c.cdmx_buzon_usuario) : ''}"></div>
+      <div class="field"><label>Contraseña del Buzón</label><input type="password" id="cdmxBuzonPasswordInput" placeholder="Tu contraseña (siempre hay que volver a escribirla para guardar)"></div>
+    </form>
+    <div style="margin-top:12px; display:flex; gap:10px;">
+      <button class="btn" id="saveCdmxBuzonCredencialesBtn">Guardar</button>
+      ${configurado ? `<button class="btn secondary" id="borrarCdmxBuzonCredencialesBtn">Quitar cuenta guardada</button>` : ''}
     </div>
   </div></div>`;
 }
@@ -6751,6 +7471,45 @@ function bindViewBody(){
       renderViewBody();
     });
   });
+  document.querySelectorAll('[data-cal-nav]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      const dir = parseInt(el.dataset.calNav, 10);
+      if(AGENDA_CAL_VISTA === 'mes'){
+        if(dir === 0){
+          const hoy = new Date();
+          AGENDA_CAL_MES = {y: hoy.getFullYear(), m: hoy.getMonth()};
+        } else if(AGENDA_CAL_MES){
+          let {y, m} = AGENDA_CAL_MES;
+          m += dir;
+          if(m < 0){ m = 11; y--; } else if(m > 11){ m = 0; y++; }
+          AGENDA_CAL_MES = {y, m};
+        }
+      } else {
+        // Semana/Día comparten la misma ancla -- navegar de 7 en 7 días o
+        // de 1 en 1 según la vista activa.
+        if(dir === 0){
+          AGENDA_CAL_DIA = dateToISO(new Date());
+        } else {
+          const paso = AGENDA_CAL_VISTA === 'semana' ? 7 : 1;
+          const base = parseDate(AGENDA_CAL_DIA) || new Date();
+          AGENDA_CAL_DIA = dateToISO(addDaysDate(base, dir * paso));
+        }
+      }
+      renderViewBody();
+    });
+  });
+  document.querySelectorAll('[data-cal-vista]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      AGENDA_CAL_VISTA = el.dataset.calVista;
+      renderViewBody();
+    });
+  });
+  document.querySelectorAll('[data-cal-idx]').forEach(el=>{
+    el.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      abrirCalPopover(parseInt(el.dataset.calIdx, 10), el);
+    });
+  });
   const toggleDisponibilidad = document.querySelector('[data-toggle-disponibilidad]');
   if(toggleDisponibilidad){
     toggleDisponibilidad.addEventListener('click', ()=>{
@@ -6941,6 +7700,85 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo borrar: ' + err.message); }
     });
   });
+  document.querySelectorAll('[data-supervisor-responder]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const card = btn.closest('[data-supervisor-pregunta-id]');
+      const textarea = card ? card.querySelector('.supervisor-respuesta-input') : null;
+      const archivoInput = card ? card.querySelector('.supervisor-respuesta-archivo') : null;
+      const respuesta = textarea ? textarea.value.trim() : '';
+      const archivo = archivoInput && archivoInput.files[0] ? archivoInput.files[0] : null;
+      if(!respuesta && !archivo){ alert('Escribe una respuesta o adjunta un documento primero.'); return; }
+      btn.disabled = true;
+      btn.textContent = 'Enviando...';
+      try{
+        const fd = new FormData();
+        fd.append('id', String(parseInt(btn.dataset.supervisorResponder)));
+        fd.append('respuesta', respuesta);
+        if(archivo) fd.append('archivo', archivo);
+        const opts = {method:'POST', body: fd, credentials:'same-origin', headers:{}};
+        if(CSRF_TOKEN) opts.headers['X-CSRF-Token'] = CSRF_TOKEN;
+        const res = await fetch(API_BASE + 'supervisor_pregunta_responder.php', opts);
+        const json = await res.json();
+        if(!json || json.ok !== true) throw new Error((json && json.error) || ('Error del servidor ('+res.status+').'));
+        await loadSupervisorPreguntas();
+        if(ACTIVE_CASE){
+          ACTIVE_CASE = findCase(ACTIVE_CASE.id);
+          await loadDocumentos(ACTIVE_CASE.id);
+          renderModal();
+        }
+        renderViewBody();
+      }catch(err){
+        alert('No se pudo enviar: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = 'Responder';
+      }
+    });
+  });
+  // Confirmar/descartar una sugerencia de Google Calendar (11 nov 2026) --
+  // siempre requiere este tap, nunca se aplica sola.
+  document.querySelectorAll('[data-calendario-sugerencia-aplicar], [data-calendario-sugerencia-descartar]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const aplicar = btn.hasAttribute('data-calendario-sugerencia-aplicar');
+      const id = parseInt(aplicar ? btn.dataset.calendarioSugerenciaAplicar : btn.dataset.calendarioSugerenciaDescartar);
+      btn.disabled = true;
+      try{
+        await api('POST', 'google_calendario_sugerencia_resolver.php', {id, aplicar});
+        await loadGoogleCalendarioSugerencias();
+        if(ACTIVE_CASE){ ACTIVE_CASE = findCase(ACTIVE_CASE.id); renderModal(); }
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); btn.disabled = false; }
+    });
+  });
+  // Descartar una irregularidad (12 nov 2026) -- "Corregir" no pasa por
+  // aquí, es solo el [data-id] genérico que abre el expediente.
+  document.querySelectorAll('[data-irregularidad-descartar]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const id = parseInt(btn.dataset.irregularidadDescartar);
+      btn.disabled = true;
+      try{
+        await api('POST', 'qa_irregularidad_resolver.php', {id});
+        await loadIrregularidades();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); btn.disabled = false; }
+    });
+  });
+  // Se abrió el sistema desde el push de una pregunta nueva
+  // (abrirPreguntaDesdeNotificacion()) -- ya se renderizó "Preguntas al
+  // abogado" con el HTML en el DOM, así que recién aquí se puede hacer
+  // scroll y enfocar la tarjeta correcta. Se limpia después de usarse una
+  // sola vez.
+  if(PREGUNTA_ENFOCAR && VIEW === 'preguntas_abogado'){
+    const card = document.querySelector(`[data-supervisor-pregunta-id="${PREGUNTA_ENFOCAR}"]`);
+    if(card){
+      card.scrollIntoView({behavior:'smooth', block:'center'});
+      const textarea = card.querySelector('.supervisor-respuesta-input');
+      if(textarea) textarea.focus();
+    }
+    PREGUNTA_ENFOCAR = null;
+  }
   document.querySelectorAll('[data-prospecto-abrir]').forEach(el=>{
     el.addEventListener('click', async ()=>{
       const id = parseInt(el.dataset.prospectoAbrir);
@@ -7092,21 +7930,6 @@ function bindViewBody(){
       }
     });
   }
-  const edomexCaptchaBtn = document.getElementById('edomexCaptchaBtn');
-  if(edomexCaptchaBtn){
-    edomexCaptchaBtn.addEventListener('click', async ()=>{
-      const input = document.getElementById('edomexCaptchaInput');
-      const respuesta = input.value.trim();
-      if(!respuesta){ alert('Escribe el código que ves en la imagen.'); return; }
-      edomexCaptchaBtn.disabled = true;
-      try{
-        await api('POST', 'edomex_captcha_resolver.php', {id: EDOMEX_CAPTCHA_PENDIENTE.id, respuesta});
-        await loadEdomexCaptchaPendiente();
-        renderViewBody();
-      }catch(err){ alert('No se pudo enviar: ' + err.message); }
-      finally{ edomexCaptchaBtn.disabled = false; }
-    });
-  }
   document.querySelectorAll('[data-rename-btn]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const id = parseInt(btn.dataset.renameBtn);
@@ -7152,6 +7975,46 @@ function bindViewBody(){
   if(reporteEjecutivoBtn) reporteEjecutivoBtn.addEventListener('click', abrirReporteEjecutivoPDF);
   const descargarRespaldoBtn = document.getElementById('descargarRespaldoBtn');
   if(descargarRespaldoBtn) descargarRespaldoBtn.addEventListener('click', exportarRespaldo);
+  const cargarCalendariosGoogleBtn = document.getElementById('cargarCalendariosGoogleBtn');
+  if(cargarCalendariosGoogleBtn){
+    cargarCalendariosGoogleBtn.addEventListener('click', async ()=>{
+      cargarCalendariosGoogleBtn.disabled = true;
+      cargarCalendariosGoogleBtn.textContent = 'Cargando...';
+      try{
+        const d = await api('GET', 'google_calendarios_disponibles.php');
+        GOOGLE_CALENDARIOS_DISPONIBLES = d.calendarios;
+        renderViewBody();
+      }catch(err){ alert('No se pudo cargar: ' + err.message); }
+      finally{ cargarCalendariosGoogleBtn.disabled = false; cargarCalendariosGoogleBtn.textContent = 'Actualizar lista'; }
+    });
+  }
+  document.querySelectorAll('[data-calendario-mapeo-guardar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const sel = btn.previousElementSibling;
+      if(!sel || !sel.classList.contains('calendario-google-abogado-select')) return;
+      const calendarId = sel.dataset.calendarId;
+      const nombreCalendario = sel.dataset.calendarNombre;
+      const abogadoId = parseInt(sel.value);
+      if(!abogadoId){ alert('Elige a qué abogado corresponde este calendario primero.'); return; }
+      btn.disabled = true;
+      try{
+        await api('POST', 'google_calendarios_mapeo_set.php', {calendar_id: calendarId, nombre_calendario: nombreCalendario, abogado_id: abogadoId});
+        await loadGoogleCalendariosMapeo();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); btn.disabled = false; }
+    });
+  });
+  document.querySelectorAll('[data-calendario-mapeo-quitar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      if(!confirm('¿Dejar de vigilar este calendario? Las sugerencias ya aplicadas no se tocan.')) return;
+      btn.disabled = true;
+      try{
+        await api('POST', 'google_calendarios_mapeo_delete.php', {id: parseInt(btn.dataset.calendarioMapeoQuitar)});
+        await loadGoogleCalendariosMapeo();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); btn.disabled = false; }
+    });
+  });
   const addBtn = document.getElementById('addLawyerBtn2');
   if(addBtn) addBtn.addEventListener('click', async ()=>{
     const name = prompt("Nombre completo del socio/a a agregar:");
@@ -7276,6 +8139,32 @@ function bindViewBody(){
       }catch(err){ alert('No se pudo quitar: ' + err.message); }
     });
   }
+  const saveCdmxBuzonCredencialesBtn = document.getElementById('saveCdmxBuzonCredencialesBtn');
+  if(saveCdmxBuzonCredencialesBtn){
+    saveCdmxBuzonCredencialesBtn.addEventListener('click', async ()=>{
+      const cdmx_buzon_usuario = document.getElementById('cdmxBuzonUsuarioInput').value.trim();
+      const cdmx_buzon_password = document.getElementById('cdmxBuzonPasswordInput').value;
+      if(!cdmx_buzon_usuario || !cdmx_buzon_password){ alert('Escribe tu correo y tu contraseña del Buzón Electrónico Laboral.'); return; }
+      saveCdmxBuzonCredencialesBtn.disabled = true;
+      try{
+        await api('POST', 'cdmx_buzon_credenciales_set.php', {cdmx_buzon_usuario, cdmx_buzon_password});
+        await loadCdmxBuzonCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); }
+      finally{ saveCdmxBuzonCredencialesBtn.disabled = false; }
+    });
+  }
+  const borrarCdmxBuzonCredencialesBtn = document.getElementById('borrarCdmxBuzonCredencialesBtn');
+  if(borrarCdmxBuzonCredencialesBtn){
+    borrarCdmxBuzonCredencialesBtn.addEventListener('click', async ()=>{
+      if(!confirm('¿Quitar tu cuenta guardada del Buzón Electrónico Laboral? El robot dejará de revisar tu buzón hasta que la vuelvas a capturar.')) return;
+      try{
+        await api('POST', 'cdmx_buzon_credenciales_set.php', {borrar: true});
+        await loadCdmxBuzonCredenciales();
+        renderViewBody();
+      }catch(err){ alert('No se pudo quitar: ' + err.message); }
+    });
+  }
 }
 
 // ---------------------------------------------------------------
@@ -7288,17 +8177,27 @@ async function openModal(k, tab){
   ARCHIVO_CROP_QUEUE = [];
   ACTIVE_CASE = k; MODAL_TAB = tab || "resumen";
   if(MODAL_TAB === 'documentos') await loadDocumentos(k.id);
-  if(MODAL_TAB === 'resumen' && !k.resumen_ejecutivo && !(INFORME_EJECUTIVO_STATE[k.id]||{}).cargando) cargarInformeEjecutivo(k.id, false);
+  if(MODAL_TAB === 'resumen' && !(INFORME_EJECUTIVO_STATE[k.id]||{}).cargando) cargarInformeEjecutivo(k.id, false);
   renderModal();
   document.getElementById('modalOverlay').classList.add('show');
 }
 // Pide (o regenera) el informe ejecutivo con IA de un expediente. El backend
 // cachea el resultado y solo vuelve a llamar a la IA si el expediente cambió
 // desde la última vez -- por eso es seguro llamar esto sin forzar cada vez
-// que se abre la pestaña "Informe del juicio".
+// que se abre la pestaña "Informe del juicio" (confirmado real, 10 nov 2026:
+// antes los 2 lugares que llamaban a esta función solo lo hacían si
+// `!k.resumen_ejecutivo`, así que un informe generado una sola vez se
+// quedaba congelado para siempre -- el chequeo de "¿cambió el expediente?"
+// del backend nunca llegaba a correr de nuevo). Si ya había un resumen
+// mostrado, la revisión es silenciosa (no se tapa el texto con el
+// indicador de carga) -- solo se ve el "cargando" cuando no hay nada
+// todavía o cuando se fuerza a mano con el botón "Actualizar".
 async function cargarInformeEjecutivo(caseId, forzar){
-  INFORME_EJECUTIVO_STATE[caseId] = {cargando:true, error:null};
-  if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
+  const yaHabiaResumen = !!(findCase(caseId) || {}).resumen_ejecutivo;
+  if(!yaHabiaResumen || forzar){
+    INFORME_EJECUTIVO_STATE[caseId] = {cargando:true, error:null};
+    if(ACTIVE_CASE && ACTIVE_CASE.id===caseId && MODAL_TAB==='resumen') renderModal();
+  }
   try{
     const r = await api('POST', 'expediente_resumen_ejecutivo.php', {id: caseId, forzar: !!forzar});
     const kc = findCase(caseId);
@@ -7377,7 +8276,7 @@ function renderModal(){
       if(b.dataset.t !== 'documentos'){ detenerCamara(); CROP_PENDING = null; ARCHIVO_CROP_QUEUE = []; } // no dejar la cámara prendida ni una cola de recorte a medias al salir de la pestaña
       MODAL_TAB = b.dataset.t;
       if(MODAL_TAB === 'documentos') await loadDocumentos(ACTIVE_CASE.id);
-      if(MODAL_TAB === 'resumen' && !ACTIVE_CASE.resumen_ejecutivo && !(INFORME_EJECUTIVO_STATE[ACTIVE_CASE.id]||{}).cargando) cargarInformeEjecutivo(ACTIVE_CASE.id, false);
+      if(MODAL_TAB === 'resumen' && !(INFORME_EJECUTIVO_STATE[ACTIVE_CASE.id]||{}).cargando) cargarInformeEjecutivo(ACTIVE_CASE.id, false);
       renderModal();
     });
   });
@@ -7610,7 +8509,7 @@ function modalTabContent(k,p,meta){
       <div class="field"><label>Puesto</label><div class="v">${escapeHTML(k.puesto||'—')}</div></div>
       <div class="field"><label>Socio asignado</label><div class="v">${escapeHTML(assignedLawyer(k))}</div></div>
       <div class="field"><label>Estatus (importado)</label><div class="v">${escapeHTML(k.status||'—')}</div></div>
-      <div class="field"><label>Instancia</label><div class="v">${escapeHTML(k.junta || k.instancia || '—')}</div></div>
+      <div class="field"><label>Tribunal</label><div class="v">${escapeHTML(k.tribunal || k.junta || k.instancia || '—')}</div></div>
       <div class="field"><label>Fecha de ingreso</label><div class="v">${fmtDate(k.fecha_ingreso)}</div></div>
       <div class="field"><label>Fecha de baja</label><div class="v">${fmtDate(k.fecha_baja)}</div></div>
       <div class="field"><label>Antigüedad</label><div class="v">${liqResumen? liqResumen.aniosDec.toFixed(2)+' años':'—'}</div></div>
@@ -7631,6 +8530,7 @@ function modalTabContent(k,p,meta){
     </div>
     <div style="margin-top:10px;">
       <textarea id="nuevaNotaTexto" placeholder="Agregar una nueva nota de seguimiento..." style="width:100%; min-height:70px; border:1px solid var(--border); border-radius:8px; padding:9px 11px; font-size:13px; font-family:var(--sans); background:var(--parchment);"></textarea>
+      ${dictadoBotonHTML('nuevaNotaTexto')}
       <button class="btn" id="agregarNotaBtn" style="margin-top:8px;">+ Agregar nota (con fecha automática)</button>
     </div>
   `;
@@ -7780,7 +8680,6 @@ function modalTabContent(k,p,meta){
       <input type="text" id="amparoTribunalOtro" placeholder="Nombre completo del tribunal o juzgado" value="${circuitoActual===''?escapeHTML(meta.amparo_tribunal||''):''}">
     </div>
     <div class="field" style="margin-top:10px;"><label>Número de expediente del amparo</label><input type="text" id="amparoExpediente" placeholder="Ej. AD 123/2026 (distinto al expediente del juicio laboral)" value="${escapeHTML(meta.amparo_expediente||'')}"></div>
-    <div class="field" style="margin-top:14px;"><label>Notas sobre el amparo</label><textarea id="amparoNotas" placeholder="Acto reclamado, observaciones...">${escapeHTML(meta.amparo_notas||'')}</textarea></div>
     <div class="legal-box">Art. 17, párrafo primero, de la Ley de Amparo: el plazo general para presentar la demanda de amparo directo es de 15 días, contados por días hábiles a partir del día siguiente a que surta efectos la notificación de la sentencia o laudo definitivo (Art. 22 de la Ley de Amparo). Este cálculo descarta sábados, domingos y los días inhábiles capturados en "Días inhábiles"; aun así, verifica el calendario oficial del Tribunal Colegiado de Circuito correspondiente antes de tomar decisiones procesales. El número de expediente del amparo (una vez que el Tribunal lo asigne) es lo que permite que el robot Federal también avise cuando haya movimientos ahí -- captúralo en cuanto lo tengas.</div>
     <div style="margin-top:14px;"><button class="btn" id="saveAmparoBtn">Guardar datos de amparo</button></div>
     `;
@@ -7788,7 +8687,7 @@ function modalTabContent(k,p,meta){
   if(MODAL_TAB==='boletin'){
     const avisos = avisosDeExpediente(k.id);
     return `
-    <div class="notice" style="margin-bottom:16px;">Los robots de monitoreo revisan solos el boletín Federal y el de CDMX todos los días; Edomex necesita que alguien resuelva un captcha cuando el robot lo pida (aparece en Agenda). También puedes registrar aquí a mano cualquier revisión que hagas tú mismo.</div>
+    <div class="notice" style="margin-bottom:16px;">Los robots de monitoreo (Federal, CDMX y el correo de notificaciones de Edomex) revisan solos el boletín todos los días, sin necesitar que nadie resuelva nada a mano. También puedes registrar aquí a mano cualquier revisión que hagas tú mismo.</div>
     <div class="grid2" style="margin-bottom:6px;">
       <div class="field"><label>Fuente revisada</label>
         <select id="avisoFuente" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
@@ -7797,7 +8696,7 @@ function modalTabContent(k,p,meta){
       </div>
       <div class="field"><label>Fecha del boletín revisado</label><input type="date" id="avisoFecha" value="${dateToISO(new Date())}"></div>
     </div>
-    <div class="field" style="margin-top:6px;"><label>¿Qué encontraste? (o "sin novedades" si no había nada nuevo)</label><textarea id="avisoResumen" placeholder="Ej. Se dictó auto admitiendo pruebas; próxima audiencia el..."></textarea></div>
+    <div class="field" style="margin-top:6px;"><label>¿Qué encontraste? (o "sin novedades" si no había nada nuevo)</label><textarea id="avisoResumen" placeholder="Ej. Se dictó auto admitiendo pruebas; próxima audiencia el..."></textarea>${dictadoBotonHTML('avisoResumen')}</div>
     <div class="field" style="margin-top:6px;"><label>Enlace de verificación (opcional)</label><input type="text" id="avisoUrl" placeholder="https://..."></div>
     <div style="margin-top:12px;"><button class="btn" id="addAvisoBtn">Registrar revisión</button></div>
     <div class="divider"></div>
@@ -7811,6 +8710,7 @@ function modalTabContent(k,p,meta){
           <span class="badge ${a.estado==='nuevo'?'warn':a.estado==='descartado'?'closed':'ok'}">${a.estado}</span>
         </div>
         <div class="aviso-resumen">${escapeHTML(a.resumen)}</div>
+        ${avisoIaHTML(a)}
         <div class="aviso-meta">${a.fecha_publicacion? 'Fecha del boletín: '+fmtDate(a.fecha_publicacion)+' &middot; ':''}${a.origen==='manual'?'Registrado por '+escapeHTML(a.creado_por_nombre||'—')+' el ':'Encontrado el '}${new Date(a.creado_en).toLocaleDateString('es-MX')}${a.url_verificacion? ` &middot; <a href="${escapeHTML(a.url_verificacion)}" target="_blank" rel="noopener">ver fuente</a>`:''}</div>
         ${a.estado==='nuevo' ? `<div class="aviso-actions">
           <button class="btn secondary" data-aviso-mark="${a.id}" data-estado="revisado" style="padding:6px 12px; font-size:11.5px;">Marcar revisado</button>
@@ -7821,11 +8721,27 @@ function modalTabContent(k,p,meta){
     `;
   }
   if(MODAL_TAB==='editar'){
+    // Mostrar/ocultar por tipo de demanda (11 nov 2026, pedido explícito
+    // del usuario): un campo sin `scope` es común a cualquier demanda
+    // (actor, fechas, salario...) y siempre se muestra; uno con `scope`
+    // (los de Rescisión Art. 51 / Prima de antigüedad) se oculta si no
+    // coincide con `tipo_demanda`. Se renderizan TODOS los campos (nunca
+    // se quitan del DOM) y el selector de tipo_demanda solo alterna
+    // data-scope con CSS al cambiar (ver el listener en bindModalEvents())
+    // -- así cambiar de tipo sin guardar primero no arriesga perder lo que
+    // ya se haya escrito en otro campo visible.
     return `
     <div class="notice" style="margin-bottom:14px;">Todo lo que captures aquí sobrescribe el dato importado (si lo había) y queda registrado en el Historial de cambios. Déjalo en blanco para conservar el valor original.</div>
+    <div class="notice" style="margin-bottom:14px;">Elige primero el <strong>Tipo de demanda a presentar</strong> -- el resto de los campos de Rescisión Art. 51 o Prima de antigüedad solo aparecen una vez que elijas ese tipo.</div>
     <div class="grid2">
-      ${EDITABLE_FIELDS.map(f=>`
-        <div class="field">
+      ${EDITABLE_FIELDS.map(f=>{
+        // f.scope puede ser un string (un solo tipo) o un arreglo (varios
+        // tipos aplican, ej. horario/jornada sirve para Demanda normal Y
+        // Rescisión Art. 51, pero no para Prima de antigüedad).
+        const scopeList = Array.isArray(f.scope) ? f.scope : (f.scope ? [f.scope] : null);
+        const atributoScope = scopeList ? `data-tipo-demanda-scope="${escapeHTML(scopeList.join('|'))}" style="${!scopeList.includes(k.tipo_demanda)?'display:none;':''}"` : '';
+        return `
+        <div class="field" ${atributoScope}>
           <label>${escapeHTML(f.label)}</label>
           ${f.type==='date' ?
             `<input type="date" class="edit-field" data-field="${f.key}" value="${k[f.key]||''}">` :
@@ -7852,23 +8768,41 @@ function modalTabContent(k,p,meta){
               </select>`;
             })() :
             f.type==='tribunal' ?
-            tribunalFieldHTML(f, k[f.key]!=null ? String(k[f.key]) : '') :
+            // Expedientes viejos capturados cuando todavía existía el campo
+            // 'junta' por separado: si 'tribunal' está vacío, se usa 'junta'
+            // como punto de partida para que no se vea en blanco un dato
+            // que sí existe, solo que bajo el nombre de columna anterior.
+            tribunalFieldHTML(f, (k[f.key] || (f.key==='tribunal' ? k.junta : '') || '') + '') :
             (f.key==='ultima_nota' || f.type==='textarea') ?
-            `<textarea class="edit-field" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>` :
+            `<textarea class="edit-field" id="edit-field-${f.key}" data-field="${f.key}">${escapeHTML(k[f.key]||'')}</textarea>${dictadoBotonHTML('edit-field-' + f.key)}` :
             `<input type="text" class="edit-field" data-field="${f.key}" value="${escapeHTML(k[f.key]!=null?k[f.key]:'')}">`
           }
-        </div>`).join("")}
+        </div>`;
+      }).join("")}
     </div>
     <div style="margin-top:18px;"><button class="btn" id="saveCamposBtn">Guardar datos del expediente</button></div>
     `;
   }
   if(MODAL_TAB==='documentos'){
+    const docsJuicio = documentosDelSubtab(DOCUMENTOS_ACTIVOS, 'juicio');
+    const docsAmparo = documentosDelSubtab(DOCUMENTOS_ACTIVOS, 'amparo');
+    const docsSubtabActual = DOCUMENTOS_SUBTAB === 'amparo' ? docsAmparo : docsJuicio;
+    // En la subpestaña Amparo el desplegable de categoría solo ofrece
+    // 'acuerdo_amparo' (no tendría sentido subir ahí una "Demanda" o
+    // "Pruebas" del juicio principal); en Juicio se ofrecen todas las
+    // demás, igual que antes.
+    const categoriasDisponibles = Object.keys(CATEGORIA_DOCUMENTO_LABEL)
+      .filter(c => DOCUMENTOS_SUBTAB === 'amparo' ? c === 'acuerdo_amparo' : c !== 'acuerdo_amparo');
     return `
+    <div class="doc-subtabs" style="margin-bottom:16px;">
+      <button data-docsubtab="juicio" class="${DOCUMENTOS_SUBTAB==='juicio'?'active':''}">Juicio principal ${docsJuicio.length ? `<span class="nav-badge">${docsJuicio.length}</span>` : ""}</button>
+      <button data-docsubtab="amparo" class="${DOCUMENTOS_SUBTAB==='amparo'?'active':''}">Amparo ${docsAmparo.length ? `<span class="nav-badge">${docsAmparo.length}</span>` : ""}</button>
+    </div>
     <div class="notice" style="margin-bottom:16px;">Sube aquí los documentos de este asunto (demanda, contestación, pruebas, actas de audiencia...). Formatos permitidos: PDF, Word, Excel e imágenes (JPG/PNG), hasta 20 MB por archivo. Si eliges una o varias imágenes, cada una se abre primero en un visor donde puedes ajustar el recuadro a las orillas del documento y girarla si salió de lado o al revés; si eliges varias juntas, al terminar se arman en un solo PDF, ya recortadas y acomodadas en orden.</div>
     <div class="grid2" style="margin-bottom:6px;">
       <div class="field"><label>Categoría</label>
         <select id="documentoCategoria" style="width:100%; padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
-          ${Object.keys(CATEGORIA_DOCUMENTO_LABEL).map(c=>`<option value="${c}">${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[c])}</option>`).join("")}
+          ${categoriasDisponibles.map(c=>`<option value="${c}">${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[c])}</option>`).join("")}
         </select>
       </div>
       <div class="field"><label>Archivo (puedes elegir varias imágenes a la vez)</label><input type="file" id="documentoArchivo" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" multiple></div>
@@ -7889,11 +8823,11 @@ function modalTabContent(k,p,meta){
     `}
     <div id="fotosPanel">${fotosPanelHTML()}</div>
     <div class="divider"></div>
-    <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Documentos subidos (${DOCUMENTOS_ACTIVOS.length})</div>
-    ${DOCUMENTOS_ACTIVOS.length ? `<table><thead><tr><th>Archivo</th><th>Categoría</th><th>Tamaño</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead><tbody>
-      ${DOCUMENTOS_ACTIVOS.map(d=>`
+    <div style="font-family:var(--serif); font-size:15px; font-weight:700; margin-bottom:10px; color:var(--ink);">Documentos subidos (${docsSubtabActual.length})</div>
+    ${docsSubtabActual.length ? `<table><thead><tr><th>Archivo</th><th>Categoría</th><th>Tamaño</th><th>Subido por</th><th>Fecha</th><th></th></tr></thead><tbody>
+      ${documentosAgrupadosPorCategoria(docsSubtabActual).map(d=>`
         <tr>
-          <td>${escapeHTML(d.nombre_archivo)}</td>
+          <td>${escapeHTML(d.nombre_archivo)}${documentoIaHTML(d)}</td>
           <td>${escapeHTML(CATEGORIA_DOCUMENTO_LABEL[d.categoria] || d.categoria)}</td>
           <td>${fmtBytes(d.tamano_bytes)}</td>
           <td>${escapeHTML(d.subido_por_nombre || '—')}</td>
@@ -7904,7 +8838,7 @@ function modalTabContent(k,p,meta){
             <button class="btn secondary" data-delete-documento="${d.id}" style="padding:5px 10px; font-size:11px;">Eliminar</button>
           </td>
         </tr>`).join("")}
-    </tbody></table>` : '<div class="empty">Sin documentos subidos todavía.</div>'}
+    </tbody></table>` : `<div class="empty">Sin documentos ${DOCUMENTOS_SUBTAB==='amparo' ? 'de amparo' : 'del juicio'} subidos todavía.</div>`}
     `;
   }
   if(MODAL_TAB==='historial'){
@@ -7985,6 +8919,7 @@ function modalTabContent(k,p,meta){
     <div class="field" style="margin-top:14px;">
       <label>Notas internas del despacho</label>
       <textarea id="notasInternas" placeholder="Notas de seguimiento, acuerdos, pendientes...">${escapeHTML(meta.notas||'')}</textarea>
+      ${dictadoBotonHTML('notasInternas')}
     </div>
     <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-size:12.5px; color:var(--ink);">
       <input type="checkbox" id="cobroPendiente" ${meta.cobro_pendiente?'checked':''}> Convenio pagado pendiente de cobro / seguimiento de pago
@@ -8014,7 +8949,13 @@ function modalTabContent(k,p,meta){
     <div class="notice" style="margin-bottom:14px;">Marca cada etapa conforme vaya ocurriendo. Al registrar "Demanda presentada" el sistema deja de contar la prescripción de este asunto automáticamente. En las audiencias puedes capturar la fecha en que están agendadas aunque todavía no se celebren — eso es lo que le aparece a tu cliente como "próxima audiencia".</div>
     ${ETAPAS_DEF.map(def=>{
       const val = k_etapa_valor(meta, def.key);
-      const esAudiencia = def.key==='audiencia_preliminar' || def.key==='audiencia_juicio';
+      // Los citatorios de conciliación también se agendan con anticipación
+      // (igual que una audiencia) -- antes solo tenían un campo de fecha
+      // ambiguo ("¿ya pasó o está agendado?"), así que nunca aparecían en
+      // Agenda como pendientes (11 nov 2026, bug real reportado por el
+      // usuario: un citatorio agendado no se veía en ningún lado).
+      const esAudiencia = def.key==='audiencia_preliminar' || def.key==='audiencia_juicio'
+        || def.key==='conciliacion_primer_citatorio' || def.key==='conciliacion_segundo_citatorio';
       const esSentencia = def.key==='sentencia';
       const programada = (meta.etapas[def.key] && meta.etapas[def.key].fecha_programada) || '';
       const resultado = (meta.etapas[def.key] && meta.etapas[def.key].resultado) || '';
@@ -8163,6 +9104,12 @@ async function iniciarCropArchivo(file, esMulti){
 function bindModalTabEvents(){
   bindTribunalFieldEvents();
   bindTipoAsuntoField();
+  document.querySelectorAll('[data-docsubtab]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      DOCUMENTOS_SUBTAB = btn.dataset.docsubtab;
+      renderModal();
+    });
+  });
   const subirDocumentoBtn = document.getElementById('subirDocumentoBtn');
   if(subirDocumentoBtn){
     subirDocumentoBtn.addEventListener('click', async ()=>{
@@ -8272,6 +9219,20 @@ function bindModalTabEvents(){
       }catch(err){ alert('No se pudo eliminar: ' + err.message); }
     });
   });
+  // Confirmar la categoría que la IA sugirió al analizar el documento (11
+  // nov 2026) -- siempre requiere este tap, nunca se aplica sola (ver
+  // documentos_recategorizar.php).
+  document.querySelectorAll('[data-documento-recategorizar]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = parseInt(btn.dataset.documentoRecategorizar);
+      btn.disabled = true;
+      try{
+        await api('POST', 'documentos_recategorizar.php', {id});
+        await loadDocumentos(ACTIVE_CASE.id);
+        renderModal();
+      }catch(err){ alert('No se pudo actualizar la categoría: ' + err.message); btn.disabled = false; }
+    });
+  });
   const exportarCalculoBtn = document.getElementById('exportarCalculoBtn');
   if(exportarCalculoBtn){
     exportarCalculoBtn.addEventListener('click', ()=> abrirCalculoPDF(ACTIVE_CASE));
@@ -8286,6 +9247,20 @@ function bindModalTabEvents(){
     };
     escritoPlantillaSelect.addEventListener('change', togglePanel);
     togglePanel();
+  }
+  // Mostrar/ocultar en vivo los campos de Rescisión Art. 51 / Prima de
+  // antigüedad en "Editar datos" según el "Tipo de demanda a presentar"
+  // (11 nov 2026) -- nunca se re-renderiza el tab entero aquí (eso
+  // perdería cualquier dato sin guardar que ya esté escrito en otro
+  // campo visible), solo se alterna CSS sobre lo que ya está en el DOM.
+  const tipoDemandaSelect = document.querySelector('[data-field="tipo_demanda"]');
+  if(tipoDemandaSelect){
+    tipoDemandaSelect.addEventListener('change', ()=>{
+      const actual = tipoDemandaSelect.value;
+      document.querySelectorAll('[data-tipo-demanda-scope]').forEach(div=>{
+        div.style.display = div.dataset.tipoDemandaScope.split('|').includes(actual) ? '' : 'none';
+      });
+    });
   }
   const genDemandaBtn = document.getElementById('genDemandaBtn');
   if(genDemandaBtn){
@@ -8459,6 +9434,7 @@ function bindModalTabEvents(){
         savePendBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(savePendBtn) savePendBtn.textContent = "Guardar pendientes"; }, 1600);
         await refreshBootstrap();
+        syncGoogleIfConnected();
         ACTIVE_CASE = findCase(ACTIVE_CASE.id);
         renderModal();
         renderViewBody();
@@ -8560,6 +9536,11 @@ function bindModalTabEvents(){
       const amparoTribunalFinal = tribunalSelVal === AMPARO_TRIBUNAL_OTRO
         ? (document.getElementById('amparoTribunalOtro') ? document.getElementById('amparoTribunalOtro').value.trim() : '')
         : tribunalSelVal;
+      // Las notas ya no se capturan aquí (pedido del usuario: menos campos
+      // en Amparo) -- si un expediente viejo ya tenía notas, se mandan tal
+      // cual para no perderlas al guardar, aunque ya no se puedan editar
+      // desde esta pestaña.
+      const metaActual = getMeta(ACTIVE_CASE.id);
       try{
         await api('POST', 'expedientes_update_amparo.php', {
           id: ACTIVE_CASE.id,
@@ -8567,7 +9548,7 @@ function bindModalTabEvents(){
           amparo_fecha_notif: document.getElementById('amparoFecha').value,
           amparo_tribunal: amparoTribunalFinal,
           amparo_expediente: document.getElementById('amparoExpediente').value.trim(),
-          amparo_notas: document.getElementById('amparoNotas').value
+          amparo_notas: metaActual.amparo_notas || ''
         });
         saveAmparoBtn.textContent = "Guardado ✓";
         setTimeout(()=>{ if(saveAmparoBtn) saveAmparoBtn.textContent = "Guardar datos de amparo"; }, 1600);
@@ -8904,6 +9885,32 @@ async function init(){
     history.replaceState(null, '', location.pathname);
     abrirConversacionDesdeNotificacion(abrirParam);
   }
+
+  // Igual, pero para el push de "pregunta nueva del supervisor" (10 nov
+  // 2026) -- lleva directo a "Preguntas al abogado" y enfoca esa pregunta.
+  const preguntaParam = new URLSearchParams(location.search).get('pregunta');
+  if(preguntaParam){
+    history.replaceState(null, '', location.pathname);
+    abrirPreguntaDesdeNotificacion(preguntaParam);
+  }
+
+  // Push de "evento de calendario por confirmar" (ver
+  // cron_leer_google_calendar.php, 11 nov 2026) -- lleva directo a
+  // "Preguntas al abogado", donde vive el panel de sugerencias.
+  const pregCalParam = new URLSearchParams(location.search).get('pregunta_calendario');
+  if(pregCalParam){
+    history.replaceState(null, '', location.pathname);
+    if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){ VIEW = 'preguntas_abogado'; render(); }
+  }
+
+  // Push de "posible irregularidad detectada" (ver
+  // cron_qa_irregularidades.php, 12 nov 2026) -- lleva directo a
+  // "Preguntas al abogado", donde vive el panel nuevo.
+  const irregularidadParam = new URLSearchParams(location.search).get('irregularidad');
+  if(irregularidadParam){
+    history.replaceState(null, '', location.pathname);
+    if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){ VIEW = 'preguntas_abogado'; render(); }
+  }
 }
 init();
 
@@ -8913,9 +9920,46 @@ init();
 if('serviceWorker' in navigator){
   navigator.serviceWorker.addEventListener('message', (event)=>{
     if(event.data && event.data.type === 'abrir-conversacion' && event.data.url){
-      const telefono = new URL(event.data.url, location.origin).searchParams.get('abrir');
+      const urlNotificacion = new URL(event.data.url, location.origin);
+      const telefono = urlNotificacion.searchParams.get('abrir');
+      const preguntaId = urlNotificacion.searchParams.get('pregunta');
       if(telefono) abrirConversacionDesdeNotificacion(telefono);
+      if(preguntaId) abrirPreguntaDesdeNotificacion(preguntaId);
     }
   });
 }
+
+// Dictado por voz genérico (11 nov 2026, ver dictadoBotonHTML()) -- un
+// solo listener delegado para CUALQUIER botón "🎤 Dictar" del sistema, sin
+// importar en qué modal/pestaña se pinte ni cuántas veces se vuelva a
+// renderizar esa vista. Reconocimiento de voz nativo del navegador (Web
+// Speech API), gratis y sin mandar nada a ningún servidor de
+// transcripción.
+document.addEventListener('click', (ev)=>{
+  const btn = ev.target.closest('.btn-dictar');
+  if(!btn) return;
+  ev.stopPropagation();
+  const textarea = document.getElementById(btn.dataset.dictarTarget);
+  if(!textarea) return;
+  if(btn.dataset.grabando === '1'){ if(window.__dictadoActivo) window.__dictadoActivo.stop(); return; }
+  if(window.__dictadoActivo) window.__dictadoActivo.stop(); // solo un dictado activo a la vez
+
+  const Reconocedor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recog = new Reconocedor();
+  recog.lang = 'es-MX';
+  recog.interimResults = false;
+  recog.continuous = true;
+  const textoBase = textarea.value;
+  recog.onresult = (ev2)=>{
+    let textoNuevo = '';
+    for(let i = ev2.resultIndex; i < ev2.results.length; i++) textoNuevo += ev2.results[i][0].transcript;
+    textarea.value = (textoBase + ' ' + textoNuevo).trim();
+  };
+  recog.onerror = ()=>{ alert('No se pudo escuchar — revisa que le diste permiso de micrófono al navegador.'); };
+  recog.onend = ()=>{ btn.dataset.grabando = '0'; btn.textContent = '🎤 Dictar'; window.__dictadoActivo = null; };
+  window.__dictadoActivo = recog;
+  btn.dataset.grabando = '1';
+  btn.textContent = '⏹️ Detener';
+  recog.start();
+});
 

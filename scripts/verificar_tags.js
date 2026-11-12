@@ -47,7 +47,7 @@ if (!INIT_RE.test(src)) {
 src += `
 globalThis.__VERIFICAR_EXPORTS__ = {
   mergeTags, calcularJornada, construirPrestacionesOpcionalesTexto,
-  construirPruebasAdicionalesTexto, construirHechoCausaAuto, FRACCION_51,
+  construirPruebasAdicionalesTexto, FRACCION_51,
   PRESTACIONES_RESCISION_OPCIONES,
 };
 `;
@@ -84,7 +84,7 @@ try {
 }
 
 const { mergeTags, calcularJornada, construirPrestacionesOpcionalesTexto,
-  construirPruebasAdicionalesTexto, construirHechoCausaAuto, FRACCION_51,
+  construirPruebasAdicionalesTexto, FRACCION_51,
   PRESTACIONES_RESCISION_OPCIONES } = sandbox.__VERIFICAR_EXPORTS__;
 
 // ---------------------------------------------------------------------
@@ -122,8 +122,7 @@ const FIXTURES = {
     hora_entrada: '09:00', hora_salida: '19:00', comida_inicio: '14:00', comida_fin: '15:00',
     dias_laborados: 'lunes a viernes', dias_laborados_num: 5, tipo_jornada: 'Diurna',
     rescision_fraccion: 'V', fecha_rescision: '2026-07-01', fecha_desde_incumplimiento: '2026-05-01',
-    persona_responsable_incumplimiento: 'Carlos López', hecho_causa_narrativa: 'Detalle extra de prueba.',
-    banco1_nombre: 'BBVA México', banco1_cuenta: '123456789',
+    persona_responsable_incumplimiento: 'Carlos López', hecho_causa_narrativa: 'Es el caso que, a partir del 1 de mayo de 2026, la demandada incumplió con sus obligaciones de pago, hecho redactado íntegramente por el abogado de prueba.',
     monto_prima_antiguedad: 15000, fecha_solicitud_interna: '2026-01-14', hora_solicitud_interna: '17:07',
     folio_solicitud_interna: '0153', funcionario_rh_nombre: 'Ana Ruiz', funcionario_rh_puesto: 'Encargada de RH',
     numero_oficio_respuesta: 'DCAF/0001/2026', fecha_oficio_respuesta: '2026-03-02',
@@ -219,41 +218,46 @@ for (const [nombreCaso, claves] of Object.entries({
 if (!fallas) ok('Prestaciones opcionales de Rescisión Art. 51 -- letras correctas, sin "undefined".');
 
 // ---------------------------------------------------------------------
-// 7) Las 9 fracciones del art. 51 deben producir un párrafo completo.
+// 7) El hecho de la causal de Rescisión Art. 51 ahora lo redacta el
+//    abogado a mano (11 nov 2026, pedido explícito del usuario) -- el
+//    catálogo de 9 frases automáticas por fracción se quitó del todo.
+//    hecho_causa_auto debe salir SIEMPRE vacío (nunca "undefined", nunca
+//    el párrafo viejo) y hecho_causa_narrativa debe traer tal cual lo que
+//    haya escrito el abogado, o el placeholder de siempre si está vacío.
 // ---------------------------------------------------------------------
 for (const code of Object.keys(FRACCION_51)) {
   const tags = mergeTags(Object.assign({}, FIXTURES.completo, { rescision_fraccion: code }));
-  const texto = tags.hecho_causa_auto;
-  if (!texto || /\bundefined\b/.test(texto)) {
-    fallo(`Fracción ${code} del art. 51: hecho_causa_auto sale mal ("${texto}").`);
+  if (tags.hecho_causa_auto !== '') {
+    fallo(`Fracción ${code} del art. 51: hecho_causa_auto debía salir vacío y salió ("${tags.hecho_causa_auto}").`);
+  }
+  if (!tags.hecho_causa_narrativa || /\bundefined\b/.test(tags.hecho_causa_narrativa)) {
+    fallo(`Fracción ${code} del art. 51: hecho_causa_narrativa sale mal ("${tags.hecho_causa_narrativa}").`);
   }
 }
-if (!fallas) ok('Las 9 fracciones del art. 51 arman un párrafo completo (hecho_causa_auto).');
+const tagsSinHecho = mergeTags(Object.assign({}, FIXTURES.completo, { hecho_causa_narrativa: null }));
+if (tagsSinHecho.hecho_causa_narrativa !== '________________') {
+  fallo(`hecho_causa_narrativa vacío debía caer al placeholder y salió ("${tagsSinHecho.hecho_causa_narrativa}").`);
+}
+if (!fallas) ok('hecho_causa_auto vacío en las 9 fracciones; hecho_causa_narrativa trae el párrafo del abogado o el placeholder.');
 
 // ---------------------------------------------------------------------
-// 8) Pruebas adicionales (bancos + inspección + testimonial), con 0, 1 y
-//    3 bancos capturados -- la numeración debe seguir corrida.
+// 8) Pruebas adicionales (inspección + testimonial) -- los bancos se
+//    quitaron del todo (11 nov 2026), la numeración ya no depende de
+//    nada capturado y siempre debe arrancar en 5/6.
 // ---------------------------------------------------------------------
-for (const n of [0, 1, 3]) {
-  const k = Object.assign({}, FIXTURES.completo);
-  if (n < 1) { delete k.banco1_nombre; delete k.banco1_cuenta; }
-  if (n >= 2) { k.banco2_nombre = 'Banco Azteca'; k.banco2_cuenta = '987654321'; }
-  if (n >= 3) { k.banco3_nombre = 'Santander'; k.banco3_cuenta = '555555555'; }
-  try {
-    const tags = mergeTags(k);
-    const numeros = Array.from(tags.pruebas_adicionales.matchAll(/^(\d+)\.-/gm)).map(m => Number(m[1]));
-    const esperado = Array.from({ length: numeros.length }, (_, i) => 5 + i);
-    if (JSON.stringify(numeros) !== JSON.stringify(esperado)) {
-      fallo(`Pruebas adicionales con ${n} banco(s): numeración ${JSON.stringify(numeros)}, esperaba ${JSON.stringify(esperado)}.`);
-    }
-    if (/\bundefined\b/.test(tags.pruebas_adicionales)) {
-      fallo(`Pruebas adicionales con ${n} banco(s): el texto contiene "undefined".`);
-    }
-  } catch (e) {
-    fallo(`construirPruebasAdicionalesTexto() lanzó una excepción con ${n} banco(s): ${e.message}`);
+try {
+  const tags = mergeTags(FIXTURES.completo);
+  const numeros = Array.from(tags.pruebas_adicionales.matchAll(/^(\d+)\.-/gm)).map(m => Number(m[1]));
+  if (JSON.stringify(numeros) !== JSON.stringify([5, 6])) {
+    fallo(`Pruebas adicionales: numeración ${JSON.stringify(numeros)}, esperaba [5,6] (inspección, testimonial).`);
   }
+  if (/\bundefined\b/.test(tags.pruebas_adicionales)) {
+    fallo('Pruebas adicionales: el texto contiene "undefined".');
+  }
+} catch (e) {
+  fallo(`construirPruebasAdicionalesTexto() lanzó una excepción: ${e.message}`);
 }
-if (!fallas) ok('Pruebas adicionales (bancos + inspección + testimonial) -- numeración corrida con 0, 1 y 3 bancos.');
+if (!fallas) ok('Pruebas adicionales (inspección + testimonial, sin bancos) -- numeración 5/6 fija.');
 
 // ---------------------------------------------------------------------
 console.log('');

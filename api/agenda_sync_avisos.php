@@ -33,9 +33,9 @@ if ($todos) {
 if (!$idsVisibles) respond(['ok' => true]);
 
 $upsert = $pdo->prepare(
-    'INSERT INTO agenda_avisos_cache (expediente_id, clave, tipo, fecha, hora, label)
-     VALUES (:eid, :clave, :tipo, :fecha, :hora, :label)
-     ON DUPLICATE KEY UPDATE tipo = VALUES(tipo), fecha = VALUES(fecha), hora = VALUES(hora), label = VALUES(label)'
+    'INSERT INTO agenda_avisos_cache (expediente_id, clave, tipo, fecha, hora, label, dias_atraso)
+     VALUES (:eid, :clave, :tipo, :fecha, :hora, :label, :dias_atraso)
+     ON DUPLICATE KEY UPDATE tipo = VALUES(tipo), fecha = VALUES(fecha), hora = VALUES(hora), label = VALUES(label), dias_atraso = VALUES(dias_atraso)'
 );
 
 $enviadas = [];
@@ -49,7 +49,12 @@ foreach ($entries as $e) {
     if ($clave === '' || $tipo === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $fecha)) continue;
     $hora = ($e['hora'] ?? '') !== '' ? substr((string)$e['hora'], 0, 8) : null;
     $label = substr((string)($e['label'] ?? ''), 0, 255);
-    $upsert->execute([':eid' => $eid, ':clave' => $clave, ':tipo' => $tipo, ':fecha' => $fecha, ':hora' => $hora, ':label' => $label]);
+    // Cuántos días lleva atrasado (ya lo calculó el navegador, ver
+    // buildAgendaEntries()/syncAvisosAbogado() -- aquí nunca se recalcula
+    // ningún plazo) -- usado por el cron para escalar al Administrador si
+    // un abogado lo ignora varios días seguidos.
+    $diasAtraso = max(0, (int)($e['dias_atraso'] ?? 0));
+    $upsert->execute([':eid' => $eid, ':clave' => $clave, ':tipo' => $tipo, ':fecha' => $fecha, ':hora' => $hora, ':label' => $label, ':dias_atraso' => $diasAtraso]);
     $enviadas[] = $eid . ':' . $clave;
 }
 
