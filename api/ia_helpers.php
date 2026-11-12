@@ -327,17 +327,26 @@ memoria — es la fuente más común de errores):
     diario — nunca lo calcules ni lo redondees tú mismo.
   · IMPORTANTE: los 20 días de salario por cada año de servicio NO
     corresponden automáticamente solo por haber un despido injustificado.
-    Solo proceden en tres supuestos: (a) cuando es el propio trabajador
-    quien rescinde la relación laboral por una causa imputable al patrón
-    (despido indirecto, ver "rescisión" abajo); (b) cuando, al final de
-    un juicio, el patrón se niega a reinstalar al trabajador; o (c)
-    cuando la persona es trabajador/a de CONFIANZA (Art. 9 y 49-II LFT
-    — funciones de dirección, inspección, vigilancia, fiscalización, o
-    de carácter general estrechamente vinculadas a la autoridad
-    patronal), porque la ley le niega el derecho a exigir reinstalación
-    y por eso automáticamente le corresponde el paquete del Art. 50
-    (igual que en rescisión). No los incluyas en la respuesta general de
-    un despido salvo que se dé alguno de esos tres supuestos. Bug real
+    Solo forman parte de lo que le ofreces o calculas en UN supuesto:
+    cuando es el propio trabajador quien rescinde la relación laboral por
+    una causa imputable al patrón (despido indirecto, ver "rescisión"
+    abajo). En un DESPIDO, NUNCA los sumes ni los menciones como algo que
+    va a recuperar -- tampoco si es trabajador/a de confianza: la ley NO
+    le niega a la persona de confianza el derecho a pedir reinstalación;
+    lo que pasa es que el PATRÓN puede eximirse de reinstalarla pagando lo
+    del Art. 50 (Art. 49-III), y eso solo se sabe ya en juicio, si el
+    patrón lo decide. Ofrecerlos como seguros genera una falsa
+    expectativa grave. REGLA DURA del despacho (12-nov-2026), por un caso
+    real: a una coordinadora de producción con 20 años se le dijo que era
+    "muy probable" que fuera de confianza y que por eso "automáticamente"
+    le tocaban los 20 días por año; se le prometieron ~$571,000 (de los
+    cuales ~$309,000 eran esos 20 días) y luego la empresa le ofreció
+    mucho menos. Además, NUNCA presentes "ser de confianza" como algo
+    favorable: al trabajador de confianza lo pueden despedir por pérdida
+    razonable de la confianza (Art. 185 LFT), lo que le pone el caso más
+    difícil, no más fácil -- si la persona podría serlo, díselo como un
+    punto que el abogado debe revisar en la asesoría, no como una ventaja.
+    Bug real
     detectado: una secretaria de dirección, SIN ser trabajadora de
     confianza (confirmado después con el abogado), recibió un cálculo
     con 20 días por año solo porque su caso había empezado como
@@ -992,11 +1001,11 @@ mejor que mencionarla en cada respuesta.
   de $499 de este prompt, y NUNCA un número que tú mismo "recuerdes" de un
   precio anterior del despacho (como $299 o $399) sin haberlo consultado
   -- esa cifra puede estar mal y contradecir el link real que sí se
-  generó. El link de pago real puede ser por un monto distinto al precio
-  de lista vigente SOLO si a esa persona se le había cotizado un precio
-  anterior en esta misma conversación antes de un cambio de precio (el
-  sistema lo respeta automáticamente) -- eso también lo confirma
-  consultar_cita_pago, nunca lo asumas. Dos bugs reales ya ocurridos por
+  generó. Los links nuevos siempre salen por el precio vigente ($499),
+  aunque antes se le haya cotizado otro precio (decisión del despacho,
+  11-nov-2026: ya no se respetan precios anteriores); solo un link
+  generado ANTES de ese cambio podría ser por otro monto -- por eso
+  siempre confirma con consultar_cita_pago, nunca lo asumas. Dos bugs reales ya ocurridos por
   esto, en direcciones opuestas: (1) el bot le insistió a una clienta que
   el precio correcto era $499 cuando su link de verdad era de $399 (el
   que se le había cotizado antes), haciéndola dudar de algo en lo que
@@ -1018,6 +1027,22 @@ mejor que mencionarla en cada respuesta.
   detectado en producción (6-nov-2026): un cliente que pagó $299 en
   agosto preguntó por qué ahora es $499, y el bot contestó que no sabía
   y lo escaló sin necesidad, cuando la respuesta era simple y conocida.
+- REGLA DURA sobre precios que aparecen en el historial: cuando ofrezcas
+  o menciones la asesoría personalizada, el precio es SIEMPRE el vigente
+  de este prompt ($499 MXN). NUNCA copies un precio que aparezca en
+  mensajes anteriores de la conversación ($299, $399 o cualquier otro),
+  aunque tú mismo lo hayas escrito antes -- esos mensajes pueden ser de
+  meses atrás, de antes de un cambio de precio. El despacho ya NO
+  respeta precios anteriores: si la persona dice que antes le ofrecieron
+  o le cotizaron un precio menor, explícale con amabilidad que la
+  asesoría se actualizó a $499 en octubre de 2026 y que ese es el precio
+  actual (ver regla anterior) -- no le prometas el precio viejo ni
+  escales a un humano solo por eso. Si confirmar_horario_asesoria te
+  regresa "aviso_cambio_precio", explícaselo junto con el link. Bug real
+  detectado en producción (10-nov-2026): un cliente al que se le había
+  cotizado $299 en agosto volvió a escribir, y el bot le ofreció otra vez
+  "la asesoría de $299" copiándolo del historial -- el sistema tomó ese
+  mensaje como cotización vigente y le cobró $299 en vez de $499.
 - REGLA DURA sobre reagendar sin cobrar de nuevo: un pago que ya se hizo
   para una cita anterior (aunque haya quedado confirmada de verdad en su
   momento) NUNCA cubre un horario nuevo o distinto -- si la cita original
@@ -1339,7 +1364,7 @@ const IA_TOOLS = [
                 ],
                 'trabajador_confianza' => [
                     'type' => 'boolean',
-                    'description' => 'Solo aplica cuando modo="despido" y tipo="injustificado": true SOLO si confirmaste explícitamente con la persona que sus funciones reales son de dirección, inspección, vigilancia, fiscalización, o de carácter general estrechamente vinculadas a la autoridad del patrón (Art. 9/49-II LFT) -- NUNCA lo pongas true solo porque el puesto "suena" a confianza (secretaria, gerente, supervisor, etc.), sin haber preguntado y confirmado las funciones reales. Si es true, la ley le niega el derecho a exigir reinstalación y por eso se le suman los 20 días por año de servicio (Art. 50-II), igual que en rescisión. Default false.',
+                    'description' => 'Solo aplica cuando modo="despido" y tipo="injustificado": true SOLO si confirmaste explícitamente con la persona que sus funciones reales son de dirección, inspección, vigilancia, fiscalización, o de carácter general estrechamente vinculadas a la autoridad del patrón (Art. 9/49-II LFT) -- NUNCA lo pongas true solo porque el puesto "suena" a confianza (secretaria, gerente, supervisor, etc.), sin haber preguntado y confirmado las funciones reales. Si es true, los 20 días por año NO se suman al total (la ley no le niega la reinstalación; solo el patrón puede eximirse de reinstalarlo en juicio, Art. 49-III): el resultado trae ese monto aparte en indemnizacion_20_dias_si_patron_no_reinstala, que NUNCA le debes presentar al cliente como algo que va a recuperar. Default false.',
                 ],
                 'dias_vacaciones_anteriores' => [
                     'type' => 'number',
@@ -2332,9 +2357,10 @@ function ia_resultado_consultar_cita_pago(PDO $pdo, string $telefono): string
     $pendiente = $stmt->fetch();
     if ($pendiente) {
         // Bug real detectado en producción: a una clienta se le había
-        // cotizado $399 (precio anterior a la subida de octubre 2026,
-        // respetado por mercadopago_monto_asesoria_a_respetar() al generar
-        // SU link de pago real), pero cuando preguntó "¿cuánto cuesta?" el
+        // cotizado $399 (precio anterior a la subida de octubre 2026, que
+        // en ese entonces se respetaba al generar SU link de pago real --
+        // desde el 11-nov-2026 ya no se respeta, ver
+        // mercadopago_monto_asesoria_a_respetar()), pero cuando preguntó "¿cuánto cuesta?" el
         // bot le contestó el precio de lista actual ($499) porque esa cifra
         // está fija en el prompt -- terminó insistiéndole que estaba
         // equivocada cuando en realidad el link sí era de $399, una
