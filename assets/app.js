@@ -2345,6 +2345,17 @@ async function loadGoogleCalendarioSugerencias(){
     GOOGLE_CALENDARIO_SUGERENCIAS = d.sugerencias;
   }catch(e){ GOOGLE_CALENDARIO_SUGERENCIAS = []; }
 }
+// Panel "Posibles irregularidades" (12 nov 2026, cron_qa_irregularidades.php,
+// corre 1 vez por semana) -- mismo panel que "Preguntas al abogado", nunca
+// se corrigen solas: "Corregir" solo navega a Etapas del juicio, "Está
+// bien, no es error" descarta.
+let IRREGULARIDADES = [];
+async function loadIrregularidades(){
+  try{
+    const d = await api('GET', 'qa_irregularidades_list.php');
+    IRREGULARIDADES = d.irregularidades;
+  }catch(e){ IRREGULARIDADES = []; }
+}
 // Mapeo de sub-calendarios de Google → abogado (11 nov 2026, solo
 // Administrador, ver "Equipo"). GOOGLE_CALENDARIOS_DISPONIBLES solo se
 // carga bajo demanda (botón) -- llamar a la API de Google en cada render
@@ -2379,6 +2390,12 @@ async function abrirPreguntaDesdeNotificacion(preguntaId){
   render();
 }
 function supervisorPreguntasPendientesCount(){ return SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente').length; }
+// Badge de "Preguntas al abogado" (12 nov 2026): se amplió para sumar
+// también las irregularidades detectadas -- antes solo contaba preguntas
+// del supervisor, las sugerencias de Google Calendar ya listadas en
+// GOOGLE_CALENDARIO_SUGERENCIAS (siempre pendientes, el endpoint solo trae
+// esas) se quedaban sin reflejarse en el badge.
+function preguntasAbogadoBadgeCount(){ return supervisorPreguntasPendientesCount() + GOOGLE_CALENDARIO_SUGERENCIAS.length + IRREGULARIDADES.length; }
 function supervisorPreguntaCardHTML(p){
   return `
       <div class="aviso-card" data-supervisor-pregunta-id="${p.id}">
@@ -2859,6 +2876,7 @@ async function refreshBootstrap(){
   await loadAvisosBoletin();
   await loadSupervisorPreguntas();
   await loadGoogleCalendarioSugerencias();
+  await loadIrregularidades();
   await loadPjfCredenciales();
   await loadEdomexCorreoCredenciales();
   await loadCdmxBuzonCredenciales();
@@ -3409,7 +3427,7 @@ function shellHTML(){
         <button data-v="tablero" class="${VIEW==='tablero'?'active':''}"><span class="ico">${ICONS.tablero}</span> Tablero</button>
         <button data-v="expedientes" class="${VIEW==='expedientes'?'active':''}"><span class="ico">${ICONS.expedientes}</span> Expedientes</button>
         <button data-v="alertas" class="${VIEW==='alertas'?'active':''}"><span class="ico">${ICONS.alertas}</span> Alertas de prescripción</button>
-        <button data-v="preguntas_abogado" class="${VIEW==='preguntas_abogado'?'active':''}"><span class="ico">🧑‍⚖️</span> Preguntas al abogado ${supervisorPreguntasPendientesCount()>0?`<span class="nav-badge">${supervisorPreguntasPendientesCount()}</span>`:""}</button>
+        <button data-v="preguntas_abogado" class="${VIEW==='preguntas_abogado'?'active':''}"><span class="ico">🧑‍⚖️</span> Preguntas al abogado ${preguntasAbogadoBadgeCount()>0?`<span class="nav-badge">${preguntasAbogadoBadgeCount()}</span>`:""}</button>
         <button data-v="cobros" class="${VIEW==='cobros'?'active':''}"><span class="ico">&#128176;</span> Cobros de convenios</button>
         ${isAdmin ? `<button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>` : ""}
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
@@ -6710,11 +6728,33 @@ function googleCalendarioSugerenciaCardHTML(s){
         </div>
       </div>`;
 }
+function irregularidadCardHTML(i){
+  const tipoIcono = i.tipo === 'orden_cronologico' ? '📅' : '🔎';
+  return `
+      <div class="aviso-card" data-irregularidad-id="${i.id}">
+        <div class="aviso-head">
+          <div data-id="${i.expediente_id}" data-tab="etapas" style="cursor:pointer;">
+            <div class="aviso-caso">${escapeHTML(i.expediente_actor)} <span style="color:var(--gray); font-weight:400;">vs</span> ${escapeHTML(truncate(i.expediente_demandado||'—',30))} ${i.expediente_exp? `&middot; Exp. ${escapeHTML(i.expediente_exp)}`:''}</div>
+            <div class="aviso-fuente">${i.etapa_key ? escapeHTML(etapaLabelPorKey(i.etapa_key)) : ''}</div>
+          </div>
+        </div>
+        <div class="aviso-resumen">${tipoIcono} ${escapeHTML(i.motivo)}</div>
+        <div class="aviso-actions">
+          <button class="btn" data-id="${i.expediente_id}" data-tab="etapas" style="padding:6px 12px; font-size:11.5px;">Corregir</button>
+          <button class="btn secondary" data-irregularidad-descartar="${i.id}" style="padding:6px 12px; font-size:11.5px;">Está bien, no es error</button>
+        </div>
+      </div>`;
+}
 function preguntasAbogadoHTML(){
   const pendientes = SUPERVISOR_PREGUNTAS.filter(p=>p.estado==='pendiente');
   const historial = SUPERVISOR_PREGUNTAS.filter(p=>p.estado!=='pendiente');
   return `
   <div class="notice" style="margin-bottom:16px; max-width:100%;">Preguntas que el supervisor de IA le hace al abogado a cargo cuando detecta un posible atraso, buscando el dato concreto que falta para seguir el plazo legal — normalmente una fecha. Puedes contestar con texto, o adjuntar una foto/documento (ej. una cédula de notificación) para que la IA lo lea y, si confirma una fecha, llene sola la etapa correspondiente.</div>
+  ${IRREGULARIDADES.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>⚠️ Posibles irregularidades</h3><span class="count">${IRREGULARIDADES.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${IRREGULARIDADES.map(irregularidadCardHTML).join("")}</div>
+  </div>` : ''}
   ${GOOGLE_CALENDARIO_SUGERENCIAS.length ? `
   <div class="panel">
     <div class="panel-head"><h3>📅 Conflictos de fecha en tu Google Calendar</h3><span class="count">${GOOGLE_CALENDARIO_SUGERENCIAS.length}</span></div>
@@ -7707,6 +7747,20 @@ function bindViewBody(){
         await api('POST', 'google_calendario_sugerencia_resolver.php', {id, aplicar});
         await loadGoogleCalendarioSugerencias();
         if(ACTIVE_CASE){ ACTIVE_CASE = findCase(ACTIVE_CASE.id); renderModal(); }
+        renderViewBody();
+      }catch(err){ alert('No se pudo guardar: ' + err.message); btn.disabled = false; }
+    });
+  });
+  // Descartar una irregularidad (12 nov 2026) -- "Corregir" no pasa por
+  // aquí, es solo el [data-id] genérico que abre el expediente.
+  document.querySelectorAll('[data-irregularidad-descartar]').forEach(btn=>{
+    btn.addEventListener('click', async (ev)=>{
+      ev.stopPropagation();
+      const id = parseInt(btn.dataset.irregularidadDescartar);
+      btn.disabled = true;
+      try{
+        await api('POST', 'qa_irregularidad_resolver.php', {id});
+        await loadIrregularidades();
         renderViewBody();
       }catch(err){ alert('No se pudo guardar: ' + err.message); btn.disabled = false; }
     });
@@ -9845,6 +9899,15 @@ async function init(){
   // "Preguntas al abogado", donde vive el panel de sugerencias.
   const pregCalParam = new URLSearchParams(location.search).get('pregunta_calendario');
   if(pregCalParam){
+    history.replaceState(null, '', location.pathname);
+    if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){ VIEW = 'preguntas_abogado'; render(); }
+  }
+
+  // Push de "posible irregularidad detectada" (ver
+  // cron_qa_irregularidades.php, 12 nov 2026) -- lleva directo a
+  // "Preguntas al abogado", donde vive el panel nuevo.
+  const irregularidadParam = new URLSearchParams(location.search).get('irregularidad');
+  if(irregularidadParam){
     history.replaceState(null, '', location.pathname);
     if(CURRENT_USER && CURRENT_USER.role !== 'cliente'){ VIEW = 'preguntas_abogado'; render(); }
   }

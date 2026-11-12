@@ -3527,6 +3527,136 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
     return $sugerencias;
 }
 
+// Panel "Posibles irregularidades" (12 nov 2026, pedido explícito del
+// usuario: "tenemos que hacer que la ia sea muy efectiva revisando los
+// juicios para detectar irregularidades"). A diferencia de
+// ia_auditar_expediente() (que busca fechas para etapas SIN registrar),
+// esta función es la "segunda opinión": revisa una etapa que un mecanismo
+// de IA YA llenó sola (viene de expediente_historial, usuario_id NULL) con
+// TODO el contexto actual del expediente, y responde si el motivo
+// original sigue viéndose como una confirmación literal genuina o si, bajo
+// las mismas 2 reglas que se reforzaron hoy (nunca un plazo calculado,
+// nunca el evento de una etapa distinta), hay motivo real para dudar.
+// Deliberadamente conservadora: el objetivo NO es reabrir cualquier cosa
+// sin "documento de respaldo" en el sistema (muchas etapas se capturan a
+// mano desde el expediente físico/digital sin subir nada) -- solo marca
+// cuando el propio motivo original, o el contexto, da una señal CLARA de
+// error (igual que los 2 casos reales de hoy). Devuelve
+// ['sospechosa'=>bool, 'motivo'=>?string] o null si falló la llamada.
+function ia_verificar_fecha_etapa_llenada_sola(
+    string $etapaKey, string $fecha, string $motivoOriginal, array $expediente, array $etapas,
+    array $documentosRecientes = [], array $avisosRecientes = [], array $preguntasRecientes = []
+): ?array {
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) {
+        error_log('Falta api/anthropic_credentials.php');
+        return null;
+    }
+    require_once $credentialsFile;
+
+    $lineas = [];
+    $agregar = function (string $etiqueta, $valor) use (&$lineas) {
+        if ($valor === null || $valor === '') return;
+        $lineas[] = $etiqueta . ': ' . $valor;
+    };
+    $agregar('Actor', $expediente['actor'] ?? null);
+    $agregar('Demandado', $expediente['demandado'] ?? null);
+    $agregar('Expediente', $expediente['exp'] ?? null);
+
+    $ordenEtapas = defined('ETAPA_KEYS') ? ETAPA_KEYS : [];
+    $registradas = [];
+    foreach ($ordenEtapas as $key) {
+        foreach ($etapas as $e) {
+            if (($e['etapa_key'] ?? null) === $key && !empty($e['fecha']) && $e['fecha'] !== '0000-00-00') {
+                $registradas[] = (ETAPA_LABELS[$key] ?? $key) . ': ' . $e['fecha'];
+            }
+        }
+    }
+    if ($registradas) $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
+
+    if ($documentosRecientes) {
+        $lineas[] = "Documentos guardados en el expediente y su resumen de IA:\n" . implode("\n", array_map(
+            fn($d) => '- [' . ($d['categoria'] ?? '?') . '] ' . ($d['nombre_archivo'] ?? '?') . ': ' . ($d['ia_resumen'] ?? '(sin resumen)'),
+            $documentosRecientes
+        ));
+    }
+    if ($avisosRecientes) {
+        $lineas[] = "Avisos de boletín del expediente y su resumen de IA:\n" . implode("\n", array_map(
+            fn($a) => '- (' . ($a['creado_en'] ?? '?') . ') ' . ($a['ia_resumen'] ?? $a['resumen'] ?? ''),
+            $avisosRecientes
+        ));
+    }
+    if ($preguntasRecientes) {
+        $lineas[] = "Preguntas del supervisor y lo que contestó el abogado:\n" . implode("\n\n", array_map(
+            fn($p) => 'P: ' . $p['pregunta'] . "\nR: " . ($p['respuesta'] ?? '(sin contestar)'),
+            $preguntasRecientes
+        ));
+    }
+
+    $lineas[] = 'Etapa a revisar: ' . (ETAPA_LABELS[$etapaKey] ?? $etapaKey) . " = $fecha";
+    $lineas[] = 'Motivo que dio la IA cuando la llenó sola: ' . $motivoOriginal;
+
+    $payload = [
+        'model' => IA_MODELO_ANALIZAR_ACUERDO,
+        'max_tokens' => 400,
+        'thinking' => ['type' => 'disabled'],
+        'system' => 'Eres el supervisor interno de un despacho de derecho laboral en México, haciendo una '
+            . 'segunda revisión de una fecha que OTRO proceso de IA ya llenó solo en el expediente, con más '
+            . 'contexto del que tuvo esa vez. Tu trabajo es decidir si el "motivo" que dio esa vez sigue '
+            . 'viéndose como una confirmación LITERAL genuina de que ese evento específico ya ocurrió en esa '
+            . 'fecha, o si hay una señal clara de error. Marca SOSPECHOSA solo si el motivo, leído con cuidado, '
+            . 'cae en alguno de estos 2 errores reales ya confirmados en este despacho: '
+            . '(1) la fecha es un PLAZO/VENCIMIENTO calculado (ej. "se conceden 15 días... lo que vence el...") '
+            . 'en vez de una confirmación de que el evento ya pasó, o '
+            . '(2) la fecha pertenece a un evento DISTINTO al que nombra la etapa (ej. la fecha del despido '
+            . 'usada para una etapa procesal que no es el despido), o el motivo describe una ORDEN de hacer algo '
+            . '("se ordena notificar", "se concede un plazo para") sin confirmar que ya se hizo. '
+            . 'Si el motivo describe una confirmación directa de que el evento ya pasó (un acuerdo que dice '
+            . 'literalmente que algo se hizo/se recibió/se celebró en esa fecha), NO la marques, aunque hoy no '
+            . 'haya ningún documento adicional que la respalde -- muchas etapas se capturan a mano desde el '
+            . 'expediente físico sin subir nada al sistema, eso NO es un error. Ante la duda genuina (no hay '
+            . 'señal clara de ninguno de los 2 errores), responde (ninguna) -- el objetivo es atrapar errores '
+            . 'reales, no generarle trabajo de revisión al abogado por algo que probablemente está bien.'
+            . "\n\nResponde ÚNICAMENTE, sin nada más: si no hay motivo de duda, la palabra (ninguna). Si sí, "
+            . "2 líneas:\nSOSPECHOSA: si\nMOTIVO: <explica en 1 línea cuál de los 2 errores aplica>",
+        'messages' => [['role' => 'user', 'content' => implode("\n\n", $lineas)]],
+    ];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 40,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [verificar_fecha_etapa] status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        return null;
+    }
+
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    $texto = trim($texto);
+    if ($texto === '' || stripos($texto, '(ninguna)') !== false) return ['sospechosa' => false, 'motivo' => null];
+
+    preg_match('/MOTIVO:\s*(.+)/is', $texto, $mMotivo);
+    return ['sospechosa' => true, 'motivo' => isset($mMotivo[1]) ? trim($mMotivo[1]) : 'La IA marcó esta fecha como sospechosa sin dar motivo.'];
+}
+
 // Usa el mismo modelo que el bot de WhatsApp (Sonnet, no Haiku como el resto
 // de estos helpers) -- se detectó en pruebas reales que Haiku seguía
 // confundiendo "convenio con cobro pendiente" (no pagado) con "pagado" a

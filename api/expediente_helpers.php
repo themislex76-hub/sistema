@@ -119,6 +119,42 @@ function motivo_sugiere_fecha_calculada(string $motivo): bool
     return false;
 }
 
+// Panel "Posibles irregularidades" (12 nov 2026) -- a diferencia de
+// etapa_fecha_es_consistente() (que solo revisa una fecha NUEVA candidata
+// contra las ya registradas, usada por los 5 mecanismos de llenado
+// automático), esta función revisa TODAS las parejas de etapas YA
+// registradas de un expediente entre sí -- detecta violaciones que
+// entraron por captura MANUAL del abogado (ese candado nunca corre ahí,
+// solo cuando la IA llena algo sola). Devuelve [etapa_key => motivo] --
+// la clave es la etapa cuya fecha queda ANTES de lo que debería (la que
+// tiene algo que "debió pasar antes" con una fecha más tardía).
+function detectar_irregularidades_orden_cronologico(array $etapas): array
+{
+    $porKey = [];
+    foreach ($etapas as $e) {
+        if (!empty($e['etapa_key']) && !empty($e['fecha']) && $e['fecha'] !== '0000-00-00') {
+            $porKey[$e['etapa_key']] = $e['fecha'];
+        }
+    }
+    $labels = defined('ETAPA_LABELS') ? ETAPA_LABELS : [];
+    $resultado = [];
+    foreach (ETAPA_KEYS as $idx => $key) {
+        if (!isset($porKey[$key])) continue;
+        $fecha = $porKey[$key];
+        $motivos = [];
+        foreach (ETAPA_KEYS as $idxAnterior => $keyAnterior) {
+            if ($idxAnterior >= $idx || !isset($porKey[$keyAnterior])) continue;
+            $fechaAnterior = $porKey[$keyAnterior];
+            if ($fechaAnterior > $fecha) {
+                $motivos[] = ($labels[$keyAnterior] ?? $keyAnterior) . " ($fechaAnterior) es POSTERIOR a "
+                    . ($labels[$key] ?? $key) . " ($fecha), pero por el orden del trámite debería ser antes";
+            }
+        }
+        if ($motivos) $resultado[$key] = implode('; ', $motivos);
+    }
+    return $resultado;
+}
+
 // Texto corto para el historial de cambios (log_historial) cuando se
 // guarda una etapa -- null si la etapa quedó vacía (para que
 // log_historial no registre nada en ese caso, ya trae su propio guard de
