@@ -1048,8 +1048,40 @@ decidió ampliarlo: "eso también debe estar en calendario".
     Calendar de el usuario con demasiado ruido (son fechas que ya
     vencieron, no compromisos futuros), avisar para quitarlos de la
     lista otra vez.
-  `app.js?v=142`. **Sin probar en vivo todavía** ninguna de las 2 piezas
-  (pendientes, ni atraso/accion_ia) de este día.
+  `app.js?v=142`.
+  - **Confirmado funcionando en vivo (12 nov 2026)**: tras darle clic a
+    "Sincronizar ahora", apareció en Google Calendar "[Pendiente] SHARON
+    ECHEVERRIA MAYEN vs GRUPO MOSALDI..." con la descripción "FIRMA DE LA
+    DEMANDA EN TRIBUNAL CUAUTITLAN", y de paso un "[Sugerido por IA]"
+    también presente -- confirma que los 3 tipos nuevos sí se sincronizan.
+  - **Bug de diseño real encontrado por el usuario al revisar ese mismo
+    evento**: cayó en el calendario PRINCIPAL de quien dio clic en
+    "Sincronizar ahora" (el Administrador, cuenta `themislex76@gmail.com`,
+    calendario "Rubén Buerhend"), no en el sub-calendario del abogado
+    ASIGNADO al caso ("Audiencias linsday", de Lic. Lindsay Luna
+    Maldonado) -- "se debe ir a la agenda del abogado asignado... a la
+    agenda compartida". Corregido el mismo día: el sync de salida ahora
+    primero intenta la cuenta de Google COMPARTIDA (la misma ya conectada
+    para "Calendarios de Google vigilados" en Equipo) en vez de la cuenta
+    propia de quien dispara el sync, y para cada evento busca el
+    sub-calendario mapeado al `abogado_id`/`abogado_id_2` del caso --
+    nuevos endpoints `api/google_access_token_compartido.php` (cualquier
+    usuario puede pedir el token de la cuenta compartida) y
+    `api/google_calendarios_mapeo_por_abogado.php` (mapa simple
+    abogado_id → calendar_id, sin restringir a Administrador). Si el
+    abogado del caso no tiene un sub-calendario mapeado todavía (como
+    Mariana, Christian, Rubén, Junta Federal -- solo "Audiencias linsday"
+    está vigilado hoy), cae de regreso al calendario principal de la
+    cuenta compartida (sigue siendo mejor que antes, al menos todo
+    termina en UN solo lugar central en vez de dispersarse según quién
+    dio clic). Si no hay ninguna cuenta compartida configurada en
+    absoluto (instalación nueva sin nada mapeado en Equipo), cae de
+    regreso al comportamiento viejo (calendario propio de quien
+    sincroniza). `app.js?v=143`.
+  - **Sin probar en vivo todavía** este último cambio de ruteo por
+    abogado -- falta confirmar que un evento nuevo (ej. otro pendiente de
+    Sharon, o la próxima audiencia de Lindsay) sí caiga en "Audiencias
+    linsday" y no en el calendario principal.
 
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez

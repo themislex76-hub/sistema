@@ -2477,24 +2477,53 @@ async function googlePushEvent(base, headers, id, body){
 }
 
 async function sincronizarGoogleCalendar(onProgress){
-  const tok = await api('GET', 'google_access_token.php');
-  const accessToken = tok.access_token;
+  // Primero intenta la cuenta de Google COMPARTIDA (la que ya se conectó
+  // desde "Equipo" para vigilar los sub-calendarios de audiencias) -- así
+  // cada evento se puede mandar al sub-calendario del abogado asignado al
+  // caso, en vez de siempre al calendario principal de quien dé clic en
+  // "Sincronizar ahora" (12 nov 2026, pedido explícito del usuario: "se
+  // debe ir a la agenda del abogado asignado... a la agenda compartida").
+  // Si no hay ninguna cuenta compartida configurada todavía, cae de
+  // regreso a la cuenta PROPIA de quien tenga la sesión abierta (el
+  // comportamiento de siempre, útil si nadie ha configurado Equipo aún).
+  let accessToken, tokenCompartido = false;
+  try{
+    const tokC = await api('GET', 'google_access_token_compartido.php');
+    accessToken = tokC.access_token;
+    tokenCompartido = true;
+  }catch(e){
+    const tok = await api('GET', 'google_access_token.php');
+    accessToken = tok.access_token;
+  }
+  let mapaAbogados = {};
+  if(tokenCompartido){
+    try{ const m = await api('GET', 'google_calendarios_mapeo_por_abogado.php'); mapaAbogados = m.mapa; }catch(e){}
+  }
+  const calendarIdPara = (kase)=>{
+    if(!tokenCompartido) return 'primary';
+    return mapaAbogados[kase.abogado_id] || mapaAbogados[kase.abogado_id_2] || 'primary';
+  };
+
   const entries = buildAgendaEntries().filter(e => GOOGLE_TIPOS_SINCRONIZABLES.includes(e.tipo));
   // Las asesorías de pago ya confirmadas (pagadas) también se agendan solas
   // en el calendario — con hora exacta, a diferencia de audiencias/pagos/
   // etc. que son de todo el día, porque aquí sí importa la hora exacta de
-  // la llamada.
+  // la llamada. Siempre al calendario principal (no están ligadas a un
+  // abogado asignado de un expediente).
   const citas = CITAS.filter(c => c.estado === 'confirmada');
   const total = entries.length + citas.length;
   const headers = {'Authorization': 'Bearer ' + accessToken, 'Content-Type': 'application/json'};
-  const base = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
-  const idsActuales = [];
+  const eventosUrl = (calendarId)=> `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events`;
+  const idsActuales = []; // [{id, calendarId}]
+  const calendariosUsados = new Set(['primary']);
   let fallos = 0;
   let hechos = 0;
 
   for(const e of entries){
     const id = await googleEventId(CURRENT_USER.id, e);
-    idsActuales.push(id);
+    const calendarId = calendarIdPara(e.k);
+    calendariosUsados.add(calendarId);
+    idsActuales.push({id, calendarId});
     // Si la audiencia trae hora capturada, se manda como evento con horario
     // exacto (igual que las citas de asesoría) en vez de todo el día — así
     // Google Calendar también puede avisar de un choque de horario.
@@ -2505,36 +2534,42 @@ async function sincronizarGoogleCalendar(onProgress){
       start: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
       end: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
     };
-    try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
+    try{ if(!(await googlePushEvent(eventosUrl(calendarId), headers, id, body))) fallos++; }catch(err){ fallos++; }
     hechos++;
     if(onProgress) onProgress(hechos, total);
   }
 
   for(const c of citas){
     const id = await googleCitaEventId(CURRENT_USER.id, c.id);
-    idsActuales.push(id);
+    idsActuales.push({id, calendarId:'primary'});
     const body = {
       summary: `[Asesoría] ${c.nombre_cliente || c.telefono}`,
       description: `Llamada telefónica de la asesoría pagada ($${c.monto.toFixed(0)} MXN). Teléfono: ${c.telefono}.\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.`,
       start: {dateTime: `${c.fecha}T${c.hora_inicio}:00`, timeZone: 'America/Mexico_City'},
       end: {dateTime: `${c.fecha}T${c.hora_fin}:00`, timeZone: 'America/Mexico_City'},
     };
-    try{ if(!(await googlePushEvent(base, headers, id, body))) fallos++; }catch(err){ fallos++; }
+    try{ if(!(await googlePushEvent(eventosUrl('primary'), headers, id, body))) fallos++; }catch(err){ fallos++; }
     hechos++;
     if(onProgress) onProgress(hechos, total);
   }
 
   // Borra del calendario lo que ya no aplica (pago cobrado, prescripción
   // resuelta, cita cancelada/expirada, etc.) comparando contra lo que se
-  // sincronizó la vez anterior.
+  // sincronizó la vez anterior. Se prueba en cada calendario tocado en esta
+  // corrida -- un evento viejo pudo haberse creado en un calendario distinto
+  // al de hoy (ej. el abogado asignado cambió), así que no basta con
+  // probar solo el calendario "actual" de ese caso.
   let previos = [];
   try{ const st = await api('GET', 'google_sync_state.php'); previos = st.evento_ids; }catch(e){}
-  const obsoletos = previos.filter(id => !idsActuales.includes(id));
+  const idsActualesFlat = idsActuales.map(x=>x.id);
+  const obsoletos = previos.filter(id => !idsActualesFlat.includes(id));
   for(const id of obsoletos){
-    try{ await fetch(base + '/' + id, {method:'DELETE', headers}); }catch(e){}
+    for(const calendarId of calendariosUsados){
+      try{ await fetch(eventosUrl(calendarId) + '/' + id, {method:'DELETE', headers}); }catch(e){}
+    }
   }
 
-  await api('POST', 'google_sync_state.php', {evento_ids: idsActuales});
+  await api('POST', 'google_sync_state.php', {evento_ids: idsActualesFlat});
   return {sincronizados: total, borrados: obsoletos.length, fallos};
 }
 
