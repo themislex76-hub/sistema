@@ -1,5 +1,52 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Causa raíz real de "primer/segundo citatorio confundidos" en la QA semanal (12 nov 2026)
+Encontrada revisando el `expediente_historial` real de los 3 casos que el
+usuario reportó (Luis Enrique Aguilar Mateos y otros 2 iguales) --
+**no era un error de llenado, era un falso positivo de la QA nueva**.
+- Lo que pasó en cada caso: el abogado capturó a mano (meses atrás) que un
+  citatorio de conciliación SE CELEBRÓ en fecha X (campo `fecha`).
+  Después, `cron_leer_google_calendar.php` llenó solo, para el SIGUIENTE
+  citatorio de la misma pareja (primer/segundo), su **"Fecha agendada"**
+  (campo `fecha_programada`, una fecha FUTURA) -- un campo totalmente
+  distinto, sin tocar `fecha`. `cron_leer_google_calendar.php` también
+  deja `usuario_id NULL` en `expediente_historial` (igual que los otros 4
+  mecanismos automáticos), pero con texto "fecha agendada: ..." en vez de
+  "fecha: ...".
+- `ia_verificar_fecha_etapa_llenada_sola()` (la "segunda opinión" de la QA
+  semanal) no distinguía esto -- comparaba el motivo de ESE llenado de
+  Google Calendar (que habla de una cita agendada a futuro) contra el
+  campo `fecha` (la fecha YA celebrada, puesta por el abogado para la
+  ocasión ANTERIOR) -- como nunca van a coincidir (uno es pasado, otro es
+  futuro), siempre salía "sospechoso", un falso positivo sistemático.
+- **Corregido (commit `bb1ce74`)**: `cron_qa_irregularidades.php` ahora
+  excluye del chequeo cualquier fila de historial cuyo texto empiece con
+  "fecha agendada:" -- esas nunca deberían pasar por esta verificación
+  (no son una confirmación de "ya ocurrió", son una fecha programada a
+  futuro; ese tipo de llenado ya tiene su propio candado de orden
+  cronológico y el criterio conservador de `ia_matchear_evento_
+  calendario()` para evitar matches ambiguos).
+- **No hubo nada que revertir**: el dato real (`fecha_programada` de
+  Google Calendar) siempre estuvo bien -- el error estaba solo en el
+  chequeo nuevo, no en el llenado original.
+- **Pendiente**: limpiar a mano (o con SQL) las irregularidades
+  `fecha_sin_respaldo` ya creadas por este falso positivo específico --
+  dar "Está bien, no es error" en cada una, o correr este UPDATE una vez
+  en phpMyAdmin (revisar el resultado antes de confiarlo a ciegas):
+  ```sql
+  UPDATE expediente_irregularidades i
+  JOIN expediente_historial h
+    ON h.expediente_id = i.expediente_id
+   AND h.campo = CONCAT('etapa_', i.etapa_key)
+   AND h.usuario_id IS NULL
+   AND h.despues LIKE 'fecha agendada:%'
+  SET i.estado = 'descartada', i.resuelto_en = NOW()
+  WHERE i.tipo = 'fecha_sin_respaldo' AND i.estado = 'pendiente';
+  ```
+- Sin cambios de base de datos nuevos (la tabla ya existía desde la
+  migración 069). No se tocó `assets/app.js` -- no aplica cache-bust ni
+  `verificar_tags.js`.
+
 ## Irregularidades "fecha_sin_respaldo" no se cerraban solas al corregirse (12 nov 2026)
 Reportado por el usuario: corrigió a mano la fecha de Luis Enrique Aguilar
 Mateos (el primer caso real que el panel detectó) y la irregularidad
