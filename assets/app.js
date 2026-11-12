@@ -9361,6 +9361,22 @@ function bindModalTabEvents(){
       finally{ saveCamposBtn.disabled = false; }
     });
   }
+  // Mantiene el checkbox de cada etapa sincronizado con su campo de fecha
+  // (12 nov 2026, bug real reportado por el usuario: "corrijo la fecha...
+  // lo dejo libre porque todavía no se da y no lo guarda"). Antes eran 2
+  // controles sin relación entre sí -- si el abogado borraba "Fecha en
+  // que se celebró" para dejarla en blanco, pero el checkbox seguía
+  // marcado de cuando la etapa SÍ tenía fecha, el guardado (más abajo)
+  // interpretaba "checkbox marcado + fecha vacía" como "márcala hecha HOY
+  // sin fecha exacta" y rellenaba la fecha de hoy solo, deshaciendo en
+  // silencio el borrado -- por eso parecía que "no guardaba".
+  document.querySelectorAll('.etapa-fecha').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const row = inp.closest('[data-etapa-row]');
+      const check = row ? row.querySelector('.etapa-check') : null;
+      if(check) check.checked = !!inp.value;
+    });
+  });
   const saveEtapasBtn = document.getElementById('saveEtapasBtn');
   if(saveEtapasBtn){
     saveEtapasBtn.addEventListener('click', async ()=>{
