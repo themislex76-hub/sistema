@@ -32,28 +32,27 @@ etapa.
   rechaza por texto del motivo ("vence", "concediéndole", etc.), conectado
   en `cron_auditoria_expediente_ia.php` junto al candado de orden
   cronológico ya existente.
-- **URGENTE, pendiente de que el usuario haga 2 cosas** (si otra sesión ve
-  esto antes de que se haya hecho, recordárselo):
-  1. **Subir ya los 3 archivos** (`api/ia_helpers.php`,
-     `api/expediente_helpers.php`, `api/cron_auditoria_expediente_ia.php`)
-     antes de la próxima corrida diaria del cron (8am) -- mientras no se
-     suban, el cron sigue corriendo con el código viejo (vulnerable) sobre
-     CUALQUIER expediente activo, no solo este.
-  2. **Corregir a mano en "Etapas del juicio" del expediente de Alan
-     Campuzano**: borrar la fecha de `emplazamiento` (15/06/2026, el
-     motivo solo dice que el Tribunal ORDENÓ notificar, no que se hizo),
-     `contestacion_recibida` (30/06/2026, vencimiento calculado) y
-     `conciliacion_prejudicial` (30/01/2026, es la fecha del despido, no
-     de la conciliación) -- la 4ª etapa que llenó esta misma auditoría en
-     este expediente, `prevencion` (24/04/2026), SÍ parece legítima (el
-     motivo cita un documento que confirma literalmente que el Tribunal
-     previno al actor esa fecha) y no hace falta tocarla.
-  3. **Revisar el resto de expedientes** en el panel "Actividad de la IA"
-     (Equipo) filtrando por "IA (auditoría integral)" -- este bug corrió
-     desde que el cron se dio de alta (10 nov 2026) sobre TODOS los
-     expedientes activos con etapas, así que puede haber más casos como
-     este sin que nadie lo haya notado todavía. No se revisó en esta
-     sesión por falta de acceso a la base de datos en vivo.
+- **YA RESUELTO (12 nov 2026, mismo día)**: usuario subió los 3 archivos
+  (`api/ia_helpers.php`, `api/expediente_helpers.php`,
+  `api/cron_auditoria_expediente_ia.php`) y corrigió a mano en "Etapas del
+  juicio" los 3 campos malos del expediente de Alan Campuzano
+  (`emplazamiento`, `contestacion_recibida`, `conciliacion_prejudicial` --
+  `prevencion` se dejó igual, es legítima). Se revisó TODO el historial de
+  "Actividad de la IA" filtrado por "IA (auditoría integral)" desde que el
+  cron se dio de alta (10 nov 2026) hasta hoy -- se encontró un 4º caso real
+  con el mismo patrón ("orden" confundida con "ya se hizo"):
+  **Zeltzin Monserrat Flores Cruz vs Institufacil** (10 nov, `emplazamiento`,
+  20/05/2026) -- el motivo decía "el acuerdo de admisión **ordena** el
+  emplazamiento" (una orden, no una confirmación de que ya se hizo). **Ya
+  corregido a mano por el usuario también.**
+  - El resto de entradas de "auditoría integral" revisadas (Isabel Torres
+    Arizmendi, Zeltzin -conciliación prejudicial-, Alejandro Hernández
+    -rechazada sola por el candado de orden cronológico-, Oscar Manuel
+    Trejo, Mir Castro) se ven bien -- confirmaciones literales genuinas, no
+    cálculos ni eventos ajenos. Con esto se da por cerrada la revisión
+    retroactiva; de aquí en adelante el prompt reforzado + Sonnet + el
+    candado `motivo_sugiere_fecha_calculada()` deben prevenir que se
+    repita.
 - Este archivo de reprocesamiento legacy que YA CORRIÓ
   (`_una_vez_reprocesar_calendario_legacy.php`, de la pieza de Google
   Calendar) NO se tocó -- es un bug distinto (ese es sobre eventos de
