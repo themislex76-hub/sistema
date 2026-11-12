@@ -5284,15 +5284,18 @@ const AGENDA_CAL_DIAS = ['L','M','M','J','V','S','D']; // lunes-primero, solo pa
 // HTML sería más frágil (comillas, texto largo, etc.).
 let CAL_POPOVER_ITEMS = [];
 
-// El calendario se limita a lo que de verdad son fechas puntuales del
-// calendario del abogado -- audiencias/citatorios agendados, pagos de
-// convenio, y vencimientos de plazo (prescripción/amparo). Pendientes y
-// "posibles atrasos"/sugerencias de IA se quedan solo en la lista de
-// "General" (ahí sí hace falta el botón de resolver acción, que el
-// calendario no tiene espacio para mostrar bien). Pedido explícito del
-// usuario (11 nov 2026). Compartido entre las 3 vistas (mes/semana/día).
+// El calendario muestra fechas puntuales del calendario del abogado --
+// audiencias/citatorios agendados, pagos de convenio, vencimientos de
+// plazo (prescripción/amparo), y pendientes manuales con fecha propia
+// (ej. "Firma de demanda") -- pedido explícito del usuario (12 nov 2026,
+// tras ver que un pendiente manual no aparecía ahí). "Posibles atrasos"/
+// sugerencias de IA (tipo 'atraso'/'accion_ia') se quedan solo en la
+// lista de "General" -- esos no tienen una fecha "agendada" propia (son
+// una fecha límite calculada o una sugerencia de urgencia, no algo que
+// el abogado programó), y su botón de acción sigue sin caber bien en una
+// celda del calendario. Compartido entre las 3 vistas (mes/semana/día).
 function calendarioItemsPorDia(all){
-  const TIPOS_CALENDARIO_SIN_AUDIENCIA = ['pago', 'prescripcion', 'amparo'];
+  const TIPOS_CALENDARIO_SIN_AUDIENCIA = ['pago', 'prescripcion', 'amparo', 'pendiente'];
   let itemsCalendario = all.filter(e => TIPOS_CALENDARIO_SIN_AUDIENCIA.includes(e.tipo));
 
   // Audiencias/citatorios: el calendario muestra TODAS las que tengan

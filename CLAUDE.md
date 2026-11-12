@@ -998,6 +998,32 @@ al "Historial de cambios" de cada expediente uno por uno.
   existía). No se tocó `mergeTags()`/tags de demanda -- no aplica
   `verificar_tags.js`. **Sin probar en vivo todavía**.
 
+## Calendario: pendientes manuales también visibles (12 nov 2026, `app.js?v=141`)
+Pedido explícito del usuario tras notar que un pendiente manual ("Firma
+de la demanda en Tribunal Cuautitlán", expediente de Sharon Echeverria
+Mayen) aparecía en Agenda general → General pero no en la pestaña
+Calendario. El alcance limitado del Calendario había sido una decisión
+explícita de ayer (solo audiencia/pago/prescripción/amparo) -- el usuario
+decidió ampliarlo: "eso también debe estar en calendario".
+- `calendarioItemsPorDia()` ahora también incluye el tipo `pendiente`
+  (los que `buildAgendaEntries()` ya arma a partir de la pestaña
+  "Pendientes" de cada expediente, con fecha fija o calculada a días
+  hábiles/naturales). Mismo chip/popover que audiencias/pagos --
+  informativo + botón "Abrir expediente", sin el botón "Marcar cumplido"
+  dentro del popover (eso se sigue haciendo desde "General" o la pestaña
+  "Pendientes" del expediente).
+- **A propósito NO se incluyeron** los tipos `atraso`/`accion_ia`
+  ("posibles atrasos" y sugerencias de IA) -- esos no tienen una fecha
+  "agendada" propia (son un límite calculado o una sugerencia de
+  urgencia, no algo que el abogado programó), y siguen necesitando el
+  botón de acción que el calendario no tiene espacio para mostrar bien.
+  Si el usuario pide que también se vean ahí, replantear el diseño del
+  chip para esos 2 tipos en vez de solo agregarlos a la lista de tipos
+  incluidos.
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de
+  demanda -- no aplica `verificar_tags.js`. **Sin probar en vivo
+  todavía**.
+
 ## Informe ejecutivo desactualizado: se revisaba solo una vez, nunca de nuevo (10 nov 2026)
 El usuario detectó en vivo (expediente de Margarita Reyna Ramírez
 Mercado) que el Informe Ejecutivo con IA seguía diciendo "aún no se ha
