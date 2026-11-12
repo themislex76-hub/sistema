@@ -1801,6 +1801,30 @@ exacto que ya existía para Edomex:
   historial y de explicar el aumento en vez de prometer el precio viejo.
   Probado con SQLite (5 casos). Sin migración, sin cambio de `app.js`.
 
+## Despido de trabajador de confianza: ya NO se suman 20 días por año (12 nov 2026, conversación "chats")
+- Corrección jurídica del despacho ("es un grave error... genera una
+  falsa expectativa en la gente"): en un DESPIDO los 20 días por año
+  (Art. 50-II) nunca se suman al estimado, ni siquiera si es de
+  confianza. La ley no le niega la reinstalación al trabajador de
+  confianza; es el patrón quien puede eximirse de reinstalarlo pagando lo
+  del Art. 50 (Art. 49-III), y eso solo se sabe en juicio. Solo se suman
+  en RESCISIÓN (Art. 52), que no cambió.
+- Caso real: Norma (coordinadora de producción, 20 años, $705 diarios):
+  el bot le dijo "muy probable que seas de confianza... automáticamente
+  te tocan los 20 días" y un seguimiento automático le prometió
+  "~$571,486"; la empresa la despidió y le ofreció mucho menos.
+- Cambios: `api/liquidacion_calculadora.php` -- con
+  `trabajador_confianza=true` el monto de 20 días ya no entra a
+  `total_estimado`; va aparte en
+  `indemnizacion_20_dias_si_patron_no_reinstala` (el PDF no lo muestra).
+  Mismo caso: antes $571,643, ahora $262,161. `api/ia_helpers.php`:
+  REGLA DURA reescrita (nunca ofrecer los 20 días en despido; nunca
+  presentar "ser de confianza" como ventaja -- riesgo de despido por
+  pérdida de la confianza, Art. 185) + descripción del parámetro
+  `trabajador_confianza` de la herramienta. Sin migración, sin `app.js`.
+- `assets/app.js` (formato de demanda de Rescisión Art. 51, prestación
+  `veinte_dias`) NO se tocó: ahí sí corresponden.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado

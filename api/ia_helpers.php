@@ -327,17 +327,26 @@ memoria — es la fuente más común de errores):
     diario — nunca lo calcules ni lo redondees tú mismo.
   · IMPORTANTE: los 20 días de salario por cada año de servicio NO
     corresponden automáticamente solo por haber un despido injustificado.
-    Solo proceden en tres supuestos: (a) cuando es el propio trabajador
-    quien rescinde la relación laboral por una causa imputable al patrón
-    (despido indirecto, ver "rescisión" abajo); (b) cuando, al final de
-    un juicio, el patrón se niega a reinstalar al trabajador; o (c)
-    cuando la persona es trabajador/a de CONFIANZA (Art. 9 y 49-II LFT
-    — funciones de dirección, inspección, vigilancia, fiscalización, o
-    de carácter general estrechamente vinculadas a la autoridad
-    patronal), porque la ley le niega el derecho a exigir reinstalación
-    y por eso automáticamente le corresponde el paquete del Art. 50
-    (igual que en rescisión). No los incluyas en la respuesta general de
-    un despido salvo que se dé alguno de esos tres supuestos. Bug real
+    Solo forman parte de lo que le ofreces o calculas en UN supuesto:
+    cuando es el propio trabajador quien rescinde la relación laboral por
+    una causa imputable al patrón (despido indirecto, ver "rescisión"
+    abajo). En un DESPIDO, NUNCA los sumes ni los menciones como algo que
+    va a recuperar -- tampoco si es trabajador/a de confianza: la ley NO
+    le niega a la persona de confianza el derecho a pedir reinstalación;
+    lo que pasa es que el PATRÓN puede eximirse de reinstalarla pagando lo
+    del Art. 50 (Art. 49-III), y eso solo se sabe ya en juicio, si el
+    patrón lo decide. Ofrecerlos como seguros genera una falsa
+    expectativa grave. REGLA DURA del despacho (12-nov-2026), por un caso
+    real: a una coordinadora de producción con 20 años se le dijo que era
+    "muy probable" que fuera de confianza y que por eso "automáticamente"
+    le tocaban los 20 días por año; se le prometieron ~$571,000 (de los
+    cuales ~$309,000 eran esos 20 días) y luego la empresa le ofreció
+    mucho menos. Además, NUNCA presentes "ser de confianza" como algo
+    favorable: al trabajador de confianza lo pueden despedir por pérdida
+    razonable de la confianza (Art. 185 LFT), lo que le pone el caso más
+    difícil, no más fácil -- si la persona podría serlo, díselo como un
+    punto que el abogado debe revisar en la asesoría, no como una ventaja.
+    Bug real
     detectado: una secretaria de dirección, SIN ser trabajadora de
     confianza (confirmado después con el abogado), recibió un cálculo
     con 20 días por año solo porque su caso había empezado como
@@ -1355,7 +1364,7 @@ const IA_TOOLS = [
                 ],
                 'trabajador_confianza' => [
                     'type' => 'boolean',
-                    'description' => 'Solo aplica cuando modo="despido" y tipo="injustificado": true SOLO si confirmaste explícitamente con la persona que sus funciones reales son de dirección, inspección, vigilancia, fiscalización, o de carácter general estrechamente vinculadas a la autoridad del patrón (Art. 9/49-II LFT) -- NUNCA lo pongas true solo porque el puesto "suena" a confianza (secretaria, gerente, supervisor, etc.), sin haber preguntado y confirmado las funciones reales. Si es true, la ley le niega el derecho a exigir reinstalación y por eso se le suman los 20 días por año de servicio (Art. 50-II), igual que en rescisión. Default false.',
+                    'description' => 'Solo aplica cuando modo="despido" y tipo="injustificado": true SOLO si confirmaste explícitamente con la persona que sus funciones reales son de dirección, inspección, vigilancia, fiscalización, o de carácter general estrechamente vinculadas a la autoridad del patrón (Art. 9/49-II LFT) -- NUNCA lo pongas true solo porque el puesto "suena" a confianza (secretaria, gerente, supervisor, etc.), sin haber preguntado y confirmado las funciones reales. Si es true, los 20 días por año NO se suman al total (la ley no le niega la reinstalación; solo el patrón puede eximirse de reinstalarlo en juicio, Art. 49-III): el resultado trae ese monto aparte en indemnizacion_20_dias_si_patron_no_reinstala, que NUNCA le debes presentar al cliente como algo que va a recuperar. Default false.',
                 ],
                 'dias_vacaciones_anteriores' => [
                     'type' => 'number',
