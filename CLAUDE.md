@@ -1,5 +1,66 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## ⚠️ Bug real de integridad de datos: auditoría integral IA calculaba plazos (12 nov 2026, URGENTE)
+Reportado por Lic. Lindsay Luna Maldonado vía WhatsApp: el expediente **Alan
+Jonathan Campuzano Brito vs Protectora Buro de Seguridad Privada y
+Logística, Exp. 780/2026** tenía "Emplazamiento" (15/06/2026) y
+"Contestación de demanda recibida" (30/06/2026) marcados con fecha, pero
+NINGUNA corresponde a una actuación real del expediente digital del
+Tribunal (última actuación real: 25/06/2026, sin relación a contestación).
+Confirmado vía el panel "Actividad de la IA" (su primer uso real, útil para
+esto): los 2 (y un 3º, conciliación prejudicial) los llenó
+`cron_auditoria_expediente_ia.php` el 10-11 nov 2026, pese a que el prompt
+de `ia_auditar_expediente()` YA prohibía explícitamente "calcular un
+plazo". Dos patrones de error reales, con Haiku:
+1. Un documento decía "se concede 15 días para contestar a partir del
+   emplazamiento del 2026-06-15" -- la IA **calculó** que eso "vence" el
+   2026-06-30 y lo reportó como si fuera la fecha en que la contestación
+   de verdad se recibió (nadie confirmó que se recibió).
+2. La demanda mencionaba que "el despido injustificado ocurrió el
+   30/01/2026" -- la IA usó esa fecha para "Conciliación prejudicial" (un
+   evento distinto al despido).
+El candado de orden cronológico (`etapa_fecha_es_consistente()`) no atrapó
+ninguno de los 2 porque ambas fechas quedaban en orden válido -- no es un
+problema de secuencia, es que la fecha no corresponde al evento real de esa
+etapa.
+- **Corregido (commit `acfd047`)**: prompt de `ia_auditar_expediente()`
+  reforzado con estos 2 patrones como ejemplos negativos explícitos +
+  modelo cambiado de Haiku a Sonnet (`IA_MODELO_ANALIZAR_ACUERDO`, mismo
+  criterio que ya se usó con `IA_MODELO_BUSQUEDA` cuando Haiku demostró no
+  seguir bien una regla dura) + candado heurístico nuevo
+  `motivo_sugiere_fecha_calculada()` (`api/expediente_helpers.php`) que
+  rechaza por texto del motivo ("vence", "concediéndole", etc.), conectado
+  en `cron_auditoria_expediente_ia.php` junto al candado de orden
+  cronológico ya existente.
+- **URGENTE, pendiente de que el usuario haga 2 cosas** (si otra sesión ve
+  esto antes de que se haya hecho, recordárselo):
+  1. **Subir ya los 3 archivos** (`api/ia_helpers.php`,
+     `api/expediente_helpers.php`, `api/cron_auditoria_expediente_ia.php`)
+     antes de la próxima corrida diaria del cron (8am) -- mientras no se
+     suban, el cron sigue corriendo con el código viejo (vulnerable) sobre
+     CUALQUIER expediente activo, no solo este.
+  2. **Corregir a mano en "Etapas del juicio" del expediente de Alan
+     Campuzano**: borrar la fecha de `emplazamiento` (15/06/2026, el
+     motivo solo dice que el Tribunal ORDENÓ notificar, no que se hizo),
+     `contestacion_recibida` (30/06/2026, vencimiento calculado) y
+     `conciliacion_prejudicial` (30/01/2026, es la fecha del despido, no
+     de la conciliación) -- la 4ª etapa que llenó esta misma auditoría en
+     este expediente, `prevencion` (24/04/2026), SÍ parece legítima (el
+     motivo cita un documento que confirma literalmente que el Tribunal
+     previno al actor esa fecha) y no hace falta tocarla.
+  3. **Revisar el resto de expedientes** en el panel "Actividad de la IA"
+     (Equipo) filtrando por "IA (auditoría integral)" -- este bug corrió
+     desde que el cron se dio de alta (10 nov 2026) sobre TODOS los
+     expedientes activos con etapas, así que puede haber más casos como
+     este sin que nadie lo haya notado todavía. No se revisó en esta
+     sesión por falta de acceso a la base de datos en vivo.
+- Este archivo de reprocesamiento legacy que YA CORRIÓ
+  (`_una_vez_reprocesar_calendario_legacy.php`, de la pieza de Google
+  Calendar) NO se tocó -- es un bug distinto (ese es sobre eventos de
+  calendario, no sobre esta auditoría), no hace falta re-ejecutarlo.
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda --
+  no aplica `verificar_tags.js`.
+
 ## Flujo de despliegue
 - No hay acceso SSH ni a servidor en vivo desde estas sesiones.
 - Cambios de código: editar aquí → `php -l` / `node --check` → subir el
