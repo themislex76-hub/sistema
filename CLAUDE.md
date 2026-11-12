@@ -1,5 +1,49 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Etapas del juicio: borrar una fecha revertía sola a hoy (12 nov 2026, `app.js?v=145`)
+Reportado por el usuario al intentar corregir una irregularidad detectada
+por el panel nuevo: "corrijo la fecha del 12/11/26 lo dejo libre porque
+todavía no se da y no lo guarda". No era que no guardara -- guardaba, pero
+de vuelta la fecha de HOY en silencio.
+- **Causa real**: `.etapa-check` (el checkbox de cada fila) y `.etapa-fecha`
+  (el campo "Fecha en que se celebró") son 2 controles de DOM sin relación
+  entre sí. El checkbox arranca marcado si la etapa ya tenía fecha, pero
+  nada lo desmarcaba si el abogado borraba SOLO el campo de fecha. El
+  guardado (`saveEtapasBtn`) interpretaba "checkbox marcado + fecha vacía"
+  como "márcala hecha HOY sin fecha exacta" (pensado para etapas sin
+  "Fecha agendada" propia, donde tiene sentido como atajo) y rellenaba la
+  fecha de hoy sola -- deshaciendo el borrado sin ningún error visible.
+- **Corregido**: nuevo listener en cada `.etapa-fecha` que sincroniza el
+  checkbox de su misma fila al vuelo (checkbox = true solo si el campo
+  tiene valor) -- borrar la fecha ahora desmarca el checkbox solo, así el
+  guardado ya no la rellena con la fecha de hoy.
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda --
+  no aplica `verificar_tags.js`. **Pendiente de confirmar en vivo**: que
+  ahora SÍ se pueda dejar en blanco "Fecha en que se celebró" de la
+  conciliación (segundo citatorio) del expediente de Luis Enrique Aguilar
+  Mateos.
+
+## Panel "Posibles irregularidades": primera corrida real (12 nov 2026)
+Primera corrida real de `cron_qa_irregularidades.php` tras subir todo:
+**"46 expediente(s) activo(s) revisado(s) por orden cronológico, 14
+llenado(s) automático(s) verificado(s) con IA (11 sospechoso(s), 0
+fallido(s)), 10 expediente(s) con novedades nuevas"**. Tasa de sospecha
+alta (11/14) para un chequeo pensado como conservador -- revisando 3
+ejemplos reales que mandó el usuario, **se ven genuinos, no falsos
+positivos**: un patrón nuevo no cubierto antes -- "la fecha del motivo
+pertenece al citatorio equivocado" (ej. una fecha que es del SEGUNDO
+citatorio aplicada al PRIMERO) y "el motivo solo confirma que hay una cita
+AGENDADA, no que la conciliación ya se celebró" (mismo patrón de fondo que
+el bug de Alan Campuzano -- confundir "programado" con "ya ocurrido", pero
+esta vez entre 2 citatorios de la misma conciliación en vez de entre
+etapas distintas). Parece ser un hueco real en el mecanismo que llena
+`fecha` (celebrada) de los citatorios de conciliación a partir de eventos
+de Google Calendar o boletín -- **pendiente de identificar la causa raíz
+exacta** (cuál de los mecanismos está confundiendo primer/segundo
+citatorio) antes de dar por buena la corrida y programarla semanal en
+cPanel. Mientras tanto, el panel ya está cumpliendo su función: detectó
+10 expedientes con datos mal puestos que nadie había notado.
+
 ## Panel "Posibles irregularidades": QA semanal sobre etapas ya registradas (12 nov 2026, `app.js?v=144`, migración 069)
 Pedido explícito del usuario tras el bug de Alan Campuzano de hoy mismo:
 "tenemos que hacer que la ia sea muy efectiva revisando los juicios para
