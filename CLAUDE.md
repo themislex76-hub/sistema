@@ -1,5 +1,64 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Panel "Posibles irregularidades": QA semanal sobre etapas ya registradas (12 nov 2026, `app.js?v=144`, migración 069)
+Pedido explícito del usuario tras el bug de Alan Campuzano de hoy mismo:
+"tenemos que hacer que la ia sea muy efectiva revisando los juicios para
+detectar irregularidades, atrasos, términos, llenar de manera correcta el
+sistema". A diferencia de los mecanismos que ya existen (llenan huecos
+SIN fecha), este nuevo cron semanal revisa lo que YA está registrado,
+buscando contradicciones -- **nunca corrige nada solo**.
+- **Requisito explícito del usuario, decisivo para el diseño**: "tiene
+  que ser muy práctico para el abogado... no queremos quitarles mucho
+  tiempo corrigiendo o llenando el sistema". Por eso: se integra DENTRO
+  del panel ya existente "Preguntas al abogado" (no una pantalla nueva que
+  aprender/revisar aparte), silencioso cuando no hay nada, y cada alerta
+  es UN tap, nunca un formulario.
+- **2 chequeos, deliberadamente baratos y conservadores**:
+  1. **Orden cronológico roto** entre etapas YA registradas (sin IA,
+     gratis) -- `detectar_irregularidades_orden_cronologico()`
+     (`api/expediente_helpers.php`) aplica retroactivamente sobre captura
+     MANUAL del abogado el mismo candado que ya existía (`etapa_fecha_es_
+     consistente()`) pero que solo corría cuando la IA llenaba algo sola
+     -- si el abogado captura a mano una fecha fuera de orden, antes de
+     hoy nadie lo detectaba nunca.
+  2. **"Segunda opinión" de IA (Sonnet)** SOLO sobre etapas que un
+     mecanismo automático llenó solo (`expediente_historial.usuario_id IS
+     NULL`, nunca sobre captura manual del abogado -- ahí se confía en su
+     criterio) -- `ia_verificar_fecha_etapa_llenada_sola()`
+     (`api/ia_helpers.php`), mismo prompt reforzado hoy tras el bug real
+     de Alan Campuzano (nunca marca sospechoso solo por falta de
+     "documento de respaldo" -- muchas etapas se capturan a mano desde el
+     expediente físico sin subir nada, eso no es un error).
+- **Nuevo cron `api/cron_qa_irregularidades.php`** -- correr **1 vez a la
+  semana** (no diario como el resto, esto revisa lo ya registrado, no hay
+  prisa). Candidatos: expedientes activos con al menos 1 etapa. El
+  chequeo de IA (parte 2) se limita a 25 llenados-automáticos-sin-
+  verificar por corrida (`qa_verificado_en` marca cada fila de historial
+  ya revisada, para no re-pagar la misma).
+- **Autocierre inteligente, sin que el abogado tenga que volver**: las de
+  orden cronológico se recalculan completas cada corrida -- si el abogado
+  ya corrigió la fecha, la irregularidad se cierra sola como `corregida`.
+  Si el abogado dio "Está bien, no es error" (`descartada`) y la situación
+  no cambió, no se le vuelve a mostrar; si algo nuevo pasa (el motivo
+  cambia), se reabre.
+- **UI** (`preguntasAbogadoHTML()`): panel "⚠️ Posibles irregularidades"
+  arriba de los demás -- cada tarjeta tiene 2 botones: "Corregir" (reusa
+  el `[data-id]` genérico, abre el expediente directo en "Etapas del
+  juicio") y "Está bien, no es error" (`api/qa_irregularidad_resolver.php`,
+  descarta). Badge de "Preguntas al abogado" ampliado
+  (`preguntasAbogadoBadgeCount()`) para sumar también estas + las
+  sugerencias de Google Calendar (antes el badge solo contaba preguntas
+  del supervisor, un hueco que ya existía). Push solo si hay novedades
+  nuevas (`?irregularidad=1`, mismo patrón que `?pregunta=`/`?pregunta_
+  calendario=`).
+- Sin tocar `mergeTags()`/tags de demanda -- no aplica `verificar_tags.js`.
+  **Sin probar en vivo todavía** -- falta correr el cron por primera vez
+  (abrir la URL directo, mismo patrón que los demás) una vez que el
+  usuario suba los 5 archivos nuevos/tocados y corra la migración 069.
+  Pendiente de confirmar que detecte algo real (ej. forzando a mano una
+  fecha fuera de orden en un expediente de prueba) antes de programarlo en
+  el Cron Job de cPanel.
+
 ## Informe ejecutivo: Junta/Tribunal invertido + "Prevención" tratada como paso seguro (12 nov 2026, commit `279ff23`)
 Reportado por el usuario viendo el Informe del juicio de **Yazmin González
 Román vs Servicio Automotriz Xola**: decía "la demanda se presentó ante la
