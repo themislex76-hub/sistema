@@ -615,11 +615,28 @@ Demanda normal + Rescisión Art. 51 + Prima de antigüedad de un jalón).
     son datos de identificación/trámite que cualquier demanda necesita,
     sin evidencia de código que sugiera lo contrario.
   `app.js?v=133`.
-- **Sin probar en vivo todavía** ninguna de las 3 entregas de esta pieza
-  (filtro inicial, el bug de los 3 campos de despido, ni esta revisión
-  completa) -- falta confirmar con un expediente real, los 3 tipos, y
-  generar un documento de Rescisión Art. 51 real para ver cómo sale en
-  Word sin las cuentas bancarias y con el hecho manual.
+- **Bug real encontrado y corregido (12 nov 2026)**: la abogada reportó
+  que `tipo_demanda` no se guardaba al elegirlo (sin ningún error visible)
+  y que, por eso, en cualquier dispositivo los campos de testigos/horas
+  extra seguían escondidos (dependen de que `tipo_demanda` tenga valor).
+  Causa real: `api/expediente_helpers.php` en el SERVIDOR tenía una
+  versión vieja de `EDITABLE_CAMPOS` sin `tipo_demanda` en la lista --
+  el servidor lo rechazaba en silencio (`in_array($key, EDITABLE_CAMPOS,
+  true)` devuelve `false` y simplemente lo salta, sin lanzar error) cada
+  vez que alguien intentaba guardarlo. El archivo en el repo SÍ lo tenía
+  bien desde que se creó el campo -- nunca se volvió a subir ese archivo
+  específico al servidor después de ese cambio (riesgo ya documentado en
+  la sección de "varias sesiones" de este mismo archivo: una entrega que
+  no incluye TODOS los archivos tocados puede dejar al servidor con una
+  mezcla de versiones). **Confirmado arreglado tras resubir el archivo.**
+  Lección para la próxima vez que algo se "guarda sin error pero no
+  queda": sospechar primero de un archivo PHP desactualizado en el
+  servidor (sobre todo la whitelist `EDITABLE_CAMPOS` de
+  `expediente_helpers.php`) antes de asumir un bug de lógica nuevo --
+  pedir reenviar/resubir el archivo es la prueba más barata.
+- **Sin probar en vivo todavía** generar un documento de Rescisión Art. 51
+  real para ver cómo sale en Word sin las cuentas bancarias y con el
+  hecho manual.
 
 ## Google Calendar → sistema: lectura de audiencias agendadas por los abogados (11 nov 2026, `app.js?v=135`, migración 067)
 Pedido explícito del usuario, descubierto mientras se investigaba el bug de
