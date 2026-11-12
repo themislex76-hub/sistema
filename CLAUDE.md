@@ -1,5 +1,27 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Irregularidades "fecha_sin_respaldo" no se cerraban solas al corregirse (12 nov 2026)
+Reportado por el usuario: corrigió a mano la fecha de Luis Enrique Aguilar
+Mateos (el primer caso real que el panel detectó) y la irregularidad
+seguía apareciendo en "Preguntas al abogado". Hueco real: las de tipo
+`orden_cronologico` ya se recalculaban y auto-cerraban solas en la corrida
+semanal del cron, pero las de `fecha_sin_respaldo` NO tenían ningún
+chequeo automático -- solo se cerraban con un tap explícito en "Está
+bien, no es error", nunca solas, aunque el dato ya estuviera corregido.
+- **Corregido**: `api/expedientes_update_etapas.php` ahora revisa, cada
+  vez que se guarda "Etapas del juicio", si hay irregularidades
+  `pendiente` de ese expediente cuya condición ya no aplica (la fecha ya
+  no coincide con la que causó la alerta, o la violación de orden
+  cronológico ya no existe) y las cierra solas como `corregida` -- de
+  inmediato, sin esperar la corrida semanal.
+- **Acción inmediata para el caso de Luis Enrique** (ya corregido ANTES de
+  subir este arreglo, así que el candado nuevo no lo agarró):  descartar a
+  mano con "Está bien, no es error" en el panel, o volver a darle
+  "Guardar etapas" en ese expediente (sin cambiar nada) una vez subido
+  `expedientes_update_etapas.php` -- cualquiera de las 2 lo quita.
+- Sin cambios de base de datos. No se tocó `assets/app.js` -- no aplica
+  cache-bust ni `verificar_tags.js`.
+
 ## Etapas del juicio: borrar una fecha revertía sola a hoy (12 nov 2026, `app.js?v=145`)
 Reportado por el usuario al intentar corregir una irregularidad detectada
 por el panel nuevo: "corrijo la fecha del 12/11/26 lo dejo libre porque
