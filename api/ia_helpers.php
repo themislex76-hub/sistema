@@ -3382,7 +3382,16 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
     }
 
     $payload = [
-        'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
+        // Usa el modelo grande, no Haiku (12 nov 2026) -- confirmado real en
+        // un expediente de producción que Haiku ignoró la instrucción
+        // explícita de "nunca calcular un plazo" y de todos modos reportó
+        // una fecha de vencimiento calculada, y por separado atribuyó la
+        // fecha del despido a la etapa de conciliación prejudicial (evento
+        // distinto). Mismo criterio ya usado en IA_MODELO_BUSQUEDA: cuando
+        // Haiku demuestra no seguir bien una regla dura explícita, el costo
+        // extra de Sonnet es preferible al riesgo de datos legales mal
+        // llenados solos.
+        'model' => IA_MODELO_ANALIZAR_ACUERDO,
         'max_tokens' => 600,
         'thinking' => ['type' => 'disabled'],
         'system' => 'Eres el supervisor interno de un despacho de derecho laboral en México, haciendo una '
@@ -3396,6 +3405,20 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
             . 'nunca una suposición razonable), repórtala. Si no encuentras evidencia clara y literal para '
             . 'ninguna etapa, no reportes nada -- es preferible no decir nada a adivinar mal en un expediente '
             . 'legal real.'
+            . "\n\nDOS ERRORES REALES ya detectados que NUNCA debes repetir:\n"
+            . "1. Un documento dice \"se concede al demandado 15 días para contestar a partir del emplazamiento "
+            . "realizado el 2026-06-15\" -- NUNCA calcules que eso \"vence\" el 2026-06-30 y lo reportes como la "
+            . "fecha de \"Contestación de demanda recibida\". Esa cuenta es un PLAZO, no una confirmación de que "
+            . "la contestación de verdad se recibió. Si ningún documento dice literalmente que la contestación ya "
+            . "se recibió (o se tuvo por no contestada), NO reportes esa etapa, aunque puedas hacer la cuenta.\n"
+            . "2. La demanda menciona que \"el despido injustificado ocurrió el 30/01/2026\" -- esa es la fecha "
+            . "del DESPIDO, un evento distinto. NUNCA la uses para \"Conciliación prejudicial\" ni para ninguna "
+            . "otra etapa que no sea, literalmente, la del despido. Cada etapa necesita su PROPIA fecha, "
+            . "mencionada como tal -- una fecha de un evento no sirve de evidencia para una etapa distinta solo "
+            . "porque es la única fecha disponible en el contexto.\n"
+            . "En general: una fecha solo cuenta si el texto confirma que ESE evento específico (el que nombra la "
+            . "etapa) ya ocurrió en esa fecha -- una orden de hacer algo (\"se ordena notificar\", \"se le "
+            . "concede un plazo\") no es evidencia de que ya se hizo."
             . "\n\nResponde ÚNICAMENTE con bloques en este formato, uno por cada etapa donde sí tengas evidencia "
             . "(sin nada más antes o después):\n\nETAPA: <clave exacta de la lista>\nFECHA: YYYY-MM-DD\nMOTIVO: "
             . "<de dónde sale la fecha, 1 línea>\n---\n\nSi no hay ninguna, responde exactamente: (ninguna)",

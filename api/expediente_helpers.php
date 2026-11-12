@@ -89,6 +89,36 @@ function etapa_fecha_es_consistente(string $etapaKey, string $fecha, array $etap
     return true;
 }
 
+// Candado nuevo (12 nov 2026): confirmado real que `ia_auditar_expediente()`
+// (con Haiku) ignoró la instrucción explícita de "nunca calcular un plazo" y
+// reportó "Contestación de demanda recibida" con la fecha de VENCIMIENTO de
+// los 15 días para contestar (calculada a partir del emplazamiento), no una
+// fecha donde el documento confirme que la contestación de verdad se
+// recibió -- y por separado atribuyó a "Conciliación prejudicial" la fecha
+// del DESPIDO (un evento distinto, no la conciliación en sí). El candado de
+// orden cronológico (`etapa_fecha_es_consistente()`) no atrapa ninguno de
+// los 2 porque ambas fechas sí quedaban en orden válido. Este candado es un
+// respaldo heurístico sobre el texto del MOTIVO que la IA da para
+// justificar la fecha -- si el motivo delata que la fecha salió de un
+// cálculo de plazo o de un evento distinto al que se está llenando, se
+// rechaza en vez de aplicarse a ciegas. No reemplaza la instrucción del
+// prompt (que ya pedía esto) -- es la verificación de que de verdad se
+// cumplió.
+function motivo_sugiere_fecha_calculada(string $motivo): bool
+{
+    $m = mb_strtolower($motivo, 'UTF-8');
+    $patrones = [
+        'vence', 'vencimiento', 'venciendo', 'plazo de', 'concediéndole',
+        'concediendole', 'concede', 'días para contestar', 'dias para contestar',
+        'término de', 'termino de', 'a partir del', 'a partir de la notificación',
+        'lo que da', 'contados a partir', 'días hábiles para', 'dias habiles para',
+    ];
+    foreach ($patrones as $p) {
+        if (mb_strpos($m, $p) !== false) return true;
+    }
+    return false;
+}
+
 // Texto corto para el historial de cambios (log_historial) cuando se
 // guarda una etapa -- null si la etapa quedó vacía (para que
 // log_historial no registre nada en ese caso, ya trae su propio guard de
