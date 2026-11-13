@@ -1,5 +1,27 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Auditoría integral también lee la bitácora de notas del abogado (13 nov 2026)
+Pedido explícito del usuario ("adelante") tras extender este mismo arreglo
+al Informe Ejecutivo -- `ia_auditar_expediente()` (la auditoría integral
+diaria, `cron_auditoria_expediente_ia.php`) tenía el mismo hueco:
+tampoco leía `expediente_notas` (la bitácora real que el abogado llena
+con "Agregar nota de seguimiento"), solo veía etapas/documentos/avisos/
+preguntas del supervisor -- podía perderse una fecha literal que el
+abogado ya hubiera escrito a mano ahí.
+- **Más cuidado que en el Informe Ejecutivo a propósito**: esta función SÍ
+  escribe sola en `expediente_etapas` (el Informe Ejecutivo solo redacta
+  texto informativo) -- el texto nuevo del prompt reitera la misma regla
+  dura ya existente (nunca calcular/inferir, solo fecha LITERAL de que
+  ESA etapa específica ya ocurrió).
+- `ia_auditar_expediente()` ahora acepta un 6º parámetro opcional
+  `$notasBitacora`; `cron_auditoria_expediente_ia.php` junta las últimas 8
+  notas (`expediente_notas`, más reciente primero) y las manda, mismo
+  patrón que `expediente_resumen_ejecutivo.php`.
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica cache-bust
+  ni `verificar_tags.js`. **Sin probar en vivo todavía** -- falta que el
+  usuario suba `api/ia_helpers.php` y `api/cron_auditoria_expediente_ia.php`
+  y se vea un caso real donde esto haga la diferencia.
+
 ## Panel nuevo: Validación de Tribunal / número de expediente (13 nov 2026, `app.js?v=146`)
 Pedido explícito del usuario tras el caso de Isabel Torres Arizmendi
 (Exp. 2235/2026 compartido por coincidencia con otro tribunal, ver

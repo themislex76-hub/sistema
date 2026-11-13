@@ -99,7 +99,16 @@ foreach ($candidatos as $c) {
     $preguntasStmt->execute([':id' => $c['id']]);
     $preguntasRecientes = $preguntasStmt->fetchAll();
 
-    $sugerencias = ia_auditar_expediente($expediente, $etapas, $documentosRecientes, $avisosRecientes, $preguntasRecientes);
+    // Bitácora de notas de seguimiento del abogado -- mismo arreglo que ya
+    // se hizo en expediente_resumen_ejecutivo.php (13 nov 2026): sin esto la
+    // auditoría nunca veía las notas que el abogado agrega a mano con
+    // "Agregar nota de seguimiento", y podía perderse una fecha literal ya
+    // escrita ahí.
+    $notasStmt = $pdo->prepare('SELECT texto, creado_en FROM expediente_notas WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 8');
+    $notasStmt->execute([':id' => $c['id']]);
+    $notasBitacora = $notasStmt->fetchAll();
+
+    $sugerencias = ia_auditar_expediente($expediente, $etapas, $documentosRecientes, $avisosRecientes, $preguntasRecientes, $notasBitacora);
     $auditados++;
 
     if ($sugerencias === null) {

@@ -3514,7 +3514,7 @@ function ia_interpretar_respuesta_supervisor(string $pregunta, string $respuesta
 // dichas en alguna parte del expediente. Devuelve un array de
 // ['etapa_key'=>, 'fecha'=>'YYYY-MM-DD', 'motivo'=>] (vacío si no encontró
 // nada), o null si falló la llamada a la IA.
-function ia_auditar_expediente(array $expediente, array $etapas, array $documentosRecientes = [], array $avisosRecientes = [], array $preguntasRecientes = []): ?array
+function ia_auditar_expediente(array $expediente, array $etapas, array $documentosRecientes = [], array $avisosRecientes = [], array $preguntasRecientes = [], array $notasBitacora = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3569,6 +3569,21 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
             fn($p) => 'P: ' . $p['pregunta'] . "\nR: " . ($p['respuesta'] ?? '(sin contestar)'),
             $preguntasRecientes
         ));
+    }
+    // Bitácora de notas de seguimiento del abogado (tabla `expediente_notas`
+    // -- agregada 13 nov 2026, mismo arreglo que ya se hizo para el Informe
+    // Ejecutivo: antes esta auditoría tampoco veía estas notas, así que
+    // podía perderse una fecha literal que el abogado ya había escrito a
+    // mano ahí). Aquí el riesgo es mayor que en el resumen ejecutivo porque
+    // esta función SÍ escribe sola en expediente_etapas -- por eso el texto
+    // de abajo reitera la misma regla dura de nunca calcular/inferir.
+    if ($notasBitacora) {
+        $lineas[] = "Bitácora de notas de seguimiento del abogado (de más reciente a más antigua -- "
+            . "mismo principio: una fecha solo cuenta si confirma LITERALMENTE que esa etapa específica ya "
+            . "ocurrió en esa fecha, nunca una orden ni un plazo):\n" . implode("\n", array_map(
+                fn($n) => (!empty($n['creado_en']) ? substr((string)$n['creado_en'], 0, 10) : '(sin fecha)') . ': ' . trim((string)($n['texto'] ?? '')),
+                $notasBitacora
+            ));
     }
 
     $payload = [
