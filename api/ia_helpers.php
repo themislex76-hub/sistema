@@ -1043,6 +1043,29 @@ mejor que mencionarla en cada respuesta.
   cotizado $299 en agosto volvió a escribir, y el bot le ofreció otra vez
   "la asesoría de $299" copiándolo del historial -- el sistema tomó ese
   mensaje como cotización vigente y le cobró $299 en vez de $499.
+- REGLA DURA sobre la cita del cliente: ANTES de mencionar su cita o su
+  llamada ("tu asesoría de hoy", "a las 5:00 pm te llama el Lic.", que no
+  se puede reprogramar, que tendría que pagar otra vez, etc.), llama
+  consultar_cita_pago EN ESE MISMO TURNO y usa SOLO lo que te regrese.
+  NUNCA deduzcas la cita de mensajes anteriores de la conversación
+  (confirmaciones de pago o recordatorios viejos): pueden ser de una
+  asesoría que ya se realizó hace días o semanas. Compara siempre la fecha
+  de la cita con la fecha de hoy -- solo es "hoy" si coincide el día. Si
+  consultar_cita_pago dice que la asesoría ya se realizó, no la trates
+  como pendiente. Bug real detectado en producción (12-nov-2026): una
+  clienta que ya había tomado su asesoría el 30 de octubre escribió con
+  una duda nueva; el bot le dijo "en tu asesoría de hoy a las 5:00 pm",
+  le negó reprogramarla, le ofreció pagar otros $499 por cambiarla, y
+  ella se quedó esperando una llamada que nunca iba a llegar.
+- REGLA DURA sobre actas administrativas: NO afirmes que un acta
+  administrativa "no tiene validez", "pierde validez" o "es nula" por la
+  forma en que se levantó (sin el trabajador presente, ya firmada, etc.)
+  -- la LFT no regula en general cómo debe levantarse un acta en una
+  empresa privada (depende del reglamento interior o del contrato
+  colectivo) y en juicio se valora como prueba. Puedes decir que el acta
+  NO prueba por sí sola que la persona aceptó los hechos, que hizo bien en
+  no firmar algo con lo que no está de acuerdo, y que el abogado revisará
+  cómo se levantó en la asesoría.
 - REGLA DURA sobre reagendar sin cobrar de nuevo: un pago que ya se hizo
   para una cita anterior (aunque haya quedado confirmada de verdad en su
   momento) NUNCA cubre un horario nuevo o distinto -- si la cita original
@@ -1911,6 +1934,24 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         $texto = 'Antes de confirmarte, déjame verificar bien tu pago directo con el sistema -- en un momento un abogado del despacho te contacta por aquí mismo para confirmarte con toda seguridad.';
     }
 
+    // Misma idea, otro caso real (12-nov-2026): el bot le dijo a una
+    // clienta "en tu asesoría de hoy a las 5:00 pm" deduciéndolo de una
+    // confirmación vieja del historial -- su asesoría había sido el 30 de
+    // octubre y ya se había realizado; ella se quedó esperando una llamada
+    // que no existía. Si el texto habla de una cita/llamada "de hoy" y este
+    // teléfono no tiene ninguna cita (confirmada o apartada) con fecha de
+    // hoy, se bloquea y se escala a un humano.
+    if (ia_texto_menciona_cita_hoy_sin_evidencia($pdo, $telefono, $texto)) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [cita_hoy_bloqueada] tel=$telefono | texto_bloqueado=\"" . $texto . "\"\n", FILE_APPEND);
+        ia_registrar_prospecto_atorado(
+            $pdo, $telefono,
+            ['tipo' => 'reclamo', 'estado' => '', 'nombre' => '', 'resumen' => ''],
+            'La IA iba a decirle a esta persona que tiene una asesoría/llamada HOY, pero el sistema no tiene ninguna cita para hoy en su número (probablemente confundió una cita vieja del historial) -- se bloqueó el mensaje, revisar con prioridad.'
+        );
+        $texto = 'Déjame revisar bien tu cita directo en el sistema para no darte un dato equivocado -- en un momento un abogado del despacho te confirma por aquí mismo.';
+    }
+
     // Misma idea que el guardrail de pago de arriba, para otro caso real
     // detectado en producción (Eli, sep-2026): a pesar de la REGLA DURA
     // que dice que el CÁLCULO siempre es gratis (solo la revisión de un
@@ -1984,6 +2025,35 @@ function ia_texto_confirma_pago_sin_evidencia(PDO $pdo, string $telefono, string
     if ($stmt->fetchColumn()) return false;
 
     return true;
+}
+
+/**
+ * true si $texto le habla a la persona de SU cita/llamada "de hoy" pero
+ * este teléfono no tiene ninguna cita (confirmada o apartada pendiente de
+ * pago) con fecha de hoy -- ver el caso real en ia_responder_whatsapp()
+ * arriba. Ofrecer horarios de hoy ("Hoy viernes, 1:00 pm") o decir que
+ * hoy ya no hay espacio no cuenta: solo frases que dan por hecho que la
+ * persona YA tiene una cita hoy.
+ */
+function ia_texto_menciona_cita_hoy_sin_evidencia(PDO $pdo, string $telefono, string $texto): bool
+{
+    $hablaDeCitaHoy = preg_match(
+        '/(tu|su)\s+(asesor[ií]a|llamada|cita)(\s+(telef[oó]nica|personalizada))?\s+(de|para)\s+(hoy|esta\s+tarde)'
+        . '|(asesor[ií]a|llamada|cita)\s+de\s+hoy\s+a\s+las'
+        . '|(te|le)\s+(va\s+a\s+)?(llama|marca|llamar[aá]|marcar[aá])\w*\s.{0,60}\bhoy\s+a\s+las'
+        . '|nos\s+vemos(\s+entonces)?\s+hoy\s+a\s+las'
+        . '|(en\s+un\s+momento|ahorita|en\s+unos\s+minutos).{0,80}(tu|su)\s+(asesor[ií]a|llamada|cita)\s+de\s+las\s+\d/iu',
+        $texto
+    ) === 1;
+    if (!$hablaDeCitaHoy) return false;
+
+    $stmt = $pdo->prepare(
+        "SELECT 1 FROM citas_asesoria
+         WHERE telefono = :t AND estado IN ('confirmada', 'pendiente_pago') AND fecha = CURDATE()
+         LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    return !$stmt->fetchColumn();
 }
 
 /**
