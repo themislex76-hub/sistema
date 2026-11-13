@@ -72,7 +72,11 @@ foreach ($atrasos as $atraso) {
     $docsStmt->execute([':id' => $atraso['expediente_id']]);
     $documentosRecientes = $docsStmt->fetchAll();
 
-    $avisosStmt = $pdo->prepare("SELECT ia_resumen FROM avisos_boletin WHERE expediente_id = :id AND ia_resumen IS NOT NULL AND ia_resumen <> '' ORDER BY creado_en DESC LIMIT 5");
+    // Excluir 'descartado' -- mismo motivo que en cron_auditoria_expediente_ia.php
+    // y cron_qa_irregularidades.php: un aviso descartado es de OTRO caso que
+    // compartía el mismo número de expediente por coincidencia (bug real
+    // encontrado 13 nov 2026).
+    $avisosStmt = $pdo->prepare("SELECT ia_resumen FROM avisos_boletin WHERE expediente_id = :id AND estado != 'descartado' AND ia_resumen IS NOT NULL AND ia_resumen <> '' ORDER BY creado_en DESC LIMIT 5");
     $avisosStmt->execute([':id' => $atraso['expediente_id']]);
     $avisosRecientes = $avisosStmt->fetchAll();
 

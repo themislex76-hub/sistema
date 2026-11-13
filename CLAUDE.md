@@ -1,5 +1,67 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Bug real: auditoría integral/preguntas del supervisor usaban avisos de boletín "descartados" como si fueran del expediente (13 nov 2026)
+Encontrado probando en vivo el panel "Posibles irregularidades" -- la
+irregularidad de **Isabel Torres Arizmendi vs Impulsora Ideal, Exp.
+2235/2026** decía que el llenado de "Prevención" venía de un aviso de
+boletín que en realidad es de OTRO caso (Rosas Rivas Anahi vs. Edxsmart...).
+El usuario confirmó con el único documento real del expediente (una
+Constancia de no conciliación de agosto, sin relación con "Prevención") y
+con el historial de cambios: **`cron_auditoria_expediente_ia.php` SÍ llenó
+sola `etapa_prevencion` (fecha 2026-09-28) y `etapa_demanda_admitida`
+(fecha 2026-09-28) el 11 nov 2026**, citando como motivo avisos de boletín
+que mencionan "Prevencion"/"Admision" para el expediente 2235/2026 -- pero
+ese número de expediente se repite en VARIOS tribunales/casos distintos de
+la CDMX (coincidencia, no es raro), y esos avisos en particular son de
+**Ferrusca Padilla Jaime vs Total Safety** y **Rosas Rivas Anahi vs
+Edxsmart...**, no del caso de Isabel Torres Arizmendi.
+- **Causa real**: esos avisos SÍ están correctamente marcados
+  `estado='descartado'` en `avisos_boletin` (confirmado visible en la
+  pestaña "Boletín" del expediente, "Historial de revisiones") -- el
+  sistema ya sabía que no correspondían a este caso. El problema es que
+  **3 lugares distintos leían `avisos_boletin` por `expediente_id` sin
+  excluir `estado = 'descartado'`**, así que para efectos de darle
+  contexto a la IA, esos avisos se trataban igual que uno real:
+  `ia_auditar_expediente()` (vía `cron_auditoria_expediente_ia.php`, el que
+  de verdad llenó las 2 etapas mal), la "segunda opinión" del panel de
+  irregularidades (`cron_qa_irregularidades.php`, por eso detectó el
+  problema -- usando el mismo contexto contaminado, pero esta vez para bien,
+  dio una explicación certera) y `ia_generar_pregunta_supervisor()` (vía
+  `cron_generar_preguntas_supervisor.php`, no se confirmó que haya causado
+  un error real ahí, pero mismo riesgo).
+- **Corregido**: las 3 consultas ahora agregan `AND estado != 'descartado'`.
+  El robot de boletín de CDMX (`robots/cdmx/cdmx.js`) YA tiene su propio
+  candado de Tribunal+partes antes de reportar un aviso nuevo (agregado
+  después del 28 sep 2026, fecha de estos avisos en particular) -- por eso
+  esto no debería repetirse con avisos NUEVOS, pero no protegía contra
+  avisos VIEJOS que ya estaban en la base de antes de ese candado y que un
+  humano marcó "descartado" después de verlos por error.
+- **Pendiente -- acción del usuario**: en el expediente de Isabel Torres
+  Arizmendi, revisar/borrar "Prevención" y "Demanda admitida" en "Etapas
+  del juicio" (no hay ninguna fecha real confirmada para ninguna de las 2
+  todavía -- quedan en blanco hasta que se revise el expediente real del
+  Tribunal). Además, correr este SQL de diagnóstico en phpMyAdmin para ver
+  si hay OTROS expedientes con el mismo riesgo (llenado de auditoría
+  integral citando un aviso de boletín, en un expediente que también tiene
+  algún aviso descartado) -- revisar cada fila a mano, no corregir en
+  automático:
+  ```sql
+  SELECT h.expediente_id, e.actor, e.demandado, e.exp, h.campo, h.despues, h.creado_en
+  FROM expediente_historial h
+  JOIN expedientes e ON e.id = h.expediente_id
+  WHERE h.usuario_id IS NULL
+    AND h.campo LIKE 'etapa_%'
+    AND h.despues LIKE '%auditoría integral%Aviso de boletín%'
+    AND EXISTS (
+      SELECT 1 FROM avisos_boletin a
+      WHERE a.expediente_id = h.expediente_id AND a.estado = 'descartado'
+    )
+  ORDER BY h.creado_en DESC;
+  ```
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica cache-bust
+  ni `verificar_tags.js`. Archivos a subir: `api/cron_auditoria_expediente_ia.php`,
+  `api/cron_qa_irregularidades.php`, `api/cron_generar_preguntas_supervisor.php`.
+
 ## Causa raíz real de "primer/segundo citatorio confundidos" en la QA semanal (12 nov 2026)
 Encontrada revisando el `expediente_historial` real de los 3 casos que el
 usuario reportó (Luis Enrique Aguilar Mateos y otros 2 iguales) --

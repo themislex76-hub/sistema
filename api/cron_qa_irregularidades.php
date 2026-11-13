@@ -192,7 +192,13 @@ foreach ($filasHistorial as $h) {
     $docsStmt->execute([':id' => $expedienteId]);
     $documentosRecientes = $docsStmt->fetchAll();
 
-    $avisosStmt = $pdo->prepare('SELECT resumen, ia_resumen, creado_en FROM avisos_boletin WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 10');
+    // Excluir 'descartado' -- un aviso descartado quiere decir que el filtro
+    // de seguridad del robot encontró el mismo número de expediente en OTRO
+    // caso (el número no es único entre tribunales) y su resumen habla de
+    // partes ajenas a este expediente; incluirlo aquí producía falsos
+    // "sospechosos" explicando una confusión que en realidad nunca se aplicó
+    // (bug real encontrado 13 nov 2026, expediente de Isabel Torres Arizmendi).
+    $avisosStmt = $pdo->prepare("SELECT resumen, ia_resumen, creado_en FROM avisos_boletin WHERE expediente_id = :id AND estado != 'descartado' ORDER BY creado_en DESC LIMIT 10");
     $avisosStmt->execute([':id' => $expedienteId]);
     $avisosRecientes = $avisosStmt->fetchAll();
 
