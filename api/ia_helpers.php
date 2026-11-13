@@ -2895,7 +2895,7 @@ function ia_siguiente_etapa_esperada_texto(array $etapas): ?string
 // contradecir lo que la pestaña "Etapas del juicio" ya mostraba (por
 // ejemplo, sugerir dar seguimiento a una etapa que ya pasó, ignorando un
 // atraso real más adelante en la bitácora).
-function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?array
+function ia_generar_resumen_expediente(array $expediente, array $etapas = [], array $notasBitacora = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -2942,7 +2942,16 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
     }
     if (!empty($expediente['cobro_pendiente'])) $lineas[] = 'Tiene cobro pendiente marcado.';
     $agregar('Notas internas', $expediente['notas_internas'] ?? null);
-    $agregar('Última nota', $expediente['ultima_nota'] ?? null);
+    // "Última nota" es un campo CONGELADO importado una sola vez del sistema
+    // viejo del despacho al migrar -- nadie lo vuelve a actualizar después
+    // (confirmado real, 13 nov 2026: el informe de Alan Jonathan Campuzano
+    // Brito seguía diciendo "falta presentar la promoción aclaratoria del
+    // domicilio" casi palabra por palabra igual a este campo, aunque la
+    // bitácora de notas de seguimiento de abajo ya mostraba esa promoción
+    // presentada DOS VECES, la más reciente apenas 2 minutos antes de que
+    // se generara el informe). Se etiqueta así a propósito para que la IA
+    // no la confunda con una actualización real.
+    $agregar('Última actuación/nota importada del sistema viejo (puede estar MUY desactualizada)', $expediente['ultima_nota'] ?? null);
 
     // Bitácora real de trámite -- sin esto la IA solo veía los datos de
     // captura de arriba y podía sugerir una próxima acción que ya pasó o
@@ -2969,6 +2978,33 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
         $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
         $siguienteTexto = ia_siguiente_etapa_esperada_texto($etapas);
         if ($siguienteTexto !== null) $lineas[] = $siguienteTexto;
+    }
+
+    // Bitácora de notas de seguimiento del abogado (tabla aparte
+    // `expediente_notas`, el abogado la va llenando con el avance real del
+    // trámite -- promociones presentadas, resultados de actuarios, etc.).
+    // Agregada 13 nov 2026 tras un bug real: el informe ejecutivo de Alan
+    // Jonathan Campuzano Brito seguía recomendando "presentar la promoción
+    // aclaratoria del domicilio" como si siguiera pendiente, repitiendo casi
+    // textual el campo "Última nota" (congelado, importado del sistema
+    // viejo) -- pero la bitácora de este expediente ya tenía 2 notas MÁS
+    // RECIENTES (04/06/2026 y 28/10/2026) confirmando que esa promoción ya
+    // se presentó y que ya se pidió al Tribunal notificar vía actuario. La
+    // IA nunca veía estas notas porque este helper solo leía los 2 campos
+    // congelados de arriba. Se manda de más reciente a más antigua (al
+    // revés que la bitácora de trámite) porque lo que importa aquí es la
+    // ÚLTIMA novedad, no la secuencia completa.
+    if ($notasBitacora) {
+        $notasTexto = [];
+        foreach ($notasBitacora as $n) {
+            $fecha = !empty($n['creado_en']) ? substr((string)$n['creado_en'], 0, 10) : '(sin fecha)';
+            $notasTexto[] = $fecha . ': ' . trim((string)($n['texto'] ?? ''));
+        }
+        $lineas[] = "Bitácora de notas de seguimiento del abogado (de más reciente a más antigua -- "
+            . "esta es la fuente MÁS confiable y actual de qué ha pasado de verdad en el trámite, por "
+            . "encima de \"Última actuación/nota importada del sistema viejo\" si se contradicen; si una "
+            . "nota reciente dice que algo ya se presentó/resolvió, NUNCA digas en el informe ni en la "
+            . "próxima acción que todavía falta hacerlo):\n" . implode("\n", $notasTexto);
     }
 
     if (!$lineas) return null;

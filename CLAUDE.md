@@ -1,5 +1,54 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Informe ejecutivo ciego a la bitácora de notas del abogado -- usaba un campo congelado importado del sistema viejo (13 nov 2026)
+Reportado por el usuario viendo el expediente de **Alan Jonathan Campuzano
+Brito vs Protectora Buro de Seguridad Privada y Logística, Exp. 780/2026**:
+el Informe Ejecutivo (generado 12 nov, 08:27pm) seguía diciendo que faltaba
+"presentar la promoción aclaratoria del domicilio... para que el Tribunal
+proceda al emplazamiento" -- pero la "Bitácora de notas del despacho" de
+ese mismo expediente ya tenía 2 notas MÁS RECIENTES confirmando que esa
+promoción ya se presentó dos veces (04/06/2026, y de nuevo 28/10/2026
+pidiendo notificar vía actuario), la última apenas 2 minutos ANTES de que
+se generara el informe.
+- **Causa real**: `ia_generar_resumen_expediente()` (`api/ia_helpers.php`)
+  nunca leía la tabla `expediente_notas` (la bitácora real que el abogado
+  llena con "Agregar nota de seguimiento") -- solo leía 2 campos sueltos de
+  la tabla `expedientes`: `notas_internas` y `ultima_nota`. Este 2º campo
+  se muestra en la UI como "Última actuación / nota **(importada de la
+  base original)**" -- es un dato CONGELADO que se cargó una sola vez al
+  migrar del sistema viejo del despacho y nadie lo vuelve a tocar después
+  (`api/expedientes_add_nota.php` inserta en `expediente_notas`, nunca en
+  `expedientes.ultima_nota`). La IA tomó ese texto viejo como si fuera el
+  estado actual, sin enterarse de que la bitácora real ya lo había
+  superado por completo.
+- **Corregido**: `api/expediente_resumen_ejecutivo.php` ahora también
+  manda las últimas 8 notas de `expediente_notas` (más reciente primero) a
+  `ia_generar_resumen_expediente()` (nuevo parámetro `$notasBitacora`),
+  etiquetadas en el prompt como "la fuente MÁS confiable y actual" -- por
+  encima del campo congelado si se contradicen -- con regla dura explícita:
+  si una nota reciente dice que algo ya se presentó/resolvió, nunca
+  redactar que todavía falta.
+- **Bug secundario encontrado de paso**: agregar una nota de seguimiento
+  tampoco bumpeaba `expedientes.actualizado_en` (a diferencia de Etapas/
+  Editar datos/Cobros/Pendientes, que sí lo hacen desde el arreglo del 10
+  nov) -- así que el informe ejecutivo no se enteraba sola de una nota
+  nueva, dependía de que alguien le diera "Actualizar" a mano o tocara otra
+  cosa primero. Corregido en `api/expedientes_add_nota.php` (mismo UPDATE
+  que ya usan los demás).
+- **Alcance NO ampliado todavía**: `ia_auditar_expediente()` (auditoría
+  integral diaria) tampoco lee `expediente_notas` -- mismo hueco en
+  potencia (podría estar perdiéndose fechas literales que el abogado ya
+  escribió a mano en sus notas), pero no se tocó esta vez porque el
+  usuario no lo pidió ni se confirmó un caso real afectado ahí. Si aparece
+  un caso real de auditoría integral que debería haber visto algo de la
+  bitácora de notas y no lo vio, aplicar el mismo arreglo ahí.
+- Sin cambios de base de datos (la tabla `expediente_notas` ya existía).
+  No se tocó `app.js` -- no aplica cache-bust ni `verificar_tags.js`.
+  **Pendiente**: pedirle al usuario que entre al expediente de Alan
+  Campuzano y le dé "Actualizar" en "Informe del juicio" para confirmar
+  que el texto nuevo ya refleja las 2 promociones presentadas en vez de
+  seguir pidiendo la primera.
+
 ## Bug real: auditoría integral/preguntas del supervisor usaban avisos de boletín "descartados" como si fueran del expediente (13 nov 2026)
 Encontrado probando en vivo el panel "Posibles irregularidades" -- la
 irregularidad de **Isabel Torres Arizmendi vs Impulsora Ideal, Exp.

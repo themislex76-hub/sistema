@@ -21,4 +21,14 @@ $stmt = $pdo->prepare(
 );
 $stmt->execute([':eid' => $id, ':uid' => $user['id'], ':uname' => $user['nombre'], ':texto' => $texto]);
 
+// expediente_notas es una tabla aparte -- guardar aquí NO toca
+// expedientes.actualizado_en solo. Sin este UPDATE explícito, el informe
+// ejecutivo con IA (que ahora también lee esta bitácora, ver
+// ia_generar_resumen_expediente()) nunca se enteraría de que hay una nota
+// nueva y seguiría mostrando una "próxima acción" vieja hasta que algo más
+// (Etapas, Editar datos, etc.) bumpeara la fecha por su cuenta -- bug real
+// encontrado 13 nov 2026, mismo patrón que ya se corrigió para
+// expedientes_update_etapas.php.
+$pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $id]);
+
 respond(['ok' => true, 'fecha' => date('Y-m-d H:i:s')]);

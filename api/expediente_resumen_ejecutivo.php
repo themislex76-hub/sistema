@@ -43,7 +43,15 @@ $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha, fecha_programada, resultad
 $etapasStmt->execute([':id' => $id]);
 $etapas = $etapasStmt->fetchAll();
 
-$resultado = ia_generar_resumen_expediente($row, $etapas);
+// Últimas notas de seguimiento del abogado (bitácora real del trámite, ver
+// ia_generar_resumen_expediente() -- sin esto la IA solo veía el campo
+// congelado "Última nota" importado del sistema viejo y podía recomendar
+// algo que ya se hizo hace meses).
+$notasStmt = $pdo->prepare('SELECT texto, creado_en FROM expediente_notas WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 8');
+$notasStmt->execute([':id' => $id]);
+$notasBitacora = $notasStmt->fetchAll();
+
+$resultado = ia_generar_resumen_expediente($row, $etapas, $notasBitacora);
 
 if ($resultado === null) {
     // La IA falló (red, sin crédito, etc.) -- si ya había un resumen viejo
