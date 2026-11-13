@@ -33,7 +33,20 @@ coincidencia de número, como ya pasó).
   información" -- misma tabla clicable (`[data-id]`) que abre el
   expediente directo, nunca corrige nada solo.
 - Sin cambios de base de datos, sin tocar `mergeTags()`/tags de demanda --
-  no aplica `verificar_tags.js`. **Sin probar en vivo todavía**.
+  no aplica `verificar_tags.js`.
+- **Confirmado funcionando en vivo (13 nov 2026)**: primera revisión real
+  encontró 2 casos genuinos, ambos confirmados reales por el usuario (no
+  falsos positivos): **Eduardo Ramírez Gaspar vs Comercializadora
+  Pepsic...** (número `MEXOAE/2026/006400`, no sigue `NNN/AAAA` -- a
+  pesar de que `MEXOAE` es un prefijo real de Edomex, en este caso SÍ es
+  un error de captura real, no el formato legítimo) y **Anel Yadira
+  Hernández Zaragoza vs Banco Nacional de México** (Tribunal capturado
+  como "TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES CON SEDE EN LA
+  CIUDAD DE MÉXICO", sin el número ordinal que llevan TODOS los
+  tribunales federales del catálogo -- hay que volver a capturarlo desde
+  el selector con el número correcto). **Pendiente**: que el usuario
+  corrija ambos expedientes (número de Eduardo Ramírez, Tribunal con
+  número de Anel Yadira).
 
 ## Informe ejecutivo ciego a la bitácora de notas del abogado -- usaba un campo congelado importado del sistema viejo (13 nov 2026)
 Reportado por el usuario viendo el expediente de **Alan Jonathan Campuzano
