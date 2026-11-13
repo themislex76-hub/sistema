@@ -1,5 +1,44 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Informe ejecutivo ahora también lee documentos y avisos de boletín, no solo etapas/notas (13 nov 2026)
+Pedido explícito del usuario ("la ia tiene que revisar todas las fuentes de
+información para lograr exactitud y autonomía") tras ver el expediente de
+**Mir Castro Ma Claudia vs Servicio Postal Mexicano, Exp. 242/2026**: el
+Informe Ejecutivo decía "URGENTE: Presentar objeciones y réplica... que ya
+debería estar presentada desde hace más de 110 días" -- pero el documento
+más reciente del expediente (**Acuerdo No. 4**, ya con su resumen de IA
+guardado) decía que el Tribunal había levantado DE OFICIO un incidente de
+competencia y declarado los autos "en estado de resolución de dicho
+incidente" -- el trámite está PAUSADO por eso, no atrasado por descuido.
+- **Causa real**: `ia_generar_resumen_expediente()` (el Informe Ejecutivo)
+  nunca recibía documentos ni avisos de boletín como contexto -- a
+  diferencia de `ia_auditar_expediente()` (auditoría integral), que sí los
+  lee desde que se construyó. Por eso podía insistir en una "próxima
+  acción" urgente sin saber que un documento real ya explicaba por qué esa
+  etapa sigue sin registrarse.
+- **Corregido**: `ia_generar_resumen_expediente()` acepta ahora 2
+  parámetros más, `$documentosRecientes`/`$avisosRecientes` (mismas
+  consultas que ya usa `cron_auditoria_expediente_ia.php`, incluyendo
+  excluir avisos `estado='descartado'` -- mismo candado del bug de Isabel
+  Torres Arizmendi), con una regla dura nueva: si un documento/aviso
+  menciona literalmente un incidente/recurso/suspensión/excusa/
+  acumulación que pausa o altera la secuencia normal, la próxima acción
+  debe ser dar seguimiento a ESE incidente, nunca insistir en el trámite
+  de la etapa normal como si el abogado lo estuviera descuidando.
+  `api/expediente_resumen_ejecutivo.php` junta y manda ambas listas.
+- **Modelo subido a Sonnet SOLO en esta función** (`IA_MODELO_ANALIZAR_
+  ACUERDO` en vez de la constante `IA_MODELO_RESUMEN_EXPEDIENTE`/Haiku que
+  siguen usando las otras 2 llamadas que comparten esa constante) -- mismo
+  criterio ya aplicado el mismo día a la auditoría integral: ahora
+  sintetiza varias fuentes que pueden contradecirse, más que extracción
+  simple.
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica cache-bust
+  ni `verificar_tags.js`. **Pendiente**: que el usuario suba
+  `api/ia_helpers.php` y `api/expediente_resumen_ejecutivo.php`, y le dé
+  "Actualizar" al Informe del juicio de Mir Castro Ma Claudia para
+  confirmar que ya menciona el incidente de competencia en vez de insistir
+  en las objeciones/réplica.
+
 ## Auditoría integral también lee la bitácora de notas del abogado (13 nov 2026)
 Pedido explícito del usuario ("adelante") tras extender este mismo arreglo
 al Informe Ejecutivo -- `ia_auditar_expediente()` (la auditoría integral

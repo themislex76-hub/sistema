@@ -2895,7 +2895,7 @@ function ia_siguiente_etapa_esperada_texto(array $etapas): ?string
 // contradecir lo que la pestaña "Etapas del juicio" ya mostraba (por
 // ejemplo, sugerir dar seguimiento a una etapa que ya pasó, ignorando un
 // atraso real más adelante en la bitácora).
-function ia_generar_resumen_expediente(array $expediente, array $etapas = [], array $notasBitacora = []): ?array
+function ia_generar_resumen_expediente(array $expediente, array $etapas = [], array $notasBitacora = [], array $documentosRecientes = [], array $avisosRecientes = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3007,10 +3007,54 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = [], ar
             . "próxima acción que todavía falta hacerlo):\n" . implode("\n", $notasTexto);
     }
 
+    // Documentos del expediente y avisos de boletín, con su resumen de IA --
+    // agregado 13 nov 2026 tras un bug real: el informe ejecutivo del
+    // expediente de Mir Castro Ma Claudia (Exp. 242/2026) seguía diciendo
+    // "URGENTE: presentar objeciones y réplica... ya debería estar
+    // presentada desde hace más de 110 días" sin saber que el Tribunal
+    // había levantado DE OFICIO un incidente de competencia y declarado los
+    // autos "en estado de resolución de dicho incidente" -- un hecho real
+    // que SÍ estaba documentado (Acuerdo No. 4, ya con su resumen de IA
+    // guardado), pero que esta función nunca recibía como contexto (a
+    // diferencia de ia_auditar_expediente(), que sí lee documentos/avisos
+    // desde que se construyó). Un incidente/recurso/suspensión real puede
+    // pausar o desviar por completo la secuencia normal de ETAPA_KEYS, así
+    // que esta fuente puede ser la explicación de por qué "no ha pasado lo
+    // esperado" en vez de simplemente un atraso.
+    if ($documentosRecientes) {
+        $lineas[] = "Documentos guardados en el expediente y su resumen de IA (más reciente primero):\n" . implode("\n", array_map(
+            fn($d) => '- [' . ($d['categoria'] ?? '?') . '] ' . ($d['nombre_archivo'] ?? '?') . ': ' . ($d['ia_resumen'] ?? '(sin resumen)'),
+            $documentosRecientes
+        ));
+    }
+    if ($avisosRecientes) {
+        $lineas[] = "Avisos de boletín del expediente y su resumen de IA (más reciente primero):\n" . implode("\n", array_map(
+            fn($a) => '- (' . ($a['creado_en'] ?? '?') . ') ' . ($a['ia_resumen'] ?? $a['resumen'] ?? ''),
+            $avisosRecientes
+        ));
+    }
+    if ($documentosRecientes || $avisosRecientes) {
+        $lineas[] = 'REGLA DURA sobre documentos/avisos de arriba: si alguno menciona literalmente un incidente, '
+            . 'recurso, suspensión, excusa, acumulación u otra actuación del Tribunal que pausa o altera la '
+            . 'secuencia normal del trámite, eso explica por qué la "siguiente etapa esperada" todavía no se '
+            . 'registra -- en ese caso la próxima acción es dar seguimiento a ESE incidente/recurso específico '
+            . '(o verificar si ya se resolvió), nunca insistir en que urge presentar el trámite de la etapa '
+            . 'normal como si el abogado lo estuviera descuidando.';
+    }
+
     if (!$lineas) return null;
 
     $payload = [
-        'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
+        // Sube a Sonnet solo en esta función (13 nov 2026) -- desde que
+        // recibe documentos/avisos como contexto además de etapas/notas,
+        // tiene que sintetizar y priorizar correctamente varias fuentes
+        // que a veces se contradicen (mismo criterio ya aplicado a
+        // ia_auditar_expediente() el mismo día: cuando el razonamiento es
+        // más que extracción simple, el costo extra de Sonnet es preferible
+        // al riesgo de un informe mal redactado). Las otras 2 llamadas que
+        // usan IA_MODELO_RESUMEN_EXPEDIENTE (Haiku) no se tocan -- siguen
+        // siendo tareas más simples.
+        'model' => IA_MODELO_ANALIZAR_ACUERDO,
         'max_tokens' => 400,
         'thinking' => ['type' => 'disabled'],
         'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Te doy '

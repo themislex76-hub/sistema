@@ -51,7 +51,21 @@ $notasStmt = $pdo->prepare('SELECT texto, creado_en FROM expediente_notas WHERE 
 $notasStmt->execute([':id' => $id]);
 $notasBitacora = $notasStmt->fetchAll();
 
-$resultado = ia_generar_resumen_expediente($row, $etapas, $notasBitacora);
+// Documentos del expediente y avisos de boletín, con su resumen de IA --
+// agregado 13 nov 2026 (mismo patrón que cron_auditoria_expediente_ia.php):
+// sin esto el informe ejecutivo no se enteraba de hechos reales documentados
+// (ej. un incidente de competencia levantado de oficio por el Tribunal) que
+// explican por qué el trámite no sigue la secuencia normal -- ver caso real
+// de Mir Castro Ma Claudia, Exp. 242/2026.
+$docsStmt = $pdo->prepare('SELECT nombre_archivo, categoria, ia_resumen FROM expediente_documentos WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 12');
+$docsStmt->execute([':id' => $id]);
+$documentosRecientes = $docsStmt->fetchAll();
+
+$avisosStmt = $pdo->prepare("SELECT resumen, ia_resumen, creado_en FROM avisos_boletin WHERE expediente_id = :id AND estado != 'descartado' ORDER BY creado_en DESC LIMIT 10");
+$avisosStmt->execute([':id' => $id]);
+$avisosRecientes = $avisosStmt->fetchAll();
+
+$resultado = ia_generar_resumen_expediente($row, $etapas, $notasBitacora, $documentosRecientes, $avisosRecientes);
 
 if ($resultado === null) {
     // La IA falló (red, sin crédito, etc.) -- si ya había un resumen viejo
