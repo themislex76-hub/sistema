@@ -2020,6 +2020,17 @@ exacto que ya existía para Edomex:
   afirmar que un acta administrativa "pierde validez" por cómo se levantó.
   Sin migración, sin `app.js`.
 
+## Candado de pagos ya reconoce cursos pagados (13 nov 2026, conversación "chats")
+- Bug real (12-nov): cliente pagó el curso "Nuevo Procedimiento Laboral
+  Mexicano" ($299), el webhook le mandó su acceso, y al mandar su
+  comprobante el bot le contestó "déjame verificar tu pago... un abogado
+  te contacta" -- `ia_texto_confirma_pago_sin_evidencia()` solo revisaba
+  `citas_asesoria` y `compras_documento_calculo`, no `compras_curso`, así
+  que bloqueó una confirmación correcta y lo escaló sin necesidad (mismo
+  hueco que ya había pasado con el documento de $49). Ahora también
+  revisa `compras_curso.estado='confirmada'`. Probado con 3 casos. Si se
+  agrega otro producto pagado, agregarlo también a este candado.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado

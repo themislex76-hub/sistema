@@ -2024,6 +2024,16 @@ function ia_texto_confirma_pago_sin_evidencia(PDO $pdo, string $telefono, string
     $stmt->execute([':t' => $telefono]);
     if ($stmt->fetchColumn()) return false;
 
+    // Mismo hueco que el del documento de $49, ahora con los cursos (bug
+    // real, 12-nov-2026): un cliente pagó el curso de $299 (vive en
+    // compras_curso), el webhook ya le había mandado su acceso, y cuando
+    // mandó su comprobante el bot quiso confirmarle el pago -- este candado
+    // lo bloqueó porque no encontró ninguna cita ni documento, y le contestó
+    // "déjame verificar tu pago" a alguien que ya tenía su curso.
+    $stmt = $pdo->prepare("SELECT 1 FROM compras_curso WHERE telefono = :t AND estado = 'confirmada' LIMIT 1");
+    $stmt->execute([':t' => $telefono]);
+    if ($stmt->fetchColumn()) return false;
+
     return true;
 }
 
