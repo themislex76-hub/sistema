@@ -7053,6 +7053,72 @@ function exportarRespaldo(){
   window.open(API_BASE + 'backup_export.php', '_blank');
 }
 
+// ---------------------------------------------------------------
+// Validación de Tribunal / número de expediente (13 nov 2026) -- pedido
+// explícito del usuario tras el caso de Isabel Torres Arizmendi (Exp.
+// 2235/2026, que resultó compartir número con otro caso de otro tribunal
+// -- ver CLAUDE.md): "sería bueno que revisara que esté correcto el
+// número de tribunal, la entidad y el número de expediente" para atrapar
+// errores de captura ANTES de que un robot simplemente no encuentre nada
+// (o, peor, encuentre el caso EQUIVOCADO por coincidencia de número).
+// Todo corre en el navegador con datos que ya están cargados (CASES_DATA,
+// los catálogos de Tribunal) -- no hace falta ningún endpoint nuevo, y
+// nunca corrige nada solo, solo señala para que el abogado lo revise.
+function validarTribunalesExpedientes(){
+  const activos = CASES_DATA.filter(k => !estaConcluido(k) && (k.tribunal || k.junta));
+  const resultados = [];
+  const porParTribunalExp = {};
+  activos.forEach(k => {
+    const tribunal = (k.tribunal || k.junta || '').trim();
+    const exp = (k.exp || '').trim();
+    if (!tribunal) return;
+    const motivos = [];
+    if (exp && !/^\d+\/\d{4}$/.test(exp)) {
+      motivos.push(`El número de expediente ("${exp}") no sigue el formato esperado NNN/AAAA -- revisa si hay un error de captura.`);
+    }
+    if (!findTribunalEstado(tribunal)) {
+      motivos.push(`El Tribunal capturado ("${tribunal}") no coincide con ninguno del catálogo del selector -- probablemente se escribió a mano en vez de elegirlo de la lista, revisa que esté bien escrito.`);
+    }
+    if (exp) {
+      const key = tribunal.toLowerCase() + '|' + exp.toLowerCase();
+      (porParTribunalExp[key] = porParTribunalExp[key] || []).push(k);
+    }
+    if (motivos.length) resultados.push({ kase: k, motivos });
+  });
+  // El número de expediente solo es único DENTRO de cada tribunal, no en
+  // todo el país -- si 2 expedientes DISTINTOS comparten tribunal+número,
+  // casi seguro uno de los 2 tiene un error de captura (mismo patrón real
+  // que confundió a la auditoría integral con avisos de otro caso).
+  Object.values(porParTribunalExp).forEach(grupo => {
+    if (grupo.length <= 1) return;
+    grupo.forEach(k => {
+      const otros = grupo.filter(x => x.id !== k.id).map(x => `${x.actor||'—'} vs ${x.demandado||'—'}`).join('; ');
+      const motivo = `Comparte Tribunal + número de expediente con otro(s) expediente(s) del sistema (${otros}) -- el número de expediente solo es único dentro de cada tribunal, así que probablemente uno de los 2 tiene un error de captura.`;
+      let r = resultados.find(r => r.kase.id === k.id);
+      if (r) r.motivos.push(motivo); else resultados.push({ kase: k, motivos: [motivo] });
+    });
+  });
+  return resultados;
+}
+
+function tribunalValidacionHTML(){
+  const resultados = validarTribunalesExpedientes();
+  return `
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Validación de Tribunal / número de expediente</div>
+    <div class="notice" style="margin-bottom:14px;">De los expedientes activos con Tribunal capturado, señala los que tienen algo que podría hacer que los robots de monitoreo nunca los encuentren (o encuentren el caso equivocado): el número de expediente no sigue el formato esperado, el Tribunal no coincide con el catálogo del selector, o comparte Tribunal + número con otro expediente distinto. Nunca corrige nada solo.</div>
+    ${resultados.length ? `
+    <table><thead><tr><th>Expediente</th><th>Tribunal capturado</th><th>Exp.</th><th>Posible problema</th></tr></thead><tbody>
+      ${resultados.map(r=>`<tr>
+        <td data-id="${r.kase.id}" style="cursor:pointer; font-size:12.5px;">${escapeHTML(r.kase.actor||'—')} <span style="color:var(--gray);">vs</span> ${escapeHTML(truncate(r.kase.demandado||'—',24))}</td>
+        <td style="font-size:12px;">${escapeHTML(r.kase.tribunal || r.kase.junta || '—')}</td>
+        <td style="font-size:12px; white-space:nowrap;">${escapeHTML(r.kase.exp||'—')}</td>
+        <td style="font-size:12px;">${r.motivos.map(m=>`<div style="margin-bottom:4px;">⚠️ ${escapeHTML(m)}</div>`).join('')}</td>
+      </tr>`).join("")}
+    </tbody></table>` : '<div class="empty">Sin expedientes sospechosos -- todos los Tribunales capturados coinciden con el catálogo y no hay números repetidos entre tribunales.</div>'}
+  </div></div>`;
+}
+
 function equipoHTML(){
   const rows = USUARIOS_ADMIN.map(u=>{
     return `<tr data-rename="${u.id}"><td><strong>${escapeHTML(u.nombre)}</strong>${u.activo? '' : ' <span class="badge closed">inactivo</span>'}${u.debe_cambiar_password? ' <span class="badge warn">pendiente de 1er acceso</span>' : ''}</td><td>${escapeHTML(u.email)}</td><td>${mapRol(u.rol)}</td><td>${u.num_casos} asuntos</td>
@@ -7135,6 +7201,7 @@ function equipoHTML(){
       }).join("")}
     </tbody></table>` : '<div class="empty">Sin actividad autónoma de la IA en los últimos 30 días.</div>'}
   </div></div>
+  ${tribunalValidacionHTML()}
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Respaldo de toda la información</div>
     <div class="notice" style="margin-bottom:14px;">Toda la información (etapas, notas, convenios, pagos, historial) vive ahora en la base de datos MySQL de tu hosting — el respaldo más confiable es el de cPanel (phpMyAdmin &rarr; Exportar, o la herramienta de "Copias de seguridad" de cPanel). Este botón descarga además un respaldo en JSON como referencia rápida.</div>

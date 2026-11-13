@@ -1,5 +1,40 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Panel nuevo: Validación de Tribunal / número de expediente (13 nov 2026, `app.js?v=146`)
+Pedido explícito del usuario tras el caso de Isabel Torres Arizmendi
+(Exp. 2235/2026 compartido por coincidencia con otro tribunal, ver
+sección de abajo): "sería bueno que revisara que esté correcto el número
+de tribunal, la entidad y el número de expediente" -- el objetivo
+explícito es atrapar errores de captura ANTES de que un robot
+simplemente no encuentre nada (o, peor, encuentre el caso equivocado por
+coincidencia de número, como ya pasó).
+- **3 chequeos, todos client-side, sin endpoint nuevo** (`CASES_DATA` ya
+  trae `tribunal`/`exp` de todos los expedientes visibles, y los
+  catálogos de Tribunal -- `TRIBUNALES_LOCALES_MX`/`TRIBUNALES_FEDERALES_
+  MX`/`TRIBUNALES_CUSTOM` + `findTribunalEstado()` -- ya estaban cargados
+  para el selector de "Editar datos"):
+  1. **Formato del número de expediente**: no sigue el patrón `NNN/AAAA`.
+  2. **Tribunal capturado no coincide con el catálogo del selector**
+     (pedido explícito: "los tribunales deben de coincidir con los que
+     estan en el selector") -- usa `findTribunalEstado()`, que ya existía
+     para detectar "dato legacy sin estandarizar" en el campo de Editar
+     datos; si devuelve vacío, el texto no está en ningún catálogo
+     (local/federal/agregado a mano), probablemente mal escrito a mano en
+     vez de elegido de la lista.
+  3. **Mismo Tribunal + mismo número de expediente en 2+ expedientes
+     DISTINTOS del sistema** -- el número de expediente solo es único
+     DENTRO de cada tribunal, no en todo el país, así que esto es casi
+     seguro un error de captura en uno de los 2 (exactamente el patrón
+     que causó el bug de Isabel Torres Arizmendi).
+- Nuevas funciones `validarTribunalesExpedientes()` (la lógica) y
+  `tribunalValidacionHTML()` (el panel) en `assets/app.js`, solo sobre
+  expedientes ACTIVOS (`!estaConcluido(k)`) con Tribunal capturado. Panel
+  nuevo en "Equipo", entre "Actividad de la IA" y "Respaldo de toda la
+  información" -- misma tabla clicable (`[data-id]`) que abre el
+  expediente directo, nunca corrige nada solo.
+- Sin cambios de base de datos, sin tocar `mergeTags()`/tags de demanda --
+  no aplica `verificar_tags.js`. **Sin probar en vivo todavía**.
+
 ## Informe ejecutivo ciego a la bitácora de notas del abogado -- usaba un campo congelado importado del sistema viejo (13 nov 2026)
 Reportado por el usuario viendo el expediente de **Alan Jonathan Campuzano
 Brito vs Protectora Buro de Seguridad Privada y Logística, Exp. 780/2026**:
