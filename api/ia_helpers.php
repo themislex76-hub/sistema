@@ -2895,7 +2895,7 @@ function ia_siguiente_etapa_esperada_texto(array $etapas): ?string
 // contradecir lo que la pestaña "Etapas del juicio" ya mostraba (por
 // ejemplo, sugerir dar seguimiento a una etapa que ya pasó, ignorando un
 // atraso real más adelante en la bitácora).
-function ia_generar_resumen_expediente(array $expediente, array $etapas = [], array $notasBitacora = [], array $documentosRecientes = [], array $avisosRecientes = []): ?array
+function ia_generar_resumen_expediente(array $expediente, array $etapas = [], array $notasBitacora = [], array $documentosRecientes = [], array $avisosRecientes = [], array $pendientesAbiertos = [], array $pagosConvenio = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3040,6 +3040,29 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = [], ar
             . 'registra -- en ese caso la próxima acción es dar seguimiento a ESE incidente/recurso específico '
             . '(o verificar si ya se resolvió), nunca insistir en que urge presentar el trámite de la etapa '
             . 'normal como si el abogado lo estuviera descuidando.';
+    }
+
+    // Pendientes manuales (pestaña "Pendientes") y pagos de convenio (pestaña
+    // "Cobros") -- agregados 13 nov 2026, pedido explícito del usuario de que
+    // la IA revise "absolutamente toda la info... incluyendo notas, agenda,
+    // pendientes, documentos, boletines". Hasta ahora el informe ejecutivo
+    // podía redactar la próxima acción sin saber que ya había un pendiente
+    // manual abierto para exactamente ese trámite, o que un pago de convenio
+    // sigue sin cobrarse.
+    if ($pendientesAbiertos) {
+        $lineas[] = "Pendientes manuales capturados en la pestaña \"Pendientes\" (todavía sin marcar cumplido):\n" . implode("\n", array_map(
+            fn($p) => '- ' . trim((string)($p['descripcion'] ?? '(sin descripción)'))
+                . (!empty($p['fecha_inicio']) ? ' (capturado desde ' . $p['fecha_inicio']
+                    . ($p['tipo'] === 'fecha_fija' ? ', fecha fija' : ', ' . ($p['dias'] ?? '?') . ' días ' . ($p['tipo'] ?? '')) . ')' : ''),
+            $pendientesAbiertos
+        ));
+    }
+    if ($pagosConvenio) {
+        $lineas[] = "Pagos de convenio registrados en \"Cobros\" (más reciente primero):\n" . implode("\n", array_map(
+            fn($p) => '- $' . number_format((float)($p['monto'] ?? 0), 2) . ' programado para ' . ($p['fecha'] ?? '(sin fecha)')
+                . (!empty($p['cobrado']) ? ', YA COBRADO' . (!empty($p['fecha_cobro']) ? ' el ' . $p['fecha_cobro'] : '') : ', pendiente de cobro'),
+            $pagosConvenio
+        ));
     }
 
     if (!$lineas) return null;
@@ -3351,7 +3374,7 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
 // de un pendiente. $labelAtraso es el texto que ya arma estancadoInfo()
 // (ej. 'Se esperaba "Contestación de demanda recibida" y no se ha
 // registrado (18 día(s) de atraso)').
-function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso, array $documentosRecientes = [], array $avisosRecientes = []): ?string
+function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso, array $documentosRecientes = [], array $avisosRecientes = [], array $notasBitacora = [], array $pendientesAbiertos = [], array $pagosConvenio = []): ?string
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3396,6 +3419,33 @@ function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string
         $lineas[] = "Lo que ya leyó la IA en los últimos avisos de boletín de este expediente:\n" . implode("\n", array_map(
             fn($a) => '- ' . ($a['ia_resumen'] ?? ''),
             $avisosRecientes
+        ));
+    }
+    // Notas de seguimiento, pendientes manuales y pagos de convenio --
+    // agregados 13 nov 2026 (pedido explícito del usuario: "revisa que la ia
+    // revise absolutamente toda la info... incluyendo notas, agenda,
+    // pendientes, documentos, boletines"). Antes esta función podía redactar
+    // una pregunta sobre algo que el abogado ya había contestado a mano en su
+    // bitácora de notas, o ignorar que ya hay un pendiente manual abierto
+    // sobre el mismo trámite atorado.
+    if ($notasBitacora) {
+        $lineas[] = "Bitácora de notas de seguimiento del abogado (de más reciente a más antigua -- si ya "
+            . "confirma el dato que falta, no preguntes por él, mejor confírmalo o pregunta algo más puntual):\n" . implode("\n", array_map(
+                fn($n) => (!empty($n['creado_en']) ? substr((string)$n['creado_en'], 0, 10) : '(sin fecha)') . ': ' . trim((string)($n['texto'] ?? '')),
+                $notasBitacora
+            ));
+    }
+    if ($pendientesAbiertos) {
+        $lineas[] = "Pendientes manuales todavía sin marcar cumplido:\n" . implode("\n", array_map(
+            fn($p) => '- ' . trim((string)($p['descripcion'] ?? '(sin descripción)')),
+            $pendientesAbiertos
+        ));
+    }
+    if ($pagosConvenio) {
+        $lineas[] = "Pagos de convenio registrados:\n" . implode("\n", array_map(
+            fn($p) => '- $' . number_format((float)($p['monto'] ?? 0), 2) . ' programado para ' . ($p['fecha'] ?? '(sin fecha)')
+                . (!empty($p['cobrado']) ? ', YA COBRADO' : ', pendiente de cobro'),
+            $pagosConvenio
         ));
     }
 
@@ -3558,7 +3608,7 @@ function ia_interpretar_respuesta_supervisor(string $pregunta, string $respuesta
 // dichas en alguna parte del expediente. Devuelve un array de
 // ['etapa_key'=>, 'fecha'=>'YYYY-MM-DD', 'motivo'=>] (vacío si no encontró
 // nada), o null si falló la llamada a la IA.
-function ia_auditar_expediente(array $expediente, array $etapas, array $documentosRecientes = [], array $avisosRecientes = [], array $preguntasRecientes = [], array $notasBitacora = []): ?array
+function ia_auditar_expediente(array $expediente, array $etapas, array $documentosRecientes = [], array $avisosRecientes = [], array $preguntasRecientes = [], array $notasBitacora = [], array $pendientesAbiertos = [], array $pagosConvenio = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3628,6 +3678,26 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
                 fn($n) => (!empty($n['creado_en']) ? substr((string)$n['creado_en'], 0, 10) : '(sin fecha)') . ': ' . trim((string)($n['texto'] ?? '')),
                 $notasBitacora
             ));
+    }
+    // Pendientes manuales y pagos de convenio -- agregados 13 nov 2026,
+    // mismo pedido del usuario que las notas de arriba ("revisar absolutamente
+    // toda la info... pendientes... boletines"). Mismo candado: solo cuenta
+    // como evidencia si el texto confirma LITERALMENTE que la etapa ya
+    // ocurrió, nunca un pendiente sin cumplir ni un pago sin cobrar.
+    if ($pendientesAbiertos) {
+        $lineas[] = "Pendientes manuales capturados (todavía sin marcar cumplido -- por sí solos NO confirman que "
+            . "una etapa ya ocurrió, pero su descripción puede mencionar de pasada una fecha real):\n" . implode("\n", array_map(
+                fn($p) => '- ' . trim((string)($p['descripcion'] ?? '(sin descripción)'))
+                    . (!empty($p['fecha_inicio']) ? ' (capturado desde ' . $p['fecha_inicio'] . ')' : ''),
+                $pendientesAbiertos
+            ));
+    }
+    if ($pagosConvenio) {
+        $lineas[] = "Pagos de convenio registrados en \"Cobros\":\n" . implode("\n", array_map(
+            fn($p) => '- $' . number_format((float)($p['monto'] ?? 0), 2) . ' programado para ' . ($p['fecha'] ?? '(sin fecha)')
+                . (!empty($p['cobrado']) ? ', YA COBRADO' . (!empty($p['fecha_cobro']) ? ' el ' . $p['fecha_cobro'] : '') : ', pendiente de cobro'),
+            $pagosConvenio
+        ));
     }
 
     $payload = [

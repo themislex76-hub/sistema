@@ -1,5 +1,46 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Auditoría de cobertura completa: las 3 funciones de IA que sintetizan "todo el expediente" ya leen pendientes y pagos de convenio, y la pregunta del supervisor ya lee notas (13 nov 2026)
+Pedido explícito del usuario, generalizando el mismo arreglo de hoy (ver las
+2 secciones de abajo, "Informe ejecutivo..." y "Auditoría integral..."):
+"revisa que la ia revise absolutamente toda la info que este en el sistema
+incluyendo notas, agenda, pendientes, documentos, boletines etc". En vez de
+esperar a que apareciera un caso real afectado, se audutaron directamente las
+3 funciones de `api/ia_helpers.php` que arman el contexto de "todo el
+expediente" (`ia_generar_resumen_expediente()`, `ia_auditar_expediente()`,
+`ia_generar_pregunta_supervisor()`) contra las fuentes de datos reales del
+sistema (`expediente_notas`, `expediente_pendientes`, `expediente_pagos`,
+`expediente_documentos`, `avisos_boletin`).
+- **Hueco real encontrado**: ninguna de las 3 leía `expediente_pendientes`
+  (pestaña "Pendientes", to-dos manuales) ni `expediente_pagos` (pestaña
+  "Cobros", parcialidades de convenio) -- ambas quedaban fuera aunque son
+  justo lo que el usuario nombró explícitamente ("agenda, pendientes").
+  Además, `ia_generar_pregunta_supervisor()` (la que redacta la pregunta del
+  supervisor para un atraso) todavía NO leía `expediente_notas` -- mismo
+  hueco que ya se había cerrado hoy en las otras 2 funciones, aquí seguía
+  abierto: podía redactar una pregunta sobre un dato que el abogado ya había
+  contestado a mano en su bitácora de notas.
+- **Corregido, mismo patrón ya usado todo el día**: las 3 funciones aceptan
+  ahora 2 parámetros nuevos opcionales, `$pendientesAbiertos`/`$pagosConvenio`
+  (`ia_generar_pregunta_supervisor()` además recibe `$notasBitacora`, que ya
+  tenían las otras 2). Los 3 crons/endpoints que las llaman
+  (`expediente_resumen_ejecutivo.php`, `cron_auditoria_expediente_ia.php`,
+  `cron_generar_preguntas_supervisor.php`) ahora hacen 2 SELECTs más cada
+  uno: `expediente_pendientes` (solo `cumplido = 0`, los que siguen
+  abiertos) y `expediente_pagos` (últimos 10, con su estado de cobro).
+  Mismo candado de siempre explícito en el prompt de `ia_auditar_expediente()`
+  (la única que escribe sola en `expediente_etapas`): un pendiente sin
+  cumplir o un pago sin cobrar NO confirma por sí solo que una etapa ya
+  ocurrió, solo es contexto adicional que puede mencionar de pasada una
+  fecha real en su descripción.
+- Sin cambios de base de datos (`expediente_pendientes`/`expediente_pagos`
+  ya existían). No se tocó `app.js` -- no aplica cache-bust ni
+  `verificar_tags.js`. **Sin probar en vivo todavía** -- falta que el
+  usuario suba `api/ia_helpers.php`, `api/expediente_resumen_ejecutivo.php`,
+  `api/cron_auditoria_expediente_ia.php` y
+  `api/cron_generar_preguntas_supervisor.php`, y se vea un caso real donde
+  un pendiente/pago/nota haga la diferencia en alguno de los 3 textos.
+
 ## Informe ejecutivo ahora también lee documentos y avisos de boletín, no solo etapas/notas (13 nov 2026)
 Pedido explícito del usuario ("la ia tiene que revisar todas las fuentes de
 información para lograr exactitud y autonomía") tras ver el expediente de

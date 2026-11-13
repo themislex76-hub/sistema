@@ -108,7 +108,18 @@ foreach ($candidatos as $c) {
     $notasStmt->execute([':id' => $c['id']]);
     $notasBitacora = $notasStmt->fetchAll();
 
-    $sugerencias = ia_auditar_expediente($expediente, $etapas, $documentosRecientes, $avisosRecientes, $preguntasRecientes, $notasBitacora);
+    // Pendientes manuales y pagos de convenio -- agregado 13 nov 2026, mismo
+    // pedido del usuario que las notas de arriba ("revisar absolutamente toda
+    // la info... pendientes... boletines").
+    $pendStmt = $pdo->prepare('SELECT descripcion, fecha_inicio, dias, tipo FROM expediente_pendientes WHERE expediente_id = :id AND cumplido = 0 ORDER BY orden');
+    $pendStmt->execute([':id' => $c['id']]);
+    $pendientesAbiertos = $pendStmt->fetchAll();
+
+    $pagosStmt = $pdo->prepare('SELECT fecha, monto, cobrado, fecha_cobro FROM expediente_pagos WHERE expediente_id = :id ORDER BY orden DESC LIMIT 10');
+    $pagosStmt->execute([':id' => $c['id']]);
+    $pagosConvenio = $pagosStmt->fetchAll();
+
+    $sugerencias = ia_auditar_expediente($expediente, $etapas, $documentosRecientes, $avisosRecientes, $preguntasRecientes, $notasBitacora, $pendientesAbiertos, $pagosConvenio);
     $auditados++;
 
     if ($sugerencias === null) {

@@ -65,7 +65,18 @@ $avisosStmt = $pdo->prepare("SELECT resumen, ia_resumen, creado_en FROM avisos_b
 $avisosStmt->execute([':id' => $id]);
 $avisosRecientes = $avisosStmt->fetchAll();
 
-$resultado = ia_generar_resumen_expediente($row, $etapas, $notasBitacora, $documentosRecientes, $avisosRecientes);
+// Pendientes manuales y pagos de convenio -- agregado 13 nov 2026, pedido
+// explícito del usuario de que la IA revise "absolutamente toda la info...
+// incluyendo notas, agenda, pendientes, documentos, boletines".
+$pendStmt = $pdo->prepare('SELECT descripcion, fecha_inicio, dias, tipo FROM expediente_pendientes WHERE expediente_id = :id AND cumplido = 0 ORDER BY orden');
+$pendStmt->execute([':id' => $id]);
+$pendientesAbiertos = $pendStmt->fetchAll();
+
+$pagosStmt = $pdo->prepare('SELECT fecha, monto, cobrado, fecha_cobro FROM expediente_pagos WHERE expediente_id = :id ORDER BY orden DESC LIMIT 10');
+$pagosStmt->execute([':id' => $id]);
+$pagosConvenio = $pagosStmt->fetchAll();
+
+$resultado = ia_generar_resumen_expediente($row, $etapas, $notasBitacora, $documentosRecientes, $avisosRecientes, $pendientesAbiertos, $pagosConvenio);
 
 if ($resultado === null) {
     // La IA falló (red, sin crédito, etc.) -- si ya había un resumen viejo
