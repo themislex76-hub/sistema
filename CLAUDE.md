@@ -1,5 +1,35 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Panel nuevo: Credenciales de portales por abogado (13 nov 2026, `app.js?v=147`)
+Pregunta explícita del usuario revisando un caso real (**Escalona Jimenez
+Yuliana Yadira vs New Dynacast de México y Automotive Quality Shield, Exp.
+388/2026**, Tribunal Federal bien capturado -- "CUARTO TRIBUNAL LABORAL
+FEDERAL DE ASUNTOS INDIVIDUALES..." en Naucalpan, Edomex): "por qué hay
+asuntos en los que ya se guardó bien el tribunal y expediente... que aún
+no baja el robot". Causa real encontrada: no existía ninguna forma de que
+el Administrador viera, sin preguntarle a cada abogado uno por uno, quién
+SÍ tiene guardada su cuenta de cada portal (PJF/Buzón CDMX/correo Edomex)
+en "Mi cuenta" -- `pjf_credenciales_get.php`/`set.php` etc. solo dejaban
+que cada quien viera/editara la SUYA, nada admin-visible agregado. Si el
+abogado asignado a un expediente nunca guardó su usuario/contraseña de
+ese portal, el robot correspondiente no tiene con qué entrar a revisar
+NINGUNO de sus expedientes -- aunque el Tribunal/número estén perfectos.
+- **Nuevo endpoint `api/credenciales_portales_listar.php`** (solo
+  Administrador): junta de `usuarios` (activos, rol abogado/administrador)
+  si cada uno tiene o no `pjf_usuario`/`edomex_correo_usuario`/
+  `cdmx_buzon_usuario` capturado, más la fecha de la última vez que lo
+  actualizó -- nunca la contraseña, solo el booleano + fecha.
+- Panel nuevo en **"Equipo"**, entre "Actividad de la IA" y el panel de
+  Validación de Tribunal: tabla con una fila por abogado y 3 columnas
+  (Federal/Buzón CDMX/Correo Edomex), insignia "✓ guardada" (con la fecha)
+  o "✗ falta".
+- Sin cambios de base de datos (solo lee columnas que ya existían). No se
+  tocó `mergeTags()`/tags de demanda -- no aplica `verificar_tags.js`.
+  **Sin probar en vivo todavía** -- falta que el usuario suba
+  `api/credenciales_portales_listar.php`, `assets/app.js` e `index.html`,
+  y confirme si el caso de Escalona Jimenez de verdad era por esto (quién
+  es su abogado asignado y si le falta alguna de las 3 credenciales).
+
 ## Cómo capturar acuerdos ANTERIORES que los robots todavía no tienen + candado de duplicados ampliado (13 nov 2026)
 Pregunta explícita del usuario: "como le hacemos para que el robot revise
 si hay acuerdos anteriores publicados en los diferentes sistemas de los

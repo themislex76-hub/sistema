@@ -2378,6 +2378,21 @@ async function loadIaActividad(){
     IA_ACTIVIDAD = d.actividad;
   }catch(e){ IA_ACTIVIDAD = []; }
 }
+// Panel "Credenciales de portales por abogado" (13 nov 2026) -- pedido
+// explícito del usuario al investigar por qué un expediente con Tribunal
+// Federal bien capturado seguía sin que el robot bajara nada: no había
+// forma de que el Administrador viera, sin preguntarle a cada abogado uno
+// por uno, quién SÍ tiene guardada su cuenta de cada portal (PJF/Buzón
+// CDMX/correo Edomex) en "Mi cuenta" -- sin esa cuenta, el robot
+// correspondiente no tiene con qué entrar a revisar NINGUNO de los
+// expedientes de ese abogado, aunque el Tribunal/número estén perfectos.
+let CREDENCIALES_PORTALES = [];
+async function loadCredencialesPortales(){
+  try{
+    const d = await api('GET', 'credenciales_portales_listar.php');
+    CREDENCIALES_PORTALES = d.usuarios;
+  }catch(e){ CREDENCIALES_PORTALES = []; }
+}
 // Se abrió el sistema desde el push de una pregunta nueva (ver
 // cron_generar_preguntas_supervisor.php) -- lleva a "Preguntas al
 // abogado" y marca cuál enfocar; bindViewBody() hace el scroll/foco real
@@ -2866,6 +2881,7 @@ async function refreshBootstrap(){
     await loadUsuariosAdmin();
     await loadGoogleCalendariosMapeo();
     await loadIaActividad();
+    await loadCredencialesPortales();
   }
   await loadDiasInhabiles();
   syncAvisosAbogado(); // en segundo plano, no bloquea la carga
@@ -7200,6 +7216,24 @@ function equipoHTML(){
         </tr>`;
       }).join("")}
     </tbody></table>` : '<div class="empty">Sin actividad autónoma de la IA en los últimos 30 días.</div>'}
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Credenciales de portales por abogado</div>
+    <div class="notice" style="margin-bottom:14px;">Cada robot necesita la cuenta REAL del abogado en ese portal para poder entrar -- si falta, ese robot no tiene con qué revisar NINGUNO de los expedientes de ese abogado, aunque el Tribunal/número estén perfectos en el sistema. Cada quien guarda la suya desde "Mi cuenta".</div>
+    ${CREDENCIALES_PORTALES.length ? `
+    <table><thead><tr><th>Abogado</th><th>Federal (PJF)</th><th>Buzón CDMX</th><th>Correo Edomex</th></tr></thead><tbody>
+      ${CREDENCIALES_PORTALES.map(u=>{
+        const celda = (tiene, fecha) => tiene
+          ? `<span class="badge ok">✓ guardada</span>${fecha ? `<div style="font-size:10.5px; color:var(--gray); margin-top:2px;">${new Date(fecha).toLocaleDateString('es-MX',{day:'numeric',month:'short',year:'numeric'})}</div>` : ''}`
+          : `<span class="badge crit">✗ falta</span>`;
+        return `<tr>
+          <td style="font-size:12.5px;">${escapeHTML(u.nombre)}</td>
+          <td>${celda(u.pjf, u.pjf_actualizado_en)}</td>
+          <td>${celda(u.cdmx_buzon, u.cdmx_buzon_actualizado_en)}</td>
+          <td>${celda(u.edomex_correo, u.edomex_correo_actualizado_en)}</td>
+        </tr>`;
+      }).join("")}
+    </tbody></table>` : '<div class="empty">Sin abogados activos.</div>'}
   </div></div>
   ${tribunalValidacionHTML()}
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
