@@ -33,11 +33,14 @@ incidente" -- el trámite está PAUSADO por eso, no atrasado por descuido.
   sintetiza varias fuentes que pueden contradecirse, más que extracción
   simple.
 - Sin cambios de base de datos, sin tocar `app.js` -- no aplica cache-bust
-  ni `verificar_tags.js`. **Pendiente**: que el usuario suba
-  `api/ia_helpers.php` y `api/expediente_resumen_ejecutivo.php`, y le dé
-  "Actualizar" al Informe del juicio de Mir Castro Ma Claudia para
-  confirmar que ya menciona el incidente de competencia en vez de insistir
-  en las objeciones/réplica.
+  ni `verificar_tags.js`.
+- **Confirmado funcionando en vivo (13 nov 2026)**: el informe de Mir
+  Castro Ma Claudia ya no dice "urgente, presenta objeciones y réplica" --
+  ahora explica que la demandada promovió un incidente de competencia, el
+  Tribunal suspendió la vista para réplica hasta resolverlo, y que por eso
+  esa etapa sigue sin registrarse ("consistente con la pausa procesal, no
+  un descuido"). Próxima acción cambió a "dar seguimiento a la resolución
+  del incidente" con urgencia MEDIA (antes URGENTE/falso positivo).
 
 ## Auditoría integral también lee la bitácora de notas del abogado (13 nov 2026)
 Pedido explícito del usuario ("adelante") tras extender este mismo arreglo
