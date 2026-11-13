@@ -83,7 +83,15 @@ foreach ($candidatos as $c) {
     $docsStmt->execute([':id' => $c['id']]);
     $documentosRecientes = $docsStmt->fetchAll();
 
-    $avisosStmt = $pdo->prepare('SELECT resumen, ia_resumen, creado_en FROM avisos_boletin WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 10');
+    // IMPORTANTE: excluir 'descartado' -- un aviso descartado significa que el
+    // filtro de seguridad del robot (pareceElMismoCaso()) detectó que el
+    // número de expediente coincidía por casualidad con OTRO caso (el número
+    // de expediente solo es único dentro de cada tribunal, no en toda la
+    // CDMX/Edomex/Federal), así que su resumen habla de partes ajenas a este
+    // expediente -- incluirlo aquí como contexto llevó a la auditoría a
+    // llenar una etapa con la fecha/evento de un caso distinto (bug real
+    // encontrado 13 nov 2026, expediente de Isabel Torres Arizmendi).
+    $avisosStmt = $pdo->prepare("SELECT resumen, ia_resumen, creado_en FROM avisos_boletin WHERE expediente_id = :id AND estado != 'descartado' ORDER BY creado_en DESC LIMIT 10");
     $avisosStmt->execute([':id' => $c['id']]);
     $avisosRecientes = $avisosStmt->fetchAll();
 

@@ -131,10 +131,20 @@ foreach ($candidatos as $c) {
 $candidatosPorId = [];
 foreach ($candidatos as $c) $candidatosPorId[(int)$c['id']] = $c;
 
+// Confirmado real (12 nov 2026, expediente de Luis Enrique Aguilar Mateos
+// y otros): cron_leer_google_calendar.php también deja historial con
+// usuario_id NULL y campo LIKE 'etapa_%', pero su texto es "fecha
+// agendada: ..." -- llena fecha_programada (un citatorio AGENDADO a
+// futuro), no fecha (la celebrada). Esta "segunda opinión" solo tiene
+// sentido para confirmaciones de que un evento YA ocurrió -- comparada
+// contra fecha_programada, siempre "falla" (nunca va a decir que ya se
+// celebró algo que apenas se está agendando), generando falsos positivos
+// sistemáticos. Se excluyen explícitamente estas filas.
 $historialStmt = $pdo->prepare(
     "SELECT h.id, h.expediente_id, h.campo, h.despues
      FROM expediente_historial h
      WHERE h.usuario_id IS NULL AND h.campo LIKE 'etapa_%' AND h.qa_verificado_en IS NULL
+       AND h.despues NOT LIKE 'fecha agendada:%'
      ORDER BY h.creado_en ASC
      LIMIT " . LOTE_VERIFICACION_IA
 );
@@ -182,7 +192,13 @@ foreach ($filasHistorial as $h) {
     $docsStmt->execute([':id' => $expedienteId]);
     $documentosRecientes = $docsStmt->fetchAll();
 
-    $avisosStmt = $pdo->prepare('SELECT resumen, ia_resumen, creado_en FROM avisos_boletin WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 10');
+    // Excluir 'descartado' -- un aviso descartado quiere decir que el filtro
+    // de seguridad del robot encontró el mismo número de expediente en OTRO
+    // caso (el número no es único entre tribunales) y su resumen habla de
+    // partes ajenas a este expediente; incluirlo aquí producía falsos
+    // "sospechosos" explicando una confusión que en realidad nunca se aplicó
+    // (bug real encontrado 13 nov 2026, expediente de Isabel Torres Arizmendi).
+    $avisosStmt = $pdo->prepare("SELECT resumen, ia_resumen, creado_en FROM avisos_boletin WHERE expediente_id = :id AND estado != 'descartado' ORDER BY creado_en DESC LIMIT 10");
     $avisosStmt->execute([':id' => $expedienteId]);
     $avisosRecientes = $avisosStmt->fetchAll();
 
