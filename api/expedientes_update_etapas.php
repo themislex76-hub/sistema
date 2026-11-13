@@ -62,6 +62,43 @@ if (!empty($etapas['amparo_directo']['fecha'])) {
     $pdo->prepare('UPDATE expedientes SET amparo_activo = 1, amparo_presentado = 1 WHERE id = :id')->execute([':id' => $id]);
 }
 
+// Auto-cierre de "Posibles irregularidades" ya corregidas a mano (12 nov
+// 2026) -- las de tipo 'orden_cronologico' ya se recalculaban solas en
+// cron_qa_irregularidades.php (una vez a la semana), pero las de
+// 'fecha_sin_respaldo' no tenían NINGÚN chequeo automático -- se
+// quedaban visibles hasta que alguien las descartara a mano, aunque el
+// abogado ya hubiera corregido el dato real. Esto lo hace de inmediato,
+// aquí mismo al guardar, sin esperar la corrida semanal: por cada etapa
+// que se tocó en este guardado, si tenía una irregularidad 'pendiente'
+// cuya fecha ya no coincide con lo que hay ahora (o ya no tiene fecha),
+// se cierra sola como 'corregida'.
+$irregularidadesStmt = $pdo->prepare(
+    "SELECT id, etapa_key, tipo, fecha_detectada FROM expediente_irregularidades
+     WHERE expediente_id = :eid AND estado = 'pendiente'"
+);
+$irregularidadesStmt->execute([':eid' => $id]);
+$irregularidadesPendientes = $irregularidadesStmt->fetchAll();
+if ($irregularidadesPendientes) {
+    $etapasActuales = $pdo->prepare('SELECT etapa_key, fecha FROM expediente_etapas WHERE expediente_id = :eid');
+    $etapasActuales->execute([':eid' => $id]);
+    $etapasActuales = $etapasActuales->fetchAll();
+    $violacionesActuales = function_exists('detectar_irregularidades_orden_cronologico')
+        ? detectar_irregularidades_orden_cronologico($etapasActuales) : [];
+    $fechaActualPorKey = [];
+    foreach ($etapasActuales as $e) {
+        if (!empty($e['fecha']) && $e['fecha'] !== '0000-00-00') $fechaActualPorKey[$e['etapa_key']] = $e['fecha'];
+    }
+    foreach ($irregularidadesPendientes as $irr) {
+        $yaNoAplica = $irr['tipo'] === 'orden_cronologico'
+            ? !isset($violacionesActuales[$irr['etapa_key']])
+            : (($fechaActualPorKey[$irr['etapa_key']] ?? null) !== $irr['fecha_detectada']);
+        if ($yaNoAplica) {
+            $pdo->prepare("UPDATE expediente_irregularidades SET estado = 'corregida', resuelto_en = NOW() WHERE id = :id")
+                ->execute([':id' => $irr['id']]);
+        }
+    }
+}
+
 // expediente_etapas es una tabla aparte -- guardar aquí NO toca
 // expedientes.actualizado_en solo (MySQL no propaga ON UPDATE
 // CURRENT_TIMESTAMP entre tablas). Sin este UPDATE explícito, el informe

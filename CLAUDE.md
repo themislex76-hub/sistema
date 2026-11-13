@@ -1,5 +1,180 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Bug real: auditoría integral/preguntas del supervisor usaban avisos de boletín "descartados" como si fueran del expediente (13 nov 2026)
+Encontrado probando en vivo el panel "Posibles irregularidades" -- la
+irregularidad de **Isabel Torres Arizmendi vs Impulsora Ideal, Exp.
+2235/2026** decía que el llenado de "Prevención" venía de un aviso de
+boletín que en realidad es de OTRO caso (Rosas Rivas Anahi vs. Edxsmart...).
+El usuario confirmó con el único documento real del expediente (una
+Constancia de no conciliación de agosto, sin relación con "Prevención") y
+con el historial de cambios: **`cron_auditoria_expediente_ia.php` SÍ llenó
+sola `etapa_prevencion` (fecha 2026-09-28) y `etapa_demanda_admitida`
+(fecha 2026-09-28) el 11 nov 2026**, citando como motivo avisos de boletín
+que mencionan "Prevencion"/"Admision" para el expediente 2235/2026 -- pero
+ese número de expediente se repite en VARIOS tribunales/casos distintos de
+la CDMX (coincidencia, no es raro), y esos avisos en particular son de
+**Ferrusca Padilla Jaime vs Total Safety** y **Rosas Rivas Anahi vs
+Edxsmart...**, no del caso de Isabel Torres Arizmendi.
+- **Causa real**: esos avisos SÍ están correctamente marcados
+  `estado='descartado'` en `avisos_boletin` (confirmado visible en la
+  pestaña "Boletín" del expediente, "Historial de revisiones") -- el
+  sistema ya sabía que no correspondían a este caso. El problema es que
+  **3 lugares distintos leían `avisos_boletin` por `expediente_id` sin
+  excluir `estado = 'descartado'`**, así que para efectos de darle
+  contexto a la IA, esos avisos se trataban igual que uno real:
+  `ia_auditar_expediente()` (vía `cron_auditoria_expediente_ia.php`, el que
+  de verdad llenó las 2 etapas mal), la "segunda opinión" del panel de
+  irregularidades (`cron_qa_irregularidades.php`, por eso detectó el
+  problema -- usando el mismo contexto contaminado, pero esta vez para bien,
+  dio una explicación certera) y `ia_generar_pregunta_supervisor()` (vía
+  `cron_generar_preguntas_supervisor.php`, no se confirmó que haya causado
+  un error real ahí, pero mismo riesgo).
+- **Corregido**: las 3 consultas ahora agregan `AND estado != 'descartado'`.
+  El robot de boletín de CDMX (`robots/cdmx/cdmx.js`) YA tiene su propio
+  candado de Tribunal+partes antes de reportar un aviso nuevo (agregado
+  después del 28 sep 2026, fecha de estos avisos en particular) -- por eso
+  esto no debería repetirse con avisos NUEVOS, pero no protegía contra
+  avisos VIEJOS que ya estaban en la base de antes de ese candado y que un
+  humano marcó "descartado" después de verlos por error.
+- **Pendiente -- acción del usuario**: en el expediente de Isabel Torres
+  Arizmendi, revisar/borrar "Prevención" y "Demanda admitida" en "Etapas
+  del juicio" (no hay ninguna fecha real confirmada para ninguna de las 2
+  todavía -- quedan en blanco hasta que se revise el expediente real del
+  Tribunal). Además, correr este SQL de diagnóstico en phpMyAdmin para ver
+  si hay OTROS expedientes con el mismo riesgo (llenado de auditoría
+  integral citando un aviso de boletín, en un expediente que también tiene
+  algún aviso descartado) -- revisar cada fila a mano, no corregir en
+  automático:
+  ```sql
+  SELECT h.expediente_id, e.actor, e.demandado, e.exp, h.campo, h.despues, h.creado_en
+  FROM expediente_historial h
+  JOIN expedientes e ON e.id = h.expediente_id
+  WHERE h.usuario_id IS NULL
+    AND h.campo LIKE 'etapa_%'
+    AND h.despues LIKE '%auditoría integral%Aviso de boletín%'
+    AND EXISTS (
+      SELECT 1 FROM avisos_boletin a
+      WHERE a.expediente_id = h.expediente_id AND a.estado = 'descartado'
+    )
+  ORDER BY h.creado_en DESC;
+  ```
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica cache-bust
+  ni `verificar_tags.js`. Archivos a subir: `api/cron_auditoria_expediente_ia.php`,
+  `api/cron_qa_irregularidades.php`, `api/cron_generar_preguntas_supervisor.php`.
+
+## Causa raíz real de "primer/segundo citatorio confundidos" en la QA semanal (12 nov 2026)
+Encontrada revisando el `expediente_historial` real de los 3 casos que el
+usuario reportó (Luis Enrique Aguilar Mateos y otros 2 iguales) --
+**no era un error de llenado, era un falso positivo de la QA nueva**.
+- Lo que pasó en cada caso: el abogado capturó a mano (meses atrás) que un
+  citatorio de conciliación SE CELEBRÓ en fecha X (campo `fecha`).
+  Después, `cron_leer_google_calendar.php` llenó solo, para el SIGUIENTE
+  citatorio de la misma pareja (primer/segundo), su **"Fecha agendada"**
+  (campo `fecha_programada`, una fecha FUTURA) -- un campo totalmente
+  distinto, sin tocar `fecha`. `cron_leer_google_calendar.php` también
+  deja `usuario_id NULL` en `expediente_historial` (igual que los otros 4
+  mecanismos automáticos), pero con texto "fecha agendada: ..." en vez de
+  "fecha: ...".
+- `ia_verificar_fecha_etapa_llenada_sola()` (la "segunda opinión" de la QA
+  semanal) no distinguía esto -- comparaba el motivo de ESE llenado de
+  Google Calendar (que habla de una cita agendada a futuro) contra el
+  campo `fecha` (la fecha YA celebrada, puesta por el abogado para la
+  ocasión ANTERIOR) -- como nunca van a coincidir (uno es pasado, otro es
+  futuro), siempre salía "sospechoso", un falso positivo sistemático.
+- **Corregido (commit `bb1ce74`)**: `cron_qa_irregularidades.php` ahora
+  excluye del chequeo cualquier fila de historial cuyo texto empiece con
+  "fecha agendada:" -- esas nunca deberían pasar por esta verificación
+  (no son una confirmación de "ya ocurrió", son una fecha programada a
+  futuro; ese tipo de llenado ya tiene su propio candado de orden
+  cronológico y el criterio conservador de `ia_matchear_evento_
+  calendario()` para evitar matches ambiguos).
+- **No hubo nada que revertir**: el dato real (`fecha_programada` de
+  Google Calendar) siempre estuvo bien -- el error estaba solo en el
+  chequeo nuevo, no en el llenado original.
+- **Pendiente**: limpiar a mano (o con SQL) las irregularidades
+  `fecha_sin_respaldo` ya creadas por este falso positivo específico --
+  dar "Está bien, no es error" en cada una, o correr este UPDATE una vez
+  en phpMyAdmin (revisar el resultado antes de confiarlo a ciegas):
+  ```sql
+  UPDATE expediente_irregularidades i
+  JOIN expediente_historial h
+    ON h.expediente_id = i.expediente_id
+   AND h.campo = CONCAT('etapa_', i.etapa_key)
+   AND h.usuario_id IS NULL
+   AND h.despues LIKE 'fecha agendada:%'
+  SET i.estado = 'descartada', i.resuelto_en = NOW()
+  WHERE i.tipo = 'fecha_sin_respaldo' AND i.estado = 'pendiente';
+  ```
+- Sin cambios de base de datos nuevos (la tabla ya existía desde la
+  migración 069). No se tocó `assets/app.js` -- no aplica cache-bust ni
+  `verificar_tags.js`.
+
+## Irregularidades "fecha_sin_respaldo" no se cerraban solas al corregirse (12 nov 2026)
+Reportado por el usuario: corrigió a mano la fecha de Luis Enrique Aguilar
+Mateos (el primer caso real que el panel detectó) y la irregularidad
+seguía apareciendo en "Preguntas al abogado". Hueco real: las de tipo
+`orden_cronologico` ya se recalculaban y auto-cerraban solas en la corrida
+semanal del cron, pero las de `fecha_sin_respaldo` NO tenían ningún
+chequeo automático -- solo se cerraban con un tap explícito en "Está
+bien, no es error", nunca solas, aunque el dato ya estuviera corregido.
+- **Corregido**: `api/expedientes_update_etapas.php` ahora revisa, cada
+  vez que se guarda "Etapas del juicio", si hay irregularidades
+  `pendiente` de ese expediente cuya condición ya no aplica (la fecha ya
+  no coincide con la que causó la alerta, o la violación de orden
+  cronológico ya no existe) y las cierra solas como `corregida` -- de
+  inmediato, sin esperar la corrida semanal.
+- **Acción inmediata para el caso de Luis Enrique** (ya corregido ANTES de
+  subir este arreglo, así que el candado nuevo no lo agarró):  descartar a
+  mano con "Está bien, no es error" en el panel, o volver a darle
+  "Guardar etapas" en ese expediente (sin cambiar nada) una vez subido
+  `expedientes_update_etapas.php` -- cualquiera de las 2 lo quita.
+- Sin cambios de base de datos. No se tocó `assets/app.js` -- no aplica
+  cache-bust ni `verificar_tags.js`.
+
+## Etapas del juicio: borrar una fecha revertía sola a hoy (12 nov 2026, `app.js?v=145`)
+Reportado por el usuario al intentar corregir una irregularidad detectada
+por el panel nuevo: "corrijo la fecha del 12/11/26 lo dejo libre porque
+todavía no se da y no lo guarda". No era que no guardara -- guardaba, pero
+de vuelta la fecha de HOY en silencio.
+- **Causa real**: `.etapa-check` (el checkbox de cada fila) y `.etapa-fecha`
+  (el campo "Fecha en que se celebró") son 2 controles de DOM sin relación
+  entre sí. El checkbox arranca marcado si la etapa ya tenía fecha, pero
+  nada lo desmarcaba si el abogado borraba SOLO el campo de fecha. El
+  guardado (`saveEtapasBtn`) interpretaba "checkbox marcado + fecha vacía"
+  como "márcala hecha HOY sin fecha exacta" (pensado para etapas sin
+  "Fecha agendada" propia, donde tiene sentido como atajo) y rellenaba la
+  fecha de hoy sola -- deshaciendo el borrado sin ningún error visible.
+- **Corregido**: nuevo listener en cada `.etapa-fecha` que sincroniza el
+  checkbox de su misma fila al vuelo (checkbox = true solo si el campo
+  tiene valor) -- borrar la fecha ahora desmarca el checkbox solo, así el
+  guardado ya no la rellena con la fecha de hoy.
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda --
+  no aplica `verificar_tags.js`. **Pendiente de confirmar en vivo**: que
+  ahora SÍ se pueda dejar en blanco "Fecha en que se celebró" de la
+  conciliación (segundo citatorio) del expediente de Luis Enrique Aguilar
+  Mateos.
+
+## Panel "Posibles irregularidades": primera corrida real (12 nov 2026)
+Primera corrida real de `cron_qa_irregularidades.php` tras subir todo:
+**"46 expediente(s) activo(s) revisado(s) por orden cronológico, 14
+llenado(s) automático(s) verificado(s) con IA (11 sospechoso(s), 0
+fallido(s)), 10 expediente(s) con novedades nuevas"**. Tasa de sospecha
+alta (11/14) para un chequeo pensado como conservador -- revisando 3
+ejemplos reales que mandó el usuario, **se ven genuinos, no falsos
+positivos**: un patrón nuevo no cubierto antes -- "la fecha del motivo
+pertenece al citatorio equivocado" (ej. una fecha que es del SEGUNDO
+citatorio aplicada al PRIMERO) y "el motivo solo confirma que hay una cita
+AGENDADA, no que la conciliación ya se celebró" (mismo patrón de fondo que
+el bug de Alan Campuzano -- confundir "programado" con "ya ocurrido", pero
+esta vez entre 2 citatorios de la misma conciliación en vez de entre
+etapas distintas). Parece ser un hueco real en el mecanismo que llena
+`fecha` (celebrada) de los citatorios de conciliación a partir de eventos
+de Google Calendar o boletín -- **pendiente de identificar la causa raíz
+exacta** (cuál de los mecanismos está confundiendo primer/segundo
+citatorio) antes de dar por buena la corrida y programarla semanal en
+cPanel. Mientras tanto, el panel ya está cumpliendo su función: detectó
+10 expedientes con datos mal puestos que nadie había notado.
+
 ## Panel "Posibles irregularidades": QA semanal sobre etapas ya registradas (12 nov 2026, `app.js?v=144`, migración 069)
 Pedido explícito del usuario tras el bug de Alan Campuzano de hoy mismo:
 "tenemos que hacer que la ia sea muy efectiva revisando los juicios para
@@ -1824,6 +1999,26 @@ exacto que ya existía para Edomex:
   `trabajador_confianza` de la herramienta. Sin migración, sin `app.js`.
 - `assets/app.js` (formato de demanda de Rescisión Art. 51, prestación
   `veinte_dias`) NO se tocó: ahí sí corresponden.
+
+## Bot ya no revive citas viejas como "tu asesoría de hoy" (13 nov 2026, conversación "chats")
+- Bug real (12-nov): clienta de Oxxo con asesoría YA REALIZADA el 30-oct
+  escribió con una duda nueva; el bot, sin llamar `consultar_cita_pago`
+  (que sí habría dicho "asesoria_anterior_ya_realizada"), dedujo del
+  historial "tu asesoría de hoy a las 5:00 pm", le negó reprogramar, le
+  ofreció pagar otros $499, y ella esperó una llamada inexistente.
+- Arreglo en `api/ia_helpers.php`: (1) REGLA DURA en el prompt: antes de
+  mencionar la cita del cliente, llamar `consultar_cita_pago` en ese mismo
+  turno y comparar la fecha con hoy; nunca deducirla del historial.
+  (2) Candado de salida nuevo `ia_texto_menciona_cita_hoy_sin_evidencia()`
+  (mismo patrón que `ia_texto_confirma_pago_sin_evidencia()`): si el texto
+  da por hecho una cita/llamada "de hoy" y el teléfono no tiene cita
+  confirmada/pendiente con `fecha = CURDATE()`, se sustituye por un
+  mensaje neutro y se escala (`ia_registrar_prospecto_atorado`, log
+  `[cita_hoy_bloqueada]` en `ia_debug.log`). Probado con 11 casos (los 4
+  mensajes reales equivocados se bloquean; ofrecer horarios de hoy, una
+  cita real de hoy o una cita de otro día no). (3) REGLA DURA: nunca
+  afirmar que un acta administrativa "pierde validez" por cómo se levantó.
+  Sin migración, sin `app.js`.
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
