@@ -2000,6 +2000,26 @@ exacto que ya existía para Edomex:
 - `assets/app.js` (formato de demanda de Rescisión Art. 51, prestación
   `veinte_dias`) NO se tocó: ahí sí corresponden.
 
+## Bot ya no revive citas viejas como "tu asesoría de hoy" (13 nov 2026, conversación "chats")
+- Bug real (12-nov): clienta de Oxxo con asesoría YA REALIZADA el 30-oct
+  escribió con una duda nueva; el bot, sin llamar `consultar_cita_pago`
+  (que sí habría dicho "asesoria_anterior_ya_realizada"), dedujo del
+  historial "tu asesoría de hoy a las 5:00 pm", le negó reprogramar, le
+  ofreció pagar otros $499, y ella esperó una llamada inexistente.
+- Arreglo en `api/ia_helpers.php`: (1) REGLA DURA en el prompt: antes de
+  mencionar la cita del cliente, llamar `consultar_cita_pago` en ese mismo
+  turno y comparar la fecha con hoy; nunca deducirla del historial.
+  (2) Candado de salida nuevo `ia_texto_menciona_cita_hoy_sin_evidencia()`
+  (mismo patrón que `ia_texto_confirma_pago_sin_evidencia()`): si el texto
+  da por hecho una cita/llamada "de hoy" y el teléfono no tiene cita
+  confirmada/pendiente con `fecha = CURDATE()`, se sustituye por un
+  mensaje neutro y se escala (`ia_registrar_prospecto_atorado`, log
+  `[cita_hoy_bloqueada]` en `ia_debug.log`). Probado con 11 casos (los 4
+  mensajes reales equivocados se bloquean; ofrecer horarios de hoy, una
+  cita real de hoy o una cita de otro día no). (3) REGLA DURA: nunca
+  afirmar que un acta administrativa "pierde validez" por cómo se levantó.
+  Sin migración, sin `app.js`.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
