@@ -1,5 +1,58 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Cómo capturar acuerdos ANTERIORES que los robots todavía no tienen + candado de duplicados ampliado (13 nov 2026)
+Pregunta explícita del usuario: "como le hacemos para que el robot revise
+si hay acuerdos anteriores publicados en los diferentes sistemas de los
+tribunales que aun no tengamos en los expedientes". Se revisó cómo cada
+robot decide qué es "nuevo" -- 3 comportamientos distintos:
+- **`robots/cdmx_buzon/cdmx_buzon.js`**: NO tiene este hueco. Cada corrida
+  vuelve a abrir "Ver Acuerdos" y relee la lista COMPLETA de cada
+  expediente que hace match (Tribunal+número), saltando solo los
+  `acuerdoId` que ya guardó en `vistos{}` (`procesados_cdmx_buzon.json`).
+  Cualquier acuerdo viejo todavía no capturado se va a reportar solo en la
+  siguiente corrida diaria (6am), sin tocar nada -- mientras el Tribunal/
+  número del expediente estén bien capturados (panel de validación de
+  hoy mismo) y la cuenta del abogado en el Buzón sí vea ese expediente en
+  su "LISTA DE BUZONES" (eso depende del Poder Judicial, no del robot).
+- **`robots/federal/federal.js`** y **`robots/edomex_correo/edomex_correo.js`**:
+  SÍ tienen el hueco. Ambos guardan un contador máximo por expediente/cuenta
+  (`estado[key] = maxNo` en Federal -- número de acuerdo; `ultimoVisto` en
+  Edomex -- id de conversación de correo) y en cada corrida SOLO revisan lo
+  que quedó por encima de ese máximo. La PRIMERA vez que ven un expediente/
+  cuenta (sin entrada todavía en `procesados_federal.json`/
+  `procesados_edomex_correo.json`) sí barren TODO el historial disponible
+  en ese momento -- pero una vez que ya quedó un máximo guardado, un
+  acuerdo viejo que se haya escapado esa primera vez (por un error, o por
+  haberse agregado el expediente al monitoreo después de que ya existía
+  ese acuerdo) nunca se vuelve a revisar solo.
+- **Candado de duplicados ampliado primero, antes de tocar nada de
+  `procesados_*.json`** (`api/avisos_ingest.php`): el candado de "no
+  insertar el mismo aviso 2 veces" solo comparaba contra avisos con
+  `estado = 'nuevo'` (sin revisar todavía) -- si se forzaba un re-barrido
+  histórico y un robot volvía a reportar un acuerdo que YA se había
+  revisado/aplicado/descartado, se creaba un aviso DUPLICADO en vez de
+  detectarse como ya existente. Se quitó esa condición -- ahora cualquier
+  aviso ya existente (mismo expediente+fuente+resumen, sin importar su
+  estado) siempre cuenta como duplicado. Esto hace SEGURO forzar un
+  re-barrido histórico sin ensuciar el sistema de avisos repetidos.
+- **Plan para forzar el re-barrido histórico de Federal/Edomex** (acción
+  del usuario, en su máquina de Windows, no algo que se corrija con
+  código): primero correr `api/reporte_monitoreo_faltante.php` (ya
+  existe, abrir directo en el navegador logueado) para confirmar qué
+  expedientes activos ningún robot está alcanzando todavía (normalmente
+  Tribunal mal/sin capturado -- esa es la causa más común de huecos, hay
+  que arreglarla primero). Después, para cada robot que se quiera forzar
+  a re-barrer: borrar (o renombrar como respaldo) su archivo
+  `procesados_federal.json`/`procesados_edomex_correo.json` en la carpeta
+  del robot y correrlo una vez a mano -- con el candado ya ampliado, solo
+  va a crear avisos para lo que de verdad falte, no para lo ya revisado.
+  **Pendiente**: que el usuario suba `api/avisos_ingest.php` y confirme
+  si quiere hacer ese re-barrido ahora o esperar a que primero se corrija
+  la captura de Tribunal de los expedientes que salgan en el reporte de
+  faltantes.
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica cache-bust
+  ni `verificar_tags.js`. **Sin probar en vivo todavía**.
+
 ## Auditoría de cobertura completa: las 3 funciones de IA que sintetizan "todo el expediente" ya leen pendientes y pagos de convenio, y la pregunta del supervisor ya lee notas (13 nov 2026)
 Pedido explícito del usuario, generalizando el mismo arreglo de hoy (ver las
 2 secciones de abajo, "Informe ejecutivo..." y "Auditoría integral..."):
