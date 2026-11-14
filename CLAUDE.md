@@ -714,7 +714,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
+**(Repo: 070/070b de la LFT pendientes de correr, ver sección de precisión del bot.)** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
@@ -2394,6 +2394,34 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   el texto oficial de la LFT: el PDF de diputados.gob.mx supera el límite
   de 100 páginas para subirlo al chat), herramienta de jurisprudencia
   para el bot, revisión diaria de conversaciones y casos de prueba.
+
+## Precisión del bot, partes 2 y 3: LFT oficial y jurisprudencia consultables (14 nov 2026, conversación "chats", migración 070/070b)
+- **LFT vigente en la base**: tabla `lft_articulos` (migración
+  `070_lft_articulos.sql`) + datos `070b_lft_articulos_datos.sql` (1,266
+  artículos, 1.3 MB, importar por phpMyAdmin → Importar, DESPUÉS de la
+  070). Sacada del PDF oficial de la Cámara de Diputados, "Última reforma
+  publicada DOF 14-05-2026" (subido por el usuario en 5 partes); solo
+  articulado, sin transitorios. Clave `numero` = "47", "39-A", "3 Bis",
+  "512-D Ter". Cuando haya reforma nueva: volver a generar la 070b
+  completa (el script de separación vive en el scratchpad de esa sesión,
+  no en el repo -- regex por línea `^Artículo N...`).
+- **`api/lft_helpers.php`** (nuevo): `lft_normalizar_numero()`,
+  `lft_consultar_articulos()` (máx. 5, recorta a 6,000 caracteres -- el
+  Art. 513, tablas, mide 313k), `lft_buscar_texto()` (FULLTEXT sobre
+  `texto`) y `jurisprudencia_buscar_para_bot()` (FULLTEXT sobre `rubro`
+  de `jurisprudencia_tesis`, mismo criterio que el buscador del panel,
+  sin sus pasos de IA). Si la tabla no existe todavía, regresan un aviso
+  ("no cites número de artículo") en vez de tronar.
+- **3 herramientas nuevas del bot** en `IA_TOOLS`: `consultar_articulo_lft`,
+  `buscar_en_lft`, `buscar_jurisprudencia`. Regla del prompt (bloque de
+  CRITERIOS DEL DESPACHO): antes de citar cualquier número de artículo,
+  consultarlo en ese turno; jurisprudencia solo si la regresó la
+  herramienta, nunca de memoria.
+- Probado con SQLite la normalización y la consulta por número (FULLTEXT
+  no se puede probar sin MySQL). **Pendiente**: que el usuario corra
+  070 + 070b y suba `api/lft_helpers.php` + `api/ia_helpers.php`; partes
+  4 (tope prima de antigüedad, falta criterio), 5 (revisión diaria de
+  conversaciones) y 6 (casos de prueba).
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
