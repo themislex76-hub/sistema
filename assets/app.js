@@ -6686,21 +6686,32 @@ async function abrirCitaConversacionModal(telefono, nombre){
 // también las atienda) define los días y horas de la semana en que puede
 // tomar una llamada de asesoría de pago. Es la base para poder ofrecer
 // horarios reales desde el bot de WhatsApp más adelante.
+//
+// Rediseñado 14 nov 2026 (pedido explícito del usuario): la UI vieja
+// ("Día" + "Desde"/"Hasta" + "Agregar horario", una fila a la vez) hacía
+// tedioso dejarse espacio entre asesorías -- un bloque continuo como
+// "11:00-17:00" se parte en citas de 1h pegadas una tras otra sin ningún
+// hueco (ver citas_calcular_horarios_disponibles() en citas_helpers.php),
+// así que para dejar un espacio libre había que capturar bloques sueltos
+// a mano (11:00-12:00, luego 13:00-14:00...). Ahora es una cuadrícula de
+// casillas (día x hora, de 9am a 7pm) -- cada hora marcada se guarda como
+// su propio bloque de 1h, y dejar una casilla sin marcar entre 2 marcadas
+// ya deja el espacio libre solo. Un solo botón "Guardar horarios" manda
+// la cuadrícula completa a api/disponibilidad_guardar.php (reemplazo
+// total, mismo patrón que Cobros/Pendientes), en vez de una llamada por
+// cada horario como antes.
 // ---------------------------------------------------------------
+const DISPONIBILIDAD_HORAS = [9,10,11,12,13,14,15,16,17,18]; // bloques de 1h, 9am a 7pm
+function disponibilidadHoraMarcada(dia, hora){
+  const ini = String(hora).padStart(2,'0') + ':00';
+  const fin = String(hora+1).padStart(2,'0') + ':00';
+  // Cubre tanto las casillas nuevas (siempre bloques de 1h exactos) como
+  // cualquier bloque viejo de varias horas seguidas que ya existiera antes
+  // de este rediseño (ej. "11:00-17:00" marca las 6 casillas 11..16).
+  return DISPONIBILIDAD.some(b => b.dia_semana === dia && b.hora_inicio <= ini && b.hora_fin >= fin);
+}
 function disponibilidadPanelHTML(){
-  const porDia = {};
-  DISPONIBILIDAD.forEach(b=>{
-    if(!porDia[b.dia_semana]) porDia[b.dia_semana] = [];
-    porDia[b.dia_semana].push(b);
-  });
-  const filas = Object.keys(porDia).map(Number).sort((a,b)=>a-b).map(dia=>
-    porDia[dia].map(b=>`
-      <tr>
-        <td>${DIA_SEMANA_LABEL[dia]}</td>
-        <td>${b.hora_inicio} – ${b.hora_fin}</td>
-        <td><button class="btn secondary" data-delete-disponibilidad="${b.id}" style="padding:5px 10px; font-size:11px;">Quitar</button></td>
-      </tr>`).join("")
-  ).join("");
+  const dias = [1,2,3,4,5,6,7];
   return `
   <div class="panel">
     <div class="panel-head" style="cursor:pointer;" data-toggle-disponibilidad>
@@ -6709,21 +6720,20 @@ function disponibilidadPanelHTML(){
     </div>
     ${DISPONIBILIDAD_ABIERTA ? `
     <div class="panel-body" style="padding:16px 20px;">
-      <div class="notice" style="margin-bottom:14px;">Define los días y horas en que puedes atender una asesoría telefónica de 1 hora. Esto es lo que se va a usar para ofrecer horarios reales a los clientes que agenden.</div>
-      <form id="addDisponibilidadForm" style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:16px;">
-        <div class="field" style="margin:0;"><label>Día</label>
-          <select id="disponibilidadDia" style="padding:9px 11px; border:1px solid var(--border); border-radius:8px; background:var(--parchment); font-size:13px;">
-            ${[1,2,3,4,5,6,7].map(d=>`<option value="${d}">${DIA_SEMANA_LABEL[d]}</option>`).join("")}
-          </select>
-        </div>
-        <div class="field" style="margin:0;"><label>Desde</label><input type="time" id="disponibilidadInicio" required></div>
-        <div class="field" style="margin:0;"><label>Hasta</label><input type="time" id="disponibilidadFin" required></div>
-        <button type="submit" class="btn">Agregar horario</button>
-      </form>
-      ${DISPONIBILIDAD.length ? `
-      <table><thead><tr><th>Día</th><th>Horario</th><th></th></tr></thead>
-      <tbody>${filas}</tbody></table>
-      ` : `<div class="notice">Todavía no tienes horarios registrados.</div>`}
+      <div class="notice" style="margin-bottom:14px;">Marca las horas en que puedes atender una asesoría telefónica de 1 hora. Deja una casilla sin marcar entre 2 marcadas si quieres dejarte espacio libre entre asesorías. Esto es lo que se va a usar para ofrecer horarios reales a los clientes que agenden.</div>
+      <div style="overflow-x:auto;">
+      <table id="disponibilidadGrid" style="min-width:560px;">
+        <thead><tr><th></th>${dias.map(d=>`<th style="text-align:center;">${DIA_SEMANA_LABEL[d].slice(0,3)}</th>`).join("")}</tr></thead>
+        <tbody>
+          ${DISPONIBILIDAD_HORAS.map(h=>`
+          <tr>
+            <td style="white-space:nowrap; font-size:12.5px; color:var(--gray);">${String(h).padStart(2,'0')}:00 – ${String(h+1).padStart(2,'0')}:00</td>
+            ${dias.map(d=>`<td style="text-align:center;"><input type="checkbox" class="disponibilidad-check" data-dia="${d}" data-hora="${h}" ${disponibilidadHoraMarcada(d,h)?'checked':''}></td>`).join("")}
+          </tr>`).join("")}
+        </tbody>
+      </table>
+      </div>
+      <button class="btn" id="guardarDisponibilidadBtn" style="margin-top:14px;">Guardar horarios</button>
     </div>` : ""}
   </div>`;
 }
@@ -7618,32 +7628,26 @@ function bindViewBody(){
       renderViewBody();
     });
   }
-  const addDisponibilidadForm = document.getElementById('addDisponibilidadForm');
-  if(addDisponibilidadForm){
-    addDisponibilidadForm.addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      const dia_semana = parseInt(document.getElementById('disponibilidadDia').value, 10);
-      const hora_inicio = document.getElementById('disponibilidadInicio').value;
-      const hora_fin = document.getElementById('disponibilidadFin').value;
-      if(!hora_inicio || !hora_fin){ alert('Captura la hora de inicio y de fin.'); return; }
-      if(hora_inicio >= hora_fin){ alert('La hora de inicio debe ser antes que la hora de fin.'); return; }
+  const guardarDisponibilidadBtn = document.getElementById('guardarDisponibilidadBtn');
+  if(guardarDisponibilidadBtn){
+    guardarDisponibilidadBtn.addEventListener('click', async ()=>{
+      const horarios = Array.from(document.querySelectorAll('.disponibilidad-check:checked')).map(cb=>({
+        dia_semana: parseInt(cb.dataset.dia, 10),
+        hora: parseInt(cb.dataset.hora, 10),
+      }));
+      guardarDisponibilidadBtn.disabled = true;
+      guardarDisponibilidadBtn.textContent = 'Guardando…';
       try{
-        await api('POST', 'disponibilidad_agregar.php', {dia_semana, hora_inicio, hora_fin});
+        await api('POST', 'disponibilidad_guardar.php', {horarios});
         await loadDisponibilidad();
         renderViewBody();
-      }catch(err){ alert('No se pudo agregar el horario: ' + err.message); }
+      }catch(err){
+        alert('No se pudo guardar tu disponibilidad: ' + err.message);
+        guardarDisponibilidadBtn.disabled = false;
+        guardarDisponibilidadBtn.textContent = 'Guardar horarios';
+      }
     });
   }
-  document.querySelectorAll('[data-delete-disponibilidad]').forEach(btn=>{
-    btn.addEventListener('click', async ()=>{
-      const id = parseInt(btn.dataset.deleteDisponibilidad, 10);
-      try{
-        await api('POST', 'disponibilidad_eliminar.php', {id});
-        await loadDisponibilidad();
-        renderViewBody();
-      }catch(err){ alert('No se pudo quitar el horario: ' + err.message); }
-    });
-  });
   const googleConnectBtn = document.getElementById('googleConnectBtn');
   if(googleConnectBtn){
     googleConnectBtn.addEventListener('click', ()=>{

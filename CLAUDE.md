@@ -1,5 +1,50 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## "Mi disponibilidad para asesorías" rediseñada: cuadrícula de casillas en vez de capturar rangos a mano (14 nov 2026, `app.js?v=148`)
+Pedido explícito del usuario, viendo su propio horario capturado (bloques
+de 11:00-17:00 y 17:00-18:00 por día, sin ningún hueco entre asesorías):
+"hay que hacer más cómodo el selector de los horarios disponibles para
+activar por horas y así darme espacio entre asesorías... un selector de
+lunes a domingo y luego un selector por horas de 9 am a 7 pm".
+- **Causa de fondo del problema que describía**: `citas_calcular_horarios_
+  disponibles()` (`api/citas_helpers.php`) parte cada bloque guardado en
+  citas de 1h pegadas una tras otra, empezando exacto en `hora_inicio` --
+  un bloque "11:00-17:00" da 11,12,13,14,15,16 sin ningún espacio. La
+  única forma de dejarse un hueco con la UI vieja ("Día" + "Desde"/"Hasta"
+  + "Agregar horario", una fila a la vez) era capturar bloques sueltos a
+  mano (11:00-12:00, luego 13:00-14:00...) -- tedioso e indirecto.
+- **UI nueva**: cuadrícula de casillas, columnas = días (Lun-Dom), filas =
+  horas de 9am a 7pm (`DISPONIBILIDAD_HORAS`, bloques fijos de 1h). Marcar
+  una casilla = esa hora disponible; dejar una sin marcar entre 2 marcadas
+  ya deja el espacio libre solo, sin tener que calcular ni capturar ningún
+  rango. Un solo botón "Guardar horarios" al final, no una llamada por
+  cada hora.
+- **Nuevo endpoint `api/disponibilidad_guardar.php`**: reemplazo completo
+  del horario semanal del usuario en sesión en una sola llamada (DELETE +
+  re-INSERT, mismo patrón que `expedientes_update_pagos.php`/
+  `expedientes_update_pendientes.php`) -- cada casilla marcada se guarda
+  como su propio bloque `hora_inicio`/`hora_fin` de exactamente 1h. Los
+  endpoints viejos `api/disponibilidad_agregar.php`/`disponibilidad_
+  eliminar.php` ya NO los llama el frontend (quedan huérfanos en el
+  servidor, mismo criterio que el panel viejo de captcha de Edomex --
+  inofensivos sin uso, el usuario los puede borrar a mano si quiere).
+- `disponibilidadHoraMarcada()` en `assets/app.js` calcula qué casillas
+  mostrar marcadas al cargar la página -- también cubre bloques VIEJOS de
+  varias horas seguidas que ya existieran antes de este rediseño (ej. un
+  "11:00-17:00" guardado desde la UI vieja marca solo las 6 casillas que
+  cubre, 11 a 16), así que el horario que el abogado ya tenía capturado se
+  ve bien de entrada, sin perder nada. En cuanto le dé "Guardar horarios"
+  una vez, ese bloque viejo se reemplaza por bloques limpios de 1h cada
+  uno (igual de funcional para `citas_calcular_horarios_disponibles()`,
+  que de cualquier forma ya cortaba todo en horas sueltas).
+- Sin cambios de base de datos (`disponibilidad_asesorias` ya existía,
+  incluso ya soportaba bloques de cualquier tamaño). No se tocó
+  `mergeTags()`/tags de demanda -- no aplica `verificar_tags.js`.
+  **Sin probar en vivo todavía** -- falta que el usuario suba
+  `api/disponibilidad_guardar.php`, `assets/app.js`, `index.html` y
+  `sw.js`, y confirme que su horario actual se vea bien marcado en la
+  cuadrícula antes de guardar nada nuevo.
+
 ## Panel nuevo: Credenciales de portales por abogado (13 nov 2026, `app.js?v=147`)
 Pregunta explícita del usuario revisando un caso real (**Escalona Jimenez
 Yuliana Yadira vs New Dynacast de México y Automotive Quality Shield, Exp.
