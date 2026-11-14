@@ -2425,7 +2425,7 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   4 (tope prima de antigüedad, falta criterio), 5 (revisión diaria de
   conversaciones) y 6 (casos de prueba).
 
-## Precisión del bot, partes 5 y 6: revisión diaria de conversaciones + casos de prueba (14 nov 2026, conversación "chats", `app.js?v=149`, migración 071)
+## Precisión del bot, partes 5 y 6: revisión diaria de conversaciones + casos de prueba (14 nov 2026, conversación "chats", `app.js?v=150`, migración 071)
 - **Revisión diaria** (`api/cron_revisar_conversaciones_bot.php`, correr 1
   vez al día en la madrugada; `?fecha=AAAA-MM-DD` opcional, default
   ayer): toma cada teléfono donde el cliente escribió y el bot contestó
