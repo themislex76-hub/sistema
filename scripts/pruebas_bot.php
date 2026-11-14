@@ -118,6 +118,11 @@ caso('IMSS como patrón se atiende como Apartado A (bug real: trabajadora del IM
 caso('suspensión: Art. 423 fracc. X, máximo 8 días', strpos($p, '423 fracc. X') !== false && strpos($p, '8 días') !== false);
 caso('domingos: Art. 71 (por lo menos 25%) y Art. 73 (salario doble)', strpos($p, 'Art. 71 LFT') !== false && strpos($p, 'Art. 73 LFT') !== false);
 caso('salarios caídos con tope de 12 meses', strpos($p, 'tope de 12') !== false);
+caso('cierre de empresa: Arts. 434-436, no "despido injustificado" (casos reales 13-nov)', strpos($p, '(Art. 436)') !== false && strpos($p, 'Cierre de la empresa') !== false);
+caso('despido vs. rescisión: no convertir una baja en rescisión para sumar 20 días', strpos($p, 'Despido vs. rescisión') !== false);
+caso('embarazo: Art. 166 / 170-I, nunca 132 XXVII Bis (es paternidad)', strpos($p, 'Art. 166') !== false && strpos($p, 'PATERNIDAD') !== false);
+$rev = ia_parsear_revision_bot('{"veredicto":"revisar","gravedad":"media","resumen":"x","hallazgos":[{"cita":"a","problema":"no hay error aquí en realidad","correccion":"N/A - revisar si aplica"}]}');
+caso('revisión diaria: descarta hallazgos que la propia IA reconoce como no-error', $rev['veredicto'] === 'ok');
 caso('consultar la LFT antes de citar un artículo', strpos($p, 'consultar_articulo_lft') !== false);
 caso('jurisprudencia solo desde buscar_jurisprudencia', strpos($p, 'buscar_jurisprudencia') !== false);
 $tools = array_column(IA_TOOLS, 'name');

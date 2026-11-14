@@ -2460,6 +2460,32 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   fecha de despido vs fecha de pago. Respuestas duplicadas del bot
   cuando el cliente manda 2 mensajes seguidos: sin tocar todavía.
 
+## Primera corrida real de la revisión diaria del bot + criterios nuevos (14 nov 2026, conversación "chats")
+- Corrida real (13-nov): 174 conversaciones del día, 78 revisadas en 2
+  corridas, 12 marcadas. Confirmados con el texto oficial de la LFT como
+  errores REALES del bot: cierre de empresa tratado como "despido
+  injustificado" con Art. 47 (correcto: Arts. 434-436), Art. 132 fracc.
+  XXVII Bis citado para embarazo (es paternidad; lo correcto es Art. 166 /
+  170-I), una baja convertida en "rescisión Art. 51" para sumar 20 días,
+  "2 días prescritos" (ya corregido antes, la conversación era previa) y
+  un seguimiento que ofreció "agendar" a quien ya tenía horario apartado.
+  Falsas alarmas del revisor: montos dichos en condicional, prima de
+  antigüedad "con 15 años" en despido (no aplica), "no consta que usó la
+  herramienta", y el mensaje automático de fuera de horario.
+- Arreglos: 4 criterios nuevos en el prompt del bot (cierre de empresa,
+  despido vs rescisión, embarazo, montos condicionados + riesgo de causal
+  de despido); calibración del revisor (lista de "NO marques" + descarta
+  hallazgos con corrección "N/A"); `cron_seguimiento_calculadora.php` ya
+  no escribe si el cliente apartó cita después del cálculo. 41 casos en
+  `scripts/pruebas_bot.php`.
+- **Pendiente**: caso 5212221603610 -- el bot dio prima de antigüedad de
+  $64,361 con salario $680 sin el tope del Art. 486 (la calculadora sí
+  topa a 2x `configuracion.salario_minimo_diario`); falta ver si el valor
+  guardado en `configuracion` es otro o si el bot calculó a mano. Caso
+  5215626719440 (link de pago reenviado): sin confirmar si fue error.
+  Pendiente decidir si el despacho atiende asesorías a EMPRESAS (el bot
+  dijo que no y después, por instrucción del abogado, sí cobró una).
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
