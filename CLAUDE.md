@@ -2486,6 +2486,36 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   Pendiente decidir si el despacho atiende asesorías a EMPRESAS (el bot
   dijo que no y después, por instrucción del abogado, sí cobró una).
 
+## Reforma de jornada (DOF 01-05-2026) es GRADUAL + empresas + montos solo de la calculadora (14 nov 2026, conversación "chats", migración 072)
+- **OJO, afecta todo lo que hable de jornada/horas extra**: la LFT vigente
+  dice Art. 59 = 40 h/semana y Art. 66 = hasta 12 h extra/semana al
+  doble, Art. 68 = excedente (hasta 4 h más) al triple, y el Art. 67 YA
+  NO regula horas extra (solo las de siniestro del Art. 65). Pero los
+  transitorios del decreto (Segundo y Cuarto) lo hacen GRADUAL desde el 1
+  de enero de cada año: 2026 = 48 h y 9 extra; 2027 = 46/9; 2028 =
+  44/10; 2029 = 42/11; 2030 = 40/12. La 070b solo traía articulado (sin
+  transitorios), así que el bot habría leído "40 horas" como vigente en
+  2026. Migración **072_lft_transitorios_jornada.sql** agrega esa nota al
+  final del texto de los Arts. 59 y 66 (070b ya regenerada con la nota
+  incluida, por si se recarga).
+- Prompt del bot (CRITERIOS DEL DESPACHO): jornada/horas extra con la
+  tabla gradual; montos SOLO de `calcular_estimado_liquidacion` (caso
+  real 5212221603610: prima de antigüedad $64,361 calculada a mano sobre
+  $680 sin el tope del Art. 486 -- `configuracion.salario_minimo_diario`
+  confirmado en 315.04, la calculadora sí topa); y el despacho SÍ asesora
+  empresas/patrones (confirmado por el usuario 14-nov-2026), misma
+  asesoría telefónica. Revisor: ya no marca aguinaldo proporcional, el
+  aviso de límite de mensajes, seguimientos automáticos ni asesoría a
+  empresas. 44 casos en `scripts/pruebas_bot.php`.
+- **Pendiente para la sesión "sistema y bot completo"**: la plantilla
+  Word de la demanda (`data/plantilla_demanda.docx`, no está en el repo)
+  y Rescisión Art. 51 pueden citar el Art. 67/68 con la regla vieja de 9
+  horas al doble -- revisar el texto contra la LFT vigente (Art. 66 doble,
+  Art. 68 triple, tabla gradual) antes de la siguiente demanda con horas
+  extra. Tope de prima de antigüedad en zona libre de la frontera norte:
+  la calculadora solo usa el salario mínimo general (Art. 486 dice el del
+  área geográfica del lugar de trabajo).
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado

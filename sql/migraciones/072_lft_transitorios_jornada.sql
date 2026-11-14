@@ -1,0 +1,5 @@
+-- Agrega a los Arts. 59 y 66 de la LFT cargada la nota de sus transitorios graduales
+-- (Decreto DOF 01-05-2026). Sin esto, el bot leería 40 horas / 12 horas extra como si ya aplicaran en 2026.
+SET NAMES utf8mb4;
+UPDATE lft_articulos SET texto = CONCAT(texto, ' [NOTA - Transitorio Segundo del Decreto publicado en el DOF el 1 de mayo de 2026: la jornada de 40 horas se alcanza de manera gradual, a partir del 1 de enero de cada año: 2026: 48 horas; 2027: 46; 2028: 44; 2029: 42; 2030: 40. Transitorio Séptimo: la reducción no implicará disminución de sueldos, salarios o prestaciones.]') WHERE numero = '59' AND texto NOT LIKE '%NOTA - Transitorio%';
+UPDATE lft_articulos SET texto = CONCAT(texto, ' [NOTA - Transitorio Cuarto del Decreto publicado en el DOF el 1 de mayo de 2026: el límite de horas extraordinarias de este artículo se alcanza de manera gradual, a partir del 1 de enero de cada año: 2026: 9 horas a la semana; 2027: 9; 2028: 10; 2029: 11; 2030: 12.]') WHERE numero = '66' AND texto NOT LIKE '%NOTA - Transitorio%';
