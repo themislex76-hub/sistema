@@ -5,8 +5,9 @@ require_once __DIR__ . '/push_helpers.php';
 
 // Llamado por los robots de monitoreo (Federal, CDMX, Edomex) cuando
 // encuentran una novedad real en el boletín de un expediente. Se evita
-// duplicar el mismo aviso si ya existe uno idéntico sin revisar todavía
-// (mismo expediente + fuente + resumen).
+// duplicar el mismo aviso si ya existe uno idéntico, sin importar su
+// estado (nuevo, revisado, descartado...) -- mismo expediente + fuente +
+// resumen.
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') fail('Método no permitido.', 405);
 require_robot_key();
 
@@ -26,10 +27,19 @@ if (!in_array($fuente, $fuentesValidas, true)) $fuente = 'otro';
 
 $pdo = db();
 
+// OJO (13 nov 2026): antes este candado solo comparaba contra avisos con
+// estado='nuevo' (sin revisar todavía) -- así que un acuerdo YA revisado/
+// descartado/aplicado se podía volver a insertar como aviso DUPLICADO si
+// el robot lo reportaba otra vez (ej. al forzar un re-barrido histórico
+// borrando procesados_federal.json/procesados_edomex_correo.json para
+// capturar acuerdos viejos que se escaparon antes de que existiera el
+// expediente en ese archivo de seguimiento). Se quita esa condición --
+// un aviso ya existente, en cualquier estado, siempre cuenta como
+// duplicado.
 $existe = $pdo->prepare(
-    "SELECT id FROM avisos_boletin
-     WHERE expediente_id = :eid AND fuente = :fuente AND resumen = :resumen AND estado = 'nuevo'
-     LIMIT 1"
+    'SELECT id FROM avisos_boletin
+     WHERE expediente_id = :eid AND fuente = :fuente AND resumen = :resumen
+     LIMIT 1'
 );
 $existe->execute([':eid' => $expedienteId, ':fuente' => $fuente, ':resumen' => $resumen]);
 if ($existe->fetch()) {

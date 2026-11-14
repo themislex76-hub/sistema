@@ -80,7 +80,24 @@ foreach ($atrasos as $atraso) {
     $avisosStmt->execute([':id' => $atraso['expediente_id']]);
     $avisosRecientes = $avisosStmt->fetchAll();
 
-    $pregunta = ia_generar_pregunta_supervisor($expediente, $etapas, $atraso['label'], $documentosRecientes, $avisosRecientes);
+    // Notas de seguimiento, pendientes manuales y pagos de convenio --
+    // agregado 13 nov 2026, pedido explícito del usuario de que la IA revise
+    // "absolutamente toda la info... incluyendo notas, agenda, pendientes,
+    // documentos, boletines". Sin esto la pregunta se podía redactar sobre
+    // un dato que el abogado ya había contestado a mano en su bitácora.
+    $notasStmt = $pdo->prepare('SELECT texto, creado_en FROM expediente_notas WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 8');
+    $notasStmt->execute([':id' => $atraso['expediente_id']]);
+    $notasBitacora = $notasStmt->fetchAll();
+
+    $pendStmt = $pdo->prepare('SELECT descripcion, fecha_inicio, dias, tipo FROM expediente_pendientes WHERE expediente_id = :id AND cumplido = 0 ORDER BY orden');
+    $pendStmt->execute([':id' => $atraso['expediente_id']]);
+    $pendientesAbiertos = $pendStmt->fetchAll();
+
+    $pagosStmt = $pdo->prepare('SELECT fecha, monto, cobrado, fecha_cobro FROM expediente_pagos WHERE expediente_id = :id ORDER BY orden DESC LIMIT 10');
+    $pagosStmt->execute([':id' => $atraso['expediente_id']]);
+    $pagosConvenio = $pagosStmt->fetchAll();
+
+    $pregunta = ia_generar_pregunta_supervisor($expediente, $etapas, $atraso['label'], $documentosRecientes, $avisosRecientes, $notasBitacora, $pendientesAbiertos, $pagosConvenio);
     if (!$pregunta) {
         $fallidas++;
         continue; // se reintenta en la siguiente corrida (no se inserta nada)

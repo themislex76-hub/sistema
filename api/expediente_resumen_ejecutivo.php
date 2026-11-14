@@ -43,7 +43,40 @@ $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha, fecha_programada, resultad
 $etapasStmt->execute([':id' => $id]);
 $etapas = $etapasStmt->fetchAll();
 
-$resultado = ia_generar_resumen_expediente($row, $etapas);
+// Últimas notas de seguimiento del abogado (bitácora real del trámite, ver
+// ia_generar_resumen_expediente() -- sin esto la IA solo veía el campo
+// congelado "Última nota" importado del sistema viejo y podía recomendar
+// algo que ya se hizo hace meses).
+$notasStmt = $pdo->prepare('SELECT texto, creado_en FROM expediente_notas WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 8');
+$notasStmt->execute([':id' => $id]);
+$notasBitacora = $notasStmt->fetchAll();
+
+// Documentos del expediente y avisos de boletín, con su resumen de IA --
+// agregado 13 nov 2026 (mismo patrón que cron_auditoria_expediente_ia.php):
+// sin esto el informe ejecutivo no se enteraba de hechos reales documentados
+// (ej. un incidente de competencia levantado de oficio por el Tribunal) que
+// explican por qué el trámite no sigue la secuencia normal -- ver caso real
+// de Mir Castro Ma Claudia, Exp. 242/2026.
+$docsStmt = $pdo->prepare('SELECT nombre_archivo, categoria, ia_resumen FROM expediente_documentos WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 12');
+$docsStmt->execute([':id' => $id]);
+$documentosRecientes = $docsStmt->fetchAll();
+
+$avisosStmt = $pdo->prepare("SELECT resumen, ia_resumen, creado_en FROM avisos_boletin WHERE expediente_id = :id AND estado != 'descartado' ORDER BY creado_en DESC LIMIT 10");
+$avisosStmt->execute([':id' => $id]);
+$avisosRecientes = $avisosStmt->fetchAll();
+
+// Pendientes manuales y pagos de convenio -- agregado 13 nov 2026, pedido
+// explícito del usuario de que la IA revise "absolutamente toda la info...
+// incluyendo notas, agenda, pendientes, documentos, boletines".
+$pendStmt = $pdo->prepare('SELECT descripcion, fecha_inicio, dias, tipo FROM expediente_pendientes WHERE expediente_id = :id AND cumplido = 0 ORDER BY orden');
+$pendStmt->execute([':id' => $id]);
+$pendientesAbiertos = $pendStmt->fetchAll();
+
+$pagosStmt = $pdo->prepare('SELECT fecha, monto, cobrado, fecha_cobro FROM expediente_pagos WHERE expediente_id = :id ORDER BY orden DESC LIMIT 10');
+$pagosStmt->execute([':id' => $id]);
+$pagosConvenio = $pagosStmt->fetchAll();
+
+$resultado = ia_generar_resumen_expediente($row, $etapas, $notasBitacora, $documentosRecientes, $avisosRecientes, $pendientesAbiertos, $pagosConvenio);
 
 if ($resultado === null) {
     // La IA falló (red, sin crédito, etc.) -- si ya había un resumen viejo
