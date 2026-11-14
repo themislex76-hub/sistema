@@ -1123,7 +1123,9 @@ function computeLiquidacion(kase){
   // mínimo diario vigente (art. 162). Siempre procede: en este despacho el
   // motivo de la separación siempre es el despido, nunca la renuncia (que
   // exigiría 15+ años de servicio).
-  const topePrima = 2 * SALARIO_MINIMO_DIARIO;
+  // Criterio del despacho (14-nov-2026): tope con el salario mínimo vigente
+  // a la FECHA DEL DESPIDO (Arts. 162-II y 486 LFT), no el actual.
+  const topePrima = 2 * salarioMinimoEnFecha(kase.fecha_baja);
   const primaTopada = sd > topePrima;
   const basePrima = Math.min(sd, topePrima);
   const primaAntiguedad = 12 * aniosDec * basePrima;
@@ -3184,6 +3186,17 @@ async function loadTribunalesCustom(){
 // (art. 162 LFT: tope de 2x salario mínimo). Se guarda en la tabla
 // "configuracion" y lo edita el Administrador en "Equipo" — así no hay que
 // tocar el código cada vez que la CONASAMI publica un nuevo salario mínimo.
+// Salario mínimo general diario (CONASAMI, zona general) de años
+// anteriores; el año en curso usa SALARIO_MINIMO_DIARIO (capturado en Equipo).
+// Mismos valores que SALARIOS_MINIMOS_HISTORICOS en api/liquidacion_calculadora.php.
+const SALARIOS_MINIMOS_HISTORICOS = {2016:73.04, 2017:80.04, 2018:88.36, 2019:102.68, 2020:123.22,
+  2021:141.70, 2022:172.87, 2023:207.44, 2024:248.93, 2025:278.80};
+function salarioMinimoEnFecha(fecha){
+  const anio = parseInt(String(fecha||'').slice(0,4), 10);
+  if(!anio || anio >= new Date().getFullYear()) return SALARIO_MINIMO_DIARIO;
+  if(SALARIOS_MINIMOS_HISTORICOS[anio]) return SALARIOS_MINIMOS_HISTORICOS[anio];
+  return anio < 2016 ? SALARIOS_MINIMOS_HISTORICOS[2016] : SALARIO_MINIMO_DIARIO;
+}
 let SALARIO_MINIMO_DIARIO = 315.04; // valor de respaldo (zona general, 2026) si aún no se ha guardado ninguno
 // Jornada máxima legal (Art. 61 LFT) por tipo, en horas. Igual que el
 // salario mínimo: se guarda en "configuracion" y lo edita el Administrador

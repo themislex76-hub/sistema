@@ -94,6 +94,11 @@ caso('despido de confianza: los 20 días NO entran al total', $c['indemnizacion_
 caso('despido de confianza: 20 días solo como escenario aparte', ($c['indemnizacion_20_dias_si_patron_no_reinstala'] ?? 0) > 0);
 $r = calcular_estimado_liquidacion($pdo, '2006-03-06', '2026-11-11', 705, 'injustificado', 14, 0, 'rescision');
 caso('rescisión (Art. 52): los 20 días SÍ entran', $r['indemnizacion_20_dias_monto'] > 0 && $r['total_estimado'] > $c['total_estimado']);
+$t24 = calcular_estimado_liquidacion($pdo, '2016-01-01', '2024-06-30', 680, 'injustificado', 0, 0, 'despido');
+$esperado24 = round(12 * ((strtotime('2024-06-30') - strtotime('2016-01-01')) / 86400 + 1) / 365 * 2 * 248.93, 2);
+caso('prima de antigüedad: tope con el salario mínimo de la FECHA DEL DESPIDO (2024: 2 × $248.93)', abs($t24['prima_antiguedad_monto'] - $esperado24) < 1, $t24['prima_antiguedad_monto'] . ' vs ' . $esperado24);
+$t26 = calcular_estimado_liquidacion($pdo, '2018-11-14', '2026-11-13', 680, 'injustificado', 0, 0, 'despido');
+caso('prima de antigüedad 2026: tope con el salario mínimo vigente (2 × $315.04), nunca sobre $680 completo', $t26['prima_antiguedad_monto'] < 12 * 8 * 680 && $t26['prima_antiguedad_monto'] > 0);
 $v = calcular_estimado_liquidacion($pdo, '2025-02-11', '2026-11-13', 315.04, 'injustificado', 14, 0, 'despido');
 caso('vacaciones reportadas de más: "excedentes", no "prescritas"', $v['vacaciones_anteriores_dias_excedentes'] == 2 && $v['vacaciones_anteriores_dias_prescritos'] == 0,
     'exc=' . $v['vacaciones_anteriores_dias_excedentes'] . ' presc=' . $v['vacaciones_anteriores_dias_prescritos']);
