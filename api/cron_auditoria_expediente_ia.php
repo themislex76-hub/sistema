@@ -99,7 +99,27 @@ foreach ($candidatos as $c) {
     $preguntasStmt->execute([':id' => $c['id']]);
     $preguntasRecientes = $preguntasStmt->fetchAll();
 
-    $sugerencias = ia_auditar_expediente($expediente, $etapas, $documentosRecientes, $avisosRecientes, $preguntasRecientes);
+    // Bitácora de notas de seguimiento del abogado -- mismo arreglo que ya
+    // se hizo en expediente_resumen_ejecutivo.php (13 nov 2026): sin esto la
+    // auditoría nunca veía las notas que el abogado agrega a mano con
+    // "Agregar nota de seguimiento", y podía perderse una fecha literal ya
+    // escrita ahí.
+    $notasStmt = $pdo->prepare('SELECT texto, creado_en FROM expediente_notas WHERE expediente_id = :id ORDER BY creado_en DESC LIMIT 8');
+    $notasStmt->execute([':id' => $c['id']]);
+    $notasBitacora = $notasStmt->fetchAll();
+
+    // Pendientes manuales y pagos de convenio -- agregado 13 nov 2026, mismo
+    // pedido del usuario que las notas de arriba ("revisar absolutamente toda
+    // la info... pendientes... boletines").
+    $pendStmt = $pdo->prepare('SELECT descripcion, fecha_inicio, dias, tipo FROM expediente_pendientes WHERE expediente_id = :id AND cumplido = 0 ORDER BY orden');
+    $pendStmt->execute([':id' => $c['id']]);
+    $pendientesAbiertos = $pendStmt->fetchAll();
+
+    $pagosStmt = $pdo->prepare('SELECT fecha, monto, cobrado, fecha_cobro FROM expediente_pagos WHERE expediente_id = :id ORDER BY orden DESC LIMIT 10');
+    $pagosStmt->execute([':id' => $c['id']]);
+    $pagosConvenio = $pagosStmt->fetchAll();
+
+    $sugerencias = ia_auditar_expediente($expediente, $etapas, $documentosRecientes, $avisosRecientes, $preguntasRecientes, $notasBitacora, $pendientesAbiertos, $pagosConvenio);
     $auditados++;
 
     if ($sugerencias === null) {

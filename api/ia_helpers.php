@@ -236,13 +236,94 @@ REGLA DURA — Apartado A vs. Apartado B (Art. 123 Constitucional): el
 despacho SOLO atiende trabajadores del Apartado A (relación laboral con
 un patrón privado, regida por la Ley Federal del Trabajo) — NUNCA
 trabajadores del Apartado B (empleados de gobierno: burócratas,
-trabajadores de dependencias o entidades públicas federales, estatales o
-municipales, maestros del sistema educativo público, policías,
-militares, personal del propio IMSS/ISSSTE como patrón directo de ellos,
-etc. — regidos por la Ley Federal de los Trabajadores al Servicio del
-Estado o su equivalente estatal, con reglas y tribunales distintos a los
-de la LFT). Si no es obvio por el contexto, pregunta si trabajaba para
-una empresa/negocio privado o para el gobierno/una dependencia pública.
+trabajadores de dependencias de la administración pública federal,
+estatal o municipal, maestros del sistema educativo público, policías,
+militares, etc. — regidos por la Ley Federal de los Trabajadores al
+Servicio del Estado o su equivalente estatal, con reglas y tribunales
+distintos a los de la LFT). Si no es obvio por el contexto, pregunta si
+trabajaba para una empresa/negocio privado o para el gobierno/una
+dependencia pública.
+OJO -- "recibe dinero público" o "es del gobierno" NO basta para que sea
+Apartado B. Criterio del despacho (13-nov-2026, dado por el Lic. Rubén
+Buerhend): cuando el patrón es un organismo o entidad pública, el régimen
+se determina así:
+  (1) Si su DECRETO DE CREACIÓN dice que sus trabajadores se rigen por el
+      Apartado A, es Apartado A -- sin importar que sea una entidad
+      pública ni que reciba recursos públicos.
+  (2) Si el decreto dice Apartado B, pero la entidad tiene un CONTRATO
+      COLECTIVO DE TRABAJO vigente que dice que es Apartado A, entonces es
+      Apartado A, conforme a la jurisprudencia más reciente.
+  (3) Solo es Apartado B si el decreto dice B y NO hay contrato colectivo
+      vigente que diga A. Tú no puedes revisar decretos ni contratos colectivos, así que
+NUNCA rechaces a alguien de una entidad pública solo por intuición:
+pregúntale si en su trabajo hay sindicato con contrato colectivo, y si
+hay cualquier duda dile que el Lic. Rubén Buerhend revisa el decreto y
+el contrato colectivo de su patrón en la asesoría. Solo trata un caso
+como Apartado B (y no lo atiendes) cuando es claramente una dependencia
+de gobierno sin contrato colectivo (secretarías, ayuntamientos, policía,
+militares, magisterio público) o cuando el abogado ya lo confirmó. Casos
+que el despacho SÍ atiende como Apartado A: IMSS como patrón (tiene
+contrato colectivo), CFE, Pemex y universidades públicas autónomas por
+ley. Bug real: una trabajadora cuyo patrón
+era el IMSS, que ya llevaba juicio con conciliación prejudicial ante el
+Centro de Conciliación (procedimiento de la LFT), fue rechazada por el
+bot como "Apartado B" y le dijo que buscara otro abogado justo antes de
+firmar su convenio. Si NO es claro si el patrón es una dependencia
+(Apartado B) o un organismo descentralizado/empresa del Estado (Apartado
+A) -- por ejemplo ISSSTE, organismos estatales o municipales -- NO lo
+rechaces: dile que el Lic. Rubén Buerhend lo confirma y usa
+escalar_a_humano. Y si el patrón tiene contrato colectivo (IMSS, Pemex,
+CFE, empresas grandes), avisa que sus prestaciones pueden ser mayores que
+los mínimos de la LFT, así que el cálculo de la herramienta es solo un
+piso de referencia, no lo que le corresponde con exactitud.
+
+CRITERIOS DEL DESPACHO PARA ORIENTAR CON PRECISIÓN (13-nov-2026) -- la
+orientación debe ser completa, pero cada afirmación legal tiene que ser
+exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
+· Artículos: cita un artículo SOLO si estás seguro de que dice eso. Es
+  preferible explicar la regla sin número de artículo que citar uno
+  equivocado (errores reales: Art. 804 para "conocer la acusación", Art.
+  47 para la suspensión -- ninguno dice eso).
+· Suspensión disciplinaria: el patrón SÍ puede suspender como medida
+  disciplinaria si está prevista en el reglamento interior de trabajo,
+  hasta por 8 días, y el trabajador tiene derecho a ser oído antes (Art.
+  423 fracc. X LFT). No digas que "no la puede imponer"; di que hay que
+  revisar si existe reglamento interior, si respeta el máximo de 8 días y
+  si la escucharon antes. El Art. 47 es de rescisión (despido), no de
+  suspensión.
+· Salarios caídos: cuando los menciones, di siempre que tienen tope de 12
+  meses (después solo generan intereses), Art. 48 LFT -- nunca como si
+  corrieran sin límite.
+· Impuestos (ISR) de una indemnización o finiquito: NO afirmes cuánto
+  está exento ni que "buena parte sí tendrá retención". Solo di que la
+  Ley del ISR exenta una parte de la indemnización según los años de
+  servicio, y que el monto exacto se revisa con el desglose del convenio
+  o del pago.
+· Vacaciones de años anteriores: di que están "prescritas" SOLO si la
+  herramienta reporta vacaciones_anteriores_dias_prescritos mayor a 0. Si
+  reporta vacaciones_anteriores_dias_excedentes, NO es prescripción: es
+  que la persona reportó más días de los que le tocan por ley en esos
+  años (tabla del Art. 76) -- explícalo así. Error real: el bot dijo "2
+  días ya están prescritos" a quien solo había reportado 14 días cuando
+  por su primer año le tocaban 12.
+· Salario neto vs. bruto: la liquidación se calcula con el salario bruto
+  (antes de impuestos). Si la persona te da su salario "neto", díselo y
+  pídele el bruto (o el de su recibo); si no lo tiene, aclara que el
+  cálculo con el neto puede quedar por debajo de lo real.
+· Tono: no afirmes en absoluto lo que depende de pruebas o de un juez
+  ("esa acusación no tiene sustento", "el acta es nula", "ganarías
+  seguro"). Explica qué dice la ley, qué depende de las pruebas y qué
+  debe revisar el abogado.
+· No suenes a robot: NO termines cada mensaje con la misma pregunta de
+  agendar ("¿Te paso los horarios?"). Ofrece la asesoría con claridad
+  una vez; si la persona sigue preguntando dudas, contéstalas completas
+  sin repetir la oferta en cada respuesta, y vuelve a ofrecerla solo si
+  ella la menciona o al cerrar la conversación. Queja real (13-nov-2026):
+  una clienta dijo que "la atendió una IA porque le contestan lo mismo"
+  -- el bot cerró 4 respuestas seguidas con la misma pregunta.
+· Si ya le dijiste a la persona que el despacho no puede atender su caso
+  (fuera de materia, Apartado B confirmado, etc.), sé consistente: no le
+  ofrezcas después la asesoría ni horarios en la misma conversación.
 Si es Apartado B: explícale con calidez que su caso se rige por reglas
 distintas (Apartado B) que este despacho no maneja, así que NO le
 apliques las reglas de la LFT de este prompt (serían incorrectas para
@@ -1391,7 +1472,7 @@ const IA_TOOLS = [
                 ],
                 'dias_vacaciones_anteriores' => [
                     'type' => 'number',
-                    'description' => 'Días de vacaciones de años/periodos anteriores que la persona reporta que no disfrutó. 0 si no aplica o no sabe. La herramienta ya descuenta sola los que estén prescritos (no hace falta que tú calcules eso) — si el resultado trae "vacaciones_anteriores_dias_prescritos" mayor a 0, menciónaselo a la persona para explicar por qué el número final es menor a lo que reportó.',
+                    'description' => 'Días de vacaciones de años/periodos anteriores que la persona reporta que no disfrutó. 0 si no aplica o no sabe. La herramienta ya descuenta sola los que estén prescritos (no hace falta que tú calcules eso) — si el resultado trae "vacaciones_anteriores_dias_prescritos" mayor a 0, explícale que esos días ya prescribieron; si trae "vacaciones_anteriores_dias_excedentes" mayor a 0, explícale que reportó más días de los que la ley le da en esos años (tabla del Art. 76) -- eso NO es prescripción, nunca lo llames así.',
                 ],
                 'dias_salarios_devengados' => [
                     'type' => 'number',
@@ -2895,7 +2976,7 @@ function ia_siguiente_etapa_esperada_texto(array $etapas): ?string
 // contradecir lo que la pestaña "Etapas del juicio" ya mostraba (por
 // ejemplo, sugerir dar seguimiento a una etapa que ya pasó, ignorando un
 // atraso real más adelante en la bitácora).
-function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?array
+function ia_generar_resumen_expediente(array $expediente, array $etapas = [], array $notasBitacora = [], array $documentosRecientes = [], array $avisosRecientes = [], array $pendientesAbiertos = [], array $pagosConvenio = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -2942,7 +3023,16 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
     }
     if (!empty($expediente['cobro_pendiente'])) $lineas[] = 'Tiene cobro pendiente marcado.';
     $agregar('Notas internas', $expediente['notas_internas'] ?? null);
-    $agregar('Última nota', $expediente['ultima_nota'] ?? null);
+    // "Última nota" es un campo CONGELADO importado una sola vez del sistema
+    // viejo del despacho al migrar -- nadie lo vuelve a actualizar después
+    // (confirmado real, 13 nov 2026: el informe de Alan Jonathan Campuzano
+    // Brito seguía diciendo "falta presentar la promoción aclaratoria del
+    // domicilio" casi palabra por palabra igual a este campo, aunque la
+    // bitácora de notas de seguimiento de abajo ya mostraba esa promoción
+    // presentada DOS VECES, la más reciente apenas 2 minutos antes de que
+    // se generara el informe). Se etiqueta así a propósito para que la IA
+    // no la confunda con una actualización real.
+    $agregar('Última actuación/nota importada del sistema viejo (puede estar MUY desactualizada)', $expediente['ultima_nota'] ?? null);
 
     // Bitácora real de trámite -- sin esto la IA solo veía los datos de
     // captura de arriba y podía sugerir una próxima acción que ya pasó o
@@ -2971,10 +3061,104 @@ function ia_generar_resumen_expediente(array $expediente, array $etapas = []): ?
         if ($siguienteTexto !== null) $lineas[] = $siguienteTexto;
     }
 
+    // Bitácora de notas de seguimiento del abogado (tabla aparte
+    // `expediente_notas`, el abogado la va llenando con el avance real del
+    // trámite -- promociones presentadas, resultados de actuarios, etc.).
+    // Agregada 13 nov 2026 tras un bug real: el informe ejecutivo de Alan
+    // Jonathan Campuzano Brito seguía recomendando "presentar la promoción
+    // aclaratoria del domicilio" como si siguiera pendiente, repitiendo casi
+    // textual el campo "Última nota" (congelado, importado del sistema
+    // viejo) -- pero la bitácora de este expediente ya tenía 2 notas MÁS
+    // RECIENTES (04/06/2026 y 28/10/2026) confirmando que esa promoción ya
+    // se presentó y que ya se pidió al Tribunal notificar vía actuario. La
+    // IA nunca veía estas notas porque este helper solo leía los 2 campos
+    // congelados de arriba. Se manda de más reciente a más antigua (al
+    // revés que la bitácora de trámite) porque lo que importa aquí es la
+    // ÚLTIMA novedad, no la secuencia completa.
+    if ($notasBitacora) {
+        $notasTexto = [];
+        foreach ($notasBitacora as $n) {
+            $fecha = !empty($n['creado_en']) ? substr((string)$n['creado_en'], 0, 10) : '(sin fecha)';
+            $notasTexto[] = $fecha . ': ' . trim((string)($n['texto'] ?? ''));
+        }
+        $lineas[] = "Bitácora de notas de seguimiento del abogado (de más reciente a más antigua -- "
+            . "esta es la fuente MÁS confiable y actual de qué ha pasado de verdad en el trámite, por "
+            . "encima de \"Última actuación/nota importada del sistema viejo\" si se contradicen; si una "
+            . "nota reciente dice que algo ya se presentó/resolvió, NUNCA digas en el informe ni en la "
+            . "próxima acción que todavía falta hacerlo):\n" . implode("\n", $notasTexto);
+    }
+
+    // Documentos del expediente y avisos de boletín, con su resumen de IA --
+    // agregado 13 nov 2026 tras un bug real: el informe ejecutivo del
+    // expediente de Mir Castro Ma Claudia (Exp. 242/2026) seguía diciendo
+    // "URGENTE: presentar objeciones y réplica... ya debería estar
+    // presentada desde hace más de 110 días" sin saber que el Tribunal
+    // había levantado DE OFICIO un incidente de competencia y declarado los
+    // autos "en estado de resolución de dicho incidente" -- un hecho real
+    // que SÍ estaba documentado (Acuerdo No. 4, ya con su resumen de IA
+    // guardado), pero que esta función nunca recibía como contexto (a
+    // diferencia de ia_auditar_expediente(), que sí lee documentos/avisos
+    // desde que se construyó). Un incidente/recurso/suspensión real puede
+    // pausar o desviar por completo la secuencia normal de ETAPA_KEYS, así
+    // que esta fuente puede ser la explicación de por qué "no ha pasado lo
+    // esperado" en vez de simplemente un atraso.
+    if ($documentosRecientes) {
+        $lineas[] = "Documentos guardados en el expediente y su resumen de IA (más reciente primero):\n" . implode("\n", array_map(
+            fn($d) => '- [' . ($d['categoria'] ?? '?') . '] ' . ($d['nombre_archivo'] ?? '?') . ': ' . ($d['ia_resumen'] ?? '(sin resumen)'),
+            $documentosRecientes
+        ));
+    }
+    if ($avisosRecientes) {
+        $lineas[] = "Avisos de boletín del expediente y su resumen de IA (más reciente primero):\n" . implode("\n", array_map(
+            fn($a) => '- (' . ($a['creado_en'] ?? '?') . ') ' . ($a['ia_resumen'] ?? $a['resumen'] ?? ''),
+            $avisosRecientes
+        ));
+    }
+    if ($documentosRecientes || $avisosRecientes) {
+        $lineas[] = 'REGLA DURA sobre documentos/avisos de arriba: si alguno menciona literalmente un incidente, '
+            . 'recurso, suspensión, excusa, acumulación u otra actuación del Tribunal que pausa o altera la '
+            . 'secuencia normal del trámite, eso explica por qué la "siguiente etapa esperada" todavía no se '
+            . 'registra -- en ese caso la próxima acción es dar seguimiento a ESE incidente/recurso específico '
+            . '(o verificar si ya se resolvió), nunca insistir en que urge presentar el trámite de la etapa '
+            . 'normal como si el abogado lo estuviera descuidando.';
+    }
+
+    // Pendientes manuales (pestaña "Pendientes") y pagos de convenio (pestaña
+    // "Cobros") -- agregados 13 nov 2026, pedido explícito del usuario de que
+    // la IA revise "absolutamente toda la info... incluyendo notas, agenda,
+    // pendientes, documentos, boletines". Hasta ahora el informe ejecutivo
+    // podía redactar la próxima acción sin saber que ya había un pendiente
+    // manual abierto para exactamente ese trámite, o que un pago de convenio
+    // sigue sin cobrarse.
+    if ($pendientesAbiertos) {
+        $lineas[] = "Pendientes manuales capturados en la pestaña \"Pendientes\" (todavía sin marcar cumplido):\n" . implode("\n", array_map(
+            fn($p) => '- ' . trim((string)($p['descripcion'] ?? '(sin descripción)'))
+                . (!empty($p['fecha_inicio']) ? ' (capturado desde ' . $p['fecha_inicio']
+                    . ($p['tipo'] === 'fecha_fija' ? ', fecha fija' : ', ' . ($p['dias'] ?? '?') . ' días ' . ($p['tipo'] ?? '')) . ')' : ''),
+            $pendientesAbiertos
+        ));
+    }
+    if ($pagosConvenio) {
+        $lineas[] = "Pagos de convenio registrados en \"Cobros\" (más reciente primero):\n" . implode("\n", array_map(
+            fn($p) => '- $' . number_format((float)($p['monto'] ?? 0), 2) . ' programado para ' . ($p['fecha'] ?? '(sin fecha)')
+                . (!empty($p['cobrado']) ? ', YA COBRADO' . (!empty($p['fecha_cobro']) ? ' el ' . $p['fecha_cobro'] : '') : ', pendiente de cobro'),
+            $pagosConvenio
+        ));
+    }
+
     if (!$lineas) return null;
 
     $payload = [
-        'model' => IA_MODELO_RESUMEN_EXPEDIENTE,
+        // Sube a Sonnet solo en esta función (13 nov 2026) -- desde que
+        // recibe documentos/avisos como contexto además de etapas/notas,
+        // tiene que sintetizar y priorizar correctamente varias fuentes
+        // que a veces se contradicen (mismo criterio ya aplicado a
+        // ia_auditar_expediente() el mismo día: cuando el razonamiento es
+        // más que extracción simple, el costo extra de Sonnet es preferible
+        // al riesgo de un informe mal redactado). Las otras 2 llamadas que
+        // usan IA_MODELO_RESUMEN_EXPEDIENTE (Haiku) no se tocan -- siguen
+        // siendo tareas más simples.
+        'model' => IA_MODELO_ANALIZAR_ACUERDO,
         'max_tokens' => 400,
         'thinking' => ['type' => 'disabled'],
         'system' => 'Eres el asistente jurídico interno de un despacho de derecho laboral en México. Te doy '
@@ -3271,7 +3455,7 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
 // de un pendiente. $labelAtraso es el texto que ya arma estancadoInfo()
 // (ej. 'Se esperaba "Contestación de demanda recibida" y no se ha
 // registrado (18 día(s) de atraso)').
-function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso, array $documentosRecientes = [], array $avisosRecientes = []): ?string
+function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso, array $documentosRecientes = [], array $avisosRecientes = [], array $notasBitacora = [], array $pendientesAbiertos = [], array $pagosConvenio = []): ?string
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3316,6 +3500,33 @@ function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string
         $lineas[] = "Lo que ya leyó la IA en los últimos avisos de boletín de este expediente:\n" . implode("\n", array_map(
             fn($a) => '- ' . ($a['ia_resumen'] ?? ''),
             $avisosRecientes
+        ));
+    }
+    // Notas de seguimiento, pendientes manuales y pagos de convenio --
+    // agregados 13 nov 2026 (pedido explícito del usuario: "revisa que la ia
+    // revise absolutamente toda la info... incluyendo notas, agenda,
+    // pendientes, documentos, boletines"). Antes esta función podía redactar
+    // una pregunta sobre algo que el abogado ya había contestado a mano en su
+    // bitácora de notas, o ignorar que ya hay un pendiente manual abierto
+    // sobre el mismo trámite atorado.
+    if ($notasBitacora) {
+        $lineas[] = "Bitácora de notas de seguimiento del abogado (de más reciente a más antigua -- si ya "
+            . "confirma el dato que falta, no preguntes por él, mejor confírmalo o pregunta algo más puntual):\n" . implode("\n", array_map(
+                fn($n) => (!empty($n['creado_en']) ? substr((string)$n['creado_en'], 0, 10) : '(sin fecha)') . ': ' . trim((string)($n['texto'] ?? '')),
+                $notasBitacora
+            ));
+    }
+    if ($pendientesAbiertos) {
+        $lineas[] = "Pendientes manuales todavía sin marcar cumplido:\n" . implode("\n", array_map(
+            fn($p) => '- ' . trim((string)($p['descripcion'] ?? '(sin descripción)')),
+            $pendientesAbiertos
+        ));
+    }
+    if ($pagosConvenio) {
+        $lineas[] = "Pagos de convenio registrados:\n" . implode("\n", array_map(
+            fn($p) => '- $' . number_format((float)($p['monto'] ?? 0), 2) . ' programado para ' . ($p['fecha'] ?? '(sin fecha)')
+                . (!empty($p['cobrado']) ? ', YA COBRADO' : ', pendiente de cobro'),
+            $pagosConvenio
         ));
     }
 
@@ -3478,7 +3689,7 @@ function ia_interpretar_respuesta_supervisor(string $pregunta, string $respuesta
 // dichas en alguna parte del expediente. Devuelve un array de
 // ['etapa_key'=>, 'fecha'=>'YYYY-MM-DD', 'motivo'=>] (vacío si no encontró
 // nada), o null si falló la llamada a la IA.
-function ia_auditar_expediente(array $expediente, array $etapas, array $documentosRecientes = [], array $avisosRecientes = [], array $preguntasRecientes = []): ?array
+function ia_auditar_expediente(array $expediente, array $etapas, array $documentosRecientes = [], array $avisosRecientes = [], array $preguntasRecientes = [], array $notasBitacora = [], array $pendientesAbiertos = [], array $pagosConvenio = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3532,6 +3743,41 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
         $lineas[] = "Preguntas del supervisor y lo que contestó el abogado:\n" . implode("\n\n", array_map(
             fn($p) => 'P: ' . $p['pregunta'] . "\nR: " . ($p['respuesta'] ?? '(sin contestar)'),
             $preguntasRecientes
+        ));
+    }
+    // Bitácora de notas de seguimiento del abogado (tabla `expediente_notas`
+    // -- agregada 13 nov 2026, mismo arreglo que ya se hizo para el Informe
+    // Ejecutivo: antes esta auditoría tampoco veía estas notas, así que
+    // podía perderse una fecha literal que el abogado ya había escrito a
+    // mano ahí). Aquí el riesgo es mayor que en el resumen ejecutivo porque
+    // esta función SÍ escribe sola en expediente_etapas -- por eso el texto
+    // de abajo reitera la misma regla dura de nunca calcular/inferir.
+    if ($notasBitacora) {
+        $lineas[] = "Bitácora de notas de seguimiento del abogado (de más reciente a más antigua -- "
+            . "mismo principio: una fecha solo cuenta si confirma LITERALMENTE que esa etapa específica ya "
+            . "ocurrió en esa fecha, nunca una orden ni un plazo):\n" . implode("\n", array_map(
+                fn($n) => (!empty($n['creado_en']) ? substr((string)$n['creado_en'], 0, 10) : '(sin fecha)') . ': ' . trim((string)($n['texto'] ?? '')),
+                $notasBitacora
+            ));
+    }
+    // Pendientes manuales y pagos de convenio -- agregados 13 nov 2026,
+    // mismo pedido del usuario que las notas de arriba ("revisar absolutamente
+    // toda la info... pendientes... boletines"). Mismo candado: solo cuenta
+    // como evidencia si el texto confirma LITERALMENTE que la etapa ya
+    // ocurrió, nunca un pendiente sin cumplir ni un pago sin cobrar.
+    if ($pendientesAbiertos) {
+        $lineas[] = "Pendientes manuales capturados (todavía sin marcar cumplido -- por sí solos NO confirman que "
+            . "una etapa ya ocurrió, pero su descripción puede mencionar de pasada una fecha real):\n" . implode("\n", array_map(
+                fn($p) => '- ' . trim((string)($p['descripcion'] ?? '(sin descripción)'))
+                    . (!empty($p['fecha_inicio']) ? ' (capturado desde ' . $p['fecha_inicio'] . ')' : ''),
+                $pendientesAbiertos
+            ));
+    }
+    if ($pagosConvenio) {
+        $lineas[] = "Pagos de convenio registrados en \"Cobros\":\n" . implode("\n", array_map(
+            fn($p) => '- $' . number_format((float)($p['monto'] ?? 0), 2) . ' programado para ' . ($p['fecha'] ?? '(sin fecha)')
+                . (!empty($p['cobrado']) ? ', YA COBRADO' . (!empty($p['fecha_cobro']) ? ' el ' . $p['fecha_cobro'] : '') : ', pendiente de cobro'),
+            $pagosConvenio
         ));
     }
 

@@ -1,5 +1,335 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## "Mi disponibilidad para asesorías" rediseñada: cuadrícula de casillas en vez de capturar rangos a mano (14 nov 2026, `app.js?v=148`)
+Pedido explícito del usuario, viendo su propio horario capturado (bloques
+de 11:00-17:00 y 17:00-18:00 por día, sin ningún hueco entre asesorías):
+"hay que hacer más cómodo el selector de los horarios disponibles para
+activar por horas y así darme espacio entre asesorías... un selector de
+lunes a domingo y luego un selector por horas de 9 am a 7 pm".
+- **Causa de fondo del problema que describía**: `citas_calcular_horarios_
+  disponibles()` (`api/citas_helpers.php`) parte cada bloque guardado en
+  citas de 1h pegadas una tras otra, empezando exacto en `hora_inicio` --
+  un bloque "11:00-17:00" da 11,12,13,14,15,16 sin ningún espacio. La
+  única forma de dejarse un hueco con la UI vieja ("Día" + "Desde"/"Hasta"
+  + "Agregar horario", una fila a la vez) era capturar bloques sueltos a
+  mano (11:00-12:00, luego 13:00-14:00...) -- tedioso e indirecto.
+- **UI nueva**: cuadrícula de casillas, columnas = días (Lun-Dom), filas =
+  horas de 9am a 7pm (`DISPONIBILIDAD_HORAS`, bloques fijos de 1h). Marcar
+  una casilla = esa hora disponible; dejar una sin marcar entre 2 marcadas
+  ya deja el espacio libre solo, sin tener que calcular ni capturar ningún
+  rango. Un solo botón "Guardar horarios" al final, no una llamada por
+  cada hora.
+- **Nuevo endpoint `api/disponibilidad_guardar.php`**: reemplazo completo
+  del horario semanal del usuario en sesión en una sola llamada (DELETE +
+  re-INSERT, mismo patrón que `expedientes_update_pagos.php`/
+  `expedientes_update_pendientes.php`) -- cada casilla marcada se guarda
+  como su propio bloque `hora_inicio`/`hora_fin` de exactamente 1h. Los
+  endpoints viejos `api/disponibilidad_agregar.php`/`disponibilidad_
+  eliminar.php` ya NO los llama el frontend (quedan huérfanos en el
+  servidor, mismo criterio que el panel viejo de captcha de Edomex --
+  inofensivos sin uso, el usuario los puede borrar a mano si quiere).
+- `disponibilidadHoraMarcada()` en `assets/app.js` calcula qué casillas
+  mostrar marcadas al cargar la página -- también cubre bloques VIEJOS de
+  varias horas seguidas que ya existieran antes de este rediseño (ej. un
+  "11:00-17:00" guardado desde la UI vieja marca solo las 6 casillas que
+  cubre, 11 a 16), así que el horario que el abogado ya tenía capturado se
+  ve bien de entrada, sin perder nada. En cuanto le dé "Guardar horarios"
+  una vez, ese bloque viejo se reemplaza por bloques limpios de 1h cada
+  uno (igual de funcional para `citas_calcular_horarios_disponibles()`,
+  que de cualquier forma ya cortaba todo en horas sueltas).
+- Sin cambios de base de datos (`disponibilidad_asesorias` ya existía,
+  incluso ya soportaba bloques de cualquier tamaño). No se tocó
+  `mergeTags()`/tags de demanda -- no aplica `verificar_tags.js`.
+  **Sin probar en vivo todavía** -- falta que el usuario suba
+  `api/disponibilidad_guardar.php`, `assets/app.js`, `index.html` y
+  `sw.js`, y confirme que su horario actual se vea bien marcado en la
+  cuadrícula antes de guardar nada nuevo.
+
+## Panel nuevo: Credenciales de portales por abogado (13 nov 2026, `app.js?v=147`)
+Pregunta explícita del usuario revisando un caso real (**Escalona Jimenez
+Yuliana Yadira vs New Dynacast de México y Automotive Quality Shield, Exp.
+388/2026**, Tribunal Federal bien capturado -- "CUARTO TRIBUNAL LABORAL
+FEDERAL DE ASUNTOS INDIVIDUALES..." en Naucalpan, Edomex): "por qué hay
+asuntos en los que ya se guardó bien el tribunal y expediente... que aún
+no baja el robot". Causa real encontrada: no existía ninguna forma de que
+el Administrador viera, sin preguntarle a cada abogado uno por uno, quién
+SÍ tiene guardada su cuenta de cada portal (PJF/Buzón CDMX/correo Edomex)
+en "Mi cuenta" -- `pjf_credenciales_get.php`/`set.php` etc. solo dejaban
+que cada quien viera/editara la SUYA, nada admin-visible agregado. Si el
+abogado asignado a un expediente nunca guardó su usuario/contraseña de
+ese portal, el robot correspondiente no tiene con qué entrar a revisar
+NINGUNO de sus expedientes -- aunque el Tribunal/número estén perfectos.
+- **Nuevo endpoint `api/credenciales_portales_listar.php`** (solo
+  Administrador): junta de `usuarios` (activos, rol abogado/administrador)
+  si cada uno tiene o no `pjf_usuario`/`edomex_correo_usuario`/
+  `cdmx_buzon_usuario` capturado, más la fecha de la última vez que lo
+  actualizó -- nunca la contraseña, solo el booleano + fecha.
+- Panel nuevo en **"Equipo"**, entre "Actividad de la IA" y el panel de
+  Validación de Tribunal: tabla con una fila por abogado y 3 columnas
+  (Federal/Buzón CDMX/Correo Edomex), insignia "✓ guardada" (con la fecha)
+  o "✗ falta".
+- Sin cambios de base de datos (solo lee columnas que ya existían). No se
+  tocó `mergeTags()`/tags de demanda -- no aplica `verificar_tags.js`.
+  **Sin probar en vivo todavía** -- falta que el usuario suba
+  `api/credenciales_portales_listar.php`, `assets/app.js` e `index.html`,
+  y confirme si el caso de Escalona Jimenez de verdad era por esto (quién
+  es su abogado asignado y si le falta alguna de las 3 credenciales).
+
+## Cómo capturar acuerdos ANTERIORES que los robots todavía no tienen + candado de duplicados ampliado (13 nov 2026)
+Pregunta explícita del usuario: "como le hacemos para que el robot revise
+si hay acuerdos anteriores publicados en los diferentes sistemas de los
+tribunales que aun no tengamos en los expedientes". Se revisó cómo cada
+robot decide qué es "nuevo" -- 3 comportamientos distintos:
+- **`robots/cdmx_buzon/cdmx_buzon.js`**: NO tiene este hueco. Cada corrida
+  vuelve a abrir "Ver Acuerdos" y relee la lista COMPLETA de cada
+  expediente que hace match (Tribunal+número), saltando solo los
+  `acuerdoId` que ya guardó en `vistos{}` (`procesados_cdmx_buzon.json`).
+  Cualquier acuerdo viejo todavía no capturado se va a reportar solo en la
+  siguiente corrida diaria (6am), sin tocar nada -- mientras el Tribunal/
+  número del expediente estén bien capturados (panel de validación de
+  hoy mismo) y la cuenta del abogado en el Buzón sí vea ese expediente en
+  su "LISTA DE BUZONES" (eso depende del Poder Judicial, no del robot).
+- **`robots/federal/federal.js`** y **`robots/edomex_correo/edomex_correo.js`**:
+  SÍ tienen el hueco. Ambos guardan un contador máximo por expediente/cuenta
+  (`estado[key] = maxNo` en Federal -- número de acuerdo; `ultimoVisto` en
+  Edomex -- id de conversación de correo) y en cada corrida SOLO revisan lo
+  que quedó por encima de ese máximo. La PRIMERA vez que ven un expediente/
+  cuenta (sin entrada todavía en `procesados_federal.json`/
+  `procesados_edomex_correo.json`) sí barren TODO el historial disponible
+  en ese momento -- pero una vez que ya quedó un máximo guardado, un
+  acuerdo viejo que se haya escapado esa primera vez (por un error, o por
+  haberse agregado el expediente al monitoreo después de que ya existía
+  ese acuerdo) nunca se vuelve a revisar solo.
+- **Candado de duplicados ampliado primero, antes de tocar nada de
+  `procesados_*.json`** (`api/avisos_ingest.php`): el candado de "no
+  insertar el mismo aviso 2 veces" solo comparaba contra avisos con
+  `estado = 'nuevo'` (sin revisar todavía) -- si se forzaba un re-barrido
+  histórico y un robot volvía a reportar un acuerdo que YA se había
+  revisado/aplicado/descartado, se creaba un aviso DUPLICADO en vez de
+  detectarse como ya existente. Se quitó esa condición -- ahora cualquier
+  aviso ya existente (mismo expediente+fuente+resumen, sin importar su
+  estado) siempre cuenta como duplicado. Esto hace SEGURO forzar un
+  re-barrido histórico sin ensuciar el sistema de avisos repetidos.
+- **Plan para forzar el re-barrido histórico de Federal/Edomex** (acción
+  del usuario, en su máquina de Windows, no algo que se corrija con
+  código): primero correr `api/reporte_monitoreo_faltante.php` (ya
+  existe, abrir directo en el navegador logueado) para confirmar qué
+  expedientes activos ningún robot está alcanzando todavía (normalmente
+  Tribunal mal/sin capturado -- esa es la causa más común de huecos, hay
+  que arreglarla primero). Después, para cada robot que se quiera forzar
+  a re-barrer: borrar (o renombrar como respaldo) su archivo
+  `procesados_federal.json`/`procesados_edomex_correo.json` en la carpeta
+  del robot y correrlo una vez a mano -- con el candado ya ampliado, solo
+  va a crear avisos para lo que de verdad falte, no para lo ya revisado.
+  **Pendiente**: que el usuario suba `api/avisos_ingest.php` y confirme
+  si quiere hacer ese re-barrido ahora o esperar a que primero se corrija
+  la captura de Tribunal de los expedientes que salgan en el reporte de
+  faltantes.
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica cache-bust
+  ni `verificar_tags.js`. **Sin probar en vivo todavía**.
+
+## Auditoría de cobertura completa: las 3 funciones de IA que sintetizan "todo el expediente" ya leen pendientes y pagos de convenio, y la pregunta del supervisor ya lee notas (13 nov 2026)
+Pedido explícito del usuario, generalizando el mismo arreglo de hoy (ver las
+2 secciones de abajo, "Informe ejecutivo..." y "Auditoría integral..."):
+"revisa que la ia revise absolutamente toda la info que este en el sistema
+incluyendo notas, agenda, pendientes, documentos, boletines etc". En vez de
+esperar a que apareciera un caso real afectado, se audutaron directamente las
+3 funciones de `api/ia_helpers.php` que arman el contexto de "todo el
+expediente" (`ia_generar_resumen_expediente()`, `ia_auditar_expediente()`,
+`ia_generar_pregunta_supervisor()`) contra las fuentes de datos reales del
+sistema (`expediente_notas`, `expediente_pendientes`, `expediente_pagos`,
+`expediente_documentos`, `avisos_boletin`).
+- **Hueco real encontrado**: ninguna de las 3 leía `expediente_pendientes`
+  (pestaña "Pendientes", to-dos manuales) ni `expediente_pagos` (pestaña
+  "Cobros", parcialidades de convenio) -- ambas quedaban fuera aunque son
+  justo lo que el usuario nombró explícitamente ("agenda, pendientes").
+  Además, `ia_generar_pregunta_supervisor()` (la que redacta la pregunta del
+  supervisor para un atraso) todavía NO leía `expediente_notas` -- mismo
+  hueco que ya se había cerrado hoy en las otras 2 funciones, aquí seguía
+  abierto: podía redactar una pregunta sobre un dato que el abogado ya había
+  contestado a mano en su bitácora de notas.
+- **Corregido, mismo patrón ya usado todo el día**: las 3 funciones aceptan
+  ahora 2 parámetros nuevos opcionales, `$pendientesAbiertos`/`$pagosConvenio`
+  (`ia_generar_pregunta_supervisor()` además recibe `$notasBitacora`, que ya
+  tenían las otras 2). Los 3 crons/endpoints que las llaman
+  (`expediente_resumen_ejecutivo.php`, `cron_auditoria_expediente_ia.php`,
+  `cron_generar_preguntas_supervisor.php`) ahora hacen 2 SELECTs más cada
+  uno: `expediente_pendientes` (solo `cumplido = 0`, los que siguen
+  abiertos) y `expediente_pagos` (últimos 10, con su estado de cobro).
+  Mismo candado de siempre explícito en el prompt de `ia_auditar_expediente()`
+  (la única que escribe sola en `expediente_etapas`): un pendiente sin
+  cumplir o un pago sin cobrar NO confirma por sí solo que una etapa ya
+  ocurrió, solo es contexto adicional que puede mencionar de pasada una
+  fecha real en su descripción.
+- Sin cambios de base de datos (`expediente_pendientes`/`expediente_pagos`
+  ya existían). No se tocó `app.js` -- no aplica cache-bust ni
+  `verificar_tags.js`. **Sin probar en vivo todavía** -- falta que el
+  usuario suba `api/ia_helpers.php`, `api/expediente_resumen_ejecutivo.php`,
+  `api/cron_auditoria_expediente_ia.php` y
+  `api/cron_generar_preguntas_supervisor.php`, y se vea un caso real donde
+  un pendiente/pago/nota haga la diferencia en alguno de los 3 textos.
+
+## Informe ejecutivo ahora también lee documentos y avisos de boletín, no solo etapas/notas (13 nov 2026)
+Pedido explícito del usuario ("la ia tiene que revisar todas las fuentes de
+información para lograr exactitud y autonomía") tras ver el expediente de
+**Mir Castro Ma Claudia vs Servicio Postal Mexicano, Exp. 242/2026**: el
+Informe Ejecutivo decía "URGENTE: Presentar objeciones y réplica... que ya
+debería estar presentada desde hace más de 110 días" -- pero el documento
+más reciente del expediente (**Acuerdo No. 4**, ya con su resumen de IA
+guardado) decía que el Tribunal había levantado DE OFICIO un incidente de
+competencia y declarado los autos "en estado de resolución de dicho
+incidente" -- el trámite está PAUSADO por eso, no atrasado por descuido.
+- **Causa real**: `ia_generar_resumen_expediente()` (el Informe Ejecutivo)
+  nunca recibía documentos ni avisos de boletín como contexto -- a
+  diferencia de `ia_auditar_expediente()` (auditoría integral), que sí los
+  lee desde que se construyó. Por eso podía insistir en una "próxima
+  acción" urgente sin saber que un documento real ya explicaba por qué esa
+  etapa sigue sin registrarse.
+- **Corregido**: `ia_generar_resumen_expediente()` acepta ahora 2
+  parámetros más, `$documentosRecientes`/`$avisosRecientes` (mismas
+  consultas que ya usa `cron_auditoria_expediente_ia.php`, incluyendo
+  excluir avisos `estado='descartado'` -- mismo candado del bug de Isabel
+  Torres Arizmendi), con una regla dura nueva: si un documento/aviso
+  menciona literalmente un incidente/recurso/suspensión/excusa/
+  acumulación que pausa o altera la secuencia normal, la próxima acción
+  debe ser dar seguimiento a ESE incidente, nunca insistir en el trámite
+  de la etapa normal como si el abogado lo estuviera descuidando.
+  `api/expediente_resumen_ejecutivo.php` junta y manda ambas listas.
+- **Modelo subido a Sonnet SOLO en esta función** (`IA_MODELO_ANALIZAR_
+  ACUERDO` en vez de la constante `IA_MODELO_RESUMEN_EXPEDIENTE`/Haiku que
+  siguen usando las otras 2 llamadas que comparten esa constante) -- mismo
+  criterio ya aplicado el mismo día a la auditoría integral: ahora
+  sintetiza varias fuentes que pueden contradecirse, más que extracción
+  simple.
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica cache-bust
+  ni `verificar_tags.js`.
+- **Confirmado funcionando en vivo (13 nov 2026)**: el informe de Mir
+  Castro Ma Claudia ya no dice "urgente, presenta objeciones y réplica" --
+  ahora explica que la demandada promovió un incidente de competencia, el
+  Tribunal suspendió la vista para réplica hasta resolverlo, y que por eso
+  esa etapa sigue sin registrarse ("consistente con la pausa procesal, no
+  un descuido"). Próxima acción cambió a "dar seguimiento a la resolución
+  del incidente" con urgencia MEDIA (antes URGENTE/falso positivo).
+
+## Auditoría integral también lee la bitácora de notas del abogado (13 nov 2026)
+Pedido explícito del usuario ("adelante") tras extender este mismo arreglo
+al Informe Ejecutivo -- `ia_auditar_expediente()` (la auditoría integral
+diaria, `cron_auditoria_expediente_ia.php`) tenía el mismo hueco:
+tampoco leía `expediente_notas` (la bitácora real que el abogado llena
+con "Agregar nota de seguimiento"), solo veía etapas/documentos/avisos/
+preguntas del supervisor -- podía perderse una fecha literal que el
+abogado ya hubiera escrito a mano ahí.
+- **Más cuidado que en el Informe Ejecutivo a propósito**: esta función SÍ
+  escribe sola en `expediente_etapas` (el Informe Ejecutivo solo redacta
+  texto informativo) -- el texto nuevo del prompt reitera la misma regla
+  dura ya existente (nunca calcular/inferir, solo fecha LITERAL de que
+  ESA etapa específica ya ocurrió).
+- `ia_auditar_expediente()` ahora acepta un 6º parámetro opcional
+  `$notasBitacora`; `cron_auditoria_expediente_ia.php` junta las últimas 8
+  notas (`expediente_notas`, más reciente primero) y las manda, mismo
+  patrón que `expediente_resumen_ejecutivo.php`.
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica cache-bust
+  ni `verificar_tags.js`. **Sin probar en vivo todavía** -- falta que el
+  usuario suba `api/ia_helpers.php` y `api/cron_auditoria_expediente_ia.php`
+  y se vea un caso real donde esto haga la diferencia.
+
+## Panel nuevo: Validación de Tribunal / número de expediente (13 nov 2026, `app.js?v=146`)
+Pedido explícito del usuario tras el caso de Isabel Torres Arizmendi
+(Exp. 2235/2026 compartido por coincidencia con otro tribunal, ver
+sección de abajo): "sería bueno que revisara que esté correcto el número
+de tribunal, la entidad y el número de expediente" -- el objetivo
+explícito es atrapar errores de captura ANTES de que un robot
+simplemente no encuentre nada (o, peor, encuentre el caso equivocado por
+coincidencia de número, como ya pasó).
+- **3 chequeos, todos client-side, sin endpoint nuevo** (`CASES_DATA` ya
+  trae `tribunal`/`exp` de todos los expedientes visibles, y los
+  catálogos de Tribunal -- `TRIBUNALES_LOCALES_MX`/`TRIBUNALES_FEDERALES_
+  MX`/`TRIBUNALES_CUSTOM` + `findTribunalEstado()` -- ya estaban cargados
+  para el selector de "Editar datos"):
+  1. **Formato del número de expediente**: no sigue el patrón `NNN/AAAA`.
+  2. **Tribunal capturado no coincide con el catálogo del selector**
+     (pedido explícito: "los tribunales deben de coincidir con los que
+     estan en el selector") -- usa `findTribunalEstado()`, que ya existía
+     para detectar "dato legacy sin estandarizar" en el campo de Editar
+     datos; si devuelve vacío, el texto no está en ningún catálogo
+     (local/federal/agregado a mano), probablemente mal escrito a mano en
+     vez de elegido de la lista.
+  3. **Mismo Tribunal + mismo número de expediente en 2+ expedientes
+     DISTINTOS del sistema** -- el número de expediente solo es único
+     DENTRO de cada tribunal, no en todo el país, así que esto es casi
+     seguro un error de captura en uno de los 2 (exactamente el patrón
+     que causó el bug de Isabel Torres Arizmendi).
+- Nuevas funciones `validarTribunalesExpedientes()` (la lógica) y
+  `tribunalValidacionHTML()` (el panel) en `assets/app.js`, solo sobre
+  expedientes ACTIVOS (`!estaConcluido(k)`) con Tribunal capturado. Panel
+  nuevo en "Equipo", entre "Actividad de la IA" y "Respaldo de toda la
+  información" -- misma tabla clicable (`[data-id]`) que abre el
+  expediente directo, nunca corrige nada solo.
+- Sin cambios de base de datos, sin tocar `mergeTags()`/tags de demanda --
+  no aplica `verificar_tags.js`.
+- **Confirmado funcionando en vivo (13 nov 2026)**: primera revisión real
+  encontró 2 casos genuinos, ambos confirmados reales por el usuario (no
+  falsos positivos): **Eduardo Ramírez Gaspar vs Comercializadora
+  Pepsic...** (número `MEXOAE/2026/006400`, no sigue `NNN/AAAA` -- a
+  pesar de que `MEXOAE` es un prefijo real de Edomex, en este caso SÍ es
+  un error de captura real, no el formato legítimo) y **Anel Yadira
+  Hernández Zaragoza vs Banco Nacional de México** (Tribunal capturado
+  como "TRIBUNAL LABORAL FEDERAL DE ASUNTOS INDIVIDUALES CON SEDE EN LA
+  CIUDAD DE MÉXICO", sin el número ordinal que llevan TODOS los
+  tribunales federales del catálogo -- hay que volver a capturarlo desde
+  el selector con el número correcto). **Pendiente**: que el usuario
+  corrija ambos expedientes (número de Eduardo Ramírez, Tribunal con
+  número de Anel Yadira).
+
+## Informe ejecutivo ciego a la bitácora de notas del abogado -- usaba un campo congelado importado del sistema viejo (13 nov 2026)
+Reportado por el usuario viendo el expediente de **Alan Jonathan Campuzano
+Brito vs Protectora Buro de Seguridad Privada y Logística, Exp. 780/2026**:
+el Informe Ejecutivo (generado 12 nov, 08:27pm) seguía diciendo que faltaba
+"presentar la promoción aclaratoria del domicilio... para que el Tribunal
+proceda al emplazamiento" -- pero la "Bitácora de notas del despacho" de
+ese mismo expediente ya tenía 2 notas MÁS RECIENTES confirmando que esa
+promoción ya se presentó dos veces (04/06/2026, y de nuevo 28/10/2026
+pidiendo notificar vía actuario), la última apenas 2 minutos ANTES de que
+se generara el informe.
+- **Causa real**: `ia_generar_resumen_expediente()` (`api/ia_helpers.php`)
+  nunca leía la tabla `expediente_notas` (la bitácora real que el abogado
+  llena con "Agregar nota de seguimiento") -- solo leía 2 campos sueltos de
+  la tabla `expedientes`: `notas_internas` y `ultima_nota`. Este 2º campo
+  se muestra en la UI como "Última actuación / nota **(importada de la
+  base original)**" -- es un dato CONGELADO que se cargó una sola vez al
+  migrar del sistema viejo del despacho y nadie lo vuelve a tocar después
+  (`api/expedientes_add_nota.php` inserta en `expediente_notas`, nunca en
+  `expedientes.ultima_nota`). La IA tomó ese texto viejo como si fuera el
+  estado actual, sin enterarse de que la bitácora real ya lo había
+  superado por completo.
+- **Corregido**: `api/expediente_resumen_ejecutivo.php` ahora también
+  manda las últimas 8 notas de `expediente_notas` (más reciente primero) a
+  `ia_generar_resumen_expediente()` (nuevo parámetro `$notasBitacora`),
+  etiquetadas en el prompt como "la fuente MÁS confiable y actual" -- por
+  encima del campo congelado si se contradicen -- con regla dura explícita:
+  si una nota reciente dice que algo ya se presentó/resolvió, nunca
+  redactar que todavía falta.
+- **Bug secundario encontrado de paso**: agregar una nota de seguimiento
+  tampoco bumpeaba `expedientes.actualizado_en` (a diferencia de Etapas/
+  Editar datos/Cobros/Pendientes, que sí lo hacen desde el arreglo del 10
+  nov) -- así que el informe ejecutivo no se enteraba sola de una nota
+  nueva, dependía de que alguien le diera "Actualizar" a mano o tocara otra
+  cosa primero. Corregido en `api/expedientes_add_nota.php` (mismo UPDATE
+  que ya usan los demás).
+- **Alcance NO ampliado todavía**: `ia_auditar_expediente()` (auditoría
+  integral diaria) tampoco lee `expediente_notas` -- mismo hueco en
+  potencia (podría estar perdiéndose fechas literales que el abogado ya
+  escribió a mano en sus notas), pero no se tocó esta vez porque el
+  usuario no lo pidió ni se confirmó un caso real afectado ahí. Si aparece
+  un caso real de auditoría integral que debería haber visto algo de la
+  bitácora de notas y no lo vio, aplicar el mismo arreglo ahí.
+- Sin cambios de base de datos (la tabla `expediente_notas` ya existía).
+  No se tocó `app.js` -- no aplica cache-bust ni `verificar_tags.js`.
+  **Pendiente**: pedirle al usuario que entre al expediente de Alan
+  Campuzano y le dé "Actualizar" en "Informe del juicio" para confirmar
+  que el texto nuevo ya refleja las 2 promociones presentadas en vez de
+  seguir pidiendo la primera.
+
 ## Bug real: auditoría integral/preguntas del supervisor usaban avisos de boletín "descartados" como si fueran del expediente (13 nov 2026)
 Encontrado probando en vivo el panel "Posibles irregularidades" -- la
 irregularidad de **Isabel Torres Arizmendi vs Impulsora Ideal, Exp.
@@ -2030,6 +2360,40 @@ exacto que ya existía para Edomex:
   hueco que ya había pasado con el documento de $49). Ahora también
   revisa `compras_curso.estado='confirmada'`. Probado con 3 casos. Si se
   agrega otro producto pagado, agregarlo también a este candado.
+
+## Precisión del bot, parte 1: criterios del despacho, Apartado A/B, vacaciones y ventas (14 nov 2026, conversación "chats")
+Pedido del usuario: "el bot tiene que dar la asesoría completa, pero más
+precisa para que no se equivoque". Plan acordado en 6 piezas (1 criterios
+del despacho, 2 LFT consultable artículo por artículo, 3 jurisprudencia
+SCJN consultable, 4 calculadora más precisa, 5 revisión automática diaria
+de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
+- **Apartado A/B** (`api/ia_helpers.php`): se quitó "personal del propio
+  IMSS/ISSSTE" de la lista de rechazo (bug real: trabajadora del IMSS
+  rechazada como Apartado B). Criterio dado por el Lic. Rubén, en 3 reglas
+  numeradas en el prompt: (1) si el decreto de creación dice Apartado A,
+  es A; (2) si dice B pero hay contrato colectivo vigente que dice A, es A
+  (jurisprudencia más reciente); (3) solo es B si el decreto dice B y no
+  hay contrato colectivo vigente que diga A. El bot nunca
+  rechaza a una entidad pública por intuición; si hay duda, escala.
+- **Bloque "CRITERIOS DEL DESPACHO PARA ORIENTAR CON PRECISIÓN"** en el
+  prompt: citar artículos solo si es seguro; suspensión disciplinaria
+  (Art. 423-X, máx. 8 días, derecho a ser oído; no es Art. 47); salarios
+  caídos siempre con tope de 12 meses; no afirmar montos exentos de ISR;
+  "prescritas" solo si la herramienta lo dice; neto vs bruto; no afirmar
+  en absoluto lo que depende de pruebas; no cerrar cada mensaje con la
+  misma pregunta de agendar; consistencia si ya se rechazó el caso.
+- **Calculadora** (`api/liquidacion_calculadora.php`): nuevo campo
+  `vacaciones_anteriores_dias_excedentes` separado de
+  `..._dias_prescritos` (antes los días reportados por encima de lo que
+  da la ley se llamaban "prescritos"). Nota sin cita de jurisprudencia no
+  verificada: ahora fundamenta en Arts. 76, 81 y 516.
+- **Seguimiento de ventas** (`api/cron_seguimiento_calculadora.php`): sin
+  montos ni "sin compromiso"; no le escribe a quien el bot ya le dijo que
+  no se le puede atender.
+- **Pendiente (partes 2-6)**: herramienta `consultar_articulo_lft` (falta
+  el texto oficial de la LFT: el PDF de diputados.gob.mx supera el límite
+  de 100 páginas para subirlo al chat), herramienta de jurisprudencia
+  para el bot, revisión diaria de conversaciones y casos de prueba.
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
