@@ -215,7 +215,19 @@ function calcular_estimado_liquidacion(
     $vacacionesDiasProp = $vacEnt * ($diasCurso / 365);
     $maxVacAnterioresNoPrescritas = max_vacaciones_anteriores_no_prescritas_lft($ing, $baj);
     $vacAntDiasReconocidos = min(max(0, $diasVacacionesAnteriores), $maxVacAnterioresNoPrescritas);
-    $vacAntDiasPrescritos = max(0, $diasVacacionesAnteriores - $vacAntDiasReconocidos);
+    // Hay que distinguir 2 cosas que antes se mezclaban en "prescritos"
+    // (bug real, nov-2026: el bot le dijo a 2 clientas que "2 días ya están
+    // prescritos" cuando en realidad habían reportado 14 días y por su
+    // primer año solo les tocaban 12): días que la persona reporta POR
+    // ENCIMA de lo que la ley le da en sus años completos (excedentes, no
+    // es prescripción) vs. días que sí le tocaban pero ya prescribieron.
+    $vacTotalCorresponde = 0.0;
+    for ($i = 1; $i <= $cy; $i++) {
+        $vacTotalCorresponde += vac_dias_lft($i);
+    }
+    $vacAntReportados = max(0, $diasVacacionesAnteriores);
+    $vacAntDiasExcedentes = max(0, $vacAntReportados - $vacTotalCorresponde);
+    $vacAntDiasPrescritos = max(0, min($vacAntReportados, $vacTotalCorresponde) - $vacAntDiasReconocidos);
     $vacacionesDias = $vacacionesDiasProp + $vacAntDiasReconocidos;
     $vacacionesMonto = $vacacionesDias * $salarioDiario;
 
@@ -306,6 +318,7 @@ function calcular_estimado_liquidacion(
         'vacaciones_dias' => round($vacacionesDias, 1),
         'vacaciones_monto' => round($vacacionesMonto, 2),
         'vacaciones_anteriores_dias_prescritos' => round($vacAntDiasPrescritos, 1),
+        'vacaciones_anteriores_dias_excedentes' => round($vacAntDiasExcedentes, 1),
         'prima_vacacional_monto' => round($primaVacacionalMonto, 2),
         'prima_antiguedad_monto' => round($primaAntiguedad, 2),
         'salarios_devengados_monto' => round($salariosDevengadosMonto, 2),
@@ -319,6 +332,6 @@ function calcular_estimado_liquidacion(
         'indemnizacion_90_dias_monto' => round($indemnizacion90, 2),
         'total_estimado' => round($total, 2),
         'tipo_despido' => $tipo,
-        'nota' => 'Estimado con mínimos de ley (aguinaldo 15 días, prima vacacional 25%) y con los días de vacaciones anteriores/salarios devengados que la persona reportó — sin contar posibles pactos contractuales mayores. Si reportó más días de vacaciones anteriores de los que ya no están prescritos (ver vacaciones_anteriores_dias_prescritos), solo se contaron los no prescritos, según el criterio SCJN 2a./J. 1/97 (18 meses desde cada aniversario). El monto real solo se confirma revisando el caso a detalle.',
+        'nota' => 'Estimado con mínimos de ley (aguinaldo 15 días, prima vacacional 25%) y con los días de vacaciones anteriores/salarios devengados que la persona reportó — sin contar posibles pactos contractuales mayores. De las vacaciones anteriores reportadas solo se contaron las que todavía se pueden reclamar: vacaciones_anteriores_dias_prescritos son días que sí le tocaban pero ya prescribieron (6 meses para disfrutarlas, Art. 81, más 1 año de prescripción, Art. 516: 18 meses desde cada aniversario); vacaciones_anteriores_dias_excedentes son días que reportó por encima de lo que la ley le da en sus años completos (tabla del Art. 76) -- eso NO es prescripción. El monto real solo se confirma revisando el caso a detalle.',
     ];
 }
