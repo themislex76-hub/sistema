@@ -2386,6 +2386,55 @@ async function loadIaActividad(){
 // CDMX/correo Edomex) en "Mi cuenta" -- sin esa cuenta, el robot
 // correspondiente no tiene con qué entrar a revisar NINGUNO de los
 // expedientes de ese abogado, aunque el Tribunal/número estén perfectos.
+// Panel "Conversaciones del bot a revisar" (14 nov 2026) -- lo que
+// cron_revisar_conversaciones_bot.php marcó con algún error al comparar
+// las respuestas del bot de WhatsApp contra la LFT oficial y los criterios
+// del despacho. Nunca corrige nada solo: el Administrador abre la
+// conversación y decide.
+let BOT_REVISIONES = [];
+let BOT_REVISIONES_ULTIMA = null;
+async function loadBotRevisiones(){
+  try{
+    const d = await api('GET', 'bot_revisiones_list.php');
+    BOT_REVISIONES = d.revisiones || [];
+    BOT_REVISIONES_ULTIMA = d.ultima || null;
+  }catch(e){ BOT_REVISIONES = []; BOT_REVISIONES_ULTIMA = null; }
+}
+function botRevisionesHTML(){
+  const grav = {alta:['crit','Grave'], media:['warn','Media'], baja:['ok','Menor']};
+  const u = BOT_REVISIONES_ULTIMA;
+  const ultimaTxt = (u && u.fecha)
+    ? `Última revisión: ${fmtDate(u.fecha)} -- ${u.total} conversación(es) revisada(s), ${u.con_problema||0} con algo que revisar.`
+    : 'Todavía no corre la primera revisión automática.';
+  return `
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Conversaciones del bot a revisar${BOT_REVISIONES.length ? ` <span class="badge crit">${BOT_REVISIONES.length}</span>` : ''}</div>
+    <div class="notice" style="margin-bottom:14px;">Cada madrugada una IA revisora lee las conversaciones del día anterior y compara lo que contestó el bot contra el texto oficial de la LFT y los criterios del despacho. Aquí solo aparece lo que marcó con algún error; nunca le escribe nada al cliente. ${escapeHTML(ultimaTxt)}</div>
+    ${BOT_REVISIONES.length ? BOT_REVISIONES.map(r=>{
+      const g = grav[r.gravedad] || grav.media;
+      return `<div style="border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin-bottom:10px;">
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
+          <span class="badge ${g[0]}">${g[1]}</span>
+          <strong style="font-size:13px;">${escapeHTML(r.prospecto_nombre || r.telefono)}</strong>
+          <span style="font-size:12px; color:var(--gray);">${escapeHTML(r.telefono)} · ${fmtDate(r.fecha)}</span>
+        </div>
+        ${r.resumen ? `<div style="font-size:13px; margin-bottom:6px;">${escapeHTML(r.resumen)}</div>` : ''}
+        <ul style="margin:0 0 10px 18px; padding:0; font-size:12.5px;">
+          ${(r.hallazgos||[]).map(h=>`<li style="margin-bottom:6px;">
+            ${h.cita ? `<div style="color:var(--gray);">Bot: “${escapeHTML(h.cita)}”</div>` : ''}
+            <div><strong>Problema:</strong> ${escapeHTML(h.problema||'')}</div>
+            ${h.correccion ? `<div><strong>Debió decir:</strong> ${escapeHTML(h.correccion)}</div>` : ''}
+          </li>`).join('')}
+        </ul>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="btn" data-bot-revision-abrir="${escapeHTML(r.telefono)}" style="padding:6px 12px; font-size:12px;">Ver conversación</button>
+          <button class="btn secondary" data-bot-revision-resolver="${r.id}" data-estado="atendida" style="padding:6px 12px; font-size:12px;">Ya lo atendí</button>
+          <button class="btn secondary" data-bot-revision-resolver="${r.id}" data-estado="descartada" style="padding:6px 12px; font-size:12px;">No es error</button>
+        </div>
+      </div>`;
+    }).join('') : '<div class="empty">Sin conversaciones pendientes de revisar.</div>'}
+  </div></div>`;
+}
 let CREDENCIALES_PORTALES = [];
 async function loadCredencialesPortales(){
   try{
@@ -2882,6 +2931,7 @@ async function refreshBootstrap(){
     await loadGoogleCalendariosMapeo();
     await loadIaActividad();
     await loadCredencialesPortales();
+    await loadBotRevisiones();
   }
   await loadDiasInhabiles();
   syncAvisosAbogado(); // en segundo plano, no bloquea la carga
@@ -7227,6 +7277,7 @@ function equipoHTML(){
       }).join("")}
     </tbody></table>` : '<div class="empty">Sin actividad autónoma de la IA en los últimos 30 días.</div>'}
   </div></div>
+  ${botRevisionesHTML()}
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
     <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Credenciales de portales por abogado</div>
     <div class="notice" style="margin-bottom:14px;">Cada robot necesita la cuenta REAL del abogado en ese portal para poder entrar -- si falta, ese robot no tiene con qué revisar NINGUNO de los expedientes de ese abogado, aunque el Tribunal/número estén perfectos en el sistema. Cada quien guarda la suya desde "Mi cuenta".</div>
@@ -8080,6 +8131,19 @@ function bindViewBody(){
   if(reporteEjecutivoBtn) reporteEjecutivoBtn.addEventListener('click', abrirReporteEjecutivoPDF);
   const descargarRespaldoBtn = document.getElementById('descargarRespaldoBtn');
   if(descargarRespaldoBtn) descargarRespaldoBtn.addEventListener('click', exportarRespaldo);
+  document.querySelectorAll('[data-bot-revision-abrir]').forEach(el=>{
+    el.addEventListener('click', ()=> abrirConversacionDesdeNotificacion(el.dataset.botRevisionAbrir));
+  });
+  document.querySelectorAll('[data-bot-revision-resolver]').forEach(el=>{
+    el.addEventListener('click', async ()=>{
+      el.disabled = true;
+      try{
+        await api('POST', 'bot_revision_resolver.php', {id: Number(el.dataset.botRevisionResolver), estado: el.dataset.estado});
+        BOT_REVISIONES = BOT_REVISIONES.filter(r=> String(r.id) !== el.dataset.botRevisionResolver);
+        renderViewBody();
+      }catch(err){ el.disabled = false; alert('No se pudo guardar: ' + err.message); }
+    });
+  });
   const cargarCalendariosGoogleBtn = document.getElementById('cargarCalendariosGoogleBtn');
   if(cargarCalendariosGoogleBtn){
     cargarCalendariosGoogleBtn.addEventListener('click', async ()=>{
@@ -10027,6 +10091,13 @@ async function init(){
   // Push de "posible irregularidad detectada" (ver
   // cron_qa_irregularidades.php, 12 nov 2026) -- lleva directo a
   // "Preguntas al abogado", donde vive el panel nuevo.
+  // Push de "conversación del bot con error grave" (ver
+  // cron_revisar_conversaciones_bot.php, 14 nov 2026) -- lleva a Equipo.
+  if(new URLSearchParams(location.search).get('revision_bot')){
+    history.replaceState(null, '', location.pathname);
+    if(CURRENT_USER && CURRENT_USER.role === 'Administrador'){ VIEW = 'equipo'; render(); }
+  }
+
   const irregularidadParam = new URLSearchParams(location.search).get('irregularidad');
   if(irregularidadParam){
     history.replaceState(null, '', location.pathname);

@@ -2425,6 +2425,41 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   4 (tope prima de antigüedad, falta criterio), 5 (revisión diaria de
   conversaciones) y 6 (casos de prueba).
 
+## Precisión del bot, partes 5 y 6: revisión diaria de conversaciones + casos de prueba (14 nov 2026, conversación "chats", `app.js?v=149`, migración 071)
+- **Revisión diaria** (`api/cron_revisar_conversaciones_bot.php`, correr 1
+  vez al día en la madrugada; `?fecha=AAAA-MM-DD` opcional, default
+  ayer): toma cada teléfono donde el cliente escribió y el bot contestó
+  ese día (máx. 40 por corrida) y llama `ia_revisar_conversacion_bot()`
+  (`api/ia_helpers.php`, Sonnet): le pasa la conversación del día + 12
+  mensajes previos de contexto + el TEXTO OFICIAL de cada artículo de la
+  LFT que el bot citó (`ia_articulos_citados()` + `lft_consultar_articulos()`)
+  + el bloque CRITERIOS DEL DESPACHO del prompt del bot
+  (`ia_criterios_despacho_texto()`, se extrae solo del prompt, así que
+  cualquier criterio nuevo que se agregue ahí lo revisa también). Guarda
+  en `bot_revisiones` (migración 071, único por teléfono+día, no re-paga);
+  push al Administrador solo si hay gravedad "alta" (`?revision_bot=1`
+  lleva a Equipo). Nunca le escribe al cliente.
+- **Panel** "Conversaciones del bot a revisar" en Equipo (entre
+  "Actividad de la IA" y "Credenciales de portales"): hallazgos con la
+  frase del bot, el problema y qué debió decir; botones "Ver
+  conversación" (reusa `abrirConversacionDesdeNotificacion()`), "Ya lo
+  atendí" y "No es error" (`api/bot_revision_resolver.php`). Lista:
+  `api/bot_revisiones_list.php` (solo Administrador).
+- **Casos de prueba**: `php scripts/pruebas_bot.php` -- 37 casos
+  sacados de errores reales (precio $299, cita "de hoy" de la clienta de
+  Oxxo, curso pagado, Norma/20 días de confianza, vacaciones excedentes
+  vs prescritas, normalización de artículos LFT, reglas del prompt que
+  no se deben perder, herramientas del bot). SQLite en memoria, sin
+  costo. **Correrlo antes de mandar cualquier cambio del bot.**
+- Criterio nuevo en el prompt: domingos -- Art. 71 (prima dominical
+  "por lo menos" 25%) vs Art. 73 (domingo que es su descanso: salario
+  doble), preguntar cuál aplica.
+- **Pendiente**: correr migración 071, subir archivos, dar de alta el
+  Cron Job y correrlo una vez a mano. Tope de prima de antigüedad (Art.
+  486): hoy usa el salario mínimo vigente; falta criterio del Lic. sobre
+  fecha de despido vs fecha de pago. Respuestas duplicadas del bot
+  cuando el cliente manda 2 mensajes seguidos: sin tocar todavía.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
