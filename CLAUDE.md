@@ -2552,6 +2552,29 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
 - Verificar con el mismo SQL de diagnóstico unos días después de subir
   `api/whatsapp_procesar.php` (debería bajar a ~0 los casos a los :00/:15).
 
+## Zona Libre de la Frontera Norte en el tope de la prima de antigüedad (14 nov 2026, conversación "chats", `app.js?v=152`)
+- Art. 486 LFT: el tope es el doble del salario mínimo del área geográfica
+  del LUGAR DONDE SE PRESTA EL TRABAJO. Idea del usuario: usar la lada del
+  teléfono como pista para que el bot PREGUNTE (no para decidir solo).
+- `api/liquidacion_calculadora.php`: `SALARIOS_MINIMOS_FRONTERA_HISTORICOS`
+  (CONASAMI ZLFN 2019-2025), `salario_minimo_frontera_actual()` (config
+  `salario_minimo_diario_frontera`, respaldo 440.87 = 2026),
+  `LADAS_FRONTERA_NORTE` + `telefono_ciudad_frontera()`, parámetro nuevo
+  `$zonaFronteraNorte` (último) en `calcular_estimado_liquidacion()`; el
+  resultado ahora trae `prima_antiguedad_tope_salario_minimo` y
+  `..._zona_salario_minimo`.
+- Bot: parámetro `zona_libre_frontera_norte` en la herramienta; si la
+  lada es fronteriza y no lo marcó, el resultado trae `aviso_zona_frontera`
+  para que pregunte dónde TRABAJABA y recalcule; `consultar_salario_
+  minimo_vigente` devuelve ambas zonas; criterio nuevo en el prompt.
+- Equipo → "Parámetros del cálculo de liquidación": campo nuevo "Zona
+  libre de la frontera norte" (`configuracion_set.php` lo acepta).
+  **Cada enero actualizar ambos valores y agregar el año que termina a
+  las tablas históricas (general y frontera).**
+- **No cubierto**: la pestaña "Cálculo de liquidación" de cada expediente
+  (`computeLiquidacion()` en app.js) sigue usando solo la zona general.
+- 52 casos en `scripts/pruebas_bot.php`.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
