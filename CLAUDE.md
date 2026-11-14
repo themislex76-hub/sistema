@@ -714,7 +714,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**070/070b (LFT) ya corridas por el usuario el 14 nov 2026 (1,266 filas confirmadas).** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
+**070/070b (LFT) y 071 (bot_revisiones) ya corridas por el usuario el 14 nov 2026.** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
@@ -2454,7 +2454,7 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
 - Criterio nuevo en el prompt: domingos -- Art. 71 (prima dominical
   "por lo menos" 25%) vs Art. 73 (domingo que es su descanso: salario
   doble), preguntar cuál aplica.
-- **Pendiente**: correr migración 071, subir archivos, dar de alta el
+- 071 corrida y archivos subidos por el usuario (14 nov 2026). **Pendiente**: dar de alta el
   Cron Job y correrlo una vez a mano. Tope de prima de antigüedad (Art.
   486): hoy usa el salario mínimo vigente; falta criterio del Lic. sobre
   fecha de despido vs fecha de pago. Respuestas duplicadas del bot
