@@ -2461,6 +2461,12 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   cuando el cliente manda 2 mensajes seguidos: sin tocar todavía.
 
 ## Primera corrida real de la revisión diaria del bot + criterios nuevos (14 nov 2026, conversación "chats")
+- **Costo y plan acordado (14-nov-2026)**: revisar todas (~170/día) cuesta
+  ~$3-5 USD/día (~$1,700-2,900 MXN/mes); una muestra de 40/día ~$550 MXN/
+  mes. Acordado con el usuario: revisar TODAS ~2 semanas y después bajar a
+  muestra cambiando solo la tarea de Ferozo de horas "1-5" a "1" (sin
+  tocar código). Recordatorio programado en la sesión "chats" para el 28
+  nov 2026.
 - Corrida real (13-nov): 174 conversaciones del día, 78 revisadas en 2
   corridas, 12 marcadas. Confirmados con el texto oficial de la LFT como
   errores REALES del bot: cierre de empresa tratado como "despido
