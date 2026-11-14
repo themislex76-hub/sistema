@@ -714,7 +714,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026.** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
+**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026. Ese mismo día el usuario confirmó subidos TODOS los archivos de la sesión "chats" hasta el commit `0482e7e` (`app.js?v=152`, ia_helpers, liquidacion_calculadora, configuracion_set, whatsapp_procesar, lft_helpers, revisión diaria del bot con su Cron Job). Siguiente migración libre: 073.** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
