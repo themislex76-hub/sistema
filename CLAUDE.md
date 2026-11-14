@@ -714,7 +714,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**(Repo: 070/070b de la LFT pendientes de correr, ver sección de precisión del bot.)** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
+**070/070b (LFT) ya corridas por el usuario el 14 nov 2026 (1,266 filas confirmadas).** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
@@ -2417,9 +2417,11 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   CRITERIOS DEL DESPACHO): antes de citar cualquier número de artículo,
   consultarlo en ese turno; jurisprudencia solo si la regresó la
   herramienta, nunca de memoria.
+- 070 + 070b ya corridas en vivo (14 nov 2026, 1,266 filas). Bug real al
+  importar: 353-N y 353-Ñ chocaban en la PRIMARY KEY (la collation por
+  defecto trata N = Ñ) -- `numero` ahora es `utf8mb4_bin`.
 - Probado con SQLite la normalización y la consulta por número (FULLTEXT
-  no se puede probar sin MySQL). **Pendiente**: que el usuario corra
-  070 + 070b y suba `api/lft_helpers.php` + `api/ia_helpers.php`; partes
+  no se puede probar sin MySQL). **Pendiente**: que el usuario suba `api/lft_helpers.php` + `api/ia_helpers.php`; partes
   4 (tope prima de antigüedad, falta criterio), 5 (revisión diaria de
   conversaciones) y 6 (casos de prueba).
 
