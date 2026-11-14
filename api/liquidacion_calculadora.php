@@ -93,13 +93,56 @@ const SALARIOS_MINIMOS_HISTORICOS = [
     2021 => 141.70, 2022 => 172.87, 2023 => 207.44, 2024 => 248.93, 2025 => 278.80,
 ];
 
+// Zona Libre de la Frontera Norte (ZLFN, salario mínimo propio desde 2019,
+// CONASAMI). Año en curso: configuracion.salario_minimo_diario_frontera
+// (respaldo: 440.87, valor 2026).
+const SALARIOS_MINIMOS_FRONTERA_HISTORICOS = [
+    2019 => 176.72, 2020 => 185.56, 2021 => 213.39, 2022 => 260.34,
+    2023 => 312.41, 2024 => 374.89, 2025 => 419.88,
+];
+
+function salario_minimo_frontera_actual(PDO $pdo): float
+{
+    try {
+        $stmt = $pdo->prepare("SELECT valor FROM configuracion WHERE clave = 'salario_minimo_diario_frontera'");
+        $stmt->execute();
+        $v = $stmt->fetchColumn();
+        $f = $v !== false ? (float)$v : 0;
+    } catch (Throwable $e) {
+        $f = 0;
+    }
+    return $f > 0 ? $f : 440.87;
+}
+
+// Ladas de las principales ciudades de la ZLFN. Solo es una PISTA para que
+// el bot pregunte dónde trabajaba: el Art. 486 manda el salario mínimo del
+// lugar donde se presta el trabajo, no el del teléfono.
+const LADAS_FRONTERA_NORTE = [
+    '664' => 'Tijuana', '686' => 'Mexicali', '665' => 'Tecate', '646' => 'Ensenada',
+    '661' => 'Playas de Rosarito', '653' => 'San Luis Río Colorado', '631' => 'Nogales',
+    '633' => 'Agua Prieta', '656' => 'Ciudad Juárez', '878' => 'Piedras Negras',
+    '877' => 'Ciudad Acuña', '867' => 'Nuevo Laredo', '899' => 'Reynosa', '868' => 'Matamoros',
+];
+
+function telefono_ciudad_frontera(string $telefono): ?string
+{
+    $digitos = preg_replace('/\D/', '', $telefono);
+    if (strlen($digitos) < 10) return null;
+    $lada = substr(substr($digitos, -10), 0, 3);
+    return LADAS_FRONTERA_NORTE[$lada] ?? null;
+}
+
 // Criterio del despacho (Lic. Rubén Buerhend, 14-nov-2026): el tope de la
 // prima de antigüedad (Arts. 162-II y 486 LFT, doble del salario mínimo)
 // se calcula con el salario mínimo vigente a la FECHA DEL DESPIDO, no el de
 // la fecha del pago.
-function salario_minimo_diario_en_fecha(PDO $pdo, string $fecha): float
+function salario_minimo_diario_en_fecha(PDO $pdo, string $fecha, bool $zonaFronteraNorte = false): float
 {
     $anio = (int)substr($fecha, 0, 4);
+    if ($zonaFronteraNorte && $anio >= 2019) {
+        if ($anio >= (int)date('Y')) return salario_minimo_frontera_actual($pdo);
+        if (isset(SALARIOS_MINIMOS_FRONTERA_HISTORICOS[$anio])) return SALARIOS_MINIMOS_FRONTERA_HISTORICOS[$anio];
+    }
     if ($anio <= 0 || $anio >= (int)date('Y')) return salario_minimo_diario_actual($pdo);
     if (isset(SALARIOS_MINIMOS_HISTORICOS[$anio])) return SALARIOS_MINIMOS_HISTORICOS[$anio];
     return $anio < 2016 ? SALARIOS_MINIMOS_HISTORICOS[2016] : salario_minimo_diario_actual($pdo);
@@ -204,7 +247,8 @@ function calcular_estimado_liquidacion(
     float $diasSalariosDevengados = 0,
     string $modo = 'despido',
     bool $trabajadorConfianza = false,
-    ?float $sdiReportado = null
+    ?float $sdiReportado = null,
+    bool $zonaFronteraNorte = false
 ): ?array {
     if (!in_array($modo, ['despido', 'renuncia', 'rescision'], true)) {
         $modo = 'despido';
@@ -260,7 +304,7 @@ function calcular_estimado_liquidacion(
     // despido o rescisión, sin importar si el despido fue justificado o
     // injustificado. En renuncia voluntaria SOLO procede con 15 años o más
     // de servicio (Art. 162-III LFT).
-    $salarioMinimo = salario_minimo_diario_en_fecha($pdo, $fechaBaja);
+    $salarioMinimo = salario_minimo_diario_en_fecha($pdo, $fechaBaja, $zonaFronteraNorte);
     $topePrima = 2 * $salarioMinimo;
     $basePrima = min($salarioDiario, $topePrima);
     $primaAntiguedadProcede = $modo !== 'renuncia' || $cy >= 15;
@@ -342,6 +386,8 @@ function calcular_estimado_liquidacion(
         'vacaciones_anteriores_dias_excedentes' => round($vacAntDiasExcedentes, 1),
         'prima_vacacional_monto' => round($primaVacacionalMonto, 2),
         'prima_antiguedad_monto' => round($primaAntiguedad, 2),
+        'prima_antiguedad_tope_salario_minimo' => round($salarioMinimo, 2),
+        'prima_antiguedad_zona_salario_minimo' => $zonaFronteraNorte ? 'zona libre de la frontera norte' : 'zona general',
         'salarios_devengados_monto' => round($salariosDevengadosMonto, 2),
         'total_finiquito' => round($totalFiniquito, 2),
         'indemnizacion_20_dias_monto' => round($indemnizacion20, 2),

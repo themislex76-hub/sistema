@@ -3197,7 +3197,10 @@ function salarioMinimoEnFecha(fecha){
   if(SALARIOS_MINIMOS_HISTORICOS[anio]) return SALARIOS_MINIMOS_HISTORICOS[anio];
   return anio < 2016 ? SALARIOS_MINIMOS_HISTORICOS[2016] : SALARIO_MINIMO_DIARIO;
 }
-let SALARIO_MINIMO_DIARIO = 315.04; // valor de respaldo (zona general, 2026) si aún no se ha guardado ninguno
+let SALARIO_MINIMO_DIARIO = 315.04;
+// Zona libre de la frontera norte (lo usa la calculadora del bot vía
+// configuracion.salario_minimo_diario_frontera; aquí solo se captura).
+let SALARIO_MINIMO_FRONTERA = 440.87; // valor de respaldo (zona general, 2026) si aún no se ha guardado ninguno
 // Jornada máxima legal (Art. 61 LFT) por tipo, en horas. Igual que el
 // salario mínimo: se guarda en "configuracion" y lo edita el Administrador
 // en "Equipo" — así cuando cambie la ley (reducción de jornada prevista a
@@ -3261,6 +3264,8 @@ async function loadConfiguracion(){
     const d = await api('GET', 'configuracion_get.php');
     const v = parseFloat(d.configuracion && d.configuracion.salario_minimo_diario);
     if(!isNaN(v) && v > 0) SALARIO_MINIMO_DIARIO = v;
+    const vfr = parseFloat(d.configuracion && d.configuracion.salario_minimo_diario_frontera);
+    if(!isNaN(vfr) && vfr > 0) SALARIO_MINIMO_FRONTERA = vfr;
     const vd = parseFloat(d.configuracion && d.configuracion.jornada_maxima_diurna);
     if(!isNaN(vd) && vd > 0) JORNADA_MAXIMA.diurna = vd;
     const vn = parseFloat(d.configuracion && d.configuracion.jornada_maxima_nocturna);
@@ -7233,6 +7238,7 @@ function equipoHTML(){
     <div class="notice" style="margin-bottom:14px;">La prima de antigüedad (Art. 162 LFT) se topa a 2 veces el salario mínimo diario vigente. La CONASAMI publica un nuevo salario mínimo cada 1° de enero — actualízalo aquí cuando eso pase; el sistema recalcula todo solo, sin necesidad de tocar código.</div>
     <form id="salarioMinimoForm" style="display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;">
       <div class="field" style="margin:0;"><label>Salario mínimo diario (zona general)</label><input type="text" id="salarioMinimoInput" value="${SALARIO_MINIMO_DIARIO.toFixed(2)}" style="max-width:160px;"></div>
+      <div class="field" style="margin:0;"><label>Zona libre de la frontera norte</label><input type="text" id="salarioMinimoFronteraInput" value="${SALARIO_MINIMO_FRONTERA.toFixed(2)}" style="max-width:160px;"></div>
       <button type="submit" class="btn">Guardar</button>
     </form>
   </div></div>
@@ -8215,10 +8221,13 @@ function bindViewBody(){
     salarioMinimoForm.addEventListener('submit', async (e)=>{
       e.preventDefault();
       const v = parseFloat(document.getElementById('salarioMinimoInput').value);
-      if(isNaN(v) || v <= 0){ alert('Captura un salario mínimo diario válido.'); return; }
+      const vf = parseFloat(document.getElementById('salarioMinimoFronteraInput').value);
+      if(isNaN(v) || v <= 0 || isNaN(vf) || vf <= 0){ alert('Captura salarios mínimos diarios válidos.'); return; }
       try{
         await saveConfiguracion('salario_minimo_diario', v.toFixed(2));
+        await saveConfiguracion('salario_minimo_diario_frontera', vf.toFixed(2));
         SALARIO_MINIMO_DIARIO = v;
+        SALARIO_MINIMO_FRONTERA = vf;
         alert('Salario mínimo actualizado. La prima de antigüedad de todos los asuntos se recalculará con este valor.');
         renderViewBody();
       }catch(err){ alert('No se pudo guardar: ' + err.message); }
