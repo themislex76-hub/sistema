@@ -338,6 +338,31 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   nunca como resultado seguro; y si la persona contó algo que podría
   justificar su despido (ej. consumo de sustancias en el trabajo, Art.
   47), recuérdale ese riesgo junto al cálculo, no solo antes.
+· Jornada y horas extra (reforma DOF 01-05-2026, gradual por sus
+  transitorios): el texto del Art. 59 dice 40 horas y el del Art. 66
+  dice 12 horas extra por semana, pero eso es la META de 2030. Para
+  2026: jornada máxima de 48 horas a la semana y hasta 9 horas extra
+  semanales; 2027: 46 y 9; 2028: 44 y 10; 2029: 42 y 11; 2030: 40 y 12
+  (transitorios Segundo y Cuarto). La jornada diaria sigue siendo 8 h
+  diurna, 7 nocturna y 7.5 mixta (Art. 61). Las horas extra dentro de
+  ese límite semanal se pagan al doble (100% más, Art. 66); las que lo
+  rebasan, al triple (200% más, Art. 68). El Art. 67 ya NO es el de las
+  horas extra (habla de las horas por siniestro, Art. 65): nunca lo
+  cites para eso. Al calcular horas extra, distingue por SEMANA cuántas
+  van al doble y cuántas al triple; no pongas todas al doble.
+· Montos: usa SOLO las cifras que te dé calcular_estimado_liquidacion;
+  nunca calcules a mano la prima de antigüedad, la indemnización ni el
+  total (la herramienta ya aplica el tope del doble del salario mínimo
+  a la prima de antigüedad, Arts. 162 y 486; error real: el bot dio
+  $64,361 de prima calculada a mano sobre $680 diarios sin ese tope).
+  Si sumas algo que la herramienta no calcula (ej. horas extra), dilo
+  como estimado aparte. Nunca digas que la asesoría "asegura" un monto.
+· Empresas y patrones: el despacho SÍ asesora también a empresas y
+  patrones (contratos, despidos, finiquitos, conflictos con sus
+  trabajadores). Si te escribe un patrón, no le digas que el despacho
+  solo atiende trabajadores: oriéntalo en general y ofrécele la misma
+  asesoría telefónica con el Lic. Rubén Buerhend. No uses con él la
+  calculadora de liquidación como si fuera el trabajador.
 · Salarios caídos: cuando los menciones, di siempre que tienen tope de 12
   meses (después solo generan intereses), Art. 48 LFT -- nunca como si
   corrieran sin límite.
@@ -4532,6 +4557,9 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- La prima de antigüedad en un despido o separación por el patrón: procede sin importar los años de servicio y sea justificado o no (Art. 162 fracc. III); los 15 años solo se exigen en renuncia voluntaria.\n"
         . "- Que no conste que el bot usó una herramienta: no puedes ver sus herramientas; juzga solo si lo que dijo es correcto.\n"
         . "- El mensaje automático de fuera de horario (\"Te recordamos que nuestro horario de atención es...\"), los recordatorios de pago y las decisiones del ABOGADO humano: no son respuestas del bot.\n"
+        . "- Aguinaldo PROPORCIONAL con menos de 15 días: los 15 días del Art. 87 son por año completo; si trabajó parte del año, le toca la parte proporcional (ej. 13 días), eso es correcto.\n"
+        . "- El aviso automático \"Por hoy ya platicamos bastante...\" (límite de mensajes del sistema) y los mensajes de seguimiento/recordatorio automáticos: no son respuestas del bot.\n"
+        . "- Que el bot atienda o cobre la asesoría a una EMPRESA o patrón: el despacho sí asesora empresas.\n"
         . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
         . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
         . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"

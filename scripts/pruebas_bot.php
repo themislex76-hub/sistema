@@ -120,6 +120,9 @@ caso('domingos: Art. 71 (por lo menos 25%) y Art. 73 (salario doble)', strpos($p
 caso('salarios caídos con tope de 12 meses', strpos($p, 'tope de 12') !== false);
 caso('cierre de empresa: Arts. 434-436, no "despido injustificado" (casos reales 13-nov)', strpos($p, '(Art. 436)') !== false && strpos($p, 'Cierre de la empresa') !== false);
 caso('despido vs. rescisión: no convertir una baja en rescisión para sumar 20 días', strpos($p, 'Despido vs. rescisión') !== false);
+caso('horas extra: transitorios 2026 (48 h / 9 extra), Art. 66 doble, Art. 68 triple, no Art. 67', strpos($p, '2026: jornada máxima de 48 horas') !== false && strpos($p, 'El Art. 67 ya NO es el de las') !== false);
+caso('montos solo de la calculadora (prima de antigüedad con tope, caso real $64,361)', strpos($p, 'nunca calcules a mano la prima de antigüedad') !== false);
+caso('el despacho también asesora empresas', strpos($p, 'el despacho SÍ asesora también a empresas') !== false);
 caso('embarazo: Art. 166 / 170-I, nunca 132 XXVII Bis (es paternidad)', strpos($p, 'Art. 166') !== false && strpos($p, 'PATERNIDAD') !== false);
 $rev = ia_parsear_revision_bot('{"veredicto":"revisar","gravedad":"media","resumen":"x","hallazgos":[{"cita":"a","problema":"no hay error aquí en realidad","correccion":"N/A - revisar si aplica"}]}');
 caso('revisión diaria: descarta hallazgos que la propia IA reconoce como no-error', $rev['veredicto'] === 'ok');
