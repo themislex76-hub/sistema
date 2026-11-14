@@ -2529,6 +2529,29 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   tablas** (PHP y JS). Zona libre de la frontera norte sigue sin
   manejarse. 2 casos nuevos en `scripts/pruebas_bot.php` (46 en total).
 
+## Respuestas DUPLICADAS del bot: causa real y arreglo (14 nov 2026, conversación "chats")
+- Diagnóstico con SQL real (50 casos en 7 días, 2 respuestas casi
+  idénticas con 0-130 s de diferencia, sin mensaje del cliente en medio):
+  casi TODOS a los :00/:15/:30/:45. Causa: `cron_reanudar_horario.php`
+  (cada 15 min, en horario de atención) contestaba cualquier conversación
+  cuyo último mensaje fuera del cliente -- incluso las que el flujo
+  normal del webhook estaba contestando en ese momento (espera de 30 s +
+  IA + retraso natural de hasta ~2 min). Arreglo:
+  `reanudar_conversacion_fuera_horario()` (`api/whatsapp_procesar.php`)
+  ya no toca conversaciones cuyo último mensaje entrante tenga menos de
+  10 min (medido con `NOW()` de MySQL, no `time()` de PHP).
+- 2ª causa: el aviso de fuera de horario salía 2-3 veces en el mismo
+  segundo cuando el cliente mandaba varias burbujas seguidas (carrera
+  entre webhooks). `whatsapp_avisar_fuera_horario_si_aplica()` ahora usa
+  `GET_LOCK()` por teléfono y registra el aviso antes de mandarlo.
+- **El MySQL del servidor NO soporta funciones de ventana** (`LAG() OVER`,
+  error #1064) -- para SQL de diagnóstico usar subconsultas/JOIN.
+- Queda sin tocar (no es duplicado del bot): recordatorio de pago de 10
+  min que salió después de que el bot dijo que ese horario ya se ocupó
+  (caso 5215626719440, 13-nov).
+- Verificar con el mismo SQL de diagnóstico unos días después de subir
+  `api/whatsapp_procesar.php` (debería bajar a ~0 los casos a los :00/:15).
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
