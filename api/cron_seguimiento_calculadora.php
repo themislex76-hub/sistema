@@ -79,14 +79,32 @@ foreach ($calculos as $c) {
         continue;
     }
 
+    // Bug real (13-nov-2026): a una clienta el bot ya le había dicho que el
+    // despacho no podía atender su caso, y al día siguiente este
+    // seguimiento le escribió "podrías recuperar cerca de $123,932...
+    // ¿quieres que te agende?"; ella dijo que sí y el bot la volvió a
+    // rechazar. Si el último mensaje del bot fue un rechazo/canalización,
+    // no se le insiste.
+    $chkBot = $pdo->prepare(
+        "SELECT texto FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'saliente' ORDER BY id DESC LIMIT 1"
+    );
+    $chkBot->execute([':t' => $c['telefono']]);
+    $ultimoBot = (string)($chkBot->fetchColumn() ?: '');
+    if (preg_match('/no\s+(maneja|atiende|podemos\s+(ofrecerte|atender|ayudarte)|puedo\s+ofrecerte)|apartado\s+b|buscar?\s+(a\s+)?un\s+abogado\s+especializado|no\s+es\s+(mi|nuestra)\s+especialidad|fuera\s+de\s+(nuestra|la)\s+materia/iu', $ultimoBot)) {
+        $omitidos++;
+        continue;
+    }
+
     $minutosSilencio = (int)((time() - strtotime($ultimoMsg['creado_en'])) / 60);
 
-    $montoTxt = $c['monto_total'] ? '$' . number_format((float)$c['monto_total'], 0) : null;
 
     if ($c['primer_seguimiento_en'] === null && $minutosSilencio >= 180 && $minutosSilencio < 1200) {
-        $mensaje = $montoTxt
-            ? "¡Hola! No quiero que se te vaya a pasar — según lo que me contaste, podrías recuperar cerca de {$montoTxt}. ¿Quieres que te agende la asesoría telefónica con el abogado para ver cómo proceder con tu caso? Es sin compromiso."
-            : "¡Hola! No quiero que se te vaya a pasar tu caso — ¿te gustaría que te agende la asesoría telefónica con el abogado para revisarlo a fondo? Es sin compromiso.";
+        // Sin montos ni "sin compromiso" (decisión del despacho, 12-13 nov
+        // 2026): la cifra del cálculo es un estimado y, repetida aquí como
+        // gancho de venta, generó falsas expectativas (caso real: "podrías
+        // recuperar cerca de $571,486" a una clienta a la que le
+        // correspondía menos de la mitad); y la asesoría tiene costo.
+        $mensaje = "¡Hola! Sigo al pendiente de tu caso. Si quieres que el Lic. Rubén Buerhend lo revise a fondo por teléfono (asesoría de 1 hora, \$499), te busco un horario. ¿Te interesa?";
         if (whatsapp_enviar($c['telefono'], $mensaje)) {
             $enviados1++;
             $pdo->prepare('UPDATE calculos_liquidacion SET primer_seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $c['id']]);
@@ -98,9 +116,7 @@ foreach ($calculos as $c) {
         // además de la asesoría, se menciona el documento membretado ($49)
         // como opción más barata, para quien de plano no quiere la llamada
         // pero sí se quedó con el dato de que tiene un caso real.
-        $mensaje = $montoTxt
-            ? "¡Hola de nuevo! Sigo por aquí para cuando gustes — según lo que calculamos, podrías recuperar cerca de {$montoTxt}. Si quieres que el Lic. revise tu caso a fondo por teléfono, la asesoría cuesta \$499. Y si por ahora solo necesitas tener ese número por escrito, con membrete del despacho, fórmulas y artículos de ley aplicados — eso hace que en RH o el Centro de Conciliación te tomen en serio y hasta te ofrezcan más, porque van a saber que te lo calculó un despacho serio — ese documento cuesta \$49, que es un costo mínimo frente a lo que podrías recuperar. Solo dime cuál te gusta y te mando el link de pago."
-            : "¡Hola de nuevo! Sigo por aquí para cuando gustes platicar tu caso con el abogado a fondo — la asesoría telefónica cuesta \$499. Y si por ahora solo necesitas tu cálculo por escrito, con membrete del despacho, fórmulas y artículos de ley aplicados — eso hace que en RH o el Centro de Conciliación te tomen en serio y hasta te ofrezcan más, porque van a saber que te lo calculó un despacho serio — ese documento cuesta \$49. Solo dime cuál te gusta y te mando el link de pago.";
+        $mensaje = "¡Hola de nuevo! Sigo por aquí para cuando gustes. Si quieres que el Lic. Rubén Buerhend revise tu caso a fondo por teléfono, la asesoría cuesta \$499. Y si por ahora solo necesitas tu cálculo estimado por escrito, con membrete del despacho y los artículos de ley aplicados, ese documento cuesta \$49. Dime cuál prefieres y te mando el link de pago.";
         if (whatsapp_enviar($c['telefono'], $mensaje)) {
             $enviados2++;
             $pdo->prepare('UPDATE calculos_liquidacion SET segundo_seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $c['id']]);

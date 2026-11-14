@@ -2361,6 +2361,38 @@ exacto que ya existía para Edomex:
   revisa `compras_curso.estado='confirmada'`. Probado con 3 casos. Si se
   agrega otro producto pagado, agregarlo también a este candado.
 
+## Precisión del bot, parte 1: criterios del despacho, Apartado A/B, vacaciones y ventas (14 nov 2026, conversación "chats")
+Pedido del usuario: "el bot tiene que dar la asesoría completa, pero más
+precisa para que no se equivoque". Plan acordado en 6 piezas (1 criterios
+del despacho, 2 LFT consultable artículo por artículo, 3 jurisprudencia
+SCJN consultable, 4 calculadora más precisa, 5 revisión automática diaria
+de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
+- **Apartado A/B** (`api/ia_helpers.php`): se quitó "personal del propio
+  IMSS/ISSSTE" de la lista de rechazo (bug real: trabajadora del IMSS
+  rechazada como Apartado B). Criterio dado por el Lic. Rubén: se decide
+  por el decreto de creación; si dice B pero hay contrato colectivo
+  vigente que dice A, es A (jurisprudencia más reciente). El bot nunca
+  rechaza a una entidad pública por intuición; si hay duda, escala.
+- **Bloque "CRITERIOS DEL DESPACHO PARA ORIENTAR CON PRECISIÓN"** en el
+  prompt: citar artículos solo si es seguro; suspensión disciplinaria
+  (Art. 423-X, máx. 8 días, derecho a ser oído; no es Art. 47); salarios
+  caídos siempre con tope de 12 meses; no afirmar montos exentos de ISR;
+  "prescritas" solo si la herramienta lo dice; neto vs bruto; no afirmar
+  en absoluto lo que depende de pruebas; no cerrar cada mensaje con la
+  misma pregunta de agendar; consistencia si ya se rechazó el caso.
+- **Calculadora** (`api/liquidacion_calculadora.php`): nuevo campo
+  `vacaciones_anteriores_dias_excedentes` separado de
+  `..._dias_prescritos` (antes los días reportados por encima de lo que
+  da la ley se llamaban "prescritos"). Nota sin cita de jurisprudencia no
+  verificada: ahora fundamenta en Arts. 76, 81 y 516.
+- **Seguimiento de ventas** (`api/cron_seguimiento_calculadora.php`): sin
+  montos ni "sin compromiso"; no le escribe a quien el bot ya le dijo que
+  no se le puede atender.
+- **Pendiente (partes 2-6)**: herramienta `consultar_articulo_lft` (falta
+  el texto oficial de la LFT: el PDF de diputados.gob.mx supera el límite
+  de 100 páginas para subirlo al chat), herramienta de jurisprudencia
+  para el bot, revisión diaria de conversaciones y casos de prueba.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
