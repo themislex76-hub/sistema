@@ -2454,7 +2454,7 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
 - Criterio nuevo en el prompt: domingos -- Art. 71 (prima dominical
   "por lo menos" 25%) vs Art. 73 (domingo que es su descanso: salario
   doble), preguntar cuál aplica.
-- 071 corrida y archivos subidos por el usuario (14 nov 2026). **Pendiente**: dar de alta el
+- 071 corrida y archivos subidos (14 nov 2026). Cron Job dado de alta en Ferozo → Tareas programadas (minuto 0, horas 1-5, todos los días): `php /home/c1361311/public_html/sistema/api/cron_revisar_conversaciones_bot.php`. **Pendiente**: confirmar la primera corrida automática y
   Cron Job y correrlo una vez a mano. Tope de prima de antigüedad (Art.
   486): hoy usa el salario mínimo vigente; falta criterio del Lic. sobre
   fecha de despido vs fecha de pago. Respuestas duplicadas del bot
