@@ -2369,9 +2369,11 @@ SCJN consultable, 4 calculadora más precisa, 5 revisión automática diaria
 de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
 - **Apartado A/B** (`api/ia_helpers.php`): se quitó "personal del propio
   IMSS/ISSSTE" de la lista de rechazo (bug real: trabajadora del IMSS
-  rechazada como Apartado B). Criterio dado por el Lic. Rubén: se decide
-  por el decreto de creación; si dice B pero hay contrato colectivo
-  vigente que dice A, es A (jurisprudencia más reciente). El bot nunca
+  rechazada como Apartado B). Criterio dado por el Lic. Rubén, en 3 reglas
+  numeradas en el prompt: (1) si el decreto de creación dice Apartado A,
+  es A; (2) si dice B pero hay contrato colectivo vigente que dice A, es A
+  (jurisprudencia más reciente); (3) solo es B si el decreto dice B y no
+  hay contrato colectivo vigente que diga A. El bot nunca
   rechaza a una entidad pública por intuición; si hay duda, escala.
 - **Bloque "CRITERIOS DEL DESPACHO PARA ORIENTAR CON PRECISIÓN"** en el
   prompt: citar artículos solo si es seguro; suspensión disciplinaria
