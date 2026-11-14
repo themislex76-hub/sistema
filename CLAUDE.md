@@ -714,7 +714,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**070/070b (LFT) ya corridas por el usuario el 14 nov 2026 (1,266 filas confirmadas).** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
+**070/070b (LFT) y 071 (bot_revisiones) ya corridas por el usuario el 14 nov 2026.** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
@@ -2425,7 +2425,7 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   4 (tope prima de antigüedad, falta criterio), 5 (revisión diaria de
   conversaciones) y 6 (casos de prueba).
 
-## Precisión del bot, partes 5 y 6: revisión diaria de conversaciones + casos de prueba (14 nov 2026, conversación "chats", `app.js?v=149`, migración 071)
+## Precisión del bot, partes 5 y 6: revisión diaria de conversaciones + casos de prueba (14 nov 2026, conversación "chats", `app.js?v=150`, migración 071)
 - **Revisión diaria** (`api/cron_revisar_conversaciones_bot.php`, correr 1
   vez al día en la madrugada; `?fecha=AAAA-MM-DD` opcional, default
   ayer): toma cada teléfono donde el cliente escribió y el bot contestó
@@ -2454,11 +2454,37 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
 - Criterio nuevo en el prompt: domingos -- Art. 71 (prima dominical
   "por lo menos" 25%) vs Art. 73 (domingo que es su descanso: salario
   doble), preguntar cuál aplica.
-- **Pendiente**: correr migración 071, subir archivos, dar de alta el
+- 071 corrida y archivos subidos por el usuario (14 nov 2026). **Pendiente**: dar de alta el
   Cron Job y correrlo una vez a mano. Tope de prima de antigüedad (Art.
   486): hoy usa el salario mínimo vigente; falta criterio del Lic. sobre
   fecha de despido vs fecha de pago. Respuestas duplicadas del bot
   cuando el cliente manda 2 mensajes seguidos: sin tocar todavía.
+
+## Primera corrida real de la revisión diaria del bot + criterios nuevos (14 nov 2026, conversación "chats")
+- Corrida real (13-nov): 174 conversaciones del día, 78 revisadas en 2
+  corridas, 12 marcadas. Confirmados con el texto oficial de la LFT como
+  errores REALES del bot: cierre de empresa tratado como "despido
+  injustificado" con Art. 47 (correcto: Arts. 434-436), Art. 132 fracc.
+  XXVII Bis citado para embarazo (es paternidad; lo correcto es Art. 166 /
+  170-I), una baja convertida en "rescisión Art. 51" para sumar 20 días,
+  "2 días prescritos" (ya corregido antes, la conversación era previa) y
+  un seguimiento que ofreció "agendar" a quien ya tenía horario apartado.
+  Falsas alarmas del revisor: montos dichos en condicional, prima de
+  antigüedad "con 15 años" en despido (no aplica), "no consta que usó la
+  herramienta", y el mensaje automático de fuera de horario.
+- Arreglos: 4 criterios nuevos en el prompt del bot (cierre de empresa,
+  despido vs rescisión, embarazo, montos condicionados + riesgo de causal
+  de despido); calibración del revisor (lista de "NO marques" + descarta
+  hallazgos con corrección "N/A"); `cron_seguimiento_calculadora.php` ya
+  no escribe si el cliente apartó cita después del cálculo. 41 casos en
+  `scripts/pruebas_bot.php`.
+- **Pendiente**: caso 5212221603610 -- el bot dio prima de antigüedad de
+  $64,361 con salario $680 sin el tope del Art. 486 (la calculadora sí
+  topa a 2x `configuracion.salario_minimo_diario`); falta ver si el valor
+  guardado en `configuracion` es otro o si el bot calculó a mano. Caso
+  5215626719440 (link de pago reenviado): sin confirmar si fue error.
+  Pendiente decidir si el despacho atiende asesorías a EMPRESAS (el bot
+  dijo que no y después, por instrucción del abogado, sí cobró una).
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --

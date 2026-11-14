@@ -305,6 +305,39 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   (Art. 71 LFT); di "por lo menos", el contrato puede dar más. (2) El
   domingo es su día de descanso y aun así lo hace trabajar: salario
   doble por ese día, además del salario del descanso (Art. 73 LFT).
+· Cierre de la empresa: NO es "despido injustificado" ni tiene que ver
+  con el Art. 47 (ese es de causas imputables al TRABAJADOR). Es
+  terminación de las relaciones de trabajo (Art. 434: fuerza mayor,
+  incosteabilidad notoria, agotamiento de la materia, concurso o
+  quiebra); en esos casos la ley da indemnización de 3 meses de salario
+  más la prima de antigüedad (Art. 436), sin 20 días por año, además del
+  finiquito. El patrón debe dar aviso o pedir autorización al Tribunal
+  según la causa (Art. 435). Si la empresa apenas avisa que va a cerrar,
+  explícale eso y que si le pagan menos de lo que corresponde o no
+  siguen el procedimiento, hay que revisarlo; no lo afirmes como despido
+  injustificado. Error real (13-nov-2026): el bot dijo "el cierre no es
+  causa justificada conforme al Art. 47, así que se trata como despido
+  injustificado".
+· Despido vs. rescisión: la rescisión del Art. 51 es cuando el
+  TRABAJADOR decide separarse porque el patrón incurrió en una de sus
+  causas, dentro de los 30 días siguientes (Art. 52); ahí sí proceden 3
+  meses + 20 días por año + prima de antigüedad (Art. 50). Si el patrón
+  lo dio de baja o le dijo que ya no se presente, es DESPIDO, no
+  rescisión: no lo conviertas en rescisión para sumar los 20 días. Negar
+  las vacaciones no es una causa expresa del Art. 51; a lo mucho podría
+  discutirse como análoga (fracción X), y eso no es seguro.
+· Embarazo: el Art. 166 prohíbe, cuando se ponga en peligro la salud de
+  la mujer o del producto, el trabajo nocturno industrial, en comercios o
+  servicios después de las 10 de la noche y las horas extra, sin
+  afectar su salario; el Art. 170 fracc. I prohíbe trabajos de esfuerzos
+  considerables (cargar, empujar, estar de pie mucho tiempo). El peligro
+  normalmente se acredita con opinión médica: díselo. El Art. 132 fracc.
+  XXVII Bis es el permiso de PATERNIDAD, nunca lo cites para embarazo.
+· Montos condicionados: cuando des lo que corresponde por un despido,
+  dilo condicionado ("si el despido es injustificado, la ley prevé…"),
+  nunca como resultado seguro; y si la persona contó algo que podría
+  justificar su despido (ej. consumo de sustancias en el trabajo, Art.
+  47), recuérdale ese riesgo junto al cálculo, no solo antes.
 · Salarios caídos: cuando los menciones, di siempre que tienen tope de 12
   meses (después solo generan intereses), Art. 48 LFT -- nunca como si
   corrieran sin límite.
@@ -4494,7 +4527,13 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Dar por hecho una cita, llamada o pago que no consta (\"tu asesoría de hoy\", \"ya está confirmado tu pago\").\n"
         . "- Inventar datos del cliente, contradecirse, o ofrecer la asesoría después de haber dicho que no se le puede atender.\n"
         . "- Trato inadecuado: repetir la misma pregunta de venta en cada mensaje, ignorar lo que el cliente pidió, no contestar su duda.\n"
-        . "NO marques: estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n\n"
+        . "NO marques (son falsas alarmas ya vistas):\n"
+        . "- Montos dichos de forma CONDICIONAL (\"si el despido es injustificado, te corresponden 3 meses\", \"si llegaran a correrte...\"): eso es correcto, no es prometer el resultado.\n"
+        . "- La prima de antigüedad en un despido o separación por el patrón: procede sin importar los años de servicio y sea justificado o no (Art. 162 fracc. III); los 15 años solo se exigen en renuncia voluntaria.\n"
+        . "- Que no conste que el bot usó una herramienta: no puedes ver sus herramientas; juzga solo si lo que dijo es correcto.\n"
+        . "- El mensaje automático de fuera de horario (\"Te recordamos que nuestro horario de atención es...\"), los recordatorios de pago y las decisiones del ABOGADO humano: no son respuestas del bot.\n"
+        . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
+        . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
         . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"
         . 'Responde ÚNICAMENTE con un JSON válido, sin texto antes ni después, con esta forma: '
         . '{"veredicto":"ok"|"revisar","gravedad":"alta"|"media"|"baja"|null,"resumen":"1 línea","hallazgos":[{"cita":"frase corta del bot","problema":"qué está mal y por qué","correccion":"qué debió decir"}]}. '
@@ -4544,7 +4583,13 @@ function ia_parsear_revision_bot(string $texto): ?array
     if ($ini === false || $fin === false) return null;
     $j = json_decode(substr($texto, $ini, $fin - $ini + 1), true);
     if (!is_array($j)) return null;
-    $hallazgos = array_values(array_filter((array)($j['hallazgos'] ?? []), 'is_array'));
+    // Fuera los hallazgos que la propia IA revisora reconoció como no-error
+    // (caso real: "correccion": "N/A - revisar si aplica").
+    $hallazgos = array_values(array_filter((array)($j['hallazgos'] ?? []), function ($h) {
+        if (!is_array($h)) return false;
+        $c = trim((string)($h['correccion'] ?? ''));
+        return !preg_match('#^n\s*/?\s*a\b#i', $c) && stripos((string)($h['problema'] ?? ''), 'no hay error') === false;
+    }));
     $veredicto = (($j['veredicto'] ?? '') === 'revisar' && $hallazgos) ? 'revisar' : 'ok';
     $gravedad = in_array($j['gravedad'] ?? null, ['alta', 'media', 'baja'], true) ? $j['gravedad'] : ($veredicto === 'revisar' ? 'media' : null);
     return [
