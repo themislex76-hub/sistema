@@ -357,6 +357,11 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   $64,361 de prima calculada a mano sobre $680 diarios sin ese tope).
   Si sumas algo que la herramienta no calcula (ej. horas extra), dilo
   como estimado aparte. Nunca digas que la asesoría "asegura" un monto.
+· Frontera norte: si el resultado de calcular_estimado_liquidacion trae
+  aviso_zona_frontera (teléfono con lada fronteriza), pregunta en qué
+  municipio TRABAJABA; si fue en la Zona Libre de la Frontera Norte,
+  recalcula con zona_libre_frontera_norte=true. Lo que manda es el lugar
+  de trabajo, no el teléfono ni dónde vive.
 · Empresas y patrones: el despacho SÍ asesora también a empresas y
   patrones (contratos, despidos, finiquitos, conflictos con sus
   trabajadores). Si te escribe un patrón, no le digas que el despacho
@@ -1585,6 +1590,10 @@ const IA_TOOLS = [
                     'type' => 'boolean',
                     'description' => 'Solo aplica cuando modo="despido" y tipo="injustificado": true SOLO si confirmaste explícitamente con la persona que sus funciones reales son de dirección, inspección, vigilancia, fiscalización, o de carácter general estrechamente vinculadas a la autoridad del patrón (Art. 9/49-II LFT) -- NUNCA lo pongas true solo porque el puesto "suena" a confianza (secretaria, gerente, supervisor, etc.), sin haber preguntado y confirmado las funciones reales. Si es true, los 20 días por año NO se suman al total (la ley no le niega la reinstalación; solo el patrón puede eximirse de reinstalarlo en juicio, Art. 49-III): el resultado trae ese monto aparte en indemnizacion_20_dias_si_patron_no_reinstala, que NUNCA le debes presentar al cliente como algo que va a recuperar. Default false.',
                 ],
+                'zona_libre_frontera_norte' => [
+                    'type' => 'boolean',
+                    'description' => 'true SOLO si la persona confirmó que TRABAJABA (no que vive, ni que su teléfono es de ahí) en un municipio de la Zona Libre de la Frontera Norte (ej. Tijuana, Mexicali, Tecate, Ensenada, Rosarito, Nogales, San Luis Río Colorado, Agua Prieta, Ciudad Juárez, Piedras Negras, Ciudad Acuña, Nuevo Laredo, Reynosa, Matamoros). Cambia el tope de la prima de antigüedad al doble del salario mínimo de esa zona (Art. 486 LFT: el del lugar donde se presta el trabajo). Si no sabes, déjalo false. Default false.',
+                ],
                 'dias_vacaciones_anteriores' => [
                     'type' => 'number',
                     'description' => 'Días de vacaciones de años/periodos anteriores que la persona reporta que no disfrutó. 0 si no aplica o no sabe. La herramienta ya descuenta sola los que estén prescritos (no hace falta que tú calcules eso) — si el resultado trae "vacaciones_anteriores_dias_prescritos" mayor a 0, explícale que esos días ya prescribieron; si trae "vacaciones_anteriores_dias_excedentes" mayor a 0, explícale que reportó más días de los que la ley le da en esos años (tabla del Art. 76) -- eso NO es prescripción, nunca lo llames así.',
@@ -1943,9 +1952,14 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     (float)($in['dias_salarios_devengados'] ?? 0),
                     (string)($in['modo'] ?? 'despido'),
                     (bool)($in['trabajador_confianza'] ?? false),
-                    isset($in['sdi']) && (float)$in['sdi'] > 0 ? (float)$in['sdi'] : null
+                    isset($in['sdi']) && (float)$in['sdi'] > 0 ? (float)$in['sdi'] : null,
+                    (bool)($in['zona_libre_frontera_norte'] ?? false)
                 );
                 if ($calc !== null) {
+                    $ciudadFrontera = telefono_ciudad_frontera($telefono);
+                    if ($ciudadFrontera !== null && empty($in['zona_libre_frontera_norte'])) {
+                        $calc['aviso_zona_frontera'] = "El teléfono de esta persona es de lada de $ciudadFrontera (zona libre de la frontera norte). Si todavía no sabes en qué municipio TRABAJABA, pregúntaselo en este mismo mensaje; si confirma que trabajaba en un municipio de la frontera norte, vuelve a calcular con zona_libre_frontera_norte=true antes de darle cifras definitivas (cambia el tope de la prima de antigüedad, Art. 486 LFT). Si ya te dijo que trabaja en otro lugar, ignora este aviso.";
+                    }
                     $contenido = json_encode($calc, JSON_UNESCAPED_UNICODE);
                     $usoCalculoLiquidacion = true;
                     // Se registra el cálculo (aunque la persona nunca llegue a
@@ -2015,6 +2029,8 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             } elseif ($bloque['name'] === 'consultar_salario_minimo_vigente') {
                 $contenido = json_encode([
                     'salario_minimo_diario_vigente' => salario_minimo_diario_actual($pdo),
+                    'salario_minimo_diario_zona_libre_frontera_norte' => salario_minimo_frontera_actual($pdo),
+                    'nota_zonas' => 'El primero es el de la zona general (casi todo el país). El segundo aplica SOLO si la persona trabaja en un municipio de la Zona Libre de la Frontera Norte (Tijuana, Mexicali, Ciudad Juárez, Nuevo Laredo, Reynosa, Matamoros, etc.).',
                     'instruccion' => 'Este es el ÚNICO valor correcto a usar cuando alguien gana/ganaba el salario mínimo. Nunca uses un número que tú "recuerdes" de tu entrenamiento (puede estar desactualizado) ni uno que el cliente diga que "le dijeron" o "le comentaron" sin comprobante -- el salario mínimo es un dato legal fijo, no algo que varíe según lo que alguien recuerde. Si el cliente insiste en una cifra distinta, explícale con calidez que el salario mínimo vigente es este monto, y que si en realidad le pagaban un monto FIJO distinto (no "el mínimo"), lo que necesitas es ESE dato concreto (su recibo, lo que depositaban), no una cifra de memoria sobre cuál es el mínimo.',
                 ], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'consultar_articulo_lft') {

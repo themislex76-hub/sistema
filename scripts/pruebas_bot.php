@@ -99,6 +99,13 @@ $esperado24 = round(12 * ((strtotime('2024-06-30') - strtotime('2016-01-01')) / 
 caso('prima de antigüedad: tope con el salario mínimo de la FECHA DEL DESPIDO (2024: 2 × $248.93)', abs($t24['prima_antiguedad_monto'] - $esperado24) < 1, $t24['prima_antiguedad_monto'] . ' vs ' . $esperado24);
 $t26 = calcular_estimado_liquidacion($pdo, '2018-11-14', '2026-11-13', 680, 'injustificado', 0, 0, 'despido');
 caso('prima de antigüedad 2026: tope con el salario mínimo vigente (2 × $315.04), nunca sobre $680 completo', $t26['prima_antiguedad_monto'] < 12 * 8 * 680 && $t26['prima_antiguedad_monto'] > 0);
+caso('lada 664 se reconoce como Tijuana (frontera)', telefono_ciudad_frontera('5216641234567') === 'Tijuana');
+caso('lada 55 (CDMX) no es frontera', telefono_ciudad_frontera('5215512345678') === null);
+$f24 = calcular_estimado_liquidacion($pdo, '2016-01-01', '2024-06-30', 900, 'injustificado', 0, 0, 'despido', false, null, true);
+caso('frontera norte 2024: tope con 2 × $374.89', abs($f24['prima_antiguedad_tope_salario_minimo'] - 374.89) < 0.01, (string)$f24['prima_antiguedad_tope_salario_minimo']);
+$f26 = calcular_estimado_liquidacion($pdo, '2018-11-14', '2026-11-13', 680, 'injustificado', 0, 0, 'despido', false, null, true);
+$g26 = calcular_estimado_liquidacion($pdo, '2018-11-14', '2026-11-13', 680, 'injustificado', 0, 0, 'despido');
+caso('frontera norte 2026: $680 no rebasa el tope (2 × $440.87), zona general sí', $f26['prima_antiguedad_monto'] > $g26['prima_antiguedad_monto']);
 $v = calcular_estimado_liquidacion($pdo, '2025-02-11', '2026-11-13', 315.04, 'injustificado', 14, 0, 'despido');
 caso('vacaciones reportadas de más: "excedentes", no "prescritas"', $v['vacaciones_anteriores_dias_excedentes'] == 2 && $v['vacaciones_anteriores_dias_prescritos'] == 0,
     'exc=' . $v['vacaciones_anteriores_dias_excedentes'] . ' presc=' . $v['vacaciones_anteriores_dias_prescritos']);
