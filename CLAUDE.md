@@ -2571,8 +2571,10 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   libre de la frontera norte" (`configuracion_set.php` lo acepta).
   **Cada enero actualizar ambos valores y agregar el año que termina a
   las tablas históricas (general y frontera).**
-- **No cubierto**: la pestaña "Cálculo de liquidación" de cada expediente
-  (`computeLiquidacion()` en app.js) sigue usando solo la zona general.
+- La pestaña "Cálculo de liquidación" de cada expediente
+  (`computeLiquidacion()` en app.js) usa solo la zona general -- A
+  PROPÓSITO: decisión del usuario (14-nov-2026), el despacho no lleva
+  juicios en la frontera; la zona frontera solo aplica al bot de WhatsApp.
 - 52 casos en `scripts/pruebas_bot.php`.
 
 ## Plantillas de WhatsApp aprobadas por Meta
