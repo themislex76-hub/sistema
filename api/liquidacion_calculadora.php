@@ -84,6 +84,27 @@ function antiguedad_texto_lft(DateTimeImmutable $ing, DateTimeImmutable $baj): s
     return implode(', ', $partes);
 }
 
+// Salario mínimo general diario (zona general / resto del país), CONASAMI,
+// vigente desde el 1 de enero de cada año. Para el año en curso (y
+// posteriores) se usa el valor capturado en Equipo (configuracion), que el
+// Administrador actualiza cada enero.
+const SALARIOS_MINIMOS_HISTORICOS = [
+    2016 => 73.04, 2017 => 80.04, 2018 => 88.36, 2019 => 102.68, 2020 => 123.22,
+    2021 => 141.70, 2022 => 172.87, 2023 => 207.44, 2024 => 248.93, 2025 => 278.80,
+];
+
+// Criterio del despacho (Lic. Rubén Buerhend, 14-nov-2026): el tope de la
+// prima de antigüedad (Arts. 162-II y 486 LFT, doble del salario mínimo)
+// se calcula con el salario mínimo vigente a la FECHA DEL DESPIDO, no el de
+// la fecha del pago.
+function salario_minimo_diario_en_fecha(PDO $pdo, string $fecha): float
+{
+    $anio = (int)substr($fecha, 0, 4);
+    if ($anio <= 0 || $anio >= (int)date('Y')) return salario_minimo_diario_actual($pdo);
+    if (isset(SALARIOS_MINIMOS_HISTORICOS[$anio])) return SALARIOS_MINIMOS_HISTORICOS[$anio];
+    return $anio < 2016 ? SALARIOS_MINIMOS_HISTORICOS[2016] : salario_minimo_diario_actual($pdo);
+}
+
 function salario_minimo_diario_actual(PDO $pdo): float
 {
     $stmt = $pdo->prepare("SELECT valor FROM configuracion WHERE clave = 'salario_minimo_diario'");
@@ -239,7 +260,7 @@ function calcular_estimado_liquidacion(
     // despido o rescisión, sin importar si el despido fue justificado o
     // injustificado. En renuncia voluntaria SOLO procede con 15 años o más
     // de servicio (Art. 162-III LFT).
-    $salarioMinimo = salario_minimo_diario_actual($pdo);
+    $salarioMinimo = salario_minimo_diario_en_fecha($pdo, $fechaBaja);
     $topePrima = 2 * $salarioMinimo;
     $basePrima = min($salarioDiario, $topePrima);
     $primaAntiguedadProcede = $modo !== 'renuncia' || $cy >= 15;

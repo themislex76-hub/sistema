@@ -714,7 +714,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**070/070b (LFT) y 071 (bot_revisiones) ya corridas por el usuario el 14 nov 2026.** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
+**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026.** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
@@ -2515,6 +2515,19 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   extra. Tope de prima de antigüedad en zona libre de la frontera norte:
   la calculadora solo usa el salario mínimo general (Art. 486 dice el del
   área geográfica del lugar de trabajo).
+
+## Tope de prima de antigüedad con el salario mínimo de la FECHA DEL DESPIDO (14 nov 2026, conversación "chats", `app.js?v=151`)
+- Criterio del Lic. Rubén Buerhend: el tope de la prima de antigüedad
+  (doble del salario mínimo, Arts. 162-II y 486 LFT) usa el salario mínimo
+  vigente a la fecha del despido, no el de la fecha de pago.
+- `salario_minimo_diario_en_fecha()` (`api/liquidacion_calculadora.php`) y
+  `salarioMinimoEnFecha()` (`assets/app.js`, `computeLiquidacion()`), con
+  la misma tabla `SALARIOS_MINIMOS_HISTORICOS` (zona general CONASAMI
+  2016-2025). Año en curso o posterior = valor de Equipo
+  (`configuracion.salario_minimo_diario`). **Cada enero, al capturar el
+  salario mínimo nuevo en Equipo, agregar el del año que termina a las 2
+  tablas** (PHP y JS). Zona libre de la frontera norte sigue sin
+  manejarse. 2 casos nuevos en `scripts/pruebas_bot.php` (46 en total).
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
