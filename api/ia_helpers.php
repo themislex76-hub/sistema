@@ -299,6 +299,12 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   revisar si existe reglamento interior, si respeta el máximo de 8 días y
   si la escucharon antes. El Art. 47 es de rescisión (despido), no de
   suspensión.
+· Trabajo en domingo: distingue 2 supuestos y pregunta cuál es si no lo
+  sabes. (1) Trabaja el domingo pero descansa otro día de la semana:
+  prima dominical de AL MENOS 25% sobre el salario de un día ordinario
+  (Art. 71 LFT); di "por lo menos", el contrato puede dar más. (2) El
+  domingo es su día de descanso y aun así lo hace trabajar: salario
+  doble por ese día, además del salario del descanso (Art. 73 LFT).
 · Salarios caídos: cuando los menciones, di siempre que tienen tope de 12
   meses (después solo generan intereses), Art. 48 LFT -- nunca como si
   corrieran sin límite.
@@ -4403,4 +4409,148 @@ function ia_matchear_evento_calendario(string $tituloEvento, ?string $descripcio
     }
 
     return ['expediente_id' => $expedienteId, 'etapa_key' => $etapaKey];
+}
+
+// ---------------------------------------------------------------------
+// Revisión automática diaria de conversaciones del bot (14 nov 2026,
+// pieza 5 del plan de precisión, conversación "chats"). Una IA revisora
+// (Sonnet) lee la conversación completa de un día con el texto OFICIAL de
+// cada artículo de la LFT que el bot citó, y la compara contra los
+// criterios del despacho (el mismo bloque CRITERIOS DEL DESPACHO del
+// prompt del bot + las reglas duras que salieron de errores reales). Nunca
+// corrige nada sola: solo marca para que un humano revise.
+// ---------------------------------------------------------------------
+const IA_MODELO_REVISION_BOT = 'claude-sonnet-5';
+
+function ia_criterios_despacho_texto(): string
+{
+    $ini = strpos(IA_SYSTEM_PROMPT, 'CRITERIOS DEL DESPACHO PARA ORIENTAR CON PRECISIÓN');
+    if ($ini === false) return '';
+    $fin = strpos(IA_SYSTEM_PROMPT, "\nSi es Apartado B:", $ini);
+    return trim(substr(IA_SYSTEM_PROMPT, $ini, $fin === false ? 6000 : $fin - $ini));
+}
+
+// Números de artículo de la LFT mencionados en los mensajes del bot
+// ("Art. 423 fracc. X", "artículo 48", "Arts. 76, 81 y 516").
+function ia_articulos_citados(string $texto): array
+{
+    $nums = [];
+    if (preg_match_all('/\b(?:art[ií]culos?|arts?\.)\s*((?:\d+(?:\s*-\s*[A-ZÑ]\b|\s+bis\b)?(?:\s*(?:,|y|e)\s*)?)+)/iu', $texto, $m)) {
+        foreach ($m[1] as $grupo) {
+            if (preg_match_all('/\d+(?:\s*-\s*[A-ZÑ]\b|\s+bis\b)?/iu', $grupo, $mm)) {
+                foreach ($mm[0] as $n) $nums[] = preg_replace('/\s+/', ' ', trim($n));
+            }
+        }
+    }
+    return array_values(array_unique($nums));
+}
+
+/**
+ * @param array $mensajes filas de whatsapp_conversaciones (direccion, texto, respondido_por, creado_en), en orden
+ * @param array $contextoPrevio mismas filas, de días anteriores (solo contexto)
+ * @return array|null ['veredicto'=>'ok'|'revisar','gravedad'=>?string,'resumen'=>?string,'hallazgos'=>array] o null si falló
+ */
+function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoPrevio = []): ?array
+{
+    $credentialsFile = __DIR__ . '/anthropic_credentials.php';
+    if (!file_exists($credentialsFile)) return null;
+    require_once $credentialsFile;
+    require_once __DIR__ . '/lft_helpers.php';
+
+    $fmt = function (array $m): string {
+        $quien = $m['direccion'] === 'entrante' ? 'CLIENTE' : (($m['respondido_por'] ?? 'ia') === 'humano' ? 'ABOGADO (humano)' : 'BOT');
+        return '[' . substr((string)$m['creado_en'], 0, 16) . "] $quien: " . trim((string)$m['texto']);
+    };
+
+    $textoBot = implode("\n", array_map(fn($m) => $m['texto'], array_filter($mensajes, fn($m) => $m['direccion'] === 'saliente')));
+    $articulos = ia_articulos_citados($textoBot);
+    $bloqueLey = '';
+    if ($articulos) {
+        $r = lft_consultar_articulos($pdo, array_slice($articulos, 0, 5));
+        if (!empty($r['articulos'])) {
+            $partes = [];
+            foreach ($r['articulos'] as $a) {
+                $partes[] = 'Art. ' . $a['numero'] . ': ' . ($a['encontrado'] ? mb_strimwidth($a['texto'], 0, 3000, '…') : '(NO EXISTE en la LFT)');
+            }
+            $bloqueLey = "TEXTO OFICIAL de los artículos que citó el bot (" . ($r['fuente'] ?? 'LFT vigente') . "):\n" . implode("\n\n", $partes);
+        }
+    }
+
+    $contenido = '';
+    if ($contextoPrevio) $contenido .= "CONTEXTO (mensajes de días anteriores, NO se revisan, solo para entender):\n" . implode("\n", array_map($fmt, $contextoPrevio)) . "\n\n";
+    $contenido .= "CONVERSACIÓN A REVISAR:\n" . implode("\n", array_map($fmt, $mensajes));
+    if ($bloqueLey) $contenido .= "\n\n" . $bloqueLey;
+
+    $system = 'Eres el abogado supervisor (experto en derecho laboral mexicano, LFT vigente) de un despacho que usa un '
+        . 'bot de WhatsApp para orientar a trabajadores y vender una asesoría telefónica de $499. Revisas lo que el BOT '
+        . 'contestó en esta conversación para detectar errores que dañen al cliente o al despacho. Solo revisas los '
+        . 'mensajes del BOT (no los del abogado humano).' . "\n\n"
+        . "Marca un hallazgo SOLO si es un error real y concreto, por ejemplo:\n"
+        . "- Afirmación legal incorrecta, o un artículo citado que no dice lo que el bot afirma (compara contra el TEXTO OFICIAL que se te da; si un artículo dice NO EXISTE, es error grave).\n"
+        . "- Jurisprudencia o tesis citada con número/rubro (el bot solo puede citarla si la obtuvo de su buscador; si la cita, márcalo para verificación).\n"
+        . "- Generar falsa expectativa: montos o derechos que no proceden (ej. ofrecer 20 días por año en un DESPIDO, aunque sea de confianza; salarios caídos sin el tope de 12 meses; asegurar que ganará o que un acta es nula).\n"
+        . "- Rechazar un caso que sí se atiende (ej. tratar como Apartado B a IMSS, CFE, Pemex o universidades autónomas) o atender uno que no.\n"
+        . "- Precio distinto de $499 para la asesoría, o prometer precios viejos.\n"
+        . "- Dar por hecho una cita, llamada o pago que no consta (\"tu asesoría de hoy\", \"ya está confirmado tu pago\").\n"
+        . "- Inventar datos del cliente, contradecirse, o ofrecer la asesoría después de haber dicho que no se le puede atender.\n"
+        . "- Trato inadecuado: repetir la misma pregunta de venta en cada mensaje, ignorar lo que el cliente pidió, no contestar su duda.\n"
+        . "NO marques: estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n\n"
+        . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"
+        . 'Responde ÚNICAMENTE con un JSON válido, sin texto antes ni después, con esta forma: '
+        . '{"veredicto":"ok"|"revisar","gravedad":"alta"|"media"|"baja"|null,"resumen":"1 línea","hallazgos":[{"cita":"frase corta del bot","problema":"qué está mal y por qué","correccion":"qué debió decir"}]}. '
+        . 'gravedad alta = puede causar daño real al cliente o al despacho (falsa expectativa de dinero, error legal de fondo, pago/cita inexistente); '
+        . 'media = error legal menor o mala atención; baja = detalle. Si no hay errores reales: {"veredicto":"ok","gravedad":null,"resumen":"","hallazgos":[]}.';
+
+    $payload = [
+        'model' => IA_MODELO_REVISION_BOT,
+        'max_tokens' => 1500,
+        'thinking' => ['type' => 'disabled'],
+        'system' => $system,
+        'messages' => [['role' => 'user', 'content' => $contenido]],
+    ];
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => [
+            'x-api-key: ' . ANTHROPIC_API_KEY,
+            'anthropic-version: 2023-06-01',
+            'content-type: application/json',
+        ],
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
+        CURLOPT_TIMEOUT => 90,
+    ]);
+    $raw = curl_exec($ch);
+    $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+    if ($raw === false || $status !== 200) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [revisar_conversacion_bot] status=$status | curl=$curlError | body=" . mb_strimwidth((string)$raw, 0, 500, '…') . "\n", FILE_APPEND);
+        return null;
+    }
+    $data = json_decode($raw, true);
+    $texto = '';
+    foreach (($data['content'] ?? []) as $bloque) {
+        if (($bloque['type'] ?? '') === 'text') $texto .= $bloque['text'];
+    }
+    return ia_parsear_revision_bot($texto);
+}
+
+function ia_parsear_revision_bot(string $texto): ?array
+{
+    $ini = strpos($texto, '{');
+    $fin = strrpos($texto, '}');
+    if ($ini === false || $fin === false) return null;
+    $j = json_decode(substr($texto, $ini, $fin - $ini + 1), true);
+    if (!is_array($j)) return null;
+    $hallazgos = array_values(array_filter((array)($j['hallazgos'] ?? []), 'is_array'));
+    $veredicto = (($j['veredicto'] ?? '') === 'revisar' && $hallazgos) ? 'revisar' : 'ok';
+    $gravedad = in_array($j['gravedad'] ?? null, ['alta', 'media', 'baja'], true) ? $j['gravedad'] : ($veredicto === 'revisar' ? 'media' : null);
+    return [
+        'veredicto' => $veredicto,
+        'gravedad' => $veredicto === 'revisar' ? $gravedad : null,
+        'resumen' => mb_substr(trim((string)($j['resumen'] ?? '')), 0, 500),
+        'hallazgos' => $veredicto === 'revisar' ? $hallazgos : [],
+    ];
 }

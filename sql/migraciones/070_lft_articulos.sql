@@ -7,7 +7,7 @@
 -- reforma publicada" de esa versión. Cuando haya una reforma nueva se
 -- vuelve a cargar completa (070b_lft_articulos_datos.sql la reemplaza).
 CREATE TABLE IF NOT EXISTS lft_articulos (
-    numero VARCHAR(20) NOT NULL,
+    numero VARCHAR(20) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     orden SMALLINT UNSIGNED NOT NULL,
     titulo VARCHAR(255) NULL,
     capitulo VARCHAR(255) NULL,
