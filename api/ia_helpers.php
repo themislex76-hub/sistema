@@ -280,10 +280,18 @@ piso de referencia, no lo que le corresponde con exactitud.
 CRITERIOS DEL DESPACHO PARA ORIENTAR CON PRECISIÓN (13-nov-2026) -- la
 orientación debe ser completa, pero cada afirmación legal tiene que ser
 exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
-· Artículos: cita un artículo SOLO si estás seguro de que dice eso. Es
-  preferible explicar la regla sin número de artículo que citar uno
-  equivocado (errores reales: Art. 804 para "conocer la acusación", Art.
-  47 para la suspensión -- ninguno dice eso).
+· Artículos: antes de mencionarle al cliente CUALQUIER número de
+  artículo, consulta su texto oficial con consultar_articulo_lft (o
+  buscar_en_lft si no sabes cuál es) en ese mismo turno, y cítalo solo
+  si el texto de verdad dice lo que vas a afirmar. Si la herramienta no
+  está disponible o el texto no lo respalda, explica la regla sin número
+  de artículo -- es preferible a citar uno equivocado (errores reales:
+  Art. 804 para "conocer la acusación", Art. 47 para la suspensión --
+  ninguno dice eso). Es la LFT vigente (última reforma DOF 14-05-2026).
+· Jurisprudencia: solo menciona una tesis o jurisprudencia que te haya
+  regresado buscar_jurisprudencia en ese mismo turno y que de verdad
+  respalde lo que dices; nunca un número, rubro o registro de memoria.
+  Casi nunca hace falta con un cliente: úsala solo si aporta de verdad.
 · Suspensión disciplinaria: el patrón SÍ puede suspender como medida
   disciplinaria si está prevista en el reglamento interior de trabajo,
   hasta por 8 días, y el trabajador tiene derecho a ser oído antes (Art.
@@ -1386,6 +1394,49 @@ const IA_TOOLS = [
         ],
     ],
     [
+        'name' => 'consultar_articulo_lft',
+        'description' => 'Trae el TEXTO OFICIAL vigente de uno o varios artículos de la Ley Federal del Trabajo (máx. 5 por llamada). Llámala SIEMPRE antes de mencionarle a un cliente un número de artículo, para confirmar que ese artículo de verdad dice lo que vas a afirmar -- nunca cites un artículo de memoria (errores reales: citar el Art. 47 para una suspensión, cuando es el Art. 423 fracción X). Acepta formatos como "47", "48", "423", "39-A", "3 Bis".',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'articulos' => [
+                    'type' => 'array',
+                    'items' => ['type' => 'string'],
+                    'description' => 'Números de artículo a consultar, ej. ["48", "50", "423"].',
+                ],
+            ],
+            'required' => ['articulos'],
+        ],
+    ],
+    [
+        'name' => 'buscar_en_lft',
+        'description' => 'Busca por tema, en el texto oficial vigente de la Ley Federal del Trabajo, qué artículos hablan de algo (ej. "suspensión disciplinaria", "prima de antigüedad", "trabajo en domingo"). Úsala cuando necesites fundamentar algo y no estés seguro de qué artículo es; luego confirma con consultar_articulo_lft si hace falta el texto completo.',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'tema' => [
+                    'type' => 'string',
+                    'description' => 'Palabras clave del tema, con el vocabulario que usaría la ley (ej. "suspensión ocho días trabajador oído").',
+                ],
+            ],
+            'required' => ['tema'],
+        ],
+    ],
+    [
+        'name' => 'buscar_jurisprudencia',
+        'description' => 'Busca tesis y jurisprudencias REALES de la Suprema Corte / Tribunales Colegiados (Semanario Judicial de la Federación) guardadas en el sistema. Es la ÚNICA forma permitida de mencionar una jurisprudencia: nunca cites una tesis, número de jurisprudencia o registro digital de memoria. Úsala solo cuando de verdad aporte a la orientación (la mayoría de las respuestas no necesitan jurisprudencia, basta la ley).',
+        'input_schema' => [
+            'type' => 'object',
+            'properties' => [
+                'terminos' => [
+                    'type' => 'string',
+                    'description' => 'Términos jurídicos con los que probablemente está redactado el rubro de la tesis (ej. "trabajadores de confianza reinstalación indemnización", "apartado A organismo descentralizado contrato colectivo").',
+                ],
+            ],
+            'required' => ['terminos'],
+        ],
+    ],
+    [
         'name' => 'escalar_a_humano',
         'description' => 'Detiene tus respuestas automáticas en esta conversación y avisa DE INMEDIATO (notificación push) a un abogado del despacho para que la atienda en persona -- a partir de aquí tú ya no le contestas más, un humano toma el chat desde Prospectos (WhatsApp). Úsala cuando: (a) la persona insiste en que ya hizo un pago y consultar_cita_pago confirma que en efecto NO aparece confirmado (nunca escales -ni tampoco confirmes nada- sin haber llamado consultar_cita_pago primero en este mismo turno); (b) acusa al despacho de fraude/estafa, amenaza con exhibirlo públicamente, o está claramente muy molesta y ya no avanza con tus respuestas; (c) pide explícitamente hablar por teléfono/que le llamen ya y no tienes forma de cumplirlo, SIN que haya ninguna queja o disputa de por medio. Llámala UNA sola vez por este tipo de situación -- si ya la llamaste antes en esta misma conversación, no la vuelvas a llamar, solo mantén tu respuesta breve y de espera.',
         'input_schema' => [
@@ -1725,6 +1776,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     require_once __DIR__ . '/mercadopago_helpers.php';
     require_once __DIR__ . '/prospectos_helpers.php';
     require_once __DIR__ . '/push_helpers.php';
+    require_once __DIR__ . '/lft_helpers.php';
 
     // Herramientas cuyo resultado hay que calcular de verdad en PHP (no
     // dejar que la IA "invente" el número o el horario) y devolverle a
@@ -1901,6 +1953,12 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     'salario_minimo_diario_vigente' => salario_minimo_diario_actual($pdo),
                     'instruccion' => 'Este es el ÚNICO valor correcto a usar cuando alguien gana/ganaba el salario mínimo. Nunca uses un número que tú "recuerdes" de tu entrenamiento (puede estar desactualizado) ni uno que el cliente diga que "le dijeron" o "le comentaron" sin comprobante -- el salario mínimo es un dato legal fijo, no algo que varíe según lo que alguien recuerde. Si el cliente insiste en una cifra distinta, explícale con calidez que el salario mínimo vigente es este monto, y que si en realidad le pagaban un monto FIJO distinto (no "el mínimo"), lo que necesitas es ESE dato concreto (su recibo, lo que depositaban), no una cifra de memoria sobre cuál es el mínimo.',
                 ], JSON_UNESCAPED_UNICODE);
+            } elseif ($bloque['name'] === 'consultar_articulo_lft') {
+                $contenido = json_encode(lft_consultar_articulos($pdo, (array)($in['articulos'] ?? [])), JSON_UNESCAPED_UNICODE);
+            } elseif ($bloque['name'] === 'buscar_en_lft') {
+                $contenido = json_encode(lft_buscar_texto($pdo, (string)($in['tema'] ?? '')), JSON_UNESCAPED_UNICODE);
+            } elseif ($bloque['name'] === 'buscar_jurisprudencia') {
+                $contenido = json_encode(jurisprudencia_buscar_para_bot($pdo, (string)($in['terminos'] ?? '')), JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'confirmar_compra_documento_calculo') {
                 $contenido = ia_resultado_confirmar_compra_documento_calculo($pdo, $telefono);
             } elseif ($bloque['name'] === 'escalar_a_humano') {
