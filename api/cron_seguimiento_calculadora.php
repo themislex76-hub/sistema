@@ -49,8 +49,17 @@ foreach ($calculos as $c) {
     }
 
     // Ya pagó/agendó una asesoría — ya convirtió, no hace falta insistir.
-    $chkCita = $pdo->prepare("SELECT id FROM citas_asesoria WHERE telefono = :t AND estado = 'confirmada' LIMIT 1");
-    $chkCita->execute([':t' => $c['telefono']]);
+    // También si apartó un horario DESPUÉS de este cálculo aunque no lo haya
+    // pagado: caso real (13-nov-2026) de un cliente con horario apartado
+    // para el miércoles 18 al que este seguimiento le volvió a ofrecer
+    // "¿quieres que te agende?", como si no hubiera hecho nada (el
+    // recordatorio de pago ya lo cubre cron_recordatorio_pago_pendiente.php).
+    $chkCita = $pdo->prepare(
+        "SELECT id FROM citas_asesoria
+         WHERE telefono = :t AND (estado = 'confirmada' OR creado_en >= :calc)
+         LIMIT 1"
+    );
+    $chkCita->execute([':t' => $c['telefono'], ':calc' => $c['creado_en']]);
     if ($chkCita->fetch()) {
         $omitidos++;
         continue;

@@ -2416,7 +2416,7 @@ function botRevisionesHTML(){
         <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
           <span class="badge ${g[0]}">${g[1]}</span>
           <strong style="font-size:13px;">${escapeHTML(r.prospecto_nombre || r.telefono)}</strong>
-          <span style="font-size:12px; color:var(--gray);">${escapeHTML(r.telefono)} · ${fmtDate(r.fecha)}</span>
+          <span style="font-size:12px; color:var(--gray);">${r.prospecto_nombre ? escapeHTML(r.telefono) + ' · ' : ''}${fmtDate(r.fecha)}</span>
         </div>
         ${r.resumen ? `<div style="font-size:13px; margin-bottom:6px;">${escapeHTML(r.resumen)}</div>` : ''}
         <ul style="margin:0 0 10px 18px; padding:0; font-size:12.5px;">
