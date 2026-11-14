@@ -67,20 +67,35 @@ function whatsapp_avisar_fuera_horario_si_aplica(PDO $pdo, string $telefono): bo
     if (dentro_de_horario_atencion()) {
         return false;
     }
-    $stmt = $pdo->prepare(
-        "SELECT creado_en FROM whatsapp_conversaciones
-         WHERE telefono = :t AND direccion = 'saliente' AND texto = :texto
-         ORDER BY id DESC LIMIT 1"
-    );
-    $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_FUERA_HORARIO]);
-    $ultimoAviso = $stmt->fetch();
-    $yaAvisado = $ultimoAviso && strtotime((string)$ultimoAviso['creado_en']) >= time() - 6 * 3600;
-    if (!$yaAvisado) {
-        whatsapp_enviar($telefono, WHATSAPP_MENSAJE_FUERA_HORARIO);
+    // Candado por teléfono (GET_LOCK de MySQL): bug real (13-nov-2026) --
+    // cuando el cliente manda 2-3 burbujas seguidas fuera de horario, cada
+    // webhook revisaba al mismo tiempo "¿ya se le avisó?", ninguno veía el
+    // aviso del otro, y el cliente recibía el mismo aviso 2-3 veces en el
+    // mismo segundo. Con el candado, solo uno revisa+registra a la vez; el
+    // aviso se registra ANTES de mandarse para que el siguiente ya lo vea.
+    $lockKey = 'aviso_fh_' . $telefono;
+    $stmtLock = $pdo->prepare('SELECT GET_LOCK(:k, 10)');
+    $stmtLock->execute([':k' => $lockKey]);
+    try {
         $stmt = $pdo->prepare(
-            "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+            "SELECT TIMESTAMPDIFF(SECOND, creado_en, NOW()) AS seg FROM whatsapp_conversaciones
+             WHERE telefono = :t AND direccion = 'saliente' AND texto = :texto
+             ORDER BY id DESC LIMIT 1"
         );
         $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_FUERA_HORARIO]);
+        $ultimoAviso = $stmt->fetch();
+        $yaAvisado = $ultimoAviso && (int)$ultimoAviso['seg'] < 6 * 3600;
+        if (!$yaAvisado) {
+            $stmt = $pdo->prepare(
+                "INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')"
+            );
+            $stmt->execute([':t' => $telefono, ':texto' => WHATSAPP_MENSAJE_FUERA_HORARIO]);
+        }
+    } finally {
+        $pdo->prepare('SELECT RELEASE_LOCK(:k)')->execute([':k' => $lockKey]);
+    }
+    if (!$yaAvisado) {
+        whatsapp_enviar($telefono, WHATSAPP_MENSAJE_FUERA_HORARIO);
     }
     return true;
 }
@@ -789,6 +804,25 @@ function reanudar_conversacion_fuera_horario(PDO $pdo, string $telefono): array
     }
     if ($ultimoEntrante !== null && (time() - strtotime($ultimoEntrante)) > 23 * 3600) {
         return ['ok' => false, 'motivo' => 'Ya pasaron más de 23h desde el último mensaje del cliente -- WhatsApp ya no deja mandar un mensaje libre. No se llamó a la IA.'];
+    }
+
+    // Mensaje reciente: lo está contestando ahorita el flujo normal del
+    // webhook (espera para agrupar de 30s + IA + retraso natural de hasta
+    // ~2 min). Bug real (13-14 nov 2026, 50 casos en 7 días): este cron
+    // corre cada 15 min y, en horario de atención, agarraba también esas
+    // conversaciones en pleno proceso -- el cliente recibía 2 respuestas
+    // casi idénticas con 5-90 segundos de diferencia, siempre a los
+    // :00/:15/:30/:45. La antigüedad se mide en la base (NOW() de MySQL),
+    // no con time() de PHP, para no depender de que ambos relojes tengan
+    // la misma zona horaria.
+    $stmtEdad = $pdo->prepare(
+        "SELECT TIMESTAMPDIFF(SECOND, MAX(creado_en), NOW()) FROM whatsapp_conversaciones
+         WHERE telefono = :t AND direccion = 'entrante'"
+    );
+    $stmtEdad->execute([':t' => $telefono]);
+    $segundosDesdeUltimo = $stmtEdad->fetchColumn();
+    if ($segundosDesdeUltimo !== null && $segundosDesdeUltimo !== false && (int)$segundosDesdeUltimo < 600) {
+        return ['ok' => false, 'motivo' => 'El cliente escribió hace menos de 10 minutos -- lo está contestando el flujo normal del bot, no este cron.'];
     }
 
     $mensajesIA = ia_mensajes_desde_historial($historial);

@@ -138,5 +138,11 @@ foreach (['consultar_articulo_lft', 'buscar_en_lft', 'buscar_jurisprudencia', 'c
     caso("herramienta $t disponible para el bot", in_array($t, $tools, true));
 }
 
+// ---------------------------------------------------------------------
+echo "7) Respuestas duplicadas (bug real 13-14 nov: 50 casos en 7 días)\n";
+$wp = file_get_contents($base . '/api/whatsapp_procesar.php');
+caso('cron de reanudar no contesta mensajes de menos de 10 min (los contesta el flujo normal)', strpos($wp, '< 600') !== false && strpos($wp, 'lo está contestando el flujo normal') !== false);
+caso('aviso de fuera de horario con candado GET_LOCK (no se manda 2-3 veces)', strpos($wp, "GET_LOCK(:k, 10)") !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

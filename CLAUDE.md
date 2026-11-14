@@ -2454,7 +2454,7 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
 - Criterio nuevo en el prompt: domingos -- Art. 71 (prima dominical
   "por lo menos" 25%) vs Art. 73 (domingo que es su descanso: salario
   doble), preguntar cuál aplica.
-- 071 corrida y archivos subidos por el usuario (14 nov 2026). **Pendiente**: dar de alta el
+- 071 corrida y archivos subidos (14 nov 2026). Cron Job dado de alta en Ferozo → Tareas programadas (minuto 0, horas 1-5, todos los días): `php /home/c1361311/public_html/sistema/api/cron_revisar_conversaciones_bot.php`. **Pendiente**: confirmar la primera corrida automática y
   Cron Job y correrlo una vez a mano. Tope de prima de antigüedad (Art.
   486): hoy usa el salario mínimo vigente; falta criterio del Lic. sobre
   fecha de despido vs fecha de pago. Respuestas duplicadas del bot
@@ -2528,6 +2528,29 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   salario mínimo nuevo en Equipo, agregar el del año que termina a las 2
   tablas** (PHP y JS). Zona libre de la frontera norte sigue sin
   manejarse. 2 casos nuevos en `scripts/pruebas_bot.php` (46 en total).
+
+## Respuestas DUPLICADAS del bot: causa real y arreglo (14 nov 2026, conversación "chats")
+- Diagnóstico con SQL real (50 casos en 7 días, 2 respuestas casi
+  idénticas con 0-130 s de diferencia, sin mensaje del cliente en medio):
+  casi TODOS a los :00/:15/:30/:45. Causa: `cron_reanudar_horario.php`
+  (cada 15 min, en horario de atención) contestaba cualquier conversación
+  cuyo último mensaje fuera del cliente -- incluso las que el flujo
+  normal del webhook estaba contestando en ese momento (espera de 30 s +
+  IA + retraso natural de hasta ~2 min). Arreglo:
+  `reanudar_conversacion_fuera_horario()` (`api/whatsapp_procesar.php`)
+  ya no toca conversaciones cuyo último mensaje entrante tenga menos de
+  10 min (medido con `NOW()` de MySQL, no `time()` de PHP).
+- 2ª causa: el aviso de fuera de horario salía 2-3 veces en el mismo
+  segundo cuando el cliente mandaba varias burbujas seguidas (carrera
+  entre webhooks). `whatsapp_avisar_fuera_horario_si_aplica()` ahora usa
+  `GET_LOCK()` por teléfono y registra el aviso antes de mandarlo.
+- **El MySQL del servidor NO soporta funciones de ventana** (`LAG() OVER`,
+  error #1064) -- para SQL de diagnóstico usar subconsultas/JOIN.
+- Queda sin tocar (no es duplicado del bot): recordatorio de pago de 10
+  min que salió después de que el bot dijo que ese horario ya se ocupó
+  (caso 5215626719440, 13-nov).
+- Verificar con el mismo SQL de diagnóstico unos días después de subir
+  `api/whatsapp_procesar.php` (debería bajar a ~0 los casos a los :00/:15).
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
