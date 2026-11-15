@@ -22,6 +22,23 @@
 const API_BASE = 'api/';
 let CSRF_TOKEN = null;
 
+// Letra más grande (15 nov 2026, pedido explícito del usuario -- usa
+// lentes y el texto se ve muy chico). La app tiene ~380 tamaños de letra
+// fijos en px, repartidos entre style.css y cientos de estilos inline
+// dentro de app.js -- reescribirlos uno por uno habría sido enorme y
+// arriesgado. En vez de eso, un solo toggle aplica `zoom` (no
+// `transform:scale`, que rompe los elementos `position:fixed` como los
+// modales) sobre <body>: el navegador re-calcula el layout completo como
+// si cambiara la densidad de pixeles, así que agranda TODO por igual
+// (inline o de la hoja de estilos) sin tocar ningún tamaño individual.
+// Preferencia por dispositivo, no por cuenta -- se guarda en localStorage,
+// nunca en el servidor.
+let LETRA_GRANDE = (()=>{ try{ return localStorage.getItem('letraGrande') === '1'; }catch(e){ return false; } })();
+function aplicarLetraGrande(){
+  try{ document.body.classList.toggle('letra-grande', LETRA_GRANDE); }catch(e){}
+}
+aplicarLetraGrande();
+
 async function api(method, path, body){
   const opts = {method, headers:{}, credentials:'same-origin'};
   if(body !== undefined){
@@ -3561,6 +3578,7 @@ function shellHTML(){
         <div class="user-pill"><div class="dot"></div><span>${escapeHTML(CURRENT_USER.name)}</span></div>
         <button class="switch-user" id="pushNotifBtn" style="margin-bottom:6px;">&#128276; Activar notificaciones</button>
         ${(typeof Notification !== 'undefined' && Notification.permission === 'granted') ? `<button class="switch-user" id="pushTestBtn" style="margin-bottom:6px;">Probar notificación</button>` : ''}
+        <button class="switch-user" id="letraGrandeBtn" style="margin-bottom:6px;">${LETRA_GRANDE ? '🔎 Letra grande activada ✓' : '🔎 Letra más grande'}</button>
         <button class="switch-user" id="switchUserBtn">Cambiar de usuario</button>
       </div>
     </div>
@@ -3658,6 +3676,15 @@ function bindShell(){
         pushNotifBtn.textContent = textoOriginal;
         alert('No se pudieron activar las notificaciones: ' + err.message);
       }
+    });
+  }
+  const letraGrandeBtn = document.getElementById('letraGrandeBtn');
+  if(letraGrandeBtn){
+    letraGrandeBtn.addEventListener('click', ()=>{
+      LETRA_GRANDE = !LETRA_GRANDE;
+      try{ localStorage.setItem('letraGrande', LETRA_GRANDE ? '1' : '0'); }catch(e){}
+      aplicarLetraGrande();
+      letraGrandeBtn.textContent = LETRA_GRANDE ? '🔎 Letra grande activada ✓' : '🔎 Letra más grande';
     });
   }
   const pushTestBtn = document.getElementById('pushTestBtn');

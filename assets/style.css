@@ -32,6 +32,14 @@ body{
 }
 .app{display:flex; min-height:100vh;}
 
+/* Letra más grande (15 nov 2026) -- zoom en vez de transform:scale() a
+   propósito: zoom hace que el navegador recalcule TODO el layout como si
+   cambiara la densidad de pixeles, así los elementos position:fixed
+   (modales, overlay) se agrandan en el lugar correcto; transform:scale()
+   los habría descolocado. Agranda cualquier tamaño de letra, fijo en px o
+   no, sin tener que tocar ninguno de los ~380 que ya existen en la app. */
+body.letra-grande{zoom:1.18;}
+
 /* ---------- Sidebar ---------- */
 .sidebar{
   width:248px; flex-shrink:0;

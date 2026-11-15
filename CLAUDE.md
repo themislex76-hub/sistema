@@ -1,5 +1,42 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Botón "Letra más grande" en el sidebar (15 nov 2026, `app.js?v=156`)
+Pedido explícito del usuario: usa lentes y las letras de la app en el
+celular se le ven muy chicas.
+- **Por qué no se reescribieron los tamaños de letra existentes**: la app
+  tiene cerca de 380 tamaños de letra fijos en px (80 en `style.css`, ~300
+  como estilo inline dentro de los template strings de `app.js` -- botones,
+  tarjetas, badges, etc.). Reescribirlos uno por uno habría sido un cambio
+  enorme y arriesgado para una sola sesión, y los inline ganan siempre a
+  cualquier regla nueva de `style.css` por especificidad, así que agrandar
+  solo la hoja de estilos no habría movido la mayoría del texto real.
+- **Solución: un toggle que aplica `zoom` (no `transform:scale()`) sobre
+  `<body>`** -- a diferencia de `transform:scale()`, que rompe los
+  elementos `position:fixed` (modales, overlay) al no reposicionarlos
+  correctamente, `zoom` hace que el navegador recalcule TODO el layout
+  como si cambiara la densidad de pixeles -- agranda cualquier tamaño de
+  letra (fijo en px o no, inline o de la hoja de estilos) sin tocar
+  ninguno de los ~380 existentes. Soportado en Safari/Chrome/Edge desde
+  hace años (el público de esta app, celulares) y en Firefox desde 2024.
+- Botón nuevo "🔎 Letra más grande" en el pie del menú lateral (junto a
+  "Activar notificaciones"/"Cambiar de usuario", solo visible para
+  abogados/Administrador -- la vista de cliente no tiene ese menú).
+  Preferencia por DISPOSITIVO, no por cuenta -- se guarda en
+  `localStorage` (`letraGrande`), nunca en el servidor; se aplica de
+  inmediato al cargar la app (`aplicarLetraGrande()`, variable
+  `LETRA_GRANDE`) y al darle clic al botón.
+- `assets/style.css`: regla `body.letra-grande{zoom:1.18;}`.
+- **Trade-off avisado, no oculto**: con el zoom activado, tablas con
+  muchas columnas pueden necesitar scroll horizontal (se agranda todo por
+  igual, incluyendo el ancho real que ocupa cada cosa) -- aceptable a
+  cambio de letra más grande, pero si molesta mucho avisar para ajustar
+  el nivel de zoom (hoy 1.18, fácil de subir/bajar en un solo lugar).
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
+  -- no aplica `verificar_tags.js`. **Sin probar en vivo todavía** --
+  falta que el usuario suba `assets/app.js`, `assets/style.css`,
+  `index.html` y `sw.js`, y confirme que se vea bien en su celular (si el
+  1.18 se siente poco o demasiado, avisar para ajustarlo).
+
 ## Eventos de Google Calendar "sin identificar" ya se muestran (15 nov 2026, `app.js?v=155`)
 Pedido explícito del usuario, mismo tema de "que nada se quede callado sin
 que alguien lo note" -- `cron_leer_google_calendar.php` ya guardaba en
