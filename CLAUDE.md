@@ -2583,6 +2583,45 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   juicios en la frontera; la zona frontera solo aplica al bot de WhatsApp.
 - 52 casos en `scripts/pruebas_bot.php`.
 
+## Primera revisión AUTOMÁTICA del bot (madrugada 15-nov-2026) + arreglos (conversación "chats")
+- Corrió sola con el Cron Job: 62 conversaciones marcadas (13 y 14 nov).
+  Verificadas contra el texto oficial: MUCHAS eran falsas alarmas por un
+  error del revisor -- recortaba cada artículo a 3,000 caracteres, así que
+  no veía el final del Art. 47 (aviso escrito, que sí existe) ni la fracc.
+  XIII del 684-E (cosa juzgada, que sí existe), y "685 Ter" se leía como
+  "685". También marcaba mal el Art. 48 para los 3 meses (es correcto), el
+  documento membretado (producto real, el usuario lo confirmó) y "no
+  consta que usó la calculadora".
+- Errores REALES confirmados: Art. 47-II para embriaguez (es XIII), Art.
+  159 para sustitución patronal (es 41), Art. 110-VI para descuentos (es
+  110-I), Art. 56 para cambio de condiciones, Art. 67 para horas extra,
+  artículos de la LSS citados de memoria (54, 15-I, 42 Bis), cálculos de
+  finiquito a mano, rescisiones calculadas con hechos viejos o futuros
+  (sin hecho concreto dentro de 30 días, Art. 52), "para hoy miércoles 14
+  de octubre" dicho el 13 de noviembre, rechazo de CFE y de un patrón
+  (conversaciones previas a los arreglos), seguimientos que insistían a
+  quien dijo "ahorita no tengo dinero".
+- Arreglos (`api/ia_helpers.php`, `api/lft_helpers.php`,
+  `api/cron_revisar_conversaciones_bot.php`, `api/whatsapp_helpers.php`):
+  revisor con el texto COMPLETO de cada artículo (hasta 12) y aviso de que
+  solo tiene la LFT; `ia_articulos_citados()` reconoce Ter/Quáter; "47-X"
+  se trata como fracción X; el revisor recibe los cálculos reales de
+  `calculos_liquidacion` de ese día para saber si las cifras salieron de
+  la herramienta; más "NO marques". Bot: guía de artículos VERIFICADOS
+  para los temas más citados, prohibido citar números de otras leyes
+  (LSS, LISR, Constitución), regla de rescisión (hecho concreto, dentro de
+  30 días, que encaje en el Art. 51; nada de "espera a que el patrón lo
+  haga"). Candado de cita: bloquea "hoy <fecha que no es hoy>" cuando
+  habla de cita/asesoría agendada. `whatsapp_texto_parece_declinar()`
+  también reconoce "ahorita no / no tengo dinero / cuando me paguen"
+  (lo usan los seguimientos de calculadora y cursos). 58 casos en
+  `scripts/pruebas_bot.php`.
+- **Pendiente de decisión del usuario**: (1) precio del documento
+  membretado -- el código cobra $49 (`DOCUMENTO_CALCULO_PRECIO`) y el
+  usuario escribió "$45"; (2) el prompt le dice al bot que el documento
+  hace que RH "hasta le ofrezca una cantidad mayor" -- el revisor lo marca
+  como falsa expectativa; propuesta de suavizarlo sin cambiar la venta.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado

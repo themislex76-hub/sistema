@@ -56,6 +56,28 @@ $msgsPrevios = $pdo->prepare(
      WHERE telefono = :t AND creado_en < :ini
      ORDER BY creado_en DESC, id DESC LIMIT ' . REVISION_BOT_CONTEXTO_PREVIO
 );
+// Cálculos reales de la calculadora oficial ese día: así el revisor sabe si
+// las cifras del bot salieron de la herramienta o las hizo a mano (sin esto
+// marcaba "no consta que usó la herramienta" en casi todos los cálculos).
+$stmtCalc = $pdo->prepare(
+    "SELECT creado_en, monto_total, calculo_json FROM calculos_liquidacion
+     WHERE telefono = :t AND creado_en >= :ini AND creado_en < DATE_ADD(:ini2, INTERVAL 1 DAY)
+     ORDER BY id"
+);
+$resumenCalculo = function (?string $json): string {
+    $c = $json ? json_decode($json, true) : null;
+    if (!is_array($c)) return '';
+    $partes = [];
+    foreach ([
+        'salario_diario' => 'salario diario', 'sdi_usado' => 'SDI', 'aguinaldo_monto' => 'aguinaldo',
+        'vacaciones_monto' => 'vacaciones', 'prima_vacacional_monto' => 'prima vacacional',
+        'prima_antiguedad_monto' => 'prima de antigüedad', 'indemnizacion_90_dias_monto' => '3 meses',
+        'indemnizacion_20_dias_monto' => '20 días por año', 'total_finiquito' => 'finiquito',
+    ] as $k => $etq) {
+        if (isset($c[$k]) && is_numeric($c[$k]) && (float)$c[$k] > 0) $partes[] = "$etq $" . number_format((float)$c[$k], 2);
+    }
+    return implode(', ', $partes);
+};
 $guardar = $pdo->prepare(
     'INSERT INTO bot_revisiones (telefono, fecha, veredicto, gravedad, resumen, hallazgos)
      VALUES (:t, :f, :v, :g, :r, :h)'
@@ -72,7 +94,17 @@ foreach ($telefonos as $tel) {
     $msgsPrevios->execute([':t' => $tel, ':ini' => $fecha]);
     $previos = array_reverse($msgsPrevios->fetchAll());
 
-    $res = ia_revisar_conversacion_bot($pdo, $mensajes, $previos);
+    $calculos = [];
+    try {
+        $stmtCalc->execute([':t' => $tel, ':ini' => $fecha, ':ini2' => $fecha]);
+        foreach ($stmtCalc->fetchAll() as $fc) {
+            $calculos[] = ['creado_en' => $fc['creado_en'], 'monto_total' => $fc['monto_total'], 'detalle' => $resumenCalculo($fc['calculo_json'] ?? null)];
+        }
+    } catch (Throwable $e) {
+        $calculos = [];
+    }
+
+    $res = ia_revisar_conversacion_bot($pdo, $mensajes, $previos, $calculos);
     if ($res === null) { $fallidas++; continue; }
 
     $guardar->execute([
