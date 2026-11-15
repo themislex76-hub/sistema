@@ -174,5 +174,19 @@ caso('paro técnico: Art. 430, no afirmar salario normal', strpos($p, 'un mes de
 caso('cliente corrige su salario: no insistir, recalcular', strpos($p, 'no insistas en que él está confundido') !== false);
 caso('seguimiento: "no tengo economía" / "no me alcanza" cuentan como posponer', whatsapp_texto_parece_declinar('gracias pero no tengo economía para más gastos') && whatsapp_texto_parece_declinar('ahorita no me alcanza'));
 
+// ---------------------------------------------------------------------
+echo "9) Gerente de $65,000/mes (14-nov): SDI dividido entre 15 y promesa de abogado sin escalar\n";
+caso('prompt: salario diario y SDI del recibo ya son diarios, nunca dividir entre 15', strpos($p, 'YA SON DIARIOS') !== false);
+caso('detecta promesa de abogado ("Voy a pedir que un abogado del despacho revise tu caso")',
+    ia_texto_promete_abogado('Voy a pedir que un abogado del despacho revise tu caso directamente contigo para aclarar el cálculo.')
+    && ia_texto_promete_abogado('En un momento un abogado del despacho te contacta por aquí mismo.')
+    && !ia_texto_promete_abogado('El Lic. Rubén Buerhend te va a llamar a este mismo número a esa hora.')
+    && !ia_texto_promete_abogado('Eso lo revisa a detalle el abogado en la asesoría telefónica.'));
+$pdoC = pdo_nuevo();
+$pdoC->exec("CREATE TABLE configuracion (clave TEXT, valor TEXT)");
+$pdoC->exec("INSERT INTO configuracion VALUES ('salario_minimo_diario','315.04')");
+$g = calcular_estimado_liquidacion($pdoC, '2025-06-09', '2026-11-14', 2166.67, 'injustificado', 6, 0, 'despido', false, 2349.11);
+caso('calculadora con los datos reales del recibo (SDI $2,349.11): 3 meses = $211,419.90', abs($g['indemnizacion_90_dias_monto'] - 211419.90) < 0.5);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
