@@ -54,6 +54,12 @@ function lft_consultar_articulos(PDO $pdo, array $numeros): array
         foreach ($numeros as $n) {
             $stmt->execute([$n]);
             $f = $stmt->fetch(PDO::FETCH_ASSOC);
+            // "47-X" suele ser la fracción X del Art. 47, no un artículo
+            // "47-X" (no existe): si no está, se trae el artículo base.
+            if (!$f && preg_match('/^(\d+)-[IVXLC]$/', $n, $mb)) {
+                $stmt->execute([$mb[1]]);
+                $f = $stmt->fetch(PDO::FETCH_ASSOC);
+            }
             if (!$f) {
                 $res[] = ['numero' => $n, 'encontrado' => false];
                 continue;

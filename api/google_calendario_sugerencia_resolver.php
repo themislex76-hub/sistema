@@ -25,7 +25,10 @@ $stmt = $pdo->prepare(
 $stmt->execute([':id' => $id]);
 $sug = $stmt->fetch();
 if (!$sug) fail('Sugerencia no encontrada.', 404);
-if ($sug['estado'] !== 'pendiente') fail('Esta sugerencia ya se resolvió.', 400);
+// 'sin_match' agregado el 15 nov 2026: solo se puede descartar (nunca
+// aplicar -- no tiene expediente/etapa sugerida), el chequeo de abajo ya
+// lo exige sin necesidad de duplicar la condición aquí.
+if (!in_array($sug['estado'], ['pendiente', 'sin_match'], true)) fail('Esta sugerencia ya se resolvió.', 400);
 
 if ($user['rol'] !== 'administrador' && (int)$sug['calendario_abogado_id'] !== (int)$user['id']) {
     fail('No tienes permiso sobre esta sugerencia.', 403);

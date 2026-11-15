@@ -19,6 +19,7 @@ require $base . '/api/ia_helpers.php';
 require_once $base . '/api/mercadopago_helpers.php';
 require_once $base . '/api/liquidacion_calculadora.php';
 require_once $base . '/api/lft_helpers.php';
+require_once $base . '/api/whatsapp_helpers.php';
 
 $fallas = 0; $total = 0;
 function caso(string $nombre, bool $ok, string $detalle = ''): void
@@ -68,6 +69,7 @@ foreach ([
     ['VIEJA', 'Tengo estos horarios: 1. Hoy viernes 6 de noviembre, 1:00 pm 2. Hoy viernes, 2:00 pm', false],
     ['VIEJA', 'Tu asesoría del viernes 13 de noviembre a las 3:00 pm quedó confirmada', false],
     ['HOY', 'Recuerda tu asesoría de hoy a las 5:00 pm, el Lic. te llamará.', false],
+    ['HOY', 'Veo que ya tienes una asesoría agendada y confirmada para hoy miércoles 14 de octubre a las 4:00 pm', date('Y-m-d') !== '2026-10-14'],
 ] as [$tel, $txt, $bloquear]) {
     $r = ia_texto_menciona_cita_hoy_sin_evidencia($pdo, $tel, $txt);
     caso(($bloquear ? 'bloquea: ' : 'deja pasar: ') . mb_substr($txt, 0, 60), $r === $bloquear);
@@ -134,6 +136,11 @@ caso('cierre de empresa: Arts. 434-436, no "despido injustificado" (casos reales
 caso('despido vs. rescisión: no convertir una baja en rescisión para sumar 20 días', strpos($p, 'Despido vs. rescisión') !== false);
 caso('horas extra: transitorios 2026 (48 h / 9 extra), Art. 66 doble, Art. 68 triple, no Art. 67', strpos($p, '2026: jornada máxima de 48 horas') !== false && strpos($p, 'El Art. 67 ya NO es el de las') !== false);
 caso('montos solo de la calculadora (prima de antigüedad con tope, caso real $64,361)', strpos($p, 'nunca calcules a mano la prima de antigüedad') !== false);
+caso('guía de artículos verificados (Art. 41 sustitución, 47-XIII embriaguez, 684-E XIII cosa juzgada)', strpos($p, 'Sustitución patronal: Art. 41') !== false && strpos($p, 'fracc. XIII = embriaguez') !== false && strpos($p, 'cosa juzgada: Art. 684-E') !== false);
+caso('no citar números de artículos de otras leyes (LSS, ISR)', strpos($p, 'NUNCA cites números de sus artículos') !== false);
+caso('rescisión: hecho concreto dentro de 30 días antes de calcular', strpos($p, 'confirma (1) qué hecho') !== false);
+caso('revisor: "Art. 47-X" se entiende como fracción X del 47', ia_articulos_citados('Art. 47-X') === ['47-X']);
+caso('seguimiento: "ahorita no tengo dinero" cuenta como posponer', whatsapp_texto_parece_declinar('si quiero pero ahorita no tengo dinero') && whatsapp_texto_parece_declinar('cuando me paguen la agendo') && !whatsapp_texto_parece_declinar('si quiero agendar'));
 caso('el despacho también asesora empresas', strpos($p, 'el despacho SÍ asesora también a empresas') !== false);
 caso('embarazo: Art. 166 / 170-I, nunca 132 XXVII Bis (es paternidad)', strpos($p, 'Art. 166') !== false && strpos($p, 'PATERNIDAD') !== false);
 $rev = ia_parsear_revision_bot('{"veredicto":"revisar","gravedad":"media","resumen":"x","hallazgos":[{"cita":"a","problema":"no hay error aquí en realidad","correccion":"N/A - revisar si aplica"}]}');

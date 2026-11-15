@@ -288,6 +288,52 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   de artículo -- es preferible a citar uno equivocado (errores reales:
   Art. 804 para "conocer la acusación", Art. 47 para la suspensión --
   ninguno dice eso). Es la LFT vigente (última reforma DOF 14-05-2026).
+· Guía rápida de artículos YA VERIFICADOS contra la LFT vigente (para
+  estos temas puedes citarlos; cualquier otro, consúltalo antes). Errores
+  reales de la revisión del 13-14 nov: Art. 47 fracc. II para embriaguez,
+  Art. 159 para sustitución patronal, Art. 110 fracc. VI para descuentos,
+  Art. 56 para cambio de condiciones, Art. 67 para horas extra:
+  - Indemnización de 3 meses por despido injustificado: Art. 48 (y salarios
+    caídos con tope de 12 meses, mismo Art. 48). 20 días por año: Art. 50
+    fracc. II, solo cuando el patrón se exime de reinstalar o en rescisión.
+  - Aviso escrito del despido: Art. 47, últimos párrafos (sin aviso se
+    presume injustificado). Causas del Art. 47: fracc. X = más de 3 faltas
+    en 30 días sin permiso o causa justificada; fracc. XIII = embriaguez o
+    narcóticos; fracc. II = probidad, violencia, injurias.
+  - Rescisión por culpa del patrón: causas en Art. 51 (fracc. X =
+    análogas); plazo de 30 días desde la causa: Art. 52.
+  - Prescripción: despido 2 meses (Art. 518, se suspende con la solicitud
+    de conciliación); prestaciones 1 año (Art. 516); para separarse por
+    rescisión 1 mes (Art. 517).
+  - Convenio ante el Centro de Conciliación = cosa juzgada: Art. 684-E
+    fracc. XIII. Requisitos del convenio y nulidad de renuncia de derechos:
+    Art. 33.
+  - Casos que NO pasan por conciliación (acoso u hostigamiento sexual,
+    discriminación por embarazo, riesgos de trabajo y seguridad social,
+    etc.): Art. 685 Ter.
+  - Sustitución patronal: Art. 41. Descuentos al salario: Art. 110 (deudas
+    y daños: fracc. I). Carga de la prueba del patrón: Art. 784; documentos
+    que debe conservar: Art. 804.
+  - Vacaciones: Art. 76 (12 días el primer año, +2 por año hasta 20, luego
+    +2 cada 5 años); prima vacacional mínimo 25%: Art. 80; aguinaldo mínimo
+    15 días: Art. 87; prima de antigüedad 12 días por año con tope: Arts.
+    162 y 486.
+  - Acoso u hostigamiento sexual prohibido al patrón: Art. 133 fracc. XII y
+    XIII.
+· Otras leyes (Ley del Seguro Social, Ley del ISR, Constitución, Ley
+  Federal de los Trabajadores al Servicio del Estado): NO tienes su texto,
+  así que NUNCA cites números de sus artículos; explica la regla sin
+  número (ej. "la Ley del Seguro Social obliga al patrón a inscribirte").
+  Errores reales: "Art. 54 LSS", "Art. 15-I LSS", "Art. 42 Bis LSS".
+· Rescisión (Art. 51/52): antes de calcularla, confirma (1) qué hecho
+  concreto cometió el patrón, (2) que ese hecho ocurrió dentro de los 30
+  días anteriores a la separación, y (3) que encaja en alguna causa del
+  Art. 51. Si los hechos son viejos, si la persona dice "mejor me salí"
+  sin un hecho reciente, o si el cambio todavía no ocurre (solo se lo
+  anunciaron), NO presentes el cálculo de rescisión como lo que le toca:
+  explica el riesgo de que cuente como renuncia y que lo revise el
+  abogado. Nunca aconsejes "esperar a que el patrón lo haga" para cobrar
+  una indemnización.
 · Jurisprudencia: solo menciona una tesis o jurisprudencia que te haya
   regresado buscar_jurisprudencia en ese mismo turno y que de verdad
   respalde lo que dices; nunca un número, rubro o registro de memoria.
@@ -2274,6 +2320,17 @@ function ia_texto_menciona_cita_hoy_sin_evidencia(PDO $pdo, string $telefono, st
         . '|(en\s+un\s+momento|ahorita|en\s+unos\s+minutos).{0,80}(tu|su)\s+(asesor[ií]a|llamada|cita)\s+de\s+las\s+\d/iu',
         $texto
     ) === 1;
+    // "para hoy miércoles 14 de octubre" dicho el 13 de noviembre (caso real
+    // 13-nov-2026): si el texto pone "hoy" junto a una fecha que NO es la de
+    // hoy, está reviviendo una cita vieja -- se bloquea aunque haya cita hoy.
+    $meses = ['enero'=>1,'febrero'=>2,'marzo'=>3,'abril'=>4,'mayo'=>5,'junio'=>6,'julio'=>7,'agosto'=>8,'septiembre'=>9,'setiembre'=>9,'octubre'=>10,'noviembre'=>11,'diciembre'=>12];
+    if (preg_match('/agendad|confirmad|(tu|su)\s+(asesor[ií]a|cita|llamada)/iu', $texto)
+        && preg_match('/\bhoy\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)?,?\s*(\d{1,2})\s+de\s+(' . implode('|', array_keys($meses)) . ')/iu', $texto, $mf)) {
+        $mesTxt = mb_strtolower($mf[2]);
+        if ((int)$mf[1] !== (int)date('j') || ($meses[$mesTxt] ?? 0) !== (int)date('n')) {
+            return true;
+        }
+    }
     if (!$hablaDeCitaHoy) return false;
 
     $stmt = $pdo->prepare(
@@ -3095,15 +3152,42 @@ function ia_siguiente_etapa_esperada_texto(array $etapas): ?string
 
     $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
 
+    // Si la siguiente etapa YA tiene una "Fecha agendada" (campo
+    // `fecha_programada`, separado de `fecha` -- la fecha en que YA se
+    // celebró), avisar a la IA en vez de dejarla tratar la etapa como "nada
+    // programado todavía". Bug real confirmado (14 nov 2026, expediente de
+    // Lizbeth Diaz Almazo vs Servicio Postal Mexicano): el primer citatorio
+    // de conciliación ya estaba agendado para el 12 nov 2026 (visible en la
+    // Agenda del sistema, "Audiencia agendada"), pero el Informe Ejecutivo
+    // decía "han transcurrido ya 30 días sin que se registre el primer
+    // citatorio... requiere verificación inmediata del estatus ante el
+    // Centro" como si nunca se hubiera agendado nada -- porque esta función
+    // solo miraba `fecha` (celebrada), nunca `fecha_programada` (agendada).
+    $fechaAgendadaSiguiente = $porKey[$siguienteKey]['fecha_programada'] ?? null;
+    $notaAgendada = '';
+    if ($fechaAgendadaSiguiente && $fechaAgendadaSiguiente !== '0000-00-00') {
+        $diasDesdeAgendada = (int)round((time() - strtotime($fechaAgendadaSiguiente)) / 86400);
+        if ($diasDesdeAgendada > 0) {
+            $notaAgendada = " YA TIENE FECHA AGENDADA: $fechaAgendadaSiguiente, que ya pasó hace "
+                . "$diasDesdeAgendada día(s) -- NO digas que nada se ha agendado ni pidas \"verificar el estatus "
+                . "desde cero\"; la próxima acción es confirmar qué pasó en esa fecha (se celebró, se reagendó, no "
+                . 'se presentó la contraparte, etc.) y registrar el resultado.';
+        } else {
+            $notaAgendada = " YA TIENE FECHA AGENDADA: $fechaAgendadaSiguiente (todavía no llega) -- no la trates "
+                . 'como atrasada ni pidas verificar el estatus, solo espera esa fecha.';
+        }
+    }
+
     if ($ultimaEtapaKey === 'demanda_presentada' && $siguienteKey === 'prevencion') {
         return 'El Tribunal TODAVÍA no dicta ningún acuerdo sobre la demanda -- "Prevención" y "Demanda '
             . 'admitida" son dos resultados ALTERNATIVOS de ese primer acuerdo (puede prevenir por defectos u '
             . 'omisiones, Art. 873 LFT, o admitir la demanda directamente sin prevención), nunca uno seguido '
             . 'del otro. NO redactes esto como si ya estuviéramos "en etapa de prevención" -- estamos '
-            . "esperando el primer acuerdo del Tribunal, sea cual sea.{$sufijoDias}";
+            . "esperando el primer acuerdo del Tribunal, sea cual sea.{$sufijoDias}{$notaAgendada}";
     }
 
-    return 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey) . $sufijoDias;
+    return 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey)
+        . $sufijoDias . $notaAgendada;
 }
 
 // Devuelve null si falló, o ['resumen'=>string, 'accion'=>?string, 'urgencia'=>?'alta'|'media'|'baja'].
@@ -3593,7 +3677,7 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
 // de un pendiente. $labelAtraso es el texto que ya arma estancadoInfo()
 // (ej. 'Se esperaba "Contestación de demanda recibida" y no se ha
 // registrado (18 día(s) de atraso)').
-function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso, array $documentosRecientes = [], array $avisosRecientes = [], array $notasBitacora = [], array $pendientesAbiertos = [], array $pagosConvenio = []): ?string
+function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso, array $documentosRecientes = [], array $avisosRecientes = [], array $notasBitacora = [], array $pendientesAbiertos = [], array $pagosConvenio = [], ?string $etapaKeyAtraso = null): ?string
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3623,6 +3707,23 @@ function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string
         if ($fecha && $fecha !== '0000-00-00') $registradas[] = (ETAPA_LABELS[$key] ?? $key) . ': ' . $fecha;
     }
     if ($registradas) $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
+
+    // Si la etapa que el sistema marcó como atrasada YA tiene una "Fecha
+    // agendada" (fecha_programada) capturada en Agenda, avisarlo -- mismo
+    // hueco real confirmado hoy (15 nov 2026) en el Informe Ejecutivo: sin
+    // esto, la pregunta podía redactarse como si nada se hubiera agendado
+    // ("¿cuándo se notificó X?") cuando en realidad ya hay una fecha
+    // concreta que solo falta confirmar si se celebró.
+    if ($etapaKeyAtraso !== null) {
+        $fechaAgendadaAtraso = $porKey[$etapaKeyAtraso]['fecha_programada'] ?? null;
+        if ($fechaAgendadaAtraso && $fechaAgendadaAtraso !== '0000-00-00') {
+            $diasDesdeAgendada = (int)round((time() - strtotime($fechaAgendadaAtraso)) / 86400);
+            $lineas[] = "IMPORTANTE: esta etapa YA tiene Fecha agendada: $fechaAgendadaAtraso"
+                . ($diasDesdeAgendada > 0 ? " (ya pasó hace $diasDesdeAgendada día(s))" : ' (todavía no llega)')
+                . ' -- la pregunta debe referirse a ESA fecha concreta (ej. "¿qué pasó en la cita del '
+                . $fechaAgendadaAtraso . '?"), nunca preguntar como si no hubiera nada agendado.';
+        }
+    }
 
     // Contexto adicional -- documentos ya guardados y últimos resúmenes de
     // boletín de este expediente, para que la pregunta sea específica (ej.
@@ -3849,7 +3950,17 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
         if ($fecha && $fecha !== '0000-00-00') {
             $registradas[] = "$label: $fecha";
         } else {
-            $pendientes[] = "$key ($label)";
+            // Si esta etapa sin fecha YA tiene "Fecha agendada" (fecha_programada),
+            // avisarlo aquí -- mismo hueco real confirmado hoy (15 nov 2026) en el
+            // Informe Ejecutivo (ver ia_siguiente_etapa_esperada_texto()): sin esto,
+            // esta auditoría podía tratar una etapa ya agendada igual que una
+            // completamente huérfana, sin saber que ya existe una fecha capturada
+            // en Agenda a la que solo falta confirmar el resultado.
+            $fechaAgendada = $porKey[$key]['fecha_programada'] ?? null;
+            $sufijoAgendada = ($fechaAgendada && $fechaAgendada !== '0000-00-00')
+                ? " [YA TIENE Fecha agendada: $fechaAgendada -- si algo de abajo confirma qué pasó en esa fecha, úsalo; si no hay nada, no es excusa para calcular ni inventar una]"
+                : '';
+            $pendientes[] = "$key ($label)$sufijoAgendada";
         }
     }
     if (!$pendientes) return []; // ya están todas las etapas con fecha -- nada que buscar
@@ -4509,9 +4620,10 @@ function ia_criterios_despacho_texto(): string
 function ia_articulos_citados(string $texto): array
 {
     $nums = [];
-    if (preg_match_all('/\b(?:art[ií]culos?|arts?\.)\s*((?:\d+(?:\s*-\s*[A-ZÑ]\b|\s+bis\b)?(?:\s*(?:,|y|e)\s*)?)+)/iu', $texto, $m)) {
+    $suf = '(?:\s*-\s*[A-ZÑ]\b)?(?:\s+(?:bis|ter|qu[aá]ter)\b)?';
+    if (preg_match_all('/\b(?:art[ií]culos?|arts?\.)\s*((?:\d+' . $suf . '(?:\s*(?:,|y|e)\s*)?)+)/iu', $texto, $m)) {
         foreach ($m[1] as $grupo) {
-            if (preg_match_all('/\d+(?:\s*-\s*[A-ZÑ]\b|\s+bis\b)?/iu', $grupo, $mm)) {
+            if (preg_match_all('/\d+' . $suf . '/iu', $grupo, $mm)) {
                 foreach ($mm[0] as $n) $nums[] = preg_replace('/\s+/', ' ', trim($n));
             }
         }
@@ -4524,7 +4636,7 @@ function ia_articulos_citados(string $texto): array
  * @param array $contextoPrevio mismas filas, de días anteriores (solo contexto)
  * @return array|null ['veredicto'=>'ok'|'revisar','gravedad'=>?string,'resumen'=>?string,'hallazgos'=>array] o null si falló
  */
-function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoPrevio = []): ?array
+function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoPrevio = [], array $calculos = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) return null;
@@ -4540,13 +4652,28 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
     $articulos = ia_articulos_citados($textoBot);
     $bloqueLey = '';
     if ($articulos) {
-        $r = lft_consultar_articulos($pdo, array_slice($articulos, 0, 5));
-        if (!empty($r['articulos'])) {
-            $partes = [];
-            foreach ($r['articulos'] as $a) {
-                $partes[] = 'Art. ' . $a['numero'] . ': ' . ($a['encontrado'] ? mb_strimwidth($a['texto'], 0, 3000, '…') : '(NO EXISTE en la LFT)');
-            }
-            $bloqueLey = "TEXTO OFICIAL de los artículos que citó el bot (" . ($r['fuente'] ?? 'LFT vigente') . "):\n" . implode("\n\n", $partes);
+        // Texto COMPLETO de cada artículo (hasta 12 artículos): recortarlo
+        // causó falsas alarmas reales -- el revisor no veía el último
+        // párrafo del Art. 47 (aviso escrito) ni la fracc. XIII del 684-E
+        // (cosa juzgada) y marcaba como error citas correctas.
+        $partes = [];
+        $stmtArt = $pdo->prepare('SELECT numero, texto FROM lft_articulos WHERE numero = ?');
+        foreach (array_slice($articulos, 0, 12) as $num) {
+            $clave = lft_normalizar_numero($num);
+            try {
+                $stmtArt->execute([$clave]);
+                $fila = $stmtArt->fetch(PDO::FETCH_ASSOC);
+                if (!$fila && preg_match('/^(\d+)-[IVXLC]$/', $clave, $mb)) {
+                    $stmtArt->execute([$mb[1]]);
+                    $fila = $stmtArt->fetch(PDO::FETCH_ASSOC);
+                    if ($fila) $clave = $mb[1] . ' (el bot escribió "' . $num . '", probablemente la fracción)';
+                }
+            } catch (Throwable $e) { $fila = false; }
+            $partes[] = 'Art. ' . $clave . ': ' . ($fila ? mb_substr((string)$fila['texto'], 0, 12000) : '(NO EXISTE en la LFT)');
+        }
+        $r = ['fuente' => 'LFT vigente, última reforma DOF 14-05-2026'];
+        if ($partes) {
+            $bloqueLey = "TEXTO OFICIAL de los artículos que citó el bot (" . ($r['fuente'] ?? 'LFT vigente') . "). OJO: es SOLO la Ley Federal del Trabajo; si el bot citó un artículo de OTRA ley (Ley del Seguro Social, Ley del ISR, Constitución), ese número no está aquí -- el problema en ese caso es citar de memoria un artículo de otra ley sin verificar, no que diga lo que dice el artículo de la LFT con el mismo número:\n" . implode("\n\n", $partes);
         }
     }
 
@@ -4554,6 +4681,13 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
     if ($contextoPrevio) $contenido .= "CONTEXTO (mensajes de días anteriores, NO se revisan, solo para entender):\n" . implode("\n", array_map($fmt, $contextoPrevio)) . "\n\n";
     $contenido .= "CONVERSACIÓN A REVISAR:\n" . implode("\n", array_map($fmt, $mensajes));
     if ($bloqueLey) $contenido .= "\n\n" . $bloqueLey;
+    if ($calculos) {
+        $contenido .= "\n\nCÁLCULOS QUE HIZO LA CALCULADORA OFICIAL DEL SISTEMA (calcular_estimado_liquidacion) para este teléfono ese día -- si las cifras del bot coinciden con alguno, NO fueron calculadas a mano:\n"
+            . implode("\n", array_map(fn($c) => '- [' . substr((string)$c['creado_en'], 11, 5) . '] total $' . number_format((float)$c['monto_total'], 2)
+                . ($c['detalle'] ? ' | ' . $c['detalle'] : ''), $calculos));
+    } else {
+        $contenido .= "\n\n(Ese día la calculadora oficial NO registró ningún cálculo para este teléfono: si el bot dio montos en pesos de finiquito/indemnización ese día, salieron de un cálculo anterior o los hizo a mano.)";
+    }
 
     $system = 'Eres el abogado supervisor (experto en derecho laboral mexicano, LFT vigente) de un despacho que usa un '
         . 'bot de WhatsApp para orientar a trabajadores y vender una asesoría telefónica de $499. Revisas lo que el BOT '
@@ -4576,6 +4710,10 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Aguinaldo PROPORCIONAL con menos de 15 días: los 15 días del Art. 87 son por año completo; si trabajó parte del año, le toca la parte proporcional (ej. 13 días), eso es correcto.\n"
         . "- El aviso automático \"Por hoy ya platicamos bastante...\" (límite de mensajes del sistema) y los mensajes de seguimiento/recordatorio automáticos: no son respuestas del bot.\n"
         . "- Que el bot atienda o cobre la asesoría a una EMPRESA o patrón: el despacho sí asesora empresas.\n"
+        . "- Que el bot ofrezca el DOCUMENTO MEMBRETADO con el cálculo (PDF de bajo costo): es un producto real y autorizado del despacho.\n"
+        . "- Citar el Art. 48 para la indemnización de 3 meses: es correcto (el Art. 48 dice \"que se le indemnice con el importe de tres meses de salario\"); el Art. 50 aplica cuando el patrón se exime de reinstalar.\n"
+        . "- Una fecha límite exacta para demandar: la calcula una herramienta del sistema con el criterio de meses de calendario de la SCJN; márcala solo si contradice un hecho de la conversación (ej. ignora que ya presentó solicitud de conciliación).\n"
+        . "- Que una cifra \"no conste\" que salió de la herramienta: usa la lista de CÁLCULOS QUE HIZO LA CALCULADORA que se te da; si coincide, no es cálculo a mano.\n"
         . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
         . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
         . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"

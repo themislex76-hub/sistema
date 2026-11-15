@@ -29,15 +29,20 @@ const LOTE_MAXIMO = 15;
 
 $pdo = db();
 
-// clave = 'atraso:<etapa_key>' (ver assets/app.js, estancadoInfo() +
-// buildAgendaEntries()) -- un expediente solo puede tener UN atraso a la
-// vez (el siguiente paso sin registrar), así que esta clave ya es única
-// por expediente mientras el atraso siga vigente.
+// clave = '<tipo>:<etapa_key>' (ver assets/app.js, estancadoInfo()/
+// citasAgendadasVencidasInfo() + buildAgendaEntries()) -- un expediente
+// solo puede tener UN atraso de cada tipo a la vez, así que esta clave ya
+// es única por expediente mientras el atraso siga vigente.
+// 'vencida' agregado el 15 nov 2026: mismo mecanismo que 'atraso' (el
+// plazo legal del siguiente trámite), pero para una cita/citatorio con
+// "Fecha agendada" cuyo día ya pasó sin registrar qué ocurrió -- varias
+// de esas etapas ni siquiera tienen plazo legal propio en ETAPAS_DEF, así
+// que sin esto podían quedarse semanas sin generar ninguna pregunta.
 $stmt = $pdo->prepare(
-    "SELECT c.expediente_id, c.clave, c.label
+    "SELECT c.expediente_id, c.clave, c.tipo, c.label
      FROM agenda_avisos_cache c
      LEFT JOIN supervisor_preguntas sp ON sp.expediente_id = c.expediente_id AND sp.clave = c.clave
-     WHERE c.tipo = 'atraso' AND c.clave LIKE 'atraso:%' AND sp.id IS NULL
+     WHERE c.tipo IN ('atraso', 'vencida') AND sp.id IS NULL
      ORDER BY c.expediente_id
      LIMIT " . LOTE_MAXIMO
 );
@@ -53,7 +58,7 @@ $generadas = 0;
 $fallidas = 0;
 
 foreach ($atrasos as $atraso) {
-    $etapaKey = substr($atraso['clave'], strlen('atraso:'));
+    $etapaKey = substr($atraso['clave'], strlen($atraso['tipo']) + 1);
     if (!in_array($etapaKey, ETAPA_KEYS, true)) continue; // formato inesperado -- no adivinar, se omite
 
     $expStmt = $pdo->prepare('SELECT * FROM expedientes WHERE id = :id');
@@ -61,7 +66,7 @@ foreach ($atrasos as $atraso) {
     $expediente = $expStmt->fetch();
     if (!$expediente) continue;
 
-    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha FROM expediente_etapas WHERE expediente_id = :id');
+    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha, fecha_programada FROM expediente_etapas WHERE expediente_id = :id');
     $etapasStmt->execute([':id' => $atraso['expediente_id']]);
     $etapas = $etapasStmt->fetchAll();
 
@@ -97,7 +102,7 @@ foreach ($atrasos as $atraso) {
     $pagosStmt->execute([':id' => $atraso['expediente_id']]);
     $pagosConvenio = $pagosStmt->fetchAll();
 
-    $pregunta = ia_generar_pregunta_supervisor($expediente, $etapas, $atraso['label'], $documentosRecientes, $avisosRecientes, $notasBitacora, $pendientesAbiertos, $pagosConvenio);
+    $pregunta = ia_generar_pregunta_supervisor($expediente, $etapas, $atraso['label'], $documentosRecientes, $avisosRecientes, $notasBitacora, $pendientesAbiertos, $pagosConvenio, $etapaKey);
     if (!$pregunta) {
         $fallidas++;
         continue; // se reintenta en la siguiente corrida (no se inserta nada)
