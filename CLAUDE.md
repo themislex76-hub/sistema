@@ -2923,6 +2923,25 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   hace que RH "hasta le ofrezca una cantidad mayor" -- el revisor lo marca
   como falsa expectativa; propuesta de suavizarlo sin cambiar la venta.
 
+## Revisión forzada del 14-nov-2026: calibración 2 del revisor (15 nov 2026, conversación "chats")
+- Re-corrida del 14-nov (39 revisadas, 22 marcadas). Verificado contra la LFT oficial:
+  ~13 errores REALES del bot, casi todos de antes de los arreglos del 15-nov (rescisiones
+  con "mejor me salí"/hechos viejos, "espera a que el patrón lo haga", cierre de empresa
+  como despido, rechazo de un patrón, Art. 110-VI, Arts. 173-178/42-II/123 Constitucional,
+  LSS 54, salarios caídos a mano). ~9 falsas alarmas: seguimientos automáticos y avisos del
+  webhook de pago (se guardan con respondido_por='ia' igual que el bot), "pago confirmado"
+  (el candado ya lo bloquea si no existe), vacaciones prescritas a 18 meses (es el criterio
+  del sistema), advertencia de cosa juzgada antes de firmar, detalles de tono.
+- Arreglos: `ia_es_mensaje_automatico()` etiqueta como SISTEMA los mensajes automáticos para
+  que el revisor no los revise; 4 "NO marques" nuevos. Hueco REAL nuevo en el bot: decía "tu
+  plazo ya venció" sin preguntar si presentó solicitud de conciliación (Art. 518 la
+  suspende) -- criterio nuevo en CRITERIOS DEL DESPACHO. `whatsapp_texto_parece_declinar()`
+  ahora reconoce "no tengo economía" / "no me alcanza". 61 casos en `scripts/pruebas_bot.php`.
+- **Pendiente del usuario**: revisar a mano la conversación 5215615230823 (Leonora B PR): el
+  revisor dice que el cliente señaló una "cuenta falsa" y el abogado contestó "sí, exacto esa
+  cuenta es falsa" -- probablemente alguien suplantando al despacho en redes, no el link de
+  Mercado Pago del sistema (ese sí es real); confirmar.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado

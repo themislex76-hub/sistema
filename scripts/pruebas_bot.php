@@ -158,5 +158,17 @@ $wp = file_get_contents($base . '/api/whatsapp_procesar.php');
 caso('cron de reanudar no contesta mensajes de menos de 10 min (los contesta el flujo normal)', strpos($wp, '< 600') !== false && strpos($wp, 'lo está contestando el flujo normal') !== false);
 caso('aviso de fuera de horario con candado GET_LOCK (no se manda 2-3 veces)', strpos($wp, "GET_LOCK(:k, 10)") !== false);
 
+// ---------------------------------------------------------------------
+echo "8) Revisión forzada del 14-nov: falsas alarmas del revisor y huecos reales\n";
+caso('revisor: seguimientos y confirmaciones del webhook se etiquetan como SISTEMA',
+    ia_es_mensaje_automatico('¡Hola! Sigo al pendiente de tu caso. Si quieres...')
+    && ia_es_mensaje_automatico('¡Hola! No quiero que se te vaya a pasar — según lo que me contaste...')
+    && ia_es_mensaje_automatico('¡Hola de nuevo! Sigo por aquí para cuando gustes.')
+    && ia_es_mensaje_automatico('¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada')
+    && ia_es_mensaje_automatico('¡Hola Ana! Tu pago del curso *Nuevo Procedimiento* quedó confirmado. 🎉')
+    && !ia_es_mensaje_automatico('Con lo que me cuentas, es un despido injustificado (Art. 48 LFT).'));
+caso('bot: preguntar por la solicitud de conciliación antes de decir que el plazo venció', strpos($p, 'pregúntale si presentó solicitud ante el Centro de Conciliación') !== false);
+caso('seguimiento: "no tengo economía" / "no me alcanza" cuentan como posponer', whatsapp_texto_parece_declinar('gracias pero no tengo economía para más gastos') && whatsapp_texto_parece_declinar('ahorita no me alcanza'));
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
