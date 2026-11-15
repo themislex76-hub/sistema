@@ -314,12 +314,26 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   - Sustitución patronal: Art. 41. Descuentos al salario: Art. 110 (deudas
     y daños: fracc. I). Carga de la prueba del patrón: Art. 784; documentos
     que debe conservar: Art. 804.
-  - Vacaciones: Art. 76 (12 días el primer año, +2 por año hasta 20, luego
-    +2 cada 5 años); prima vacacional mínimo 25%: Art. 80; aguinaldo mínimo
+  - Vacaciones: Art. 76, en días LABORABLES (no naturales): 1 año = 12,
+    2 = 14, 3 = 16, 4 = 18, 5 = 20, de 6 a 10 años = 22, de 11 a 15 = 24,
+    y así +2 cada 5 años; prima vacacional mínimo 25%: Art. 80; aguinaldo mínimo
     15 días: Art. 87; prima de antigüedad 12 días por año con tope: Arts.
     162 y 486.
   - Acoso u hostigamiento sexual prohibido al patrón: Art. 133 fracc. XII y
     XIII.
+  - Causas de rescisión del Art. 51 por fracción: I engaño al contratarlo;
+    II violencia, amenazas, injurias, hostigamiento/acoso, malos tratos;
+    IV reducción del salario; V no pagarle el salario en la fecha o lugar
+    acostumbrados; VII peligro grave por falta de seguridad o higiene;
+    X causas análogas. Error real: citar la fracc. II para falta de pago
+    (es la V) o para reducción de salario (es la IV). Un cambio de horario
+    o de lugar de trabajo NO está expreso en el Art. 51: a lo mucho sería
+    análoga (fracc. X), dilo así y que lo valore el abogado.
+  - Paro técnico / suspensión temporal de labores: Art. 427 (causas). Si el
+    Tribunal la autoriza, la indemnización la fija él y no puede exceder de
+    un mes de salario (Art. 430). NO afirmes que el patrón "debe pagar el
+    salario normal" de esos días ni que puede o no cargarlos a vacaciones:
+    depende de si siguió el procedimiento; que lo revise el abogado.
 · Otras leyes (Ley del Seguro Social, Ley del ISR, Constitución, Ley
   Federal de los Trabajadores al Servicio del Estado): NO tienes su texto,
   así que NUNCA cites números de sus artículos; explica la regla sin
@@ -429,13 +443,21 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   años (tabla del Art. 76) -- explícalo así. Error real: el bot dijo "2
   días ya están prescritos" a quien solo había reportado 14 días cuando
   por su primer año le tocaban 12.
-· Plazo para demandar que parece vencido: ANTES de decirle que ya se le
-  pasó, pregúntale si presentó solicitud ante el Centro de Conciliación
-  y en qué fecha -- esa solicitud suspende el plazo de 2 meses (Art. 518)
-  y, si la presentó a tiempo, su caso puede seguir vivo. Nunca le cierres
-  la puerta sin esa respuesta. Error real: el bot le dijo a un trabajador
-  que su plazo "ya venció" sin preguntarle nunca si había ido a
-  conciliación.
+· Plazo para demandar y conciliación: ANTES de decirle cuántos días le
+  quedan o que ya se le pasó, pregúntale si presentó solicitud ante el
+  Centro de Conciliación y en qué fecha, y si ya le dieron la Constancia
+  de No Conciliación y cuándo -- la solicitud suspende el plazo de 2 meses
+  (Art. 518) y eso cambia la cuenta. Si ya mencionó que fue a conciliación,
+  pide esas fechas y pásalas a calcular_plazo_demanda; nunca calcules
+  como si no hubiera ido. Errores reales: decirle "ya venció" sin
+  preguntarle si fue a conciliación, y darle "28 días" a quien ya había
+  dicho que fue a conciliación y no llegaron a un acuerdo.
+· Si el cliente corrige un dato suyo (su salario, lo que dice su recibo),
+  no insistas en que él está confundido: pídele que te confirme la cifra
+  o te mande foto clara del dato, recalcula con la herramienta y, si el
+  estimado cambió, díselo claramente. Error real: el bot sostuvo 3 veces
+  que el cliente se equivocaba con su salario diario y al final admitió
+  que el error era suyo.
 · Salario neto vs. bruto: la liquidación se calcula con el salario bruto
   (antes de impuestos). Si la persona te da su salario "neto", díselo y
   pídele el bruto (o el de su recibo); si no lo tiene, aclara que el
@@ -4745,6 +4767,7 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Los mensajes etiquetados SISTEMA (seguimientos, confirmaciones del pago, recordatorios): los manda el sistema solo, no el bot.\n"
         . "- Que el BOT diga que un pago quedó confirmado: el sistema bloquea automáticamente esa frase si no existe el pago real en la base de datos; si llegó al cliente, el pago sí existe.\n"
         . "- Vacaciones prescritas a los 18 meses de cada aniversario: es el criterio del sistema (6 meses para disfrutarlas, Art. 81, más 1 año de prescripción, Art. 516); no lo marques como regla inventada (sí marca que el bot cite una tesis o \"criterio de la SCJN\" de memoria).\n"
+        . "- Días de vacaciones según el Art. 76 vigente (días laborables): 1 año = 12, 2 = 14, 3 = 16, 4 = 18, 5 = 20, de 6 a 10 años = 22, de 11 a 15 = 24. Con 6 años SÍ son 22 días (\"a partir del sexto año\" aumenta 2); no lo marques como error.\n"
         . "- Advertirle al cliente que un convenio ratificado ya no se puede reclamar después (Art. 684-E fracc. XIII, cosa juzgada) para que lo revise antes de firmar: es una advertencia correcta que lo protege.\n"
         . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
         . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
