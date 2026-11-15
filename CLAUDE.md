@@ -30,6 +30,26 @@ días antes de generarse el informe.
   Lizbeth Diaz Almazo para confirmar que ya no pide "verificar el
   estatus desde cero" y en vez de eso pregunta qué pasó en el citatorio
   del 12 nov.
+- **Extendido el mismo día (15 nov 2026), pedido explícito del usuario**:
+  revisando si el mismo hueco se repetía en otras funciones, se confirmó
+  que SÍ -- `ia_auditar_expediente()` (auditoría integral, la única de
+  las 4 funciones de contexto completo que SÍ escribe sola en
+  `expediente_etapas`) y `ia_generar_pregunta_supervisor()` (la que
+  redacta la pregunta cuando algo se ve atorado) tampoco sabían nada de
+  `fecha_programada` -- mismo patrón de hueco disperso que ya se había
+  repetido varias veces esta semana con notas/documentos/pendientes.
+  Corregido en las 2: la auditoría ahora marca explícitamente cada etapa
+  "sin fecha todavía" que ya tiene Fecha agendada (para no tratarla como
+  completamente huérfana); la pregunta del supervisor recibe un
+  parámetro nuevo `$etapaKeyAtraso` y, si esa etapa ya tiene Fecha
+  agendada, se le indica a la IA que pregunte por ESA fecha concreta
+  ("¿qué pasó en la cita del 12 nov?"), nunca como si no hubiera nada
+  agendado. `api/cron_auditoria_expediente_ia.php` y `api/cron_generar_
+  preguntas_supervisor.php` ahora seleccionan `fecha_programada` (ya
+  existía en la tabla, solo no se leía). Archivos a subir además de
+  `api/ia_helpers.php`: `api/cron_auditoria_expediente_ia.php`,
+  `api/cron_generar_preguntas_supervisor.php`. **Sin probar en vivo
+  todavía**.
 
 ## "Mi disponibilidad para asesorías" rediseñada: cuadrícula de casillas en vez de capturar rangos a mano (14 nov 2026, `app.js?v=148`)
 Pedido explícito del usuario, viendo su propio horario capturado (bloques
