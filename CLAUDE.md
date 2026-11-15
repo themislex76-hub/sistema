@@ -714,7 +714,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026.** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
+**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026. Ese mismo día el usuario confirmó subidos TODOS los archivos de la sesión "chats" hasta el commit `0482e7e` (`app.js?v=152`, ia_helpers, liquidacion_calculadora, configuracion_set, whatsapp_procesar, lft_helpers, revisión diaria del bot con su Cron Job). Siguiente migración libre: 073.** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
@@ -2461,6 +2461,12 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   cuando el cliente manda 2 mensajes seguidos: sin tocar todavía.
 
 ## Primera corrida real de la revisión diaria del bot + criterios nuevos (14 nov 2026, conversación "chats")
+- **Costo y plan acordado (14-nov-2026)**: revisar todas (~170/día) cuesta
+  ~$3-5 USD/día (~$1,700-2,900 MXN/mes); una muestra de 40/día ~$550 MXN/
+  mes. Acordado con el usuario: revisar TODAS ~2 semanas y después bajar a
+  muestra cambiando solo la tarea de Ferozo de horas "1-5" a "1" (sin
+  tocar código). Recordatorio programado en la sesión "chats" para el 28
+  nov 2026.
 - Corrida real (13-nov): 174 conversaciones del día, 78 revisadas en 2
   corridas, 12 marcadas. Confirmados con el texto oficial de la LFT como
   errores REALES del bot: cierre de empresa tratado como "despido
@@ -2571,8 +2577,10 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   libre de la frontera norte" (`configuracion_set.php` lo acepta).
   **Cada enero actualizar ambos valores y agregar el año que termina a
   las tablas históricas (general y frontera).**
-- **No cubierto**: la pestaña "Cálculo de liquidación" de cada expediente
-  (`computeLiquidacion()` en app.js) sigue usando solo la zona general.
+- La pestaña "Cálculo de liquidación" de cada expediente
+  (`computeLiquidacion()` en app.js) usa solo la zona general -- A
+  PROPÓSITO: decisión del usuario (14-nov-2026), el despacho no lleva
+  juicios en la frontera; la zona frontera solo aplica al bot de WhatsApp.
 - 52 casos en `scripts/pruebas_bot.php`.
 
 ## Plantillas de WhatsApp aprobadas por Meta
