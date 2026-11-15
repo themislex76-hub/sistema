@@ -167,7 +167,11 @@ caso('revisor: seguimientos y confirmaciones del webhook se etiquetan como SISTE
     && ia_es_mensaje_automatico('¡Tu pago quedó confirmado! Tu asesoría telefónica de 1 hora queda agendada')
     && ia_es_mensaje_automatico('¡Hola Ana! Tu pago del curso *Nuevo Procedimiento* quedó confirmado. 🎉')
     && !ia_es_mensaje_automatico('Con lo que me cuentas, es un despido injustificado (Art. 48 LFT).'));
-caso('bot: preguntar por la solicitud de conciliación antes de decir que el plazo venció', strpos($p, 'pregúntale si presentó solicitud ante el Centro de Conciliación') !== false);
+caso('bot: preguntar por la solicitud de conciliación antes de decir que el plazo venció', strpos($p, 'pregúntale si presentó solicitud ante el') !== false);
+caso('Art. 51 por fracción: falta de pago = V, reducción = IV (error real: fracc. II)', strpos($p, 'IV reducción del salario; V no pagarle el salario') !== false);
+caso('vacaciones: 6 a 10 años = 22 días (revisor marcó mal 22 días con 6 años)', strpos($p, 'de 6 a 10 años = 22') !== false);
+caso('paro técnico: Art. 430, no afirmar salario normal', strpos($p, 'un mes de salario (Art. 430)') !== false);
+caso('cliente corrige su salario: no insistir, recalcular', strpos($p, 'no insistas en que él está confundido') !== false);
 caso('seguimiento: "no tengo economía" / "no me alcanza" cuentan como posponer', whatsapp_texto_parece_declinar('gracias pero no tengo economía para más gastos') && whatsapp_texto_parece_declinar('ahorita no me alcanza'));
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";

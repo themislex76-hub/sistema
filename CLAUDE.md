@@ -2942,6 +2942,23 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   cuenta es falsa" -- probablemente alguien suplantando al despacho en redes, no el link de
   Mercado Pago del sistema (ese sí es real); confirmar.
 
+## Revisión del 14-nov, 2ª tanda (40 conversaciones más, 15 nov 2026, conversación "chats")
+- 21 marcadas. Errores REALES nuevos (no cubiertos antes): Art. 51 fracc. II citada para
+  falta de pago (es V) / reducción (es IV); paro técnico "deben pagarte salario normal"
+  (Arts. 427/430: la indemnización la fija el Tribunal, máx. 1 mes); "28 días para demandar"
+  a quien ya dijo que fue a conciliación; el bot insistió 3 veces en que el cliente se
+  equivocaba con su salario y el error era del bot; cambio de horario tratado como causa
+  expresa del Art. 51 (a lo mucho fracc. X). Criterios nuevos para todo eso en CRITERIOS DEL
+  DESPACHO + tabla del Art. 76 escrita completa. El resto: patrones ya corregidos antes
+  (LSS 15-I, 110-VI, cierre de empresa, rescisiones sin hecho reciente) y duplicados a las
+  :15/:30 (de antes del arreglo de duplicados; se verifica el 17-nov).
+- Falsa alarma del revisor corregida: decía que con 6 años son 20 días de vacaciones; el
+  Art. 76 vigente da 22 (6 a 10 años). Se le dio la tabla en "NO marques".
+- **Duda para el Lic. Rubén (no afirmada)**: INCan rechazado como Apartado B. El revisor dice
+  que "típicamente es A"; no está verificado -- la ley orgánica de los Institutos Nacionales
+  de Salud podría remitir a la LFTSE. Lo verificable: el bot no debe rechazar sin preguntar
+  ISSSTE/IMSS y escalar si hay duda (criterio que ya existe). 65 casos en pruebas_bot.php.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
