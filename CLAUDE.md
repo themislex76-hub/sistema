@@ -33,26 +33,38 @@ celular se le ven muy chicas.
   igual, incluyendo el ancho real que ocupa cada cosa) -- aceptable a
   cambio de letra más grande, pero si molesta mucho avisar para ajustar
   el nivel de zoom (fácil de subir/bajar en un solo lugar).
-- **Bug real encontrado y corregido el mismo día, antes de que el usuario
-  probara en vivo**: el menú lateral en celular es `position:fixed` con
-  `height:100vh` (ver CSS de `.sidebar` dentro del `@media (max-width:
-  900px)`) -- el `zoom` agranda también ese alto fijo, así que la caja del
-  menú termina siendo más alta que la pantalla real, y la parte de abajo
-  (los botones del pie, incluyendo el propio botón de "Letra más grande")
-  queda fuera de la vista sin ninguna forma de desplazarse (`position:
-  fixed` no se mueve con el scroll normal de la página). Corregido con
-  `body.letra-grande .sidebar{overflow-y:auto; -webkit-overflow-scrolling:
-  touch;}` -- scoped SOLO a cuando el toggle está activo (sin él, el menú
-  siempre cupo bien, no hacía falta scroll). Si el usuario reporta esto
-  mismo con la versión que ya probó, es justo este bug -- confirmar que
-  subió esta corrección antes de investigar algo nuevo.
+- **Bug real, 2 intentos hasta encontrar la causa exacta**: el menú
+  lateral en celular es `position:fixed` con `height:100vh` (ver CSS de
+  `.sidebar` dentro del `@media (max-width:900px)`) -- el `zoom` del body
+  también agranda ese alto fijo, así que la caja del menú termina siendo
+  más alta que la pantalla real, y la parte de abajo (los botones del
+  pie, incluyendo el propio botón de "Letra más grande") queda fuera de
+  la vista.
+  1. Primer intento: `overflow-y:auto` en `.sidebar` -- **no corrigió
+     nada, confirmado real por el usuario** (seguía sin ver los botones
+     del pie, se veía hasta "Días inhábiles" -- el último botón de
+     `.nav` -- y ya no el pie). Causa de que no funcionara: el contenido
+     del menú (brand+nav+pie) ya cabe EXACTO dentro de su propia caja de
+     100vh -- no hay ningún "overflow" real de contenido que
+     `overflow-y:auto` pueda detectar; es la CAJA COMPLETA la que el
+     `zoom` deja más grande que la pantalla física, no su contenido
+     respecto a ella misma. `overflow-y:auto` solo reacciona a contenido
+     que rebasa su propia caja, nunca a que la caja misma rebase el
+     viewport.
+  2. **Corregido de verdad**: el menú lateral nunca se agranda -- se le
+     aplica el zoom inverso exacto (`1 / 1.3`, variable CSS `--letra-zoom`
+     para que ambos valores no se desalineen nunca) para que, multiplicado
+     por el 1.3 heredado del body, el resultado neto sea 1 (tamaño normal
+     de siempre). El menú se queda con su letra de tamaño normal (nombres
+     de pantallas cortos, no es el texto que le cuesta leer al usuario) y
+     así nunca se topa con el problema del alto fijo -- todo lo demás
+     (tablas, tarjetas, modales, formularios) sí se agranda igual.
 - Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
   -- no aplica `verificar_tags.js`. **Sin probar en vivo todavía** --
   falta que el usuario suba `assets/style.css`, `index.html` y `sw.js`
   (ya tenía `assets/app.js?v=156` de la entrega anterior, sin cambios esta
-  vez), y confirme que ya no se esconde el pie del menú y que el 1.3 se
-  sienta bien (si sigue pareciendo poco o ya es demasiado, avisar para
-  ajustarlo de nuevo).
+  vez), y confirme que el menú lateral ya se vea completo y del tamaño de
+  siempre (sin agrandarse) y que el resto de la app sí se vea más grande.
 
 ## Eventos de Google Calendar "sin identificar" ya se muestran (15 nov 2026, `app.js?v=155`)
 Pedido explícito del usuario, mismo tema de "que nada se quede callado sin
