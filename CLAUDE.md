@@ -89,6 +89,22 @@ celular se le ven muy chicas.
     `sw.js` (`v78`), y confirme que el menú ahora SÍ se vea con letra más
     grande sin esconder ningún botón, y que el 1.4 general se sienta
     mejor que el 1.3 anterior.
+- **Mismo día, 3er ajuste pedido explícito del usuario**: "quiero la
+  letra mas grande y que el tamaño del texto y del menu sea del mismo
+  tamaño". Zoom general subido de 1.4 a 1.5 (mismo `--letra-zoom`, un
+  solo lugar). Los 8 valores fijos del menú (19px/20px/13px/16px...) se
+  habían puesto a ojo, aproximando el tamaño del resto de la app sin ser
+  el mismo cálculo exacto -- ahora cada uno se deriva con
+  `calc(<tamaño_normal_del_selector> * var(--letra-zoom))`, EXACTAMENTE
+  el mismo multiplicador que aplica el `zoom` sobre el resto de la app,
+  así quedan matemáticamente iguales en vez de solo parecidos. Ventaja de
+  paso: si se vuelve a pedir subir/bajar el zoom general, el menú se
+  reescala solo, sin recalcular estos 8 valores a mano otra vez.
+- Sin cambios de base de datos, sin tocar `app.js`/`mergeTags()` -- no
+  aplica `verificar_tags.js`. **Sin probar en vivo todavía** -- falta que
+  el usuario suba `assets/style.css` (`v=11`), `index.html` y `sw.js`
+  (`v79`), y confirme que el menú y el contenido principal ya se vean del
+  mismo tamaño, y que el 1.5 general se sienta bien.
 
 ## Eventos de Google Calendar "sin identificar" ya se muestran (15 nov 2026, `app.js?v=155`)
 Pedido explícito del usuario, mismo tema de "que nada se quede callado sin

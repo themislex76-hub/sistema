@@ -38,7 +38,7 @@ body{
    (modales, overlay) se agrandan en el lugar correcto; transform:scale()
    los habría descolocado. Agranda cualquier tamaño de letra, fijo en px o
    no, sin tener que tocar ninguno de los ~380 que ya existen en la app. */
-body.letra-grande{--letra-zoom:1.4; zoom:var(--letra-zoom);}
+body.letra-grande{--letra-zoom:1.5; zoom:var(--letra-zoom);}
 /* El menú lateral es position:fixed con height:100vh en celular -- el
    zoom del body también agranda ese alto fijo, así que la caja del menú
    termina siendo más alta que la pantalla real y la parte de abajo (los
@@ -65,14 +65,27 @@ body.letra-grande .sidebar{zoom:calc(1 / var(--letra-zoom));}
    normal de flexbox, sin el truco raro de `zoom` de por medio. Solo hacía
    falta tocar estos ~8 selectores (el menú, a diferencia del contenido
    principal, no tiene NINGÚN tamaño de letra puesto inline en app.js). */
-body.letra-grande .brand .seal{font-size:19px;}
-body.letra-grande .brand h1{font-size:20px;}
-body.letra-grande .brand p{font-size:13px;}
-body.letra-grande .nav button{font-size:16px; padding:11px 12px;}
-body.letra-grande .nav .section-label{font-size:12px;}
-body.letra-grande .sidebar-foot{font-size:13px;}
-body.letra-grande .user-pill span{font-size:15px;}
-body.letra-grande .switch-user{font-size:13px;}
+/* Pedido explícito del usuario (mismo día): que el menú quede DEL MISMO
+   TAMAÑO que el resto de la app, no solo "más grande a ojo" -- los
+   valores fijos de arriba (19px/20px/13px/16px...) eran un cálculo
+   aproximado, no el mismo factor exacto que ve el contenido principal
+   vía `zoom`. Ahora cada tamaño se deriva con calc(base_normal *
+   var(--letra-zoom)) -- EXACTAMENTE el mismo multiplicador que aplica el
+   `zoom` del body sobre el resto de la app -- así los dos quedan
+   matemáticamente iguales, y si el usuario pide subir/bajar el zoom
+   general después, el menú se reescala solo con el mismo cambio, sin
+   tener que volver a calcular estos 8 valores a mano. `base_normal` es
+   el tamaño que cada selector tiene fuera de letra-grande (ver reglas de
+   `.brand`/`.nav`/`.sidebar-foot`/`.user-pill`/`.switch-user` más abajo
+   en este archivo). */
+body.letra-grande .brand .seal{font-size:calc(16px * var(--letra-zoom));}
+body.letra-grande .brand h1{font-size:calc(17px * var(--letra-zoom));}
+body.letra-grande .brand p{font-size:calc(11px * var(--letra-zoom));}
+body.letra-grande .nav button{font-size:calc(13.5px * var(--letra-zoom)); padding:calc(10px * var(--letra-zoom)) calc(12px * var(--letra-zoom));}
+body.letra-grande .nav .section-label{font-size:calc(10px * var(--letra-zoom));}
+body.letra-grande .sidebar-foot{font-size:calc(11px * var(--letra-zoom));}
+body.letra-grande .user-pill span{font-size:calc(12.5px * var(--letra-zoom));}
+body.letra-grande .switch-user{font-size:calc(11px * var(--letra-zoom));}
 
 /* ---------- Sidebar ---------- */
 .sidebar{
