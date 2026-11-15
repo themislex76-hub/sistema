@@ -60,11 +60,35 @@ celular se le ven muy chicas.
      así nunca se topa con el problema del alto fijo -- todo lo demás
      (tablas, tarjetas, modales, formularios) sí se agranda igual.
 - Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
-  -- no aplica `verificar_tags.js`. **Sin probar en vivo todavía** --
-  falta que el usuario suba `assets/style.css`, `index.html` y `sw.js`
-  (ya tenía `assets/app.js?v=156` de la entrega anterior, sin cambios esta
-  vez), y confirme que el menú lateral ya se vea completo y del tamaño de
-  siempre (sin agrandarse) y que el resto de la app sí se vea más grande.
+  -- no aplica `verificar_tags.js`. **Confirmado en vivo (15 nov 2026)**:
+  el usuario probó esta versión y confirmó "quedó muy bien" -- el menú ya
+  se veía completo y el resto de la app más grande.
+- **Mismo día, 2 ajustes más pedidos explícitamente por el usuario**: (1)
+  "¿se puede hacer también la letra del menú más grande sin que se
+  esconda nada?" y (2) "si puedes subir un poco más el tamaño general,
+  mejor". Resueltos juntos:
+  - Zoom general subido de 1.3 a 1.4 (variable `--letra-zoom`, un solo
+    lugar).
+  - El menú lateral YA estaba fuera del `zoom` (ver arriba, para no
+    reventar su alto fijo) -- se agranda aparte con `font-size` real en
+    los ~8 selectores que lo componen (`body.letra-grande .nav button`,
+    `.sidebar-foot`, `.switch-user`, etc.). A diferencia de `zoom`,
+    `font-size` NO afecta el `height:100vh` fijo de `.sidebar` -- así que
+    nunca puede reproducir el mismo bug: si el contenido crece de más,
+    `.nav` (que ya tenía su propio scroll interno desde siempre) se
+    encoge y se puede deslizar, y `.sidebar-foot` (el pie, fuera de ese
+    scroll, sin `min-height:0`) siempre termina de verse completo abajo
+    -- comportamiento normal de flexbox, sin el truco de `zoom` de por
+    medio. Solo hicieron falta esos ~8 selectores porque el menú, a
+    diferencia del contenido principal (los ~300 inline en app.js), no
+    tiene NINGÚN tamaño de letra puesto inline -- todo vive en
+    `style.css`.
+  - Sin cambios de base de datos, sin tocar `app.js`/`mergeTags()` -- no
+    aplica `verificar_tags.js`. **Sin probar en vivo todavía** -- falta
+    que el usuario suba `assets/style.css` (`v=10`), `index.html` y
+    `sw.js` (`v78`), y confirme que el menú ahora SÍ se vea con letra más
+    grande sin esconder ningún botón, y que el 1.4 general se sienta
+    mejor que el 1.3 anterior.
 
 ## Eventos de Google Calendar "sin identificar" ya se muestran (15 nov 2026, `app.js?v=155`)
 Pedido explícito del usuario, mismo tema de "que nada se quede callado sin
