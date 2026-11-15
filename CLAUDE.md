@@ -1,5 +1,37 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Push diario ya no deja de avisar prescripción/amparo/pago vencidos (15 nov 2026, `app.js?v=154`)
+Mismo tema de "hacer el sistema más inteligente/autosuficiente" -- al
+revisar `AVISOS_ABOGADO_TIPOS_ABIERTOS` (la lista agregada el 9 nov 2026
+para que `atraso`/`accion_ia` se siguieran avisando aunque llevaran días
+vencidos) se confirmó que el MISMO bug exacto nunca se corrigió para
+`prescripcion`, `amparo` y `pago`: esos 3 exigían `fecha >= hoy` para
+seguir sincronizándose al caché de push
+(`api/agenda_sync_avisos.php`/`syncAvisosAbogado()`), así que un plazo de
+prescripción/amparo de verdad vencido (demanda/amparo nunca presentado a
+tiempo) o un pago de convenio no cobrado dejaban de avisar por push al
+día siguiente de vencer -- justo el momento en que más urge que alguien
+lo note -- aunque siguieran viéndose como vencidos en la Agenda general
+en pantalla. Pedido explícito del usuario: agregar estos 3 (dejó
+`pendiente` fuera a propósito).
+- `assets/app.js`: `prescripcion`, `amparo` y `pago` agregados a
+  `AVISOS_ABOGADO_TIPOS_ABIERTOS`.
+- `api/cron_recordatorio_abogado.php`: mismos 3 tipos agregados a
+  `TIPOS_ABIERTOS` (push diario + escalación al Administrador tras 7+
+  días sin resolverse). La lista de tipos abiertos en el SQL ahora se
+  arma directo de la constante `TIPOS_ABIERTOS` (`$pdo->quote()` por
+  cada uno) en vez de repetirse literal en el WHERE -- evita que las 2
+  copias se desalineen de nuevo por descuido, justo lo que pasó con este
+  bug (la constante PHP y el SQL llevaban 6 días desalineados sin que
+  nadie lo notara).
+- Sin cambios de base de datos. No se tocó `mergeTags()`/
+  `calcularJornada()`/tags de demanda -- no aplica `verificar_tags.js`.
+  **Sin probar en vivo todavía** -- falta que el usuario suba
+  `assets/app.js`, `index.html`, `sw.js` y
+  `api/cron_recordatorio_abogado.php`, y se confirme con un caso real
+  (una prescripción/amparo/pago ya vencido hace más de 1 día) que el push
+  diario lo sigue avisando en vez de quedarse callado.
+
 ## Nuevo detector: cita/citatorio agendado cuya fecha ya pasó sin resultado (15 nov 2026, `app.js?v=153`)
 Pedido explícito del usuario ("es que debemos de hacer muy inteligente y
 autosuficiente el sistema que sugieres") tras los 2 arreglos de hoy sobre
