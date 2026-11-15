@@ -429,6 +429,13 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   años (tabla del Art. 76) -- explícalo así. Error real: el bot dijo "2
   días ya están prescritos" a quien solo había reportado 14 días cuando
   por su primer año le tocaban 12.
+· Plazo para demandar que parece vencido: ANTES de decirle que ya se le
+  pasó, pregúntale si presentó solicitud ante el Centro de Conciliación
+  y en qué fecha -- esa solicitud suspende el plazo de 2 meses (Art. 518)
+  y, si la presentó a tiempo, su caso puede seguir vivo. Nunca le cierres
+  la puerta sin esa respuesta. Error real: el bot le dijo a un trabajador
+  que su plazo "ya venció" sin preguntarle nunca si había ido a
+  conciliación.
 · Salario neto vs. bruto: la liquidación se calcula con el salario bruto
   (antes de impuestos). Si la persona te da su salario "neto", díselo y
   pídele el bruto (o el de su recibo); si no lo tiene, aclara que el
@@ -4615,6 +4622,25 @@ function ia_criterios_despacho_texto(): string
     return trim(substr(IA_SYSTEM_PROMPT, $ini, $fin === false ? 6000 : $fin - $ini));
 }
 
+// Mensajes que manda el SISTEMA solo (seguimientos de los crons, avisos
+// del webhook de pago, recordatorios, fuera de horario): se guardan en
+// whatsapp_conversaciones con respondido_por = 'ia' igual que las
+// respuestas del bot, y el revisor los marcaba como "presión de venta" o
+// "pago confirmado sin evidencia" (revisión forzada del 14-nov-2026: 5 de
+// 22 hallazgos eran de estos mensajes). Se etiquetan para que no los revise.
+function ia_es_mensaje_automatico(string $texto): bool
+{
+    return preg_match(
+        '/^\s*¡Hola!? (No quiero que se te vaya a pasar|Sigo al pendiente de tu caso)'
+        . '|^\s*¡Hola de nuevo! Sigo por aquí'
+        . '|^\s*(¡Hola[^!]{0,60}!\s*)?¡?Tu pago (del curso .{0,120}?)?quedó confirmado'
+        . '|Tu asesoría con el abogado es en 1 hora'
+        . '|Te recordamos que nuestro horario de atención'
+        . '|^\s*Por hoy ya platicamos bastante/u',
+        $texto
+    ) === 1;
+}
+
 // Números de artículo de la LFT mencionados en los mensajes del bot
 // ("Art. 423 fracc. X", "artículo 48", "Arts. 76, 81 y 516").
 function ia_articulos_citados(string $texto): array
@@ -4644,7 +4670,9 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
     require_once __DIR__ . '/lft_helpers.php';
 
     $fmt = function (array $m): string {
-        $quien = $m['direccion'] === 'entrante' ? 'CLIENTE' : (($m['respondido_por'] ?? 'ia') === 'humano' ? 'ABOGADO (humano)' : 'BOT');
+        $quien = $m['direccion'] === 'entrante' ? 'CLIENTE'
+            : ((($m['respondido_por'] ?? 'ia') === 'humano') ? 'ABOGADO (humano)'
+            : (ia_es_mensaje_automatico((string)$m['texto']) ? 'SISTEMA (mensaje automático, NO es respuesta del bot: no lo revises)' : 'BOT'));
         return '[' . substr((string)$m['creado_en'], 0, 16) . "] $quien: " . trim((string)$m['texto']);
     };
 
@@ -4714,6 +4742,10 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Citar el Art. 48 para la indemnización de 3 meses: es correcto (el Art. 48 dice \"que se le indemnice con el importe de tres meses de salario\"); el Art. 50 aplica cuando el patrón se exime de reinstalar.\n"
         . "- Una fecha límite exacta para demandar: la calcula una herramienta del sistema con el criterio de meses de calendario de la SCJN; márcala solo si contradice un hecho de la conversación (ej. ignora que ya presentó solicitud de conciliación).\n"
         . "- Que una cifra \"no conste\" que salió de la herramienta: usa la lista de CÁLCULOS QUE HIZO LA CALCULADORA que se te da; si coincide, no es cálculo a mano.\n"
+        . "- Los mensajes etiquetados SISTEMA (seguimientos, confirmaciones del pago, recordatorios): los manda el sistema solo, no el bot.\n"
+        . "- Que el BOT diga que un pago quedó confirmado: el sistema bloquea automáticamente esa frase si no existe el pago real en la base de datos; si llegó al cliente, el pago sí existe.\n"
+        . "- Vacaciones prescritas a los 18 meses de cada aniversario: es el criterio del sistema (6 meses para disfrutarlas, Art. 81, más 1 año de prescripción, Art. 516); no lo marques como regla inventada (sí marca que el bot cite una tesis o \"criterio de la SCJN\" de memoria).\n"
+        . "- Advertirle al cliente que un convenio ratificado ya no se puede reclamar después (Art. 684-E fracc. XIII, cosa juzgada) para que lo revise antes de firmar: es una advertencia correcta que lo protege.\n"
         . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
         . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
         . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"

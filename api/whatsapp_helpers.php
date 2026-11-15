@@ -129,7 +129,7 @@ function whatsapp_texto_parece_declinar(string $texto): bool
         // que lo hará después o que hoy no tiene dinero -- insistirle con el
         // seguimiento automático es justo la presión que molestó a clientes.
         '/\bno\b.{0,25}(gracias|me interesa|por ahora|por el momento|as[ií]\s+est[aá]\s+bien)'
-        . '|\b(ahorita|ahora|hoy)\s+no\b|\bno\s+(tengo|cuento\s+con)\s+(dinero|el\s+recurso|recursos|trabajo|para\s+pagar)'
+        . '|\b(ahorita|ahora|hoy)\s+no\b|\bno\s+(tengo|cuento\s+con)\s+(dinero|el\s+recurso|recursos|trabajo|para\s+pagar|(la\s+)?econom[ií]a)|\bno\s+me\s+alcanza\b'
         . '|\bm[aá]s\s+adelante\b|\bcuando\s+(tenga|me\s+paguen|pueda|me\s+depositen|cobre)\b/iu',
         $texto
     ) === 1;
