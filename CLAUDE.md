@@ -2915,9 +2915,9 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   también reconoce "ahorita no / no tengo dinero / cuando me paguen"
   (lo usan los seguimientos de calculadora y cursos). 58 casos en
   `scripts/pruebas_bot.php`.
-- **Pendiente de decisión del usuario**: (1) precio del documento
-  membretado -- el código cobra $49 (`DOCUMENTO_CALCULO_PRECIO`) y el
-  usuario escribió "$45"; (2) el prompt le dice al bot que el documento
+- Precio del documento membretado confirmado por el usuario: **$49**
+  (igual que `DOCUMENTO_CALCULO_PRECIO`, sin cambios).
+- **Pendiente de decisión del usuario**: el prompt le dice al bot que el documento
   hace que RH "hasta le ofrezca una cantidad mayor" -- el revisor lo marca
   como falsa expectativa; propuesta de suavizarlo sin cambiar la venta.
 
