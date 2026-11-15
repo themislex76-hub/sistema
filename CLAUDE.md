@@ -25,11 +25,15 @@ días antes de generarse el informe.
   construyó -- no hizo falta tocar ningún endpoint, el dato ya estaba
   disponible, solo no se usaba.
 - Sin cambios de base de datos, sin tocar `app.js` -- no aplica
-  cache-bust ni `verificar_tags.js`. **Pendiente**: que el usuario suba
-  `api/ia_helpers.php` y le dé "Actualizar" al Informe del juicio de
-  Lizbeth Diaz Almazo para confirmar que ya no pide "verificar el
-  estatus desde cero" y en vez de eso pregunta qué pasó en el citatorio
-  del 12 nov.
+  cache-bust ni `verificar_tags.js`.
+- **Confirmado funcionando en vivo (15 nov 2026)**: el Informe Ejecutivo
+  de Lizbeth Diaz Almazo ya no pide "verificar el estatus desde cero" --
+  ahora dice "se agendó el primer citatorio para el 12 de noviembre de
+  2026, fecha que ya transcurrió hace 3 días sin que se haya registrado
+  el resultado... es necesario confirmar qué ocurrió en esa audiencia",
+  con próxima acción "Confirmar y registrar qué sucedió en el citatorio
+  del 12 de noviembre (se celebró, se reagendó, o no se presentó la
+  contraparte)".
 - **Extendido el mismo día (15 nov 2026), pedido explícito del usuario**:
   revisando si el mismo hueco se repetía en otras funciones, se confirmó
   que SÍ -- `ia_auditar_expediente()` (auditoría integral, la única de
