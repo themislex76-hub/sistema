@@ -47,7 +47,12 @@ const AGENDA_TIPO_LABEL = [
 // 'vencida' agregado el 15 nov 2026 (citasAgendadasVencidasInfo() en
 // assets/app.js) -- mismo tratamiento que 'atraso'/'accion_ia': una fecha
 // agendada ya vencida sin resultado registrado tampoco se resuelve sola.
-const TIPOS_ABIERTOS = ['atraso', 'vencida', 'accion_ia'];
+// 'prescripcion', 'amparo' y 'pago' agregados el mismo día, pedido
+// explícito del usuario: mismo bug que el de 9 nov nunca corregido para
+// estos 3 -- un plazo legal de verdad vencido (demanda/amparo nunca
+// presentado) o un pago de convenio no cobrado dejaban de avisar por
+// push al día siguiente de vencer, justo cuando más urge notarlo.
+const TIPOS_ABIERTOS = ['atraso', 'vencida', 'accion_ia', 'prescripcion', 'amparo', 'pago'];
 // Si un abogado lleva esto o más días ignorando un "atraso"/"accion_ia",
 // también se le avisa al Administrador -- un asunto estancado no debe
 // quedarse sin que nadie más lo note solo porque el abogado no entró al
@@ -56,14 +61,20 @@ const UMBRAL_ESCALAR_DIAS = 7;
 
 $pdo = db();
 
+// La lista de "tipos abiertos" en el SQL se arma directo de TIPOS_ABIERTOS
+// (en vez de repetirla literal aquí) para que agregar un tipo nuevo ahí
+// (como 'prescripcion'/'amparo'/'pago' el 15 nov 2026) no requiera acordarse
+// de tocar también el WHERE -- ya pasó una vez que las dos copias quedaron
+// desalineadas por descuido.
+$tiposAbiertosSql = implode(',', array_map(fn($t) => $pdo->quote($t), TIPOS_ABIERTOS));
 $stmt = $pdo->prepare(
     "SELECT c.*, e.actor, e.demandado, e.abogado_id
      FROM agenda_avisos_cache c
      JOIN expedientes e ON e.id = c.expediente_id
      WHERE e.abogado_id IS NOT NULL
        AND (
-         (c.tipo NOT IN ('atraso', 'vencida', 'accion_ia') AND c.fecha = CURDATE() + INTERVAL 1 DAY)
-         OR (c.tipo IN ('atraso', 'vencida', 'accion_ia') AND c.fecha <= CURDATE())
+         (c.tipo NOT IN ($tiposAbiertosSql) AND c.fecha = CURDATE() + INTERVAL 1 DAY)
+         OR (c.tipo IN ($tiposAbiertosSql) AND c.fecha <= CURDATE())
        )
      ORDER BY e.abogado_id, c.hora IS NULL, c.hora"
 );

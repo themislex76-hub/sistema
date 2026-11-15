@@ -5130,7 +5130,17 @@ const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendie
 // atorados que el sistema "sabía" pero nunca avisó a nadie. 'vencida'
 // agregado el 15 nov 2026 (ver citasAgendadasVencidasInfo()) -- mismo
 // comportamiento, una cita agendada vencida tampoco se "resuelve sola".
-const AVISOS_ABOGADO_TIPOS_ABIERTOS = ['atraso', 'vencida', 'accion_ia'];
+// 'prescripcion', 'amparo' y 'pago' agregados el mismo día (15 nov 2026,
+// pedido explícito del usuario): mismo bug exacto que el de 9 nov, nunca
+// corregido para estos 3 -- un plazo de prescripción/amparo que de verdad
+// se venció (nadie presentó la demanda/amparo a tiempo) o un pago de
+// convenio no cobrado dejaban de avisar por push al día siguiente de
+// vencer (exigían `fecha >= hoy`), aunque siguieran viéndose como
+// vencidos en la Agenda general en pantalla. Para prescripción/amparo
+// esto es especialmente grave -- es justo el momento en que más urge que
+// alguien lo note. 'pendiente' (to-dos manuales) se dejó fuera a
+// propósito, sin pedirlo el usuario.
+const AVISOS_ABOGADO_TIPOS_ABIERTOS = ['atraso', 'vencida', 'accion_ia', 'prescripcion', 'amparo', 'pago'];
 async function syncAvisosAbogado(){
   if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
   const hoy = new Date(); hoy.setHours(0,0,0,0);
