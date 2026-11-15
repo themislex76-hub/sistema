@@ -1,8 +1,8 @@
-const CACHE_NAME = 'ela-shell-v73';
+const CACHE_NAME = 'ela-shell-v74';
 const SHELL_FILES = [
   '/sistema/',
   '/sistema/assets/style.css?v=6',
-  '/sistema/assets/app.js?v=154',
+  '/sistema/assets/app.js?v=155',
   '/sistema/manifest.json',
   '/sistema/assets/icons/icon-192.png',
   '/sistema/assets/icons/icon-512.png',

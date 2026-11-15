@@ -1,5 +1,43 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Eventos de Google Calendar "sin identificar" ya se muestran (15 nov 2026, `app.js?v=155`)
+Pedido explícito del usuario, mismo tema de "que nada se quede callado sin
+que alguien lo note" -- `cron_leer_google_calendar.php` ya guardaba en
+`google_calendario_sugerencias` cualquier evento que la IA NO pudiera
+matchear con claridad a un expediente/etapa (`estado='sin_match'`, ver
+`ia_matchear_evento_calendario()`), pero esto quedaba ahí sin que nadie lo
+viera nunca -- ya estaba anotado como pendiente desde el 11 nov 2026.
+- **`api/google_calendario_sugerencias_list.php`**: el `WHERE` pasó de
+  `estado = 'pendiente'` a `estado IN ('pendiente', 'sin_match')`, y se
+  agregó el nombre del abogado dueño del calendario (`au.nombre`, JOIN a
+  `usuarios` vía `google_calendarios_vigilados.abogado_id`) -- para
+  `sin_match` no hay expediente que mostrar, así que se identifica por
+  abogado+calendario en su lugar.
+- **`api/google_calendario_sugerencia_resolver.php`**: el chequeo de
+  "¿ya se resolvió?" ahora acepta también `estado='sin_match'` (antes solo
+  `pendiente`) -- siempre con `aplicar=false` (nunca hay expediente/etapa
+  que aplicar en un `sin_match`, el candado que ya existía para eso lo
+  sigue exigiendo sin cambios).
+- **`assets/app.js`**: `googleCalendarioSugerenciaCardHTML()` ahora
+  distingue por `estado` -- un `sin_match` muestra abogado+calendario+
+  título del evento con solo el botón "Descartar" (sin "Usar la fecha de
+  Google Calendar", porque no hay etapa sugerida). `preguntasAbogadoHTML()`
+  separa los dos estados en 2 paneles distintos ("📅 Conflictos de fecha"
+  y "🤔 Eventos de Google Calendar sin identificar") dentro de la misma
+  vista "Preguntas al abogado" -- visible al abogado dueño de ese
+  calendario (no solo al Administrador), porque es quien mejor puede
+  reconocer si es una cita personal a ignorar o un expediente mal escrito.
+  El badge de "Preguntas al abogado" ya sumaba `GOOGLE_CALENDARIO_
+  SUGERENCIAS.length` completo, así que ya cuenta los `sin_match` sin
+  tocar nada ahí.
+- Sin cambios de base de datos (`estado='sin_match'` ya existía en el ENUM
+  desde la migración 067). No se tocó `mergeTags()`/tags de demanda -- no
+  aplica `verificar_tags.js`. **Sin probar en vivo todavía** -- falta que
+  el usuario suba `api/google_calendario_sugerencias_list.php`,
+  `api/google_calendario_sugerencia_resolver.php`, `assets/app.js`,
+  `index.html` y `sw.js`, y se confirme si ya había algún `sin_match`
+  acumulado desde el 11 nov esperando mostrarse.
+
 ## Push diario ya no deja de avisar prescripción/amparo/pago vencidos (15 nov 2026, `app.js?v=154`)
 Mismo tema de "hacer el sistema más inteligente/autosuficiente" -- al
 revisar `AVISOS_ABOGADO_TIPOS_ABIERTOS` (la lista agregada el 9 nov 2026

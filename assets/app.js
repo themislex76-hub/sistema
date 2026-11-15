@@ -6860,6 +6860,24 @@ function disponibilidadPanelHTML(){
 }
 
 function googleCalendarioSugerenciaCardHTML(s){
+  if(s.estado === 'sin_match'){
+    // Agregado 15 nov 2026: la IA no encontró con claridad a qué
+    // expediente/etapa corresponde -- nunca se puede "aplicar" (no hay
+    // etapa sugerida), solo mostrar para que el abogado reconozca de qué
+    // se trata (cita personal a ignorar, o un expediente que el match no
+    // alcanzó a identificar) y lo descarte.
+    return `
+      <div class="aviso-card" data-calendario-sugerencia-id="${s.id}">
+        <div class="aviso-head">
+          <div class="aviso-caso">${escapeHTML(s.calendario_abogado_nombre||'(abogado no identificado)')}</div>
+          <div class="aviso-fuente">${escapeHTML(s.nombre_calendario||'Google Calendar')}</div>
+        </div>
+        <div class="aviso-resumen">🤔 Evento sin identificar — "${escapeHTML(s.titulo_evento)}" (${fmtDate(s.fecha)}${s.hora? ' '+escapeHTML(s.hora.slice(0,5))+' hrs':''}) no coincidió con claridad con ningún expediente activo. Si es un compromiso personal (o el expediente ya no corresponde), descártalo.</div>
+        <div class="aviso-actions">
+          <button class="btn secondary" data-calendario-sugerencia-descartar="${s.id}" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+        </div>
+      </div>`;
+  }
   return `
       <div class="aviso-card" data-calendario-sugerencia-id="${s.id}">
         <div class="aviso-head">
@@ -6902,11 +6920,21 @@ function preguntasAbogadoHTML(){
     <div class="panel-head"><h3>⚠️ Posibles irregularidades</h3><span class="count">${IRREGULARIDADES.length}</span></div>
     <div class="panel-body" style="padding:16px 20px;">${IRREGULARIDADES.map(irregularidadCardHTML).join("")}</div>
   </div>` : ''}
-  ${GOOGLE_CALENDARIO_SUGERENCIAS.length ? `
+  ${(()=>{
+    const conflictos = GOOGLE_CALENDARIO_SUGERENCIAS.filter(s=>s.estado==='pendiente');
+    const sinMatch = GOOGLE_CALENDARIO_SUGERENCIAS.filter(s=>s.estado==='sin_match');
+    return `
+  ${conflictos.length ? `
   <div class="panel">
-    <div class="panel-head"><h3>📅 Conflictos de fecha en tu Google Calendar</h3><span class="count">${GOOGLE_CALENDARIO_SUGERENCIAS.length}</span></div>
-    <div class="panel-body" style="padding:16px 20px;">${GOOGLE_CALENDARIO_SUGERENCIAS.map(googleCalendarioSugerenciaCardHTML).join("")}</div>
+    <div class="panel-head"><h3>📅 Conflictos de fecha en tu Google Calendar</h3><span class="count">${conflictos.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${conflictos.map(googleCalendarioSugerenciaCardHTML).join("")}</div>
   </div>` : ''}
+  ${sinMatch.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>🤔 Eventos de Google Calendar sin identificar</h3><span class="count">${sinMatch.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${sinMatch.map(googleCalendarioSugerenciaCardHTML).join("")}</div>
+  </div>` : ''}`;
+  })()}
   ${pendientes.length ? `
   <div class="panel">
     <div class="panel-head"><h3>Pendientes</h3><span class="count">${pendientes.length}</span></div>
