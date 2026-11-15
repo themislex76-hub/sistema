@@ -3095,15 +3095,42 @@ function ia_siguiente_etapa_esperada_texto(array $etapas): ?string
 
     $siguienteKey = $ordenEtapas[$ultimaEtapaIdx + 1];
 
+    // Si la siguiente etapa YA tiene una "Fecha agendada" (campo
+    // `fecha_programada`, separado de `fecha` -- la fecha en que YA se
+    // celebró), avisar a la IA en vez de dejarla tratar la etapa como "nada
+    // programado todavía". Bug real confirmado (14 nov 2026, expediente de
+    // Lizbeth Diaz Almazo vs Servicio Postal Mexicano): el primer citatorio
+    // de conciliación ya estaba agendado para el 12 nov 2026 (visible en la
+    // Agenda del sistema, "Audiencia agendada"), pero el Informe Ejecutivo
+    // decía "han transcurrido ya 30 días sin que se registre el primer
+    // citatorio... requiere verificación inmediata del estatus ante el
+    // Centro" como si nunca se hubiera agendado nada -- porque esta función
+    // solo miraba `fecha` (celebrada), nunca `fecha_programada` (agendada).
+    $fechaAgendadaSiguiente = $porKey[$siguienteKey]['fecha_programada'] ?? null;
+    $notaAgendada = '';
+    if ($fechaAgendadaSiguiente && $fechaAgendadaSiguiente !== '0000-00-00') {
+        $diasDesdeAgendada = (int)round((time() - strtotime($fechaAgendadaSiguiente)) / 86400);
+        if ($diasDesdeAgendada > 0) {
+            $notaAgendada = " YA TIENE FECHA AGENDADA: $fechaAgendadaSiguiente, que ya pasó hace "
+                . "$diasDesdeAgendada día(s) -- NO digas que nada se ha agendado ni pidas \"verificar el estatus "
+                . "desde cero\"; la próxima acción es confirmar qué pasó en esa fecha (se celebró, se reagendó, no "
+                . 'se presentó la contraparte, etc.) y registrar el resultado.';
+        } else {
+            $notaAgendada = " YA TIENE FECHA AGENDADA: $fechaAgendadaSiguiente (todavía no llega) -- no la trates "
+                . 'como atrasada ni pidas verificar el estatus, solo espera esa fecha.';
+        }
+    }
+
     if ($ultimaEtapaKey === 'demanda_presentada' && $siguienteKey === 'prevencion') {
         return 'El Tribunal TODAVÍA no dicta ningún acuerdo sobre la demanda -- "Prevención" y "Demanda '
             . 'admitida" son dos resultados ALTERNATIVOS de ese primer acuerdo (puede prevenir por defectos u '
             . 'omisiones, Art. 873 LFT, o admitir la demanda directamente sin prevención), nunca uno seguido '
             . 'del otro. NO redactes esto como si ya estuviéramos "en etapa de prevención" -- estamos '
-            . "esperando el primer acuerdo del Tribunal, sea cual sea.{$sufijoDias}";
+            . "esperando el primer acuerdo del Tribunal, sea cual sea.{$sufijoDias}{$notaAgendada}";
     }
 
-    return 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey) . $sufijoDias;
+    return 'Siguiente etapa esperada, TODAVÍA SIN REGISTRAR: ' . (ETAPA_LABELS[$siguienteKey] ?? $siguienteKey)
+        . $sufijoDias . $notaAgendada;
 }
 
 // Devuelve null si falló, o ['resumen'=>string, 'accion'=>?string, 'urgencia'=>?'alta'|'media'|'baja'].
