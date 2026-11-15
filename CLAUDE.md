@@ -1,5 +1,36 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Informe Ejecutivo no se enteraba de que la siguiente etapa YA tenía fecha agendada (15 nov 2026)
+Reportado por el usuario viendo el expediente de **Lizbeth Diaz Almazo vs
+Servicio Postal Mexicano**: el Informe Ejecutivo (generado 14 nov,
+08:36pm) decía "han transcurrido ya 30 días sin que se registre el
+primer citatorio de conciliación... requiere verificación inmediata del
+estatus ante el Centro" -- pero la Agenda del propio sistema, visible en
+el mismo expediente justo debajo, ya mostraba "📅 Audiencia agendada:
+Conciliación prejudicial (primer citatorio) -- 12 nov 2026", agendada 2
+días antes de generarse el informe.
+- **Causa real**: `ia_siguiente_etapa_esperada_texto()`
+  (`api/ia_helpers.php`, compartida por el resumen ejecutivo y el
+  análisis de acuerdos/documentos) solo miraba el campo `fecha`
+  (celebrada) de la siguiente etapa -- nunca `fecha_programada`
+  (agendada) -- así que no tenía forma de saber que ya existía una fecha
+  capturada para esa etapa, y redactaba como si nunca se hubiera
+  agendado nada.
+- **Corregido**: si la siguiente etapa ya tiene `fecha_programada`, se le
+  avisa explícitamente a la IA -- si esa fecha ya pasó, la próxima acción
+  es confirmar qué pasó en ella (se celebró, se reagendó, no se presentó
+  la contraparte, etc.), nunca "verificar el estatus desde cero"; si
+  todavía no llega, no se trata como atraso. `api/expediente_resumen_
+  ejecutivo.php` ya seleccionaba `fecha_programada` desde que se
+  construyó -- no hizo falta tocar ningún endpoint, el dato ya estaba
+  disponible, solo no se usaba.
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica
+  cache-bust ni `verificar_tags.js`. **Pendiente**: que el usuario suba
+  `api/ia_helpers.php` y le dé "Actualizar" al Informe del juicio de
+  Lizbeth Diaz Almazo para confirmar que ya no pide "verificar el
+  estatus desde cero" y en vez de eso pregunta qué pasó en el citatorio
+  del 12 nov.
+
 ## "Mi disponibilidad para asesorías" rediseñada: cuadrícula de casillas en vez de capturar rangos a mano (14 nov 2026, `app.js?v=148`)
 Pedido explícito del usuario, viendo su propio horario capturado (bloques
 de 11:00-17:00 y 17:00-18:00 por día, sin ningún hueco entre asesorías):
