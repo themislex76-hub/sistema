@@ -1,5 +1,300 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Botón "Letra más grande" en el sidebar (15 nov 2026, `app.js?v=156`)
+Pedido explícito del usuario: usa lentes y las letras de la app en el
+celular se le ven muy chicas.
+- **Por qué no se reescribieron los tamaños de letra existentes**: la app
+  tiene cerca de 380 tamaños de letra fijos en px (80 en `style.css`, ~300
+  como estilo inline dentro de los template strings de `app.js` -- botones,
+  tarjetas, badges, etc.). Reescribirlos uno por uno habría sido un cambio
+  enorme y arriesgado para una sola sesión, y los inline ganan siempre a
+  cualquier regla nueva de `style.css` por especificidad, así que agrandar
+  solo la hoja de estilos no habría movido la mayoría del texto real.
+- **Solución: un toggle que aplica `zoom` (no `transform:scale()`) sobre
+  `<body>`** -- a diferencia de `transform:scale()`, que rompe los
+  elementos `position:fixed` (modales, overlay) al no reposicionarlos
+  correctamente, `zoom` hace que el navegador recalcule TODO el layout
+  como si cambiara la densidad de pixeles -- agranda cualquier tamaño de
+  letra (fijo en px o no, inline o de la hoja de estilos) sin tocar
+  ninguno de los ~380 existentes. Soportado en Safari/Chrome/Edge desde
+  hace años (el público de esta app, celulares) y en Firefox desde 2024.
+- Botón nuevo "🔎 Letra más grande" en el pie del menú lateral (junto a
+  "Activar notificaciones"/"Cambiar de usuario", solo visible para
+  abogados/Administrador -- la vista de cliente no tiene ese menú).
+  Preferencia por DISPOSITIVO, no por cuenta -- se guarda en
+  `localStorage` (`letraGrande`), nunca en el servidor; se aplica de
+  inmediato al cargar la app (`aplicarLetraGrande()`, variable
+  `LETRA_GRANDE`) y al darle clic al botón.
+- `assets/style.css`: regla `body.letra-grande{zoom:1.3;}` (subido de
+  1.18 a 1.3 el mismo día, pedido explícito del usuario: "si puede ser
+  más grande la letra sería genial").
+- **Trade-off avisado, no oculto**: con el zoom activado, tablas con
+  muchas columnas pueden necesitar scroll horizontal (se agranda todo por
+  igual, incluyendo el ancho real que ocupa cada cosa) -- aceptable a
+  cambio de letra más grande, pero si molesta mucho avisar para ajustar
+  el nivel de zoom (fácil de subir/bajar en un solo lugar).
+- **Bug real, 2 intentos hasta encontrar la causa exacta**: el menú
+  lateral en celular es `position:fixed` con `height:100vh` (ver CSS de
+  `.sidebar` dentro del `@media (max-width:900px)`) -- el `zoom` del body
+  también agranda ese alto fijo, así que la caja del menú termina siendo
+  más alta que la pantalla real, y la parte de abajo (los botones del
+  pie, incluyendo el propio botón de "Letra más grande") queda fuera de
+  la vista.
+  1. Primer intento: `overflow-y:auto` en `.sidebar` -- **no corrigió
+     nada, confirmado real por el usuario** (seguía sin ver los botones
+     del pie, se veía hasta "Días inhábiles" -- el último botón de
+     `.nav` -- y ya no el pie). Causa de que no funcionara: el contenido
+     del menú (brand+nav+pie) ya cabe EXACTO dentro de su propia caja de
+     100vh -- no hay ningún "overflow" real de contenido que
+     `overflow-y:auto` pueda detectar; es la CAJA COMPLETA la que el
+     `zoom` deja más grande que la pantalla física, no su contenido
+     respecto a ella misma. `overflow-y:auto` solo reacciona a contenido
+     que rebasa su propia caja, nunca a que la caja misma rebase el
+     viewport.
+  2. **Corregido de verdad**: el menú lateral nunca se agranda -- se le
+     aplica el zoom inverso exacto (`1 / 1.3`, variable CSS `--letra-zoom`
+     para que ambos valores no se desalineen nunca) para que, multiplicado
+     por el 1.3 heredado del body, el resultado neto sea 1 (tamaño normal
+     de siempre). El menú se queda con su letra de tamaño normal (nombres
+     de pantallas cortos, no es el texto que le cuesta leer al usuario) y
+     así nunca se topa con el problema del alto fijo -- todo lo demás
+     (tablas, tarjetas, modales, formularios) sí se agranda igual.
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
+  -- no aplica `verificar_tags.js`. **Confirmado en vivo (15 nov 2026)**:
+  el usuario probó esta versión y confirmó "quedó muy bien" -- el menú ya
+  se veía completo y el resto de la app más grande.
+- **Mismo día, 2 ajustes más pedidos explícitamente por el usuario**: (1)
+  "¿se puede hacer también la letra del menú más grande sin que se
+  esconda nada?" y (2) "si puedes subir un poco más el tamaño general,
+  mejor". Resueltos juntos:
+  - Zoom general subido de 1.3 a 1.4 (variable `--letra-zoom`, un solo
+    lugar).
+  - El menú lateral YA estaba fuera del `zoom` (ver arriba, para no
+    reventar su alto fijo) -- se agranda aparte con `font-size` real en
+    los ~8 selectores que lo componen (`body.letra-grande .nav button`,
+    `.sidebar-foot`, `.switch-user`, etc.). A diferencia de `zoom`,
+    `font-size` NO afecta el `height:100vh` fijo de `.sidebar` -- así que
+    nunca puede reproducir el mismo bug: si el contenido crece de más,
+    `.nav` (que ya tenía su propio scroll interno desde siempre) se
+    encoge y se puede deslizar, y `.sidebar-foot` (el pie, fuera de ese
+    scroll, sin `min-height:0`) siempre termina de verse completo abajo
+    -- comportamiento normal de flexbox, sin el truco de `zoom` de por
+    medio. Solo hicieron falta esos ~8 selectores porque el menú, a
+    diferencia del contenido principal (los ~300 inline en app.js), no
+    tiene NINGÚN tamaño de letra puesto inline -- todo vive en
+    `style.css`.
+  - Sin cambios de base de datos, sin tocar `app.js`/`mergeTags()` -- no
+    aplica `verificar_tags.js`. **Sin probar en vivo todavía** -- falta
+    que el usuario suba `assets/style.css` (`v=10`), `index.html` y
+    `sw.js` (`v78`), y confirme que el menú ahora SÍ se vea con letra más
+    grande sin esconder ningún botón, y que el 1.4 general se sienta
+    mejor que el 1.3 anterior.
+- **Mismo día, 3er ajuste pedido explícito del usuario**: "quiero la
+  letra mas grande y que el tamaño del texto y del menu sea del mismo
+  tamaño". Zoom general subido de 1.4 a 1.5 (mismo `--letra-zoom`, un
+  solo lugar). Los 8 valores fijos del menú (19px/20px/13px/16px...) se
+  habían puesto a ojo, aproximando el tamaño del resto de la app sin ser
+  el mismo cálculo exacto -- ahora cada uno se deriva con
+  `calc(<tamaño_normal_del_selector> * var(--letra-zoom))`, EXACTAMENTE
+  el mismo multiplicador que aplica el `zoom` sobre el resto de la app,
+  así quedan matemáticamente iguales en vez de solo parecidos. Ventaja de
+  paso: si se vuelve a pedir subir/bajar el zoom general, el menú se
+  reescala solo, sin recalcular estos 8 valores a mano otra vez.
+- Sin cambios de base de datos, sin tocar `app.js`/`mergeTags()` -- no
+  aplica `verificar_tags.js`. **Sin probar en vivo todavía** -- falta que
+  el usuario suba `assets/style.css` (`v=11`), `index.html` y `sw.js`
+  (`v79`), y confirme que el menú y el contenido principal ya se vean del
+  mismo tamaño, y que el 1.5 general se sienta bien.
+- **Subido a 1.6 el mismo día** (pedido explícito, "subelo a 1.6") --
+  gracias al `calc()` de arriba, solo hizo falta cambiar `--letra-zoom`
+  en un solo lugar; el menú se reescala solo con el mismo valor. `v=12`
+  / `sw.js v80`. **Sin probar en vivo todavía**.
+
+## Eventos de Google Calendar "sin identificar" ya se muestran (15 nov 2026, `app.js?v=155`)
+Pedido explícito del usuario, mismo tema de "que nada se quede callado sin
+que alguien lo note" -- `cron_leer_google_calendar.php` ya guardaba en
+`google_calendario_sugerencias` cualquier evento que la IA NO pudiera
+matchear con claridad a un expediente/etapa (`estado='sin_match'`, ver
+`ia_matchear_evento_calendario()`), pero esto quedaba ahí sin que nadie lo
+viera nunca -- ya estaba anotado como pendiente desde el 11 nov 2026.
+- **`api/google_calendario_sugerencias_list.php`**: el `WHERE` pasó de
+  `estado = 'pendiente'` a `estado IN ('pendiente', 'sin_match')`, y se
+  agregó el nombre del abogado dueño del calendario (`au.nombre`, JOIN a
+  `usuarios` vía `google_calendarios_vigilados.abogado_id`) -- para
+  `sin_match` no hay expediente que mostrar, así que se identifica por
+  abogado+calendario en su lugar.
+- **`api/google_calendario_sugerencia_resolver.php`**: el chequeo de
+  "¿ya se resolvió?" ahora acepta también `estado='sin_match'` (antes solo
+  `pendiente`) -- siempre con `aplicar=false` (nunca hay expediente/etapa
+  que aplicar en un `sin_match`, el candado que ya existía para eso lo
+  sigue exigiendo sin cambios).
+- **`assets/app.js`**: `googleCalendarioSugerenciaCardHTML()` ahora
+  distingue por `estado` -- un `sin_match` muestra abogado+calendario+
+  título del evento con solo el botón "Descartar" (sin "Usar la fecha de
+  Google Calendar", porque no hay etapa sugerida). `preguntasAbogadoHTML()`
+  separa los dos estados en 2 paneles distintos ("📅 Conflictos de fecha"
+  y "🤔 Eventos de Google Calendar sin identificar") dentro de la misma
+  vista "Preguntas al abogado" -- visible al abogado dueño de ese
+  calendario (no solo al Administrador), porque es quien mejor puede
+  reconocer si es una cita personal a ignorar o un expediente mal escrito.
+  El badge de "Preguntas al abogado" ya sumaba `GOOGLE_CALENDARIO_
+  SUGERENCIAS.length` completo, así que ya cuenta los `sin_match` sin
+  tocar nada ahí.
+- Sin cambios de base de datos (`estado='sin_match'` ya existía en el ENUM
+  desde la migración 067). No se tocó `mergeTags()`/tags de demanda -- no
+  aplica `verificar_tags.js`. **Sin probar en vivo todavía** -- falta que
+  el usuario suba `api/google_calendario_sugerencias_list.php`,
+  `api/google_calendario_sugerencia_resolver.php`, `assets/app.js`,
+  `index.html` y `sw.js`, y se confirme si ya había algún `sin_match`
+  acumulado desde el 11 nov esperando mostrarse.
+
+## Push diario ya no deja de avisar prescripción/amparo/pago vencidos (15 nov 2026, `app.js?v=154`)
+Mismo tema de "hacer el sistema más inteligente/autosuficiente" -- al
+revisar `AVISOS_ABOGADO_TIPOS_ABIERTOS` (la lista agregada el 9 nov 2026
+para que `atraso`/`accion_ia` se siguieran avisando aunque llevaran días
+vencidos) se confirmó que el MISMO bug exacto nunca se corrigió para
+`prescripcion`, `amparo` y `pago`: esos 3 exigían `fecha >= hoy` para
+seguir sincronizándose al caché de push
+(`api/agenda_sync_avisos.php`/`syncAvisosAbogado()`), así que un plazo de
+prescripción/amparo de verdad vencido (demanda/amparo nunca presentado a
+tiempo) o un pago de convenio no cobrado dejaban de avisar por push al
+día siguiente de vencer -- justo el momento en que más urge que alguien
+lo note -- aunque siguieran viéndose como vencidos en la Agenda general
+en pantalla. Pedido explícito del usuario: agregar estos 3 (dejó
+`pendiente` fuera a propósito).
+- `assets/app.js`: `prescripcion`, `amparo` y `pago` agregados a
+  `AVISOS_ABOGADO_TIPOS_ABIERTOS`.
+- `api/cron_recordatorio_abogado.php`: mismos 3 tipos agregados a
+  `TIPOS_ABIERTOS` (push diario + escalación al Administrador tras 7+
+  días sin resolverse). La lista de tipos abiertos en el SQL ahora se
+  arma directo de la constante `TIPOS_ABIERTOS` (`$pdo->quote()` por
+  cada uno) en vez de repetirse literal en el WHERE -- evita que las 2
+  copias se desalineen de nuevo por descuido, justo lo que pasó con este
+  bug (la constante PHP y el SQL llevaban 6 días desalineados sin que
+  nadie lo notara).
+- Sin cambios de base de datos. No se tocó `mergeTags()`/
+  `calcularJornada()`/tags de demanda -- no aplica `verificar_tags.js`.
+  **Sin probar en vivo todavía** -- falta que el usuario suba
+  `assets/app.js`, `index.html`, `sw.js` y
+  `api/cron_recordatorio_abogado.php`, y se confirme con un caso real
+  (una prescripción/amparo/pago ya vencido hace más de 1 día) que el push
+  diario lo sigue avisando en vez de quedarse callado.
+
+## Nuevo detector: cita/citatorio agendado cuya fecha ya pasó sin resultado (15 nov 2026, `app.js?v=153`)
+Pedido explícito del usuario ("es que debemos de hacer muy inteligente y
+autosuficiente el sistema que sugieres") tras los 2 arreglos de hoy sobre
+la fecha agendada -- revisando el código se confirmó un hueco real de
+fondo: `estancadoInfo()`, el ÚNICO detector de "atraso" que existía en
+toda la Agenda (alimenta el push diario, la pregunta del supervisor, y el
+Informe Ejecutivo indirectamente), **nunca mira `fecha_programada`** --
+solo calcula si ya venció el plazo legal completo de la *siguiente* etapa
+sin fecha, contado desde la última etapa YA celebrada. Peor aún: varias
+etapas agendables (`conciliacion_primer_citatorio`,
+`conciliacion_segundo_citatorio`) **ni siquiera tienen un `plazoDias`
+propio en `ETAPAS_DEF`** -- son eventos agendados, no plazos legales --
+así que para el caso real de Lizbeth Diaz Almazo (citatorio agendado para
+el 12 nov, ya vencido 3 días) el sistema NO iba a generar ningún
+atraso/push/pregunta del supervisor hasta que venciera el plazo completo
+de 45 días naturales de la conciliación (30 nov) -- 2 semanas después de
+que alguien debía haber confirmado qué pasó en esa cita. Solo se notó hoy
+porque el usuario abrió el Informe Ejecutivo a mano.
+- **Nueva función `citasAgendadasVencidasInfo()`** (`assets/app.js`):
+  revisa las 4 etapas que soportan "Fecha agendada"
+  (`conciliacion_primer_citatorio`, `conciliacion_segundo_citatorio`,
+  `audiencia_preliminar`, `audiencia_juicio`) y devuelve las que ya
+  pasaron su fecha agendada sin fecha celebrada ni fecha agendada más
+  reciente -- nunca corrige nada solo, solo lo señala (mismo principio de
+  siempre).
+- `buildAgendaEntries()` genera una entrada tipo nuevo **`vencida`** por
+  cada una encontrada -- clave `vencida:<etapa_key>`, DISTINTA de
+  `atraso:<etapa_key>` a propósito (son señales independientes; un mismo
+  expediente podría tener ambas a la vez sin pisarse). `vencida` se
+  agregó a `AGENDA_TIPO` (mismo color rojo que "Posible atraso"),
+  `AVISOS_ABOGADO_TIPOS`/`AVISOS_ABOGADO_TIPOS_ABIERTOS` (se sigue
+  avisando mientras no se resuelva, igual que `atraso`/`accion_ia`, sin
+  importar cuántos días lleve atrás) y `GOOGLE_TIPOS_SINCRONIZABLES`.
+- `api/cron_recordatorio_abogado.php`: `vencida` se trata igual que
+  `atraso`/`accion_ia` en el push diario (se avisa `fecha <= hoy`, no
+  solo "mañana") y en la escalación al Administrador tras 7+ días sin
+  resolverse (`TIPOS_ABIERTOS`).
+- `api/cron_generar_preguntas_supervisor.php`: ahora también recoge
+  entradas tipo `vencida` (antes solo `atraso`) -- el parseo de la clave
+  se generalizó de `<etapa_key> = substr($clave, strlen('atraso:'))` a
+  `substr($clave, strlen($tipo) + 1)` para que funcione con cualquier
+  prefijo. Reutiliza sin cambios el aviso de "fecha agendada" agregado
+  hoy mismo en `ia_generar_pregunta_supervisor()` (ya recibía
+  `$etapaKeyAtraso` del arreglo anterior) -- así que para una entrada
+  `vencida` la pregunta generada automáticamente se refiere a la fecha
+  concreta ("¿qué pasó en la cita del 12 de noviembre?").
+- **Sin migración** -- `agenda_avisos_cache.tipo` es `VARCHAR(30)` sin
+  ENUM, y la clave más larga (`vencida:conciliacion_segundo_citatorio`,
+  38 caracteres) cabe en el `VARCHAR(40)` de `clave` sin truncarse.
+- No se tocó `mergeTags()`/`calcularJornada()`/tags de demanda -- no
+  aplica `verificar_tags.js`. **Sin probar en vivo todavía** -- falta que
+  el usuario suba `assets/app.js`, `index.html`, `sw.js`,
+  `api/cron_recordatorio_abogado.php` y
+  `api/cron_generar_preguntas_supervisor.php`, y se confirme en un caso
+  real (ej. el propio expediente de Lizbeth Diaz Almazo, una vez que
+  alguien registre qué pasó en el citatorio del 12 nov y se pruebe con
+  otro expediente que SÍ siga con una cita vencida) que aparece como
+  "Cita agendada vencida" en Agenda general y genera su propia pregunta
+  del supervisor.
+
+## Informe Ejecutivo no se enteraba de que la siguiente etapa YA tenía fecha agendada (15 nov 2026)
+Reportado por el usuario viendo el expediente de **Lizbeth Diaz Almazo vs
+Servicio Postal Mexicano**: el Informe Ejecutivo (generado 14 nov,
+08:36pm) decía "han transcurrido ya 30 días sin que se registre el
+primer citatorio de conciliación... requiere verificación inmediata del
+estatus ante el Centro" -- pero la Agenda del propio sistema, visible en
+el mismo expediente justo debajo, ya mostraba "📅 Audiencia agendada:
+Conciliación prejudicial (primer citatorio) -- 12 nov 2026", agendada 2
+días antes de generarse el informe.
+- **Causa real**: `ia_siguiente_etapa_esperada_texto()`
+  (`api/ia_helpers.php`, compartida por el resumen ejecutivo y el
+  análisis de acuerdos/documentos) solo miraba el campo `fecha`
+  (celebrada) de la siguiente etapa -- nunca `fecha_programada`
+  (agendada) -- así que no tenía forma de saber que ya existía una fecha
+  capturada para esa etapa, y redactaba como si nunca se hubiera
+  agendado nada.
+- **Corregido**: si la siguiente etapa ya tiene `fecha_programada`, se le
+  avisa explícitamente a la IA -- si esa fecha ya pasó, la próxima acción
+  es confirmar qué pasó en ella (se celebró, se reagendó, no se presentó
+  la contraparte, etc.), nunca "verificar el estatus desde cero"; si
+  todavía no llega, no se trata como atraso. `api/expediente_resumen_
+  ejecutivo.php` ya seleccionaba `fecha_programada` desde que se
+  construyó -- no hizo falta tocar ningún endpoint, el dato ya estaba
+  disponible, solo no se usaba.
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica
+  cache-bust ni `verificar_tags.js`.
+- **Confirmado funcionando en vivo (15 nov 2026)**: el Informe Ejecutivo
+  de Lizbeth Diaz Almazo ya no pide "verificar el estatus desde cero" --
+  ahora dice "se agendó el primer citatorio para el 12 de noviembre de
+  2026, fecha que ya transcurrió hace 3 días sin que se haya registrado
+  el resultado... es necesario confirmar qué ocurrió en esa audiencia",
+  con próxima acción "Confirmar y registrar qué sucedió en el citatorio
+  del 12 de noviembre (se celebró, se reagendó, o no se presentó la
+  contraparte)".
+- **Extendido el mismo día (15 nov 2026), pedido explícito del usuario**:
+  revisando si el mismo hueco se repetía en otras funciones, se confirmó
+  que SÍ -- `ia_auditar_expediente()` (auditoría integral, la única de
+  las 4 funciones de contexto completo que SÍ escribe sola en
+  `expediente_etapas`) y `ia_generar_pregunta_supervisor()` (la que
+  redacta la pregunta cuando algo se ve atorado) tampoco sabían nada de
+  `fecha_programada` -- mismo patrón de hueco disperso que ya se había
+  repetido varias veces esta semana con notas/documentos/pendientes.
+  Corregido en las 2: la auditoría ahora marca explícitamente cada etapa
+  "sin fecha todavía" que ya tiene Fecha agendada (para no tratarla como
+  completamente huérfana); la pregunta del supervisor recibe un
+  parámetro nuevo `$etapaKeyAtraso` y, si esa etapa ya tiene Fecha
+  agendada, se le indica a la IA que pregunte por ESA fecha concreta
+  ("¿qué pasó en la cita del 12 nov?"), nunca como si no hubiera nada
+  agendado. `api/cron_auditoria_expediente_ia.php` y `api/cron_generar_
+  preguntas_supervisor.php` ahora seleccionan `fecha_programada` (ya
+  existía en la tabla, solo no se leía). Archivos a subir además de
+  `api/ia_helpers.php`: `api/cron_auditoria_expediente_ia.php`,
+  `api/cron_generar_preguntas_supervisor.php`. **Sin probar en vivo
+  todavía**.
+
 ## "Mi disponibilidad para asesorías" rediseñada: cuadrícula de casillas en vez de capturar rangos a mano (14 nov 2026, `app.js?v=148`)
 Pedido explícito del usuario, viendo su propio horario capturado (bloques
 de 11:00-17:00 y 17:00-18:00 por día, sin ningún hueco entre asesorías):
@@ -665,6 +960,10 @@ etapa.
   `SendUserFile` solo de los archivos modificados → el usuario los sube por
   cPanel → Administrador de archivos.
 - Cambios de base de datos: dar el SQL, el usuario lo corre por phpMyAdmin.
+- **Archivos `.js` (`assets/app.js`, `sw.js`) siempre en un `.zip`** (pedido
+  explícito del usuario, 15 nov 2026) -- no los puede descargar si se
+  mandan sueltos con `SendUserFile`. Empaquetar conservando la ruta
+  relativa (`assets/app.js`, no solo `app.js`) antes de mandarlos.
 - Si tocaste `mergeTags()`, `calcularJornada()`, las prestaciones opcionales
   de Rescisión Art. 51, o cualquier cosa relacionada con las {{tags}} de
   los formatos de demanda: corre `node scripts/verificar_tags.js` antes de

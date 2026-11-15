@@ -75,7 +75,7 @@ foreach ($candidatos as $c) {
     $expediente = $expStmt->fetch();
     if (!$expediente) continue;
 
-    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha FROM expediente_etapas WHERE expediente_id = :id');
+    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha, fecha_programada FROM expediente_etapas WHERE expediente_id = :id');
     $etapasStmt->execute([':id' => $c['id']]);
     $etapas = $etapasStmt->fetchAll();
 

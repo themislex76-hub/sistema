@@ -32,6 +32,61 @@ body{
 }
 .app{display:flex; min-height:100vh;}
 
+/* Letra más grande (15 nov 2026) -- zoom en vez de transform:scale() a
+   propósito: zoom hace que el navegador recalcule TODO el layout como si
+   cambiara la densidad de pixeles, así los elementos position:fixed
+   (modales, overlay) se agrandan en el lugar correcto; transform:scale()
+   los habría descolocado. Agranda cualquier tamaño de letra, fijo en px o
+   no, sin tener que tocar ninguno de los ~380 que ya existen en la app. */
+body.letra-grande{--letra-zoom:1.6; zoom:var(--letra-zoom);}
+/* El menú lateral es position:fixed con height:100vh en celular -- el
+   zoom del body también agranda ese alto fijo, así que la caja del menú
+   termina siendo más alta que la pantalla real y la parte de abajo (los
+   botones del pie) queda fuera de la vista. Darle scroll interno NO
+   corrigió nada (confirmado real, 15 nov 2026): el contenido del menú ya
+   cabe exacto dentro de su propia caja de 100vh -- no hay ningún
+   "overflow" real que overflow-y:auto pueda detectar, es la CAJA COMPLETA
+   la que queda más grande que la pantalla, no su contenido respecto a
+   ella misma. La solución real: el menú lateral nunca lleva `zoom` -- se
+   le aplica el zoom inverso exacto (1 / var(--letra-zoom)) para que,
+   multiplicado por el que ya trae heredado del body, el resultado neto
+   sea 1 -- así nunca se topa con el problema del alto fijo, sin importar
+   qué tan grande se ponga el zoom general. */
+body.letra-grande .sidebar{zoom:calc(1 / var(--letra-zoom));}
+/* Pedido explícito del usuario el mismo día: que el menú SÍ se vea con
+   letra más grande, sin volver a esconder nada. Como el menú ya quedó
+   fuera del `zoom` (arriba), aquí se agranda con `font-size` real en vez
+   de zoom -- a diferencia de zoom, font-size NO afecta el alto fijo de
+   `.sidebar` (height:100vh no depende del tamaño de letra), así que
+   nunca puede reproducir el mismo bug: si el contenido crece más de lo
+   que cabe, `.nav` (que ya tiene su propio scroll interno) simplemente
+   se encoge un poco y se puede deslizar, y `.sidebar-foot` (el pie, fuera
+   de ese scroll) siempre se sigue viendo completo abajo -- comportamiento
+   normal de flexbox, sin el truco raro de `zoom` de por medio. Solo hacía
+   falta tocar estos ~8 selectores (el menú, a diferencia del contenido
+   principal, no tiene NINGÚN tamaño de letra puesto inline en app.js). */
+/* Pedido explícito del usuario (mismo día): que el menú quede DEL MISMO
+   TAMAÑO que el resto de la app, no solo "más grande a ojo" -- los
+   valores fijos de arriba (19px/20px/13px/16px...) eran un cálculo
+   aproximado, no el mismo factor exacto que ve el contenido principal
+   vía `zoom`. Ahora cada tamaño se deriva con calc(base_normal *
+   var(--letra-zoom)) -- EXACTAMENTE el mismo multiplicador que aplica el
+   `zoom` del body sobre el resto de la app -- así los dos quedan
+   matemáticamente iguales, y si el usuario pide subir/bajar el zoom
+   general después, el menú se reescala solo con el mismo cambio, sin
+   tener que volver a calcular estos 8 valores a mano. `base_normal` es
+   el tamaño que cada selector tiene fuera de letra-grande (ver reglas de
+   `.brand`/`.nav`/`.sidebar-foot`/`.user-pill`/`.switch-user` más abajo
+   en este archivo). */
+body.letra-grande .brand .seal{font-size:calc(16px * var(--letra-zoom));}
+body.letra-grande .brand h1{font-size:calc(17px * var(--letra-zoom));}
+body.letra-grande .brand p{font-size:calc(11px * var(--letra-zoom));}
+body.letra-grande .nav button{font-size:calc(13.5px * var(--letra-zoom)); padding:calc(10px * var(--letra-zoom)) calc(12px * var(--letra-zoom));}
+body.letra-grande .nav .section-label{font-size:calc(10px * var(--letra-zoom));}
+body.letra-grande .sidebar-foot{font-size:calc(11px * var(--letra-zoom));}
+body.letra-grande .user-pill span{font-size:calc(12.5px * var(--letra-zoom));}
+body.letra-grande .switch-user{font-size:calc(11px * var(--letra-zoom));}
+
 /* ---------- Sidebar ---------- */
 .sidebar{
   width:248px; flex-shrink:0;

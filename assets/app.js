@@ -22,6 +22,23 @@
 const API_BASE = 'api/';
 let CSRF_TOKEN = null;
 
+// Letra más grande (15 nov 2026, pedido explícito del usuario -- usa
+// lentes y el texto se ve muy chico). La app tiene ~380 tamaños de letra
+// fijos en px, repartidos entre style.css y cientos de estilos inline
+// dentro de app.js -- reescribirlos uno por uno habría sido enorme y
+// arriesgado. En vez de eso, un solo toggle aplica `zoom` (no
+// `transform:scale`, que rompe los elementos `position:fixed` como los
+// modales) sobre <body>: el navegador re-calcula el layout completo como
+// si cambiara la densidad de pixeles, así que agranda TODO por igual
+// (inline o de la hoja de estilos) sin tocar ningún tamaño individual.
+// Preferencia por dispositivo, no por cuenta -- se guarda en localStorage,
+// nunca en el servidor.
+let LETRA_GRANDE = (()=>{ try{ return localStorage.getItem('letraGrande') === '1'; }catch(e){ return false; } })();
+function aplicarLetraGrande(){
+  try{ document.body.classList.toggle('letra-grande', LETRA_GRANDE); }catch(e){}
+}
+aplicarLetraGrande();
+
 async function api(method, path, body){
   const opts = {method, headers:{}, credentials:'same-origin'};
   if(body !== undefined){
@@ -1314,6 +1331,34 @@ function audienciasParaCalendario(kase){
     .filter(Boolean);
 }
 
+// Citatorios/audiencias con "Fecha agendada" cuyo día ya pasó sin que se
+// haya registrado ni la fecha en que se celebraron ni una fecha agendada
+// más reciente -- hueco real confirmado el 15 nov 2026 (expediente de
+// Lizbeth Diaz Almazo vs Servicio Postal Mexicano): estancadoInfo() (el
+// único detector de "atraso" que existía) nunca mira fecha_programada,
+// solo el plazo legal de la SIGUIENTE etapa sin fecha -- y varias etapas
+// de este tipo (conciliacion_primer_citatorio/segundo_citatorio) NI
+// SIQUIERA tienen un plazoDias propio en ETAPAS_DEF (son eventos
+// agendados, no plazos legales), así que podían pasar semanas sin que el
+// sistema avisara nada aunque la fecha agendada ya hubiera pasado -- solo
+// se notaba si alguien abría el Informe Ejecutivo a mano. Devuelve un
+// arreglo (puede haber más de una etapa en este estado a la vez, aunque
+// sea raro) -- nunca corrige nada solo, solo lo señala.
+function citasAgendadasVencidasInfo(kase){
+  const meta = getMeta(kase.id);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const out = [];
+  ['conciliacion_primer_citatorio','conciliacion_segundo_citatorio','audiencia_preliminar','audiencia_juicio'].forEach(key=>{
+    const e = meta.etapas[key];
+    if(!e || !e.fecha_programada || e.fecha) return; // sin fecha agendada, o ya se celebró
+    const programada = parseDate(e.fecha_programada);
+    if(!programada || programada >= hoy) return; // todavía no llega -- no es atraso
+    const def = ETAPAS_DEF.find(d=>d.key===key);
+    out.push({etapaKey:key, label: def ? def.label : key, fechaProgramada: e.fecha_programada, diasAtraso: daysBetween(programada, hoy)});
+  });
+  return out;
+}
+
 // Revisa si hay un pago de convenio programado que todavía no se cobra, para
 // avisarle al trabajador (y al abogado) con anticipación.
 // ---------------------------------------------------------------
@@ -2526,7 +2571,7 @@ async function loadPlantillasLib(){
 // no se refleja aquí. Ver api/google_*.php.
 // ---------------------------------------------------------------
 let GOOGLE_STATUS = {conectado:false, email:null};
-const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','accion_ia'];
+const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','vencida','accion_ia'];
 
 async function loadGoogleStatus(){
   try{ GOOGLE_STATUS = await api('GET', 'google_status.php'); }
@@ -3533,6 +3578,7 @@ function shellHTML(){
         <div class="user-pill"><div class="dot"></div><span>${escapeHTML(CURRENT_USER.name)}</span></div>
         <button class="switch-user" id="pushNotifBtn" style="margin-bottom:6px;">&#128276; Activar notificaciones</button>
         ${(typeof Notification !== 'undefined' && Notification.permission === 'granted') ? `<button class="switch-user" id="pushTestBtn" style="margin-bottom:6px;">Probar notificación</button>` : ''}
+        <button class="switch-user" id="letraGrandeBtn" style="margin-bottom:6px;">${LETRA_GRANDE ? '🔎 Letra grande activada ✓' : '🔎 Letra más grande'}</button>
         <button class="switch-user" id="switchUserBtn">Cambiar de usuario</button>
       </div>
     </div>
@@ -3630,6 +3676,15 @@ function bindShell(){
         pushNotifBtn.textContent = textoOriginal;
         alert('No se pudieron activar las notificaciones: ' + err.message);
       }
+    });
+  }
+  const letraGrandeBtn = document.getElementById('letraGrandeBtn');
+  if(letraGrandeBtn){
+    letraGrandeBtn.addEventListener('click', ()=>{
+      LETRA_GRANDE = !LETRA_GRANDE;
+      try{ localStorage.setItem('letraGrande', LETRA_GRANDE ? '1' : '0'); }catch(e){}
+      aplicarLetraGrande();
+      letraGrandeBtn.textContent = LETRA_GRANDE ? '🔎 Letra grande activada ✓' : '🔎 Letra más grande';
     });
   }
   const pushTestBtn = document.getElementById('pushTestBtn');
@@ -5045,6 +5100,18 @@ function buildAgendaEntries(){
     if(est) entries.push({tipo:'atraso', fecha: dateToISO(est.expected), k, label:`Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`, action:'abrir_etapas', actionIdx: est.siguienteKey});
   });
 
+  // Citatorios/audiencias cuya fecha agendada ya pasó sin registrar
+  // resultado -- ver citasAgendadasVencidasInfo(). Tipo separado de
+  // 'atraso' (que es el plazo legal del SIGUIENTE trámite, un criterio
+  // totalmente distinto e independiente -- varias de estas etapas ni
+  // siquiera tienen plazoDias propio) para no pisar su clave en
+  // agenda_avisos_cache.
+  cases.forEach(k=>{
+    citasAgendadasVencidasInfo(k).forEach(c=>{
+      entries.push({tipo:'vencida', fecha: c.fechaProgramada, k, label:`"${c.label}" estaba agendada para el ${c.fechaProgramada} y no se ha registrado qué pasó (${c.diasAtraso} día(s))`, action:'abrir_etapas', actionIdx: c.etapaKey});
+    });
+  });
+
   // Próxima acción sugerida por el informe ejecutivo con IA (ver
   // ia_generar_resumen_expediente() en el servidor). La IA solo clasifica
   // la URGENCIA (alta/media/baja) -- nunca calcula una fecha, para no
@@ -5076,19 +5143,31 @@ function buildAgendaEntries(){
 // en silencio, cada vez que alguien abre el sistema -- si nadie lo abre en
 // varios días el caché se queda desactualizado, pero es la misma
 // limitación que ya tiene la sincronización con Google Calendar.
-const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','accion_ia'];
-// 'atraso' y 'accion_ia' son asuntos ESTANCADOS -- su fecha es cuándo
-// debió pasar algo (o cuándo venció el seguimiento que propuso la IA), no
-// una cita futura. Una vez que de verdad se atrasan, esa fecha se queda
-// en el pasado para siempre -- a diferencia de los demás tipos (que solo
-// tiene sentido avisar en una ventana de "próximos días"), estos se
+const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','vencida','accion_ia'];
+// 'atraso', 'vencida' y 'accion_ia' son asuntos ESTANCADOS -- su fecha es
+// cuándo debió pasar algo (o cuándo venció el seguimiento que propuso la
+// IA), no una cita futura. Una vez que de verdad se atrasan, esa fecha se
+// queda en el pasado para siempre -- a diferencia de los demás tipos (que
+// solo tiene sentido avisar en una ventana de "próximos días"), estos se
 // siguen mandando mientras sigan sin resolverse, sin importar cuántos
 // días lleven atrás. Bug real confirmado (9 nov 2026): con el filtro
 // viejo (fecha >= hoy) estos NUNCA volvían a entrar a la ventana una vez
 // atrasados -- se calculaban bien y se veían en el Tablero, pero el push
 // diario (cron_recordatorio_abogado.php) jamás los mandaba. 40 asuntos
-// atorados que el sistema "sabía" pero nunca avisó a nadie.
-const AVISOS_ABOGADO_TIPOS_ABIERTOS = ['atraso', 'accion_ia'];
+// atorados que el sistema "sabía" pero nunca avisó a nadie. 'vencida'
+// agregado el 15 nov 2026 (ver citasAgendadasVencidasInfo()) -- mismo
+// comportamiento, una cita agendada vencida tampoco se "resuelve sola".
+// 'prescripcion', 'amparo' y 'pago' agregados el mismo día (15 nov 2026,
+// pedido explícito del usuario): mismo bug exacto que el de 9 nov, nunca
+// corregido para estos 3 -- un plazo de prescripción/amparo que de verdad
+// se venció (nadie presentó la demanda/amparo a tiempo) o un pago de
+// convenio no cobrado dejaban de avisar por push al día siguiente de
+// vencer (exigían `fecha >= hoy`), aunque siguieran viéndose como
+// vencidos en la Agenda general en pantalla. Para prescripción/amparo
+// esto es especialmente grave -- es justo el momento en que más urge que
+// alguien lo note. 'pendiente' (to-dos manuales) se dejó fuera a
+// propósito, sin pedirlo el usuario.
+const AVISOS_ABOGADO_TIPOS_ABIERTOS = ['atraso', 'vencida', 'accion_ia', 'prescripcion', 'amparo', 'pago'];
 async function syncAvisosAbogado(){
   if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
   const hoy = new Date(); hoy.setHours(0,0,0,0);
@@ -5351,6 +5430,7 @@ const AGENDA_TIPO = {
   amparo:{label:'Amparo', color:'#3c5a86'},
   pendiente:{label:'Pendiente', color:'#3f6b4f'},
   atraso:{label:'Posible atraso', color:'#a83a2f'},
+  vencida:{label:'Cita agendada vencida', color:'#a83a2f'},
   audiencia:{label:'Audiencia', color:'#3c5a86'},
   accion_ia:{label:'Sugerido por IA', color:'#8c6a2f'}
 };
@@ -6807,6 +6887,24 @@ function disponibilidadPanelHTML(){
 }
 
 function googleCalendarioSugerenciaCardHTML(s){
+  if(s.estado === 'sin_match'){
+    // Agregado 15 nov 2026: la IA no encontró con claridad a qué
+    // expediente/etapa corresponde -- nunca se puede "aplicar" (no hay
+    // etapa sugerida), solo mostrar para que el abogado reconozca de qué
+    // se trata (cita personal a ignorar, o un expediente que el match no
+    // alcanzó a identificar) y lo descarte.
+    return `
+      <div class="aviso-card" data-calendario-sugerencia-id="${s.id}">
+        <div class="aviso-head">
+          <div class="aviso-caso">${escapeHTML(s.calendario_abogado_nombre||'(abogado no identificado)')}</div>
+          <div class="aviso-fuente">${escapeHTML(s.nombre_calendario||'Google Calendar')}</div>
+        </div>
+        <div class="aviso-resumen">🤔 Evento sin identificar — "${escapeHTML(s.titulo_evento)}" (${fmtDate(s.fecha)}${s.hora? ' '+escapeHTML(s.hora.slice(0,5))+' hrs':''}) no coincidió con claridad con ningún expediente activo. Si es un compromiso personal (o el expediente ya no corresponde), descártalo.</div>
+        <div class="aviso-actions">
+          <button class="btn secondary" data-calendario-sugerencia-descartar="${s.id}" style="padding:6px 12px; font-size:11.5px;">Descartar</button>
+        </div>
+      </div>`;
+  }
   return `
       <div class="aviso-card" data-calendario-sugerencia-id="${s.id}">
         <div class="aviso-head">
@@ -6849,11 +6947,21 @@ function preguntasAbogadoHTML(){
     <div class="panel-head"><h3>⚠️ Posibles irregularidades</h3><span class="count">${IRREGULARIDADES.length}</span></div>
     <div class="panel-body" style="padding:16px 20px;">${IRREGULARIDADES.map(irregularidadCardHTML).join("")}</div>
   </div>` : ''}
-  ${GOOGLE_CALENDARIO_SUGERENCIAS.length ? `
+  ${(()=>{
+    const conflictos = GOOGLE_CALENDARIO_SUGERENCIAS.filter(s=>s.estado==='pendiente');
+    const sinMatch = GOOGLE_CALENDARIO_SUGERENCIAS.filter(s=>s.estado==='sin_match');
+    return `
+  ${conflictos.length ? `
   <div class="panel">
-    <div class="panel-head"><h3>📅 Conflictos de fecha en tu Google Calendar</h3><span class="count">${GOOGLE_CALENDARIO_SUGERENCIAS.length}</span></div>
-    <div class="panel-body" style="padding:16px 20px;">${GOOGLE_CALENDARIO_SUGERENCIAS.map(googleCalendarioSugerenciaCardHTML).join("")}</div>
+    <div class="panel-head"><h3>📅 Conflictos de fecha en tu Google Calendar</h3><span class="count">${conflictos.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${conflictos.map(googleCalendarioSugerenciaCardHTML).join("")}</div>
   </div>` : ''}
+  ${sinMatch.length ? `
+  <div class="panel">
+    <div class="panel-head"><h3>🤔 Eventos de Google Calendar sin identificar</h3><span class="count">${sinMatch.length}</span></div>
+    <div class="panel-body" style="padding:16px 20px;">${sinMatch.map(googleCalendarioSugerenciaCardHTML).join("")}</div>
+  </div>` : ''}`;
+  })()}
   ${pendientes.length ? `
   <div class="panel">
     <div class="panel-head"><h3>Pendientes</h3><span class="count">${pendientes.length}</span></div>
