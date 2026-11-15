@@ -3620,7 +3620,7 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
 // de un pendiente. $labelAtraso es el texto que ya arma estancadoInfo()
 // (ej. 'Se esperaba "Contestación de demanda recibida" y no se ha
 // registrado (18 día(s) de atraso)').
-function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso, array $documentosRecientes = [], array $avisosRecientes = [], array $notasBitacora = [], array $pendientesAbiertos = [], array $pagosConvenio = []): ?string
+function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string $labelAtraso, array $documentosRecientes = [], array $avisosRecientes = [], array $notasBitacora = [], array $pendientesAbiertos = [], array $pagosConvenio = [], ?string $etapaKeyAtraso = null): ?string
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) {
@@ -3650,6 +3650,23 @@ function ia_generar_pregunta_supervisor(array $expediente, array $etapas, string
         if ($fecha && $fecha !== '0000-00-00') $registradas[] = (ETAPA_LABELS[$key] ?? $key) . ': ' . $fecha;
     }
     if ($registradas) $lineas[] = "Bitácora de trámite registrada (en orden):\n" . implode("\n", $registradas);
+
+    // Si la etapa que el sistema marcó como atrasada YA tiene una "Fecha
+    // agendada" (fecha_programada) capturada en Agenda, avisarlo -- mismo
+    // hueco real confirmado hoy (15 nov 2026) en el Informe Ejecutivo: sin
+    // esto, la pregunta podía redactarse como si nada se hubiera agendado
+    // ("¿cuándo se notificó X?") cuando en realidad ya hay una fecha
+    // concreta que solo falta confirmar si se celebró.
+    if ($etapaKeyAtraso !== null) {
+        $fechaAgendadaAtraso = $porKey[$etapaKeyAtraso]['fecha_programada'] ?? null;
+        if ($fechaAgendadaAtraso && $fechaAgendadaAtraso !== '0000-00-00') {
+            $diasDesdeAgendada = (int)round((time() - strtotime($fechaAgendadaAtraso)) / 86400);
+            $lineas[] = "IMPORTANTE: esta etapa YA tiene Fecha agendada: $fechaAgendadaAtraso"
+                . ($diasDesdeAgendada > 0 ? " (ya pasó hace $diasDesdeAgendada día(s))" : ' (todavía no llega)')
+                . ' -- la pregunta debe referirse a ESA fecha concreta (ej. "¿qué pasó en la cita del '
+                . $fechaAgendadaAtraso . '?"), nunca preguntar como si no hubiera nada agendado.';
+        }
+    }
 
     // Contexto adicional -- documentos ya guardados y últimos resúmenes de
     // boletín de este expediente, para que la pregunta sea específica (ej.
@@ -3876,7 +3893,17 @@ function ia_auditar_expediente(array $expediente, array $etapas, array $document
         if ($fecha && $fecha !== '0000-00-00') {
             $registradas[] = "$label: $fecha";
         } else {
-            $pendientes[] = "$key ($label)";
+            // Si esta etapa sin fecha YA tiene "Fecha agendada" (fecha_programada),
+            // avisarlo aquí -- mismo hueco real confirmado hoy (15 nov 2026) en el
+            // Informe Ejecutivo (ver ia_siguiente_etapa_esperada_texto()): sin esto,
+            // esta auditoría podía tratar una etapa ya agendada igual que una
+            // completamente huérfana, sin saber que ya existe una fecha capturada
+            // en Agenda a la que solo falta confirmar el resultado.
+            $fechaAgendada = $porKey[$key]['fecha_programada'] ?? null;
+            $sufijoAgendada = ($fechaAgendada && $fechaAgendada !== '0000-00-00')
+                ? " [YA TIENE Fecha agendada: $fechaAgendada -- si algo de abajo confirma qué pasó en esa fecha, úsalo; si no hay nada, no es excusa para calcular ni inventar una]"
+                : '';
+            $pendientes[] = "$key ($label)$sufijoAgendada";
         }
     }
     if (!$pendientes) return []; // ya están todas las etapas con fecha -- nada que buscar

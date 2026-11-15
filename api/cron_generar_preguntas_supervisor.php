@@ -61,7 +61,7 @@ foreach ($atrasos as $atraso) {
     $expediente = $expStmt->fetch();
     if (!$expediente) continue;
 
-    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha FROM expediente_etapas WHERE expediente_id = :id');
+    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha, fecha_programada FROM expediente_etapas WHERE expediente_id = :id');
     $etapasStmt->execute([':id' => $atraso['expediente_id']]);
     $etapas = $etapasStmt->fetchAll();
 
@@ -97,7 +97,7 @@ foreach ($atrasos as $atraso) {
     $pagosStmt->execute([':id' => $atraso['expediente_id']]);
     $pagosConvenio = $pagosStmt->fetchAll();
 
-    $pregunta = ia_generar_pregunta_supervisor($expediente, $etapas, $atraso['label'], $documentosRecientes, $avisosRecientes, $notasBitacora, $pendientesAbiertos, $pagosConvenio);
+    $pregunta = ia_generar_pregunta_supervisor($expediente, $etapas, $atraso['label'], $documentosRecientes, $avisosRecientes, $notasBitacora, $pendientesAbiertos, $pagosConvenio, $etapaKey);
     if (!$pregunta) {
         $fallidas++;
         continue; // se reintenta en la siguiente corrida (no se inserta nada)
