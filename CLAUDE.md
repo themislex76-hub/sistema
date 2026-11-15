@@ -1,5 +1,65 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Nuevo detector: cita/citatorio agendado cuya fecha ya pasó sin resultado (15 nov 2026, `app.js?v=153`)
+Pedido explícito del usuario ("es que debemos de hacer muy inteligente y
+autosuficiente el sistema que sugieres") tras los 2 arreglos de hoy sobre
+la fecha agendada -- revisando el código se confirmó un hueco real de
+fondo: `estancadoInfo()`, el ÚNICO detector de "atraso" que existía en
+toda la Agenda (alimenta el push diario, la pregunta del supervisor, y el
+Informe Ejecutivo indirectamente), **nunca mira `fecha_programada`** --
+solo calcula si ya venció el plazo legal completo de la *siguiente* etapa
+sin fecha, contado desde la última etapa YA celebrada. Peor aún: varias
+etapas agendables (`conciliacion_primer_citatorio`,
+`conciliacion_segundo_citatorio`) **ni siquiera tienen un `plazoDias`
+propio en `ETAPAS_DEF`** -- son eventos agendados, no plazos legales --
+así que para el caso real de Lizbeth Diaz Almazo (citatorio agendado para
+el 12 nov, ya vencido 3 días) el sistema NO iba a generar ningún
+atraso/push/pregunta del supervisor hasta que venciera el plazo completo
+de 45 días naturales de la conciliación (30 nov) -- 2 semanas después de
+que alguien debía haber confirmado qué pasó en esa cita. Solo se notó hoy
+porque el usuario abrió el Informe Ejecutivo a mano.
+- **Nueva función `citasAgendadasVencidasInfo()`** (`assets/app.js`):
+  revisa las 4 etapas que soportan "Fecha agendada"
+  (`conciliacion_primer_citatorio`, `conciliacion_segundo_citatorio`,
+  `audiencia_preliminar`, `audiencia_juicio`) y devuelve las que ya
+  pasaron su fecha agendada sin fecha celebrada ni fecha agendada más
+  reciente -- nunca corrige nada solo, solo lo señala (mismo principio de
+  siempre).
+- `buildAgendaEntries()` genera una entrada tipo nuevo **`vencida`** por
+  cada una encontrada -- clave `vencida:<etapa_key>`, DISTINTA de
+  `atraso:<etapa_key>` a propósito (son señales independientes; un mismo
+  expediente podría tener ambas a la vez sin pisarse). `vencida` se
+  agregó a `AGENDA_TIPO` (mismo color rojo que "Posible atraso"),
+  `AVISOS_ABOGADO_TIPOS`/`AVISOS_ABOGADO_TIPOS_ABIERTOS` (se sigue
+  avisando mientras no se resuelva, igual que `atraso`/`accion_ia`, sin
+  importar cuántos días lleve atrás) y `GOOGLE_TIPOS_SINCRONIZABLES`.
+- `api/cron_recordatorio_abogado.php`: `vencida` se trata igual que
+  `atraso`/`accion_ia` en el push diario (se avisa `fecha <= hoy`, no
+  solo "mañana") y en la escalación al Administrador tras 7+ días sin
+  resolverse (`TIPOS_ABIERTOS`).
+- `api/cron_generar_preguntas_supervisor.php`: ahora también recoge
+  entradas tipo `vencida` (antes solo `atraso`) -- el parseo de la clave
+  se generalizó de `<etapa_key> = substr($clave, strlen('atraso:'))` a
+  `substr($clave, strlen($tipo) + 1)` para que funcione con cualquier
+  prefijo. Reutiliza sin cambios el aviso de "fecha agendada" agregado
+  hoy mismo en `ia_generar_pregunta_supervisor()` (ya recibía
+  `$etapaKeyAtraso` del arreglo anterior) -- así que para una entrada
+  `vencida` la pregunta generada automáticamente se refiere a la fecha
+  concreta ("¿qué pasó en la cita del 12 de noviembre?").
+- **Sin migración** -- `agenda_avisos_cache.tipo` es `VARCHAR(30)` sin
+  ENUM, y la clave más larga (`vencida:conciliacion_segundo_citatorio`,
+  38 caracteres) cabe en el `VARCHAR(40)` de `clave` sin truncarse.
+- No se tocó `mergeTags()`/`calcularJornada()`/tags de demanda -- no
+  aplica `verificar_tags.js`. **Sin probar en vivo todavía** -- falta que
+  el usuario suba `assets/app.js`, `index.html`, `sw.js`,
+  `api/cron_recordatorio_abogado.php` y
+  `api/cron_generar_preguntas_supervisor.php`, y se confirme en un caso
+  real (ej. el propio expediente de Lizbeth Diaz Almazo, una vez que
+  alguien registre qué pasó en el citatorio del 12 nov y se pruebe con
+  otro expediente que SÍ siga con una cita vencida) que aparece como
+  "Cita agendada vencida" en Agenda general y genera su propia pregunta
+  del supervisor.
+
 ## Informe Ejecutivo no se enteraba de que la siguiente etapa YA tenía fecha agendada (15 nov 2026)
 Reportado por el usuario viendo el expediente de **Lizbeth Diaz Almazo vs
 Servicio Postal Mexicano**: el Informe Ejecutivo (generado 14 nov,
