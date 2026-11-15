@@ -38,7 +38,7 @@ body{
    (modales, overlay) se agrandan en el lugar correcto; transform:scale()
    los habría descolocado. Agranda cualquier tamaño de letra, fijo en px o
    no, sin tener que tocar ninguno de los ~380 que ya existen en la app. */
-body.letra-grande{--letra-zoom:1.5; zoom:var(--letra-zoom);}
+body.letra-grande{--letra-zoom:1.6; zoom:var(--letra-zoom);}
 /* El menú lateral es position:fixed con height:100vh en celular -- el
    zoom del body también agranda ese alto fijo, así que la caja del menú
    termina siendo más alta que la pantalla real y la parte de abajo (los

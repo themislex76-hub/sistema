@@ -105,6 +105,10 @@ celular se le ven muy chicas.
   el usuario suba `assets/style.css` (`v=11`), `index.html` y `sw.js`
   (`v79`), y confirme que el menú y el contenido principal ya se vean del
   mismo tamaño, y que el 1.5 general se sienta bien.
+- **Subido a 1.6 el mismo día** (pedido explícito, "subelo a 1.6") --
+  gracias al `calc()` de arriba, solo hizo falta cambiar `--letra-zoom`
+  en un solo lugar; el menú se reescala solo con el mismo valor. `v=12`
+  / `sw.js v80`. **Sin probar en vivo todavía**.
 
 ## Eventos de Google Calendar "sin identificar" ya se muestran (15 nov 2026, `app.js?v=155`)
 Pedido explícito del usuario, mismo tema de "que nada se quede callado sin
