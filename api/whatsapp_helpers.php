@@ -125,7 +125,12 @@ function whatsapp_texto_parece_reclamo(string $texto): bool
 function whatsapp_texto_parece_declinar(string $texto): bool
 {
     return preg_match(
-        '/\bno\b.{0,25}(gracias|me interesa|por ahora|por el momento|as[ií]\s+est[aá]\s+bien)/iu',
+        // 2ª parte (14-nov-2026, revisión diaria del bot): la persona ya dijo
+        // que lo hará después o que hoy no tiene dinero -- insistirle con el
+        // seguimiento automático es justo la presión que molestó a clientes.
+        '/\bno\b.{0,25}(gracias|me interesa|por ahora|por el momento|as[ií]\s+est[aá]\s+bien)'
+        . '|\b(ahorita|ahora|hoy)\s+no\b|\bno\s+(tengo|cuento\s+con)\s+(dinero|el\s+recurso|recursos|trabajo|para\s+pagar)'
+        . '|\bm[aá]s\s+adelante\b|\bcuando\s+(tenga|me\s+paguen|pueda|me\s+depositen|cobre)\b/iu',
         $texto
     ) === 1;
 }
