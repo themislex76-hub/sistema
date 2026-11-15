@@ -755,6 +755,19 @@ memoria — es la fuente más común de errores):
     SDI de $344.19 (solo con las prestaciones mínimas de ley) -- la
     indemnización de 90 días salió $10,078.54 más baja de lo que en
     realidad le correspondía.
+    REGLA DURA — el "salario diario" y el "SDI"/"Salario Int." de un recibo
+    YA SON DIARIOS: NUNCA los dividas entre los días del periodo (15, 7,
+    30), aunque el recibo diga "Periodicidad: Quincenal" o "Días pagados:
+    15" -- eso solo indica cada cuándo le pagan. Si la persona dice cuánto
+    gana al mes, su salario diario es ese monto entre 30 (Art. 89). Revisa
+    que cuadre: el SDI siempre es un poco MAYOR que el salario diario base,
+    y salario diario × 30 debe parecerse a su sueldo mensual. Error real
+    grave (14-nov-2026): un gerente que ganaba $65,000 al mes (diario
+    $2,166.67, SDI $2,349.11 en su recibo) recibió un estimado de
+    $20,648 porque el bot dividió ambos entre 15; con los datos correctos
+    la misma calculadora da unos $283,000. Además le insistió 3 veces en
+    que él estaba confundido. Si la persona corrige su salario, cree su
+    dato, vuelve a llamar a la calculadora y dale el monto nuevo.
     REGLA DURA — "no me ha subido el sueldo en X años": en México NO
     existe obligación legal de dar aumentos periódicos de sueldo a quien
     gana por encima del salario mínimo -- el único aumento obligatorio es
@@ -2260,6 +2273,28 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         $texto = 'El cálculo estimado siempre es gratis, no tiene ningún costo -- cuéntame tu caso (qué pasó, tu salario, las fechas) y te lo calculo aquí mismo. Lo único que sí tiene costo es la asesoría personalizada con el Lic. Rubén Buerhend, si más adelante quieres que revise tu caso a fondo.';
     }
 
+    // Caso real (14-nov-2026): el bot escribió "voy a pedir que un abogado
+    // del despacho revise tu caso directamente contigo" SIN llamar
+    // escalar_a_humano -- nadie fue avisado, el bot no se pausó, al día
+    // siguiente el seguimiento automático le ofreció la asesoría y el
+    // documento de $49 como si nada, y sus preguntas siguientes se
+    // quedaron sin atender. Si el texto promete que un abogado lo va a
+    // contactar y la conversación todavía no está escalada, se escala aquí
+    // mismo (avisa al despacho y pausa el bot), sin depender de la IA.
+    if (ia_texto_promete_abogado($texto)) {
+        $chkPausa = $pdo->prepare('SELECT pausado_bot FROM prospectos WHERE telefono = :t');
+        $chkPausa->execute([':t' => $telefono]);
+        if ((int)($chkPausa->fetchColumn() ?: 0) !== 1) {
+            file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+                . " | [promesa_abogado_escalada] tel=$telefono | texto=\"" . $texto . "\"\n", FILE_APPEND);
+            ia_registrar_prospecto_atorado(
+                $pdo, $telefono,
+                ['tipo' => 'atencion_directa', 'estado' => '', 'nombre' => '', 'resumen' => ''],
+                'El bot le prometió a esta persona que un abogado la va a contactar -- se escaló automáticamente, contestarle en persona.'
+            );
+        }
+    }
+
     // A diferencia de la asesoría de pago (que sigue su flujo solo y solo
     // se guarda como prospecto si se atora o se confirma el pago), un
     // interés en curso SIEMPRE se guarda aquí mismo -- no hay ningún
@@ -2273,6 +2308,19 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     }
 
     return ['texto' => $texto, 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente, 'uso_calculo' => $usoCalculoLiquidacion];
+}
+
+// true si el texto le promete a la persona que un abogado del despacho la
+// va a contactar / revisar su caso en persona (no la asesoría agendada con
+// el Lic. Rubén, que tiene su propio flujo).
+function ia_texto_promete_abogado(string $texto): bool
+{
+    return preg_match(
+        '/voy\s+a\s+(pedir|pasar|avisar)\w*\s+(que\s+|a\s+)?un\s+abogad[oa]'
+        . '|un\s+abogad[oa](\s+del\s+despacho)?\s+(te|se)\s+(va\s+a\s+)?(contact|comunic|escrib|llam|confirm|atiend)'
+        . '|un\s+abogad[oa](\s+del\s+despacho)?\s+(revis[ae]|atiend[ae])\s+tu\s+caso\s+(directamente|en\s+persona)/iu',
+        $texto
+    ) === 1;
 }
 
 /**

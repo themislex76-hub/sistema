@@ -2959,6 +2959,18 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   de Salud podría remitir a la LFTSE. Lo verificable: el bot no debe rechazar sin preguntar
   ISSSTE/IMSS y escalar si hay duda (criterio que ya existe). 65 casos en pruebas_bot.php.
 
+## Gerente de $65,000/mes: SDI dividido entre 15 + promesa de abogado sin escalar (15 nov 2026, conversación "chats")
+- Caso real (cliente de TikTok, gerente regional, ingreso 09-jun-2025): el bot tomó del recibo
+  quincenal el salario diario ($2,166.67) y el SDI ($2,349.11) y los DIVIDIÓ entre 15 -- dio
+  $20,648; la calculadora con los datos reales da $283,252.94 (finiquito $71,833.04 + 3 meses
+  $211,419.90, baja hipotética 14-nov-2026). Insistió 3 veces en que el cliente se equivocaba.
+  REGLA DURA nueva en el prompt (junto a la del SDI del recibo): esos datos ya son diarios.
+- Además escribió "voy a pedir que un abogado revise tu caso" SIN llamar escalar_a_humano: nadie
+  fue avisado, el bot no se pausó y al día siguiente el seguimiento automático le ofreció la
+  asesoría/documento. Candado nuevo en código: `ia_texto_promete_abogado()` -- si el texto final
+  promete que un abogado lo contactará y el prospecto no está pausado, se escala solo
+  (`ia_registrar_prospecto_atorado`, log `[promesa_abogado_escalada]`). 68 casos en pruebas_bot.php.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
