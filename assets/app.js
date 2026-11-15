@@ -1314,6 +1314,34 @@ function audienciasParaCalendario(kase){
     .filter(Boolean);
 }
 
+// Citatorios/audiencias con "Fecha agendada" cuyo día ya pasó sin que se
+// haya registrado ni la fecha en que se celebraron ni una fecha agendada
+// más reciente -- hueco real confirmado el 15 nov 2026 (expediente de
+// Lizbeth Diaz Almazo vs Servicio Postal Mexicano): estancadoInfo() (el
+// único detector de "atraso" que existía) nunca mira fecha_programada,
+// solo el plazo legal de la SIGUIENTE etapa sin fecha -- y varias etapas
+// de este tipo (conciliacion_primer_citatorio/segundo_citatorio) NI
+// SIQUIERA tienen un plazoDias propio en ETAPAS_DEF (son eventos
+// agendados, no plazos legales), así que podían pasar semanas sin que el
+// sistema avisara nada aunque la fecha agendada ya hubiera pasado -- solo
+// se notaba si alguien abría el Informe Ejecutivo a mano. Devuelve un
+// arreglo (puede haber más de una etapa en este estado a la vez, aunque
+// sea raro) -- nunca corrige nada solo, solo lo señala.
+function citasAgendadasVencidasInfo(kase){
+  const meta = getMeta(kase.id);
+  const hoy = new Date(); hoy.setHours(0,0,0,0);
+  const out = [];
+  ['conciliacion_primer_citatorio','conciliacion_segundo_citatorio','audiencia_preliminar','audiencia_juicio'].forEach(key=>{
+    const e = meta.etapas[key];
+    if(!e || !e.fecha_programada || e.fecha) return; // sin fecha agendada, o ya se celebró
+    const programada = parseDate(e.fecha_programada);
+    if(!programada || programada >= hoy) return; // todavía no llega -- no es atraso
+    const def = ETAPAS_DEF.find(d=>d.key===key);
+    out.push({etapaKey:key, label: def ? def.label : key, fechaProgramada: e.fecha_programada, diasAtraso: daysBetween(programada, hoy)});
+  });
+  return out;
+}
+
 // Revisa si hay un pago de convenio programado que todavía no se cobra, para
 // avisarle al trabajador (y al abogado) con anticipación.
 // ---------------------------------------------------------------
@@ -2526,7 +2554,7 @@ async function loadPlantillasLib(){
 // no se refleja aquí. Ver api/google_*.php.
 // ---------------------------------------------------------------
 let GOOGLE_STATUS = {conectado:false, email:null};
-const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','accion_ia'];
+const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','vencida','accion_ia'];
 
 async function loadGoogleStatus(){
   try{ GOOGLE_STATUS = await api('GET', 'google_status.php'); }
@@ -5045,6 +5073,18 @@ function buildAgendaEntries(){
     if(est) entries.push({tipo:'atraso', fecha: dateToISO(est.expected), k, label:`Se esperaba "${est.siguiente}" y no se ha registrado (${est.diasAtraso} día(s) de atraso)`, action:'abrir_etapas', actionIdx: est.siguienteKey});
   });
 
+  // Citatorios/audiencias cuya fecha agendada ya pasó sin registrar
+  // resultado -- ver citasAgendadasVencidasInfo(). Tipo separado de
+  // 'atraso' (que es el plazo legal del SIGUIENTE trámite, un criterio
+  // totalmente distinto e independiente -- varias de estas etapas ni
+  // siquiera tienen plazoDias propio) para no pisar su clave en
+  // agenda_avisos_cache.
+  cases.forEach(k=>{
+    citasAgendadasVencidasInfo(k).forEach(c=>{
+      entries.push({tipo:'vencida', fecha: c.fechaProgramada, k, label:`"${c.label}" estaba agendada para el ${c.fechaProgramada} y no se ha registrado qué pasó (${c.diasAtraso} día(s))`, action:'abrir_etapas', actionIdx: c.etapaKey});
+    });
+  });
+
   // Próxima acción sugerida por el informe ejecutivo con IA (ver
   // ia_generar_resumen_expediente() en el servidor). La IA solo clasifica
   // la URGENCIA (alta/media/baja) -- nunca calcula una fecha, para no
@@ -5076,19 +5116,21 @@ function buildAgendaEntries(){
 // en silencio, cada vez que alguien abre el sistema -- si nadie lo abre en
 // varios días el caché se queda desactualizado, pero es la misma
 // limitación que ya tiene la sincronización con Google Calendar.
-const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','accion_ia'];
-// 'atraso' y 'accion_ia' son asuntos ESTANCADOS -- su fecha es cuándo
-// debió pasar algo (o cuándo venció el seguimiento que propuso la IA), no
-// una cita futura. Una vez que de verdad se atrasan, esa fecha se queda
-// en el pasado para siempre -- a diferencia de los demás tipos (que solo
-// tiene sentido avisar en una ventana de "próximos días"), estos se
+const AVISOS_ABOGADO_TIPOS = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','vencida','accion_ia'];
+// 'atraso', 'vencida' y 'accion_ia' son asuntos ESTANCADOS -- su fecha es
+// cuándo debió pasar algo (o cuándo venció el seguimiento que propuso la
+// IA), no una cita futura. Una vez que de verdad se atrasan, esa fecha se
+// queda en el pasado para siempre -- a diferencia de los demás tipos (que
+// solo tiene sentido avisar en una ventana de "próximos días"), estos se
 // siguen mandando mientras sigan sin resolverse, sin importar cuántos
 // días lleven atrás. Bug real confirmado (9 nov 2026): con el filtro
 // viejo (fecha >= hoy) estos NUNCA volvían a entrar a la ventana una vez
 // atrasados -- se calculaban bien y se veían en el Tablero, pero el push
 // diario (cron_recordatorio_abogado.php) jamás los mandaba. 40 asuntos
-// atorados que el sistema "sabía" pero nunca avisó a nadie.
-const AVISOS_ABOGADO_TIPOS_ABIERTOS = ['atraso', 'accion_ia'];
+// atorados que el sistema "sabía" pero nunca avisó a nadie. 'vencida'
+// agregado el 15 nov 2026 (ver citasAgendadasVencidasInfo()) -- mismo
+// comportamiento, una cita agendada vencida tampoco se "resuelve sola".
+const AVISOS_ABOGADO_TIPOS_ABIERTOS = ['atraso', 'vencida', 'accion_ia'];
 async function syncAvisosAbogado(){
   if(!CURRENT_USER || CURRENT_USER.role === 'cliente') return;
   const hoy = new Date(); hoy.setHours(0,0,0,0);
@@ -5351,6 +5393,7 @@ const AGENDA_TIPO = {
   amparo:{label:'Amparo', color:'#3c5a86'},
   pendiente:{label:'Pendiente', color:'#3f6b4f'},
   atraso:{label:'Posible atraso', color:'#a83a2f'},
+  vencida:{label:'Cita agendada vencida', color:'#a83a2f'},
   audiencia:{label:'Audiencia', color:'#3c5a86'},
   accion_ia:{label:'Sugerido por IA', color:'#8c6a2f'}
 };

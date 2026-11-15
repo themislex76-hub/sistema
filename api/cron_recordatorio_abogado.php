@@ -41,9 +41,13 @@ const AGENDA_TIPO_LABEL = [
     'amparo' => 'Vence plazo de amparo',
     'pendiente' => 'Pendiente',
     'atraso' => 'Asunto atorado',
+    'vencida' => 'Cita agendada vencida',
     'accion_ia' => 'Sugerido por IA',
 ];
-const TIPOS_ABIERTOS = ['atraso', 'accion_ia'];
+// 'vencida' agregado el 15 nov 2026 (citasAgendadasVencidasInfo() en
+// assets/app.js) -- mismo tratamiento que 'atraso'/'accion_ia': una fecha
+// agendada ya vencida sin resultado registrado tampoco se resuelve sola.
+const TIPOS_ABIERTOS = ['atraso', 'vencida', 'accion_ia'];
 // Si un abogado lleva esto o más días ignorando un "atraso"/"accion_ia",
 // también se le avisa al Administrador -- un asunto estancado no debe
 // quedarse sin que nadie más lo note solo porque el abogado no entró al
@@ -58,8 +62,8 @@ $stmt = $pdo->prepare(
      JOIN expedientes e ON e.id = c.expediente_id
      WHERE e.abogado_id IS NOT NULL
        AND (
-         (c.tipo NOT IN ('atraso', 'accion_ia') AND c.fecha = CURDATE() + INTERVAL 1 DAY)
-         OR (c.tipo IN ('atraso', 'accion_ia') AND c.fecha <= CURDATE())
+         (c.tipo NOT IN ('atraso', 'vencida', 'accion_ia') AND c.fecha = CURDATE() + INTERVAL 1 DAY)
+         OR (c.tipo IN ('atraso', 'vencida', 'accion_ia') AND c.fecha <= CURDATE())
        )
      ORDER BY e.abogado_id, c.hora IS NULL, c.hora"
 );
