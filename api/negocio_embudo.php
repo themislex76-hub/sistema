@@ -85,6 +85,32 @@ function negocio_dia_live(string $ts): string
     return negocio_dia_live_de_jornada(negocio_jornada($ts));
 }
 
+// Canal de llegada según el mensaje ya escrito del link de WhatsApp de cada
+// canal (acordado con el usuario el 16 nov 2026; número del bot 56 5273 6263):
+//   "Hola, quiero orientación gratis"   -> perfil de TikTok / lives
+//   "Hola, vi su video"                 -> videos (Facebook/Instagram/YouTube)
+//   "Hola, vengo de su página web"      -> página web
+//   "Hola, los encontré en Google"      -> Google Maps
+// Cualquier otro primer mensaje = escribió directo (antes de los links,
+// prácticamente todo venía del live).
+const NEGOCIO_CANALES = [
+    'tiktok' => 'Perfil de TikTok / lives (link)',
+    'videos' => 'Videos (Facebook / Instagram / YouTube)',
+    'web' => 'Página web',
+    'google' => 'Google Maps',
+    'directo' => 'Escribió directo (sin link)',
+];
+function negocio_canal(string $texto): string
+{
+    $t = mb_strtolower($texto, 'UTF-8');
+    $t = strtr($t, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u']);
+    if (str_contains($t, 'vi su video')) return 'videos';
+    if (str_contains($t, 'pagina web')) return 'web';
+    if (str_contains($t, 'encontre en google')) return 'google';
+    if (str_contains($t, 'orientacion gratis')) return 'tiktok';
+    return 'directo';
+}
+
 // Clave de cruce: 't' + últimos 10 dígitos. La 't' es a propósito: una clave
 // de arreglo PHP que es solo dígitos se convierte en int y rompe los tipos.
 function negocio_tel_clave(?string $telefono): string
@@ -164,23 +190,27 @@ unset($l);
 
 // ---------- 2. Conversaciones de WhatsApp ----------
 // Nuevas = el primer mensaje entrante de ese número en toda la historia cae
-// dentro del periodo. (Sin funciones de ventana: el MySQL del servidor no
-// las soporta.)
+// dentro del periodo. El primer mensaje (MIN(id), los ids son crecientes)
+// también dice de qué canal llegó: cada canal tiene su link de WhatsApp con
+// un mensaje ya escrito (ver negocio_canal()). Sin funciones de ventana: el
+// MySQL del servidor no las soporta.
 $st = $pdo->prepare(
-    "SELECT primero FROM (
-        SELECT telefono, MIN(creado_en) AS primero
-        FROM whatsapp_conversaciones WHERE direccion = 'entrante'
-        GROUP BY telefono
-     ) t
-     WHERE primero >= :desde AND primero < :hasta"
+    "SELECT w.telefono, w.texto, w.creado_en
+     FROM whatsapp_conversaciones w
+     JOIN (SELECT MIN(id) AS mid FROM whatsapp_conversaciones
+           WHERE direccion = 'entrante' GROUP BY telefono) f ON f.mid = w.id
+     WHERE w.creado_en >= :desde AND w.creado_en < :hasta"
 );
 $st->execute($rangoBusqueda);
 $convNuevas = 0;
-foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $primero) {
-    $dia = negocio_dia_live((string)$primero);
+$nuevasPorCanal = []; // canal => [tel10 => true]
+foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $dia = negocio_dia_live((string)$r['creado_en']);
     if (!isset($porDia[$dia])) continue;
     $porDia[$dia]['conversaciones_nuevas']++;
     $convNuevas++;
+    $k = negocio_tel_clave($r['telefono']);
+    $nuevasPorCanal[negocio_canal((string)$r['texto'])][$k !== '' ? $k : 'x' . $convNuevas] = true;
 }
 // Personas distintas que escribieron. Se agrupa por teléfono + día + si fue
 // antes o después del corte de las 8 pm (máx. 2 filas por número por día),
@@ -335,5 +365,17 @@ respond([
     'documentos' => $extras['documentos'],
     'cursos' => $extras['cursos'],
     'juicios' => $juicios,
+    'canales' => (static function () use ($nuevasPorCanal, $personasPagaron): array {
+        $out = [];
+        foreach (NEGOCIO_CANALES as $clave => $nombre) {
+            $tels = $nuevasPorCanal[$clave] ?? [];
+            $pagaron = 0;
+            foreach ($tels as $k => $_) {
+                if (isset($personasPagaron[$k])) $pagaron++;
+            }
+            $out[] = ['canal' => $clave, 'nombre' => $nombre, 'conversaciones_nuevas' => count($tels), 'pagaron_asesoria' => $pagaron];
+        }
+        return $out;
+    })(),
     'por_dia' => array_values($porDia),
 ]);

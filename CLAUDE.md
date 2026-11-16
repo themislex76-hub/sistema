@@ -54,6 +54,21 @@ documento $49 / curso $299) → se volvieron juicio.
   (`negocio_dia_live()`); más allá, se queda en su día. La búsqueda se
   extiende 3 días después de 'hasta' (`$rangoBusqueda`). Consecuencia:
   un live NO capturado se suma al anterior -- hay que capturarlos todos.
+  **Canal de llegada (`app.js?v=161`, YA HECHO pero NO ENTREGADO al usuario
+  todavía -- pidió dejarlo para cuando tenga más canales; por ahora solo usa
+  TikTok)**: `negocio_canal()` clasifica el PRIMER mensaje de cada número
+  (MIN(id)) según el texto prellenado del link de WhatsApp de cada canal;
+  panel "¿De dónde llegan?" (solo filas con gente). Número del bot:
+  **56 5273 6263**. Links acordados: `https://wa.me/525652736263?text=` +
+  "Hola, quiero orientación gratis" (perfil TikTok/lives) / "Hola, vi su
+  video" (videos FB/IG/YT) / "Hola, vengo de su página web" / "Hola, los
+  encontré en Google". La página expertoslaborales.com mostraba 55 4170 8184;
+  el usuario la va a cambiar para que todo mande al WhatsApp del bot.
+  Revisión de normas de TikTok (versión vigente 13-sep-2025): no prohíben el
+  teléfono del propio negocio; SÍ exigen marcar "contenido comercial → Tu
+  marca" al promocionar el propio servicio (si no, sale del "Para ti"); se le
+  sugirió decir "orientación laboral GRATIS" (la asesoría telefónica cuesta
+  $499, evitar que se reporte como engañoso).
   **Migración 073 ya corrida por el usuario en `c1361311_exp` (16 nov 2026).** Captura del live **confirmada funcionando en vivo** (16 nov 2026; al principio falló porque `api/tiktok_lives_guardar.php` no se había subido -- "File not found"). Falta revisar con el usuario que los números del embudo (sobre todo "se volvieron juicio", que salió 0 en noviembre) cuadren con la realidad. Siguiente migración libre: 074.
 - Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
   saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar

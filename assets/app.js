@@ -6222,6 +6222,19 @@ function negocioEmbudoHTML(){
     <div style="font-size:11px; color:var(--gray); margin-top:10px;">Cada live se compara con lo que generó: todo lo que llega (WhatsApp y pagos) desde las ${d.hora_corte||20}:00 del día del live hasta que empieza el siguiente live. Si un día no hubo live (por ejemplo sábado y domingo), lo de ese día se le cuenta al último live, hasta ${d.dias_arrastre||3} días atrás. Por eso es importante capturar TODOS los lives: un live sin capturar se le suma al anterior.</div>
     <div style="font-size:11px; color:var(--gray); margin-top:6px;">"Se volvieron juicio" cuenta a las personas que pagaron asesoría en este periodo; las asesorías muy recientes todavía pueden convertirse en juicio más adelante, así que este número sube con el tiempo.</div>`;
 
+  // ¿De dónde llegan? Cada canal tiene su link de WhatsApp con un mensaje ya
+  // escrito; se muestran solo los canales que ya trajeron gente.
+  const canales = (d.canales || []).filter(c => c.conversaciones_nuevas > 0);
+  const soloDirecto = canales.length <= 1 && (!canales.length || canales[0].canal === 'directo');
+  const tablaCanales = `
+    <div style="overflow-x:auto;"><table>
+      <thead><tr><th>Canal</th><th>Conversaciones nuevas</th><th>Pagaron asesoría</th><th>Conversión</th></tr></thead>
+      <tbody>${!canales.length ? `<tr><td colspan="4" class="empty">Sin conversaciones nuevas en este periodo.</td></tr>` : canales.map(c=>`<tr>
+        <td>${escapeHTML(c.nombre)}</td><td>${negocioNum(c.conversaciones_nuevas)}</td><td>${negocioNum(c.pagaron_asesoria)}</td>
+        <td>${negocioPct(c.pagaron_asesoria, c.conversaciones_nuevas)}</td></tr>`).join('')}</tbody>
+    </table></div>
+    ${soloDirecto ? `<div style="font-size:11px; color:var(--gray); padding:10px 16px;">Cuando uses un link de WhatsApp distinto por canal (perfil de TikTok, videos, página web, Google Maps), aquí se separa solo cuánta gente llega por cada uno y cuántos pagan.</div>` : ''}`;
+
   const e = NEGOCIO_EDITAR || {};
   const hoyISO = isoDate(new Date());
   const v = (k)=> e[k]===null || e[k]===undefined ? '' : e[k];
@@ -6278,6 +6291,10 @@ function negocioEmbudoHTML(){
   <div class="panel" style="margin-bottom:18px;">
     <div class="panel-head"><h3>Embudo del negocio</h3><span class="count">${fmtDate(d.desde)} – ${fmtDate(d.hasta)}</span></div>
     <div class="panel-body" style="padding:16px 18px;">${chipsHTML}${embudo}${resumen}</div>
+  </div>
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>¿De dónde llegan?</h3><span class="count">personas que escribieron por primera vez</span></div>
+    <div class="panel-body" style="padding:0;">${tablaCanales}</div>
   </div>
   <div class="panel" style="margin-bottom:18px;">
     <div class="panel-head"><h3>${NEGOCIO_EDITAR ? 'Editar estadísticas del live' : 'Capturar estadísticas del live (TikTok)'}</h3></div>
