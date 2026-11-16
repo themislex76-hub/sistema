@@ -16,6 +16,7 @@ require_once __DIR__ . '/whatsapp_helpers.php';
 //        &salario_diario=682.11&tipo=injustificado
 //        &dias_vacaciones_anteriores=6&dias_salarios_devengados=0
 //        &modo=despido&nombre=Fulano&sdi=456.17
+// Primero muestra solo la vista previa; para mandarlo de verdad agrega &enviar=1.
 require_admin();
 header('Content-Type: text/plain; charset=utf-8');
 
@@ -66,6 +67,16 @@ foreach ($calc as $clave => $valor) {
     echo "{$clave}: {$valor}\n";
 }
 echo "\n";
+
+// Vista previa primero (15-nov-2026): antes el PDF salía en cuanto se
+// abría la liga -- así llegó al cliente un PDF con una cifra equivocada
+// sin que nadie pudiera revisarla antes. Ahora solo se manda si la liga
+// trae &enviar=1; sin eso, solo muestra el cálculo.
+if (($_GET['enviar'] ?? '') !== '1') {
+    echo "VISTA PREVIA -- todavía NO se mandó nada al cliente.\n"
+        . "Si las cifras están bien, abre la misma liga agregando al final: &enviar=1\n";
+    exit;
+}
 
 $enviado = whatsapp_enviar_pdf_calculo($telefono, $calc, $salarioDiario, $nombre);
 
