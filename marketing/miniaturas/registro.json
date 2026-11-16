@@ -62,5 +62,61 @@
   "foto": "negro",
   "generada": "2026-11-16",
   "video": ""
+ },
+ "9": {
+  "color": 2,
+  "frase": 2,
+  "preg": 2,
+  "foto": "azul",
+  "generada": "2026-11-16",
+  "video": ""
+ },
+ "10": {
+  "color": 3,
+  "frase": 0,
+  "preg": 0,
+  "foto": "selfie",
+  "generada": "2026-11-16",
+  "video": ""
+ },
+ "11": {
+  "color": 5,
+  "frase": 1,
+  "preg": 1,
+  "foto": "negro",
+  "generada": "2026-11-16",
+  "video": ""
+ },
+ "12": {
+  "color": 4,
+  "frase": 2,
+  "preg": 2,
+  "foto": "azul",
+  "generada": "2026-11-16",
+  "video": ""
+ },
+ "13": {
+  "color": 1,
+  "frase": 0,
+  "preg": 0,
+  "foto": "selfie",
+  "generada": "2026-11-16",
+  "video": ""
+ },
+ "14": {
+  "color": 0,
+  "frase": 1,
+  "preg": 1,
+  "foto": "negro",
+  "generada": "2026-11-16",
+  "video": ""
+ },
+ "15": {
+  "color": 3,
+  "frase": 2,
+  "preg": 2,
+  "foto": "azul",
+  "generada": "2026-11-16",
+  "video": ""
  }
 }

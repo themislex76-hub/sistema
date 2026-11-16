@@ -29,21 +29,27 @@ const reg=fs.existsSync(REG)?JSON.parse(fs.readFileSync(REG,'utf8')):{};
 const FOTO_KEYS=['selfie','negro','azul'];
 const DESDE=+(process.argv[3]||1), HASTA=+(process.argv[4]||DESDE);
 function usada(c){return Object.values(reg).some(r=>r.color===c.color&&r.frase===c.frase&&r.preg===c.preg&&r.foto===c.foto);}
-function siguienteCombo(prev){
-  for(let preg=0;preg<PREGUNTAS.length;preg++)for(const foto of FOTO_KEYS)for(let color=0;color<COLORES.length;color++)for(let frase=0;frase<FRASES.length;frase++){
-    const c={color,frase,preg,foto};
-    if(usada(c))continue;
-    if(prev&&(prev.color===c.color||prev.foto===c.foto||prev.frase===c.frase||prev.preg===c.preg))continue;
-    return c;}
-  // si ya no hay con todas las reglas, al menos que no se repita la combinación
-  for(let preg=0;preg<PREGUNTAS.length;preg++)for(const foto of FOTO_KEYS)for(let color=0;color<COLORES.length;color++)for(let frase=0;frase<FRASES.length;frase++){
-    const c={color,frase,preg,foto}; if(!usada(c))return c;}
-  throw new Error('Ya se usaron todas las combinaciones: agrega frases, preguntas o colores nuevos.');
+function siguienteCombo(n){
+  // Elige la combinación NO usada con los componentes MENOS usados hasta ahora,
+  // y que no comparta color/foto/frase/preguntas con los 2 lives anteriores.
+  const usados=Object.entries(reg).filter(([k])=>+k<n).map(([,r])=>r);
+  const cuenta=(campo,v)=>usados.filter(r=>r[campo]===v).length;
+  const recientes=[reg[n-1],reg[n-2]].filter(Boolean);
+  let mejor=null,mejorScore=Infinity;
+  for(let color=0;color<COLORES.length;color++)for(const foto of FOTO_KEYS)for(let frase=0;frase<FRASES.length;frase++)for(let preg=0;preg<PREGUNTAS.length;preg++){
+    const c={color,frase,preg,foto}; if(usada(c))continue;
+    let score=cuenta('color',color)*4+cuenta('foto',foto)*3+cuenta('frase',frase)*2+cuenta('preg',preg)*2;
+    recientes.forEach((r,i)=>{const peso=i===0?100:30;
+      if(r.color===color)score+=peso; if(r.foto===foto)score+=peso; if(r.frase===frase)score+=peso; if(r.preg===preg)score+=peso;});
+    if(score<mejorScore){mejorScore=score;mejor=c;}
+  }
+  if(!mejor)throw new Error('Ya se usaron todas las combinaciones: agrega frases, preguntas o colores nuevos.');
+  return mejor;
 }
 const hoy=new Date().toISOString().slice(0,10);
 const V=[];
 for(let n=DESDE;n<=HASTA;n++){
-  if(!reg[n]){const c=siguienteCombo(reg[n-1]);reg[n]={...c,generada:hoy,video:''};}
+  if(!reg[n]){const c=siguienteCombo(n);reg[n]={...c,generada:hoy,video:''};}
   const r=reg[n];
   V.push({id:'live_'+n,num:n,foto:r.foto,bg:COLORES[r.color],...FRASES[r.frase],
     pillBg:r.color===2?'#ffd21f':'#25b04f',pillC:r.color===2?'#3a2a00':'#fff',
