@@ -83,7 +83,13 @@ documento $49 / curso $299) → se volvieron juicio.
   sus lives completos a YouTube y probando OpusClip (opus.pro, 1 crédito =
   1 min de video) para sacar clips. No se pudo instalar `rembg` para
   recortar el fondo de la foto (lo bloqueó el permiso automático), se usó
-  la foto con su fondo de oficina desvanecido.
+  la foto con su fondo de oficina desvanecido. Miniaturas por tema
+  (aguinaldo, cuánto me toca, renuncia, corrieron de palabra) en
+  `generar_miniaturas.js` -- para CLIPS cortos de un solo tema. Para los
+  lives completos (el usuario contesta preguntas de todo, sin tema único)
+  se usa la serie numerada "LIVE #N" (`generar_serie_lives.js DESDE HASTA`,
+  ya generadas #1-#6) con título "Asesoría laboral GRATIS en vivo #N |
+  Respondo tus preguntas: despido, liquidación, aguinaldo y más".
 - Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
   saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar
   a "negocio" (session_01C3deJav44xscTHSyeunJhm).
