@@ -100,6 +100,10 @@ documento $49 / curso $299) → se volvieron juicio.
   `cd marketing/miniaturas && node generar_serie_lives.js "$(pwd)" N`,
   mandarle `live_N.png`, y anotar el video en `registro.json` ("video").**
   Entregadas #1-#15 (el usuario tenía ~15 lives listos para subir). El generador elige los componentes MENOS usados y evita repetir color/foto/frase/preguntas con los 2 lives anteriores (la 1a versión solo alternaba azul/rojo, corregido).
+- **Métricas de redes** (YouTube/TikTok): `marketing/metricas_redes.md`,
+  punto de partida 16 nov 2026 (YouTube @rubenbuerhend: 24 suscriptores, 3
+  videos; TikTok: 104.1K seguidores). Agregar fila con cada captura nueva
+  que mande el usuario, para comparar contra ese día.
 - Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
   saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar
   a "negocio" (session_01C3deJav44xscTHSyeunJhm).
