@@ -1,5 +1,23 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Conversación nueva "negocio" (16 nov 2026)
+El usuario abrió una 4ª conversación, **"negocio"**, para hacer crecer el
+negocio (lives de TikTok → bot de WhatsApp → asesoría pagada → juicio). Su
+primer proyecto es un **embudo con estadísticas por etapa**: conectados en el
+live → conversaciones nuevas de WhatsApp → pagaron (asesoría $499 /
+documento $49 / curso $299) → se volvieron juicio.
+- Ya existe un embudo parcial: `api/whatsapp_embudo.php` + su tabla en
+  `assets/app.js` (mensajes/números por día → prospectos → contactados →
+  convertidos). Le falta: estadísticas del live (TikTok no las da por API,
+  hay que capturarlas a mano), pagos y el paso de asesoría a juicio.
+- El paso de asesoría a juicio no está ligado directo: `expedientes.telefono` es
+  texto libre; hay que cruzarlo por los últimos 10 dígitos contra
+  `citas_asesoria.telefono` (o usar `prospectos.expediente_id` cuando se
+  convirtió desde Prospectos).
+- Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
+  saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar
+  a "negocio" (session_01C3deJav44xscTHSyeunJhm).
+
 ## Botón "Letra más grande" en el sidebar (15 nov 2026, `app.js?v=156`)
 Pedido explícito del usuario: usa lentes y las letras de la app en el
 celular se le ven muy chicas.
