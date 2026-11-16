@@ -39,7 +39,7 @@ documento $49 / curso $299) → se volvieron juicio.
   pagaron 2+ veces en él. Los porcentajes de conversión comparan persona
   contra persona. El usuario es el único Administrador; la página se queda
   con `require_admin()`.
-  **Migración 073 ya corrida por el usuario en `c1361311_exp` (16 nov 2026).** Pantalla sin probar en vivo todavía; siguiente migración libre: 074.
+  **Migración 073 ya corrida por el usuario en `c1361311_exp` (16 nov 2026).** Captura del live **confirmada funcionando en vivo** (16 nov 2026; al principio falló porque `api/tiktok_lives_guardar.php` no se había subido -- "File not found"). Falta revisar con el usuario que los números del embudo (sobre todo "se volvieron juicio", que salió 0 en noviembre) cuadren con la realidad. Siguiente migración libre: 074.
 - Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
   saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar
   a "negocio" (session_01C3deJav44xscTHSyeunJhm).
