@@ -188,5 +188,10 @@ $pdoC->exec("INSERT INTO configuracion VALUES ('salario_minimo_diario','315.04')
 $g = calcular_estimado_liquidacion($pdoC, '2025-06-09', '2026-11-14', 2166.67, 'injustificado', 6, 0, 'despido', false, 2349.11);
 caso('calculadora con los datos reales del recibo (SDI $2,349.11): 3 meses = $211,419.90', abs($g['indemnizacion_90_dias_monto'] - 211419.90) < 0.5);
 
+// ---------------------------------------------------------------------
+echo "10) Revisión del 15-nov: día de descanso obligatorio y conciliación\n";
+caso('descanso obligatorio: triple es correcto, pero no "tienes derecho a no presentarte" (Art. 75)', strpos($p, 'quedarán obligados a prestar los servicios') !== false);
+caso('solicitud ante el Centro vs. demanda ante el Tribunal', strpos($p, 'la DEMANDA se') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
