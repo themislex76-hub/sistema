@@ -90,6 +90,16 @@ documento $49 / curso $299) → se volvieron juicio.
   se usa la serie numerada "LIVE #N" (`generar_serie_lives.js DESDE HASTA`,
   ya generadas #1-#6) con título "Asesoría laboral GRATIS en vivo #N |
   Respondo tus preguntas: despido, liquidación, aguinaldo y más".
+  **REGISTRO de miniaturas (pedido del usuario, 16 nov 2026)**:
+  `marketing/miniaturas/registro.json` (+ `registro.md` legible) guarda por
+  cada número de LIVE su combinación (color, frase, juego de preguntas,
+  foto) y el video de YouTube donde se usó. El generador elige la siguiente
+  combinación NO usada, distinta del live anterior en color/foto/frase/
+  preguntas; un número ya registrado se redibuja idéntico. **Flujo acordado:
+  el usuario avisa cada vez que sube un video -> correr
+  `cd marketing/miniaturas && node generar_serie_lives.js "$(pwd)" N`,
+  mandarle `live_N.png`, y anotar el video en `registro.json` ("video").**
+  Entregadas #1-#8 (#8 preparada por adelantado).
 - Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
   saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar
   a "negocio" (session_01C3deJav44xscTHSyeunJhm).

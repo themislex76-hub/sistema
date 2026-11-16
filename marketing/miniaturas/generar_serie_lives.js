@@ -1,8 +1,10 @@
 // Miniaturas de la serie numerada "LIVE #N" (lives de preguntas y respuestas, sin tema único).
-// Rotan 6 colores y 3 frases; foto alterna (impar = traje negro, par = azul).
-// Uso: cd marketing/miniaturas && node generar_serie_lives.js "$(pwd)" DESDE HASTA   (ej. 7 12)
+// Cada número guarda su combinación en registro.json (y registro.md legible): nunca se repite
+// una combinación y dos lives seguidos no comparten color, foto, frase ni juego de preguntas.
+// Uso: cd marketing/miniaturas && node generar_serie_lives.js "$(pwd)" DESDE [HASTA]   (ej. 8 o 8 12)
+// Un número ya registrado se vuelve a dibujar idéntico. Anotar el video en registro.json -> "video".
 const {chromium}=require('playwright');
-const S=process.argv[2];
+const S=process.argv[2]||__dirname;
 const FOTOS={
   negro:{src:'../fotos/ruben_traje_negro.jpg',w:671,l:-60,t:-215},
   azul:{src:'../fotos/ruben_traje_azul.jpg',w:628,l:-12,t:-199},
@@ -19,10 +21,41 @@ const PREGUNTAS=[
  ['¿Me deben pagar vacaciones?','¿Cuánto me toca?','¿Me corrieron embarazada?','¿Qué hago si no me pagan?'],
  ['¿Me pueden bajar el sueldo?','¿Finiquito o liquidación?','¿Y mi aguinaldo?','¿Me pagan horas extra?'],
 ];
-const DESDE=+(process.argv[3]||1), HASTA=+(process.argv[4]||6);
-const V=[];for(let n=DESDE;n<=HASTA;n++){const f=FRASES[(n-1)%FRASES.length];V.push({id:'live_'+n,num:n,foto:n<=6?(n%2?'negro':'azul'):['selfie','negro','azul'][(n-7)%3],bg:COLORES[(n-1)%COLORES.length],...f,
- pillBg:(n-1)%COLORES.length===2?'#ffd21f':'#25b04f',pillC:(n-1)%COLORES.length===2?'#3a2a00':'#fff',
- preg:PREGUNTAS[(n-1)%PREGUNTAS.length],sub:'Despido, liquidación, aguinaldo, vacaciones y más',sub2:'Conforme a la Ley Federal del Trabajo'});}
+// ---- Registro: cada número de LIVE guarda su combinación para no repetir nunca ----
+// registro.json = { "1": {color,frase,preg,foto,generada,video}, ... }
+const fs=require('fs'), path=require('path');
+const REG=path.join(__dirname,'registro.json');
+const reg=fs.existsSync(REG)?JSON.parse(fs.readFileSync(REG,'utf8')):{};
+const FOTO_KEYS=['selfie','negro','azul'];
+const DESDE=+(process.argv[3]||1), HASTA=+(process.argv[4]||DESDE);
+function usada(c){return Object.values(reg).some(r=>r.color===c.color&&r.frase===c.frase&&r.preg===c.preg&&r.foto===c.foto);}
+function siguienteCombo(prev){
+  for(let preg=0;preg<PREGUNTAS.length;preg++)for(const foto of FOTO_KEYS)for(let color=0;color<COLORES.length;color++)for(let frase=0;frase<FRASES.length;frase++){
+    const c={color,frase,preg,foto};
+    if(usada(c))continue;
+    if(prev&&(prev.color===c.color||prev.foto===c.foto||prev.frase===c.frase||prev.preg===c.preg))continue;
+    return c;}
+  // si ya no hay con todas las reglas, al menos que no se repita la combinación
+  for(let preg=0;preg<PREGUNTAS.length;preg++)for(const foto of FOTO_KEYS)for(let color=0;color<COLORES.length;color++)for(let frase=0;frase<FRASES.length;frase++){
+    const c={color,frase,preg,foto}; if(!usada(c))return c;}
+  throw new Error('Ya se usaron todas las combinaciones: agrega frases, preguntas o colores nuevos.');
+}
+const hoy=new Date().toISOString().slice(0,10);
+const V=[];
+for(let n=DESDE;n<=HASTA;n++){
+  if(!reg[n]){const c=siguienteCombo(reg[n-1]);reg[n]={...c,generada:hoy,video:''};}
+  const r=reg[n];
+  V.push({id:'live_'+n,num:n,foto:r.foto,bg:COLORES[r.color],...FRASES[r.frase],
+    pillBg:r.color===2?'#ffd21f':'#25b04f',pillC:r.color===2?'#3a2a00':'#fff',
+    preg:PREGUNTAS[r.preg],sub:'',sub2:''});
+}
+fs.writeFileSync(REG,JSON.stringify(reg,null,1));
+// Versión legible del registro
+const NOMBRES_COLOR=['Azul','Rojo','Verde','Morado','Naranja','Turquesa'];
+let md='# Registro de miniaturas "LIVE #N" (YouTube)\n\nCada combinación (color + frase + preguntas + foto) se usa una sola vez.\n\n| # | Color | Frase | Preguntas | Foto | Generada | Video de YouTube |\n|---|---|---|---|---|---|---|\n';
+for(const k of Object.keys(reg).map(Number).sort((a,b)=>a-b)){const r=reg[k];
+  md+=`| ${k} | ${NOMBRES_COLOR[r.color]} | ${FRASES[r.frase].l1} | Juego ${r.preg+1} | ${r.foto} | ${r.generada||''} | ${r.video||'(pendiente)'} |\n`;}
+fs.writeFileSync(path.join(__dirname,'registro.md'),md);
 const html=v=>{const f=FOTOS[v.foto];return `<!doctype html><html><head><meta charset="utf-8"><style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{width:1280px;height:720px;overflow:hidden;font-family:'Inter Display','Inter',sans-serif;background:radial-gradient(circle at 30% 45%,${v.bg[0]} 0%,${v.bg[1]} 50%,${v.bg[2]} 100%);position:relative;color:#fff}
@@ -59,7 +92,6 @@ fit('l1',96,50,720,200);fit('l2',62,30,720);fit('pill',96,40,660);
   for(const id of ['l1','l2','pill']){const e=el(id);const s=parseFloat(e.style.fontSize);e.style.fontSize=(s*0.95)+'px';}}})();
 </script></body></html>`};
 (async()=>{const b=await chromium.launch();const p=await b.newPage({viewport:{width:1280,height:720},deviceScaleFactor:1});
- const fs=require('fs');
  for(const v of V){fs.writeFileSync(`${S}/v_${v.id}.html`,html(v));await p.goto(`file://${S}/v_${v.id}.html`);await p.waitForTimeout(300);
-  await p.screenshot({path:`${S}/miniatura_${v.id}.png`});}
+  await p.screenshot({path:`${S}/${v.id}.png`});fs.unlinkSync(`${S}/v_${v.id}.html`);}
  await b.close();})();
