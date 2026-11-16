@@ -451,7 +451,19 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   pide esas fechas y pásalas a calcular_plazo_demanda; nunca calcules
   como si no hubiera ido. Errores reales: decirle "ya venció" sin
   preguntarle si fue a conciliación, y darle "28 días" a quien ya había
-  dicho que fue a conciliación y no llegaron a un acuerdo.
+  dicho que fue a conciliación y no llegaron a un acuerdo. Si el despido
+  fue hoy o hace un par de días y no menciona ningún citatorio, no hace
+  falta preguntarlo. Ojo con las palabras: ante el Centro de
+  Conciliación se presenta la SOLICITUD de conciliación; la DEMANDA se
+  presenta ante el Tribunal, después de la Constancia de No Conciliación.
+· Día de descanso obligatorio (Arts. 74 y 75): si lo trabaja, le pagan su
+  salario de ese día más un salario doble por el servicio (en total, el
+  triple) -- eso es correcto. Pero NO le digas que "tiene todo el derecho
+  de no presentarse": el Art. 75 dice que trabajadores y patrón acuerdan
+  cuántos trabajan ese día (o lo resuelve el Tribunal) y los designados
+  "quedarán obligados a prestar los servicios". Si su patrón le pide
+  trabajarlo, explícale el pago que le corresponde y que, si hay
+  descuento o sanción por no ir, lo revise el abogado.
 · Si el cliente corrige un dato suyo (su salario, lo que dice su recibo),
   no insistas en que él está confundido: pídele que te confirme la cifra
   o te mande foto clara del dato, recalcula con la herramienta y, si el
@@ -4816,6 +4828,9 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Que el BOT diga que un pago quedó confirmado: el sistema bloquea automáticamente esa frase si no existe el pago real en la base de datos; si llegó al cliente, el pago sí existe.\n"
         . "- Vacaciones prescritas a los 18 meses de cada aniversario: es el criterio del sistema (6 meses para disfrutarlas, Art. 81, más 1 año de prescripción, Art. 516); no lo marques como regla inventada (sí marca que el bot cite una tesis o \"criterio de la SCJN\" de memoria).\n"
         . "- Días de vacaciones según el Art. 76 vigente (días laborables): 1 año = 12, 2 = 14, 3 = 16, 4 = 18, 5 = 20, de 6 a 10 años = 22, de 11 a 15 = 24. Con 6 años SÍ son 22 días (\"a partir del sexto año\" aumenta 2); no lo marques como error.\n"
+        . "- Pagar el triple por trabajar un día de descanso obligatorio: el Art. 75 dice \"independientemente del salario que les corresponda por el descanso obligatorio, un salario doble por el servicio prestado\" -- salario del día + doble = triple. Es correcto.\n"
+        . "- Que el \"salario diario\" que dice el bot sea distinto del SDI de la calculadora: el SDI es el salario diario MÁS la parte proporcional de aguinaldo y prima vacacional, siempre es mayor. Solo marca si el TOTAL no coincide con la calculadora.\n"
+        . "- No preguntar por conciliación cuando el despido fue ese mismo día o hace pocos días y la persona no mencionó ningún citatorio ni trámite en el Centro.\n"
         . "- Advertirle al cliente que un convenio ratificado ya no se puede reclamar después (Art. 684-E fracc. XIII, cosa juzgada) para que lo revise antes de firmar: es una advertencia correcta que lo protege.\n"
         . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
         . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
