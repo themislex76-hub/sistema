@@ -6188,17 +6188,19 @@ function negocioEmbudoHTML(){
   const pasos = [
     {titulo:'Espectadores únicos del live', valor: sinLive ? null : live.espectadores_unicos,
      nota: sinLive ? 'Sin capturar en este periodo — usa el formulario de abajo' : `${negocioNum(live.dias_capturados)} día(s) capturado(s) · ${negocioNum(live.visualizaciones)} visualizaciones`, color:'#2563eb'},
-    {titulo:'Conversaciones nuevas de WhatsApp', valor: d.conversaciones_nuevas,
-     nota:`Números que escribieron por primera vez · ${negocioNum(d.conversaciones_totales)} escribieron en total`, color:'#0891b2'},
-    {titulo:'Pagaron asesoría', valor: ases.personas,
-     nota:`${negocioNum(ases.pagos)} pago(s) · ${fmtMoney(ases.ingreso)}`, color:'#16a34a'},
+    {titulo:'Personas que escribieron por WhatsApp', valor: d.conversaciones_totales,
+     nota:`${negocioNum(d.conversaciones_nuevas)} nuevas · ${negocioNum(Math.max(0,(d.conversaciones_totales||0)-(d.conversaciones_nuevas||0)))} ya habían escrito antes`, color:'#0891b2'},
+    {titulo:'Asesorías pagadas', valor: ases.pagos, base: ases.personas,
+     nota:`${negocioNum(ases.personas)} persona(s) · ${negocioNum(ases.personas_ya_habian_pagado_antes)} ya habían pagado antes · ${negocioNum(ases.personas_pagaron_varias_en_periodo)} pagaron 2+ veces en el periodo · ${fmtMoney(ases.ingreso)}`, color:'#16a34a'},
     {titulo:'Se volvieron juicio', valor: juicios.length,
      nota:'Expediente dado de alta con su mismo teléfono, después del pago', color:'#b45309'},
   ];
   const anchos = [100, 82, 64, 46];
   const embudo = pasos.map((p,i)=>{
-    const prev = i>0 ? pasos[i-1].valor : null;
-    const conv = i>0 ? `<div style="text-align:center; font-size:12px; color:var(--gray); margin:4px 0;">▼ ${(prev===null||p.valor===null)?'—':negocioPct(p.valor, prev)} pasa a la siguiente etapa</div>` : '';
+    // Se compara persona contra persona (una misma persona puede pagar varias asesorías).
+    const prev = i>0 ? (pasos[i-1].base ?? pasos[i-1].valor) : null;
+    const actual = p.base ?? p.valor;
+    const conv = i>0 ? `<div style="text-align:center; font-size:12px; color:var(--gray); margin:4px 0;">▼ ${(prev===null||actual===null)?'—':negocioPct(actual, prev)} de las personas pasa a esta etapa</div>` : '';
     return `${conv}
       <div style="width:${anchos[i]}%; margin:0 auto; background:${p.color}; color:#fff; border-radius:10px; padding:12px 16px; text-align:center;">
         <div style="font-size:26px; font-weight:800;">${p.valor===null?'—':negocioNum(p.valor)}</div>
@@ -6211,8 +6213,8 @@ function negocioEmbudoHTML(){
   const resumen = `
     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:16px;">
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Del live a juicio</div><div style="font-size:20px; font-weight:800;">${sinLive?'—':negocioPct(juicios.length, live.espectadores_unicos)}</div></div>
-      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">De WhatsApp a asesoría</div><div style="font-size:20px; font-weight:800;">${negocioPct(ases.personas, d.conversaciones_nuevas)}</div></div>
-      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">De asesoría a juicio</div><div style="font-size:20px; font-weight:800;">${negocioPct(juicios.length, ases.personas)}</div></div>
+      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">De WhatsApp a asesoría (personas)</div><div style="font-size:20px; font-weight:800;">${negocioPct(ases.personas, d.conversaciones_totales)}</div></div>
+      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">De asesoría a juicio (personas)</div><div style="font-size:20px; font-weight:800;">${negocioPct(juicios.length, ases.personas)}</div></div>
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Documentos $49</div><div style="font-size:20px; font-weight:800;">${negocioNum(d.documentos?.cantidad)}</div><div style="font-size:11px;">${fmtMoney(d.documentos?.ingreso||0)}</div></div>
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Cursos</div><div style="font-size:20px; font-weight:800;">${negocioNum(d.cursos?.cantidad)}</div><div style="font-size:11px;">${fmtMoney(d.cursos?.ingreso||0)}</div></div>
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Ingreso por bot (asesorías + documentos + cursos)</div><div style="font-size:20px; font-weight:800;">${fmtMoney(ingresoTotal)}</div></div>

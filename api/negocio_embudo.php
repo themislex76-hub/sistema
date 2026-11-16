@@ -155,6 +155,31 @@ foreach ($citas as $c) {
     }
 }
 
+// Clientes que repiten: ya habían pagado una asesoría ANTES del periodo
+// (algunos clientes piden asesoría varias veces). Las que pagaron 2+ veces
+// dentro del mismo periodo ya se ven en pagos > personas.
+$personasRepiten = 0;
+if ($personasPagaron) {
+    $st = $pdo->prepare(
+        "SELECT DISTINCT telefono FROM citas_asesoria WHERE estado = 'confirmada' AND pagado_en < :desde"
+    );
+    $st->execute([':desde' => $desde]);
+    $antes = [];
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $tel) {
+        $k = negocio_tel_clave($tel);
+        if ($k !== '') $antes[$k] = true;
+    }
+    foreach ($personasPagaron as $k => $_) {
+        if (isset($antes[$k])) $personasRepiten++;
+    }
+}
+$pagosPorPersona = [];
+foreach ($citas as $c) {
+    $k = negocio_tel_clave($c['telefono']);
+    if ($k !== '') $pagosPorPersona[$k] = ($pagosPorPersona[$k] ?? 0) + 1;
+}
+$personasVariasEnPeriodo = count(array_filter($pagosPorPersona, static fn($n) => $n > 1));
+
 $extras = [];
 foreach (['documentos' => 'compras_documento_calculo', 'cursos' => 'compras_curso'] as $clave => $tabla) {
     $extras[$clave] = ['cantidad' => 0, 'ingreso' => 0.0];
@@ -229,6 +254,8 @@ respond([
     'asesorias' => [
         'pagos' => count($citas),
         'personas' => count($personasPagaron),
+        'personas_ya_habian_pagado_antes' => $personasRepiten,
+        'personas_pagaron_varias_en_periodo' => $personasVariasEnPeriodo,
         'ingreso' => round($ingresoAsesorias, 2),
     ],
     'documentos' => $extras['documentos'],

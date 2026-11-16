@@ -31,6 +31,14 @@ documento $49 / curso $299) → se volvieron juicio.
   origen) y en el sistema siempre se captura el teléfono del cliente en el
   expediente. Bug real atrapado en la prueba: una clave de arreglo PHP con
   solo dígitos se vuelve int -- por eso la clave de cruce es 't'+10 dígitos.
+  **Ajuste el mismo día (`app.js?v=158`), pedido del usuario** ("algunos
+  clientes solicitan asesorías varias veces"): la etapa 2 ahora cuenta a
+  TODAS las personas que escribieron en el periodo (con desglose nuevas /
+  ya habían escrito) y la etapa 3 cuenta CADA asesoría pagada (`pagos`), con
+  desglose de personas, cuántas ya habían pagado antes del periodo y cuántas
+  pagaron 2+ veces en él. Los porcentajes de conversión comparan persona
+  contra persona. El usuario es el único Administrador; la página se queda
+  con `require_admin()`.
   **Sin probar en vivo todavía**; siguiente migración libre: 074.
 - Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
   saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar
