@@ -46,6 +46,14 @@ documento $49 / curso $299) → se volvieron juicio.
   día D+1 (`NEGOCIO_HORA_CORTE_LIVE`, `negocio_jornada()`) y se comparan con el
   live del día D. OJO: por eso los totales del embudo NO coinciden exacto con
   "Ingresos por periodo" (que corta a medianoche).
+  **Arrastre de fin de semana (`app.js?v=160`), pedido del usuario**: "los
+  lives del viernes generan conversiones en sábado y domingo". Regla
+  general: todo lo que llega entre un live y el siguiente es del live
+  anterior -- si la jornada D no tiene live capturado, se le cuenta al
+  último live capturado hasta `NEGOCIO_DIAS_ARRASTRE` (3) días atrás
+  (`negocio_dia_live()`); más allá, se queda en su día. La búsqueda se
+  extiende 3 días después de 'hasta' (`$rangoBusqueda`). Consecuencia:
+  un live NO capturado se suma al anterior -- hay que capturarlos todos.
   **Migración 073 ya corrida por el usuario en `c1361311_exp` (16 nov 2026).** Captura del live **confirmada funcionando en vivo** (16 nov 2026; al principio falló porque `api/tiktok_lives_guardar.php` no se había subido -- "File not found"). Falta revisar con el usuario que los números del embudo (sobre todo "se volvieron juicio", que salió 0 en noviembre) cuadren con la realidad. Siguiente migración libre: 074.
 - Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
   saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar

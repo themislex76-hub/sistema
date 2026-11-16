@@ -6219,7 +6219,7 @@ function negocioEmbudoHTML(){
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Cursos</div><div style="font-size:20px; font-weight:800;">${negocioNum(d.cursos?.cantidad)}</div><div style="font-size:11px;">${fmtMoney(d.cursos?.ingreso||0)}</div></div>
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Ingreso por bot (asesorías + documentos + cursos)</div><div style="font-size:20px; font-weight:800;">${fmtMoney(ingresoTotal)}</div></div>
     </div>
-    <div style="font-size:11px; color:var(--gray); margin-top:10px;">Cada live se compara con lo que generó: WhatsApp y pagos desde las ${d.hora_corte||20}:00 del día del live hasta las ${(d.hora_corte||20)-1}:59 del día siguiente (en este periodo: ${escapeHTML(String(d.jornada_desde||'').slice(0,16))} a ${escapeHTML(String(d.jornada_hasta||'').slice(0,16))}).</div>
+    <div style="font-size:11px; color:var(--gray); margin-top:10px;">Cada live se compara con lo que generó: todo lo que llega (WhatsApp y pagos) desde las ${d.hora_corte||20}:00 del día del live hasta que empieza el siguiente live. Si un día no hubo live (por ejemplo sábado y domingo), lo de ese día se le cuenta al último live, hasta ${d.dias_arrastre||3} días atrás. Por eso es importante capturar TODOS los lives: un live sin capturar se le suma al anterior.</div>
     <div style="font-size:11px; color:var(--gray); margin-top:6px;">"Se volvieron juicio" cuenta a las personas que pagaron asesoría en este periodo; las asesorías muy recientes todavía pueden convertirse en juicio más adelante, así que este número sube con el tiempo.</div>`;
 
   const e = NEGOCIO_EDITAR || {};
@@ -6288,7 +6288,7 @@ function negocioEmbudoHTML(){
     <div class="panel-body" style="padding:0;">${tablaJuicios}</div>
   </div>
   <div class="panel" style="margin-bottom:18px;">
-    <div class="panel-head"><h3>Detalle por live</h3><span class="count">WhatsApp y pagos de 8 pm del día del live a 7:59 pm del día siguiente</span></div>
+    <div class="panel-head"><h3>Detalle por live</h3><span class="count">WhatsApp y pagos desde las 8 pm del live hasta el siguiente live</span></div>
     <div class="panel-body" style="padding:0;">${tablaDias}</div>
   </div>`;
 }

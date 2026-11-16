@@ -21,6 +21,11 @@ require_once __DIR__ . '/config.php';
 // 8 am) y paga al día siguiente. Por eso TODO lo de WhatsApp y los pagos se
 // asigna a la jornada que va de las 20:00 del día D a las 19:59 del día D+1,
 // y se compara contra el live del día D (pedido del usuario, 16 nov 2026).
+// Si el día D no hubo live (ej. sábado y domingo: el live del viernes genera
+// ventas el fin de semana), esa jornada se le cuenta al último live capturado
+// -- "todo lo que llega entre un live y el siguiente es del live anterior" --
+// hasta NEGOCIO_DIAS_ARRASTRE días atrás; más allá (o si no hay lives
+// capturados) se queda en su propio día.
 // La hora del servidor ya es la de México (db.php).
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') fail('Método no permitido.', 405);
 require_admin();
@@ -39,12 +44,45 @@ $hastaExclusiva = date('Y-m-d', strtotime($hasta . ' +1 day'));
 $rango = [':desde' => $desde, ':hasta' => $hastaExclusiva];
 const NEGOCIO_HORA_CORTE_LIVE = 20;
 $corte = sprintf(' %02d:00:00', NEGOCIO_HORA_CORTE_LIVE);
+const NEGOCIO_DIAS_ARRASTRE = 3;
 $rangoLive = [':desde' => $desde . $corte, ':hasta' => $hastaExclusiva . $corte];
+// Ventana de búsqueda: lo de los días siguientes a 'hasta' puede caer en un
+// live de 'hasta' por el arrastre (ej. periodo que termina en viernes).
+$rangoBusqueda = [
+    ':desde' => $rangoLive[':desde'],
+    ':hasta' => date('Y-m-d', strtotime($hastaExclusiva . ' +' . NEGOCIO_DIAS_ARRASTRE . ' days')) . $corte,
+];
 
-// Día del live al que pertenece un momento (jornada de 20:00 a 19:59 del día siguiente).
+// Fechas de todos los lives capturados (para el arrastre de días sin live).
+$NEGOCIO_FECHAS_LIVE = [];
+try {
+    $NEGOCIO_FECHAS_LIVE = array_flip($pdo->query('SELECT fecha FROM tiktok_lives')->fetchAll(PDO::FETCH_COLUMN));
+} catch (PDOException $e) {
+    // migración 073 todavía no corrida
+}
+
+// Jornada de un momento: de 20:00 del día D a 19:59 del día D+1 → D.
 function negocio_jornada(string $ts): string
 {
     return date('Y-m-d', strtotime($ts) - NEGOCIO_HORA_CORTE_LIVE * 3600);
+}
+
+// Live al que se le cuenta una jornada: el mismo día si hubo live; si no,
+// el último live capturado dentro de NEGOCIO_DIAS_ARRASTRE días atrás.
+function negocio_dia_live_de_jornada(string $dia): string
+{
+    global $NEGOCIO_FECHAS_LIVE;
+    if (!$NEGOCIO_FECHAS_LIVE || isset($NEGOCIO_FECHAS_LIVE[$dia])) return $dia;
+    for ($i = 1; $i <= NEGOCIO_DIAS_ARRASTRE; $i++) {
+        $antes = date('Y-m-d', strtotime($dia . " -$i day"));
+        if (isset($NEGOCIO_FECHAS_LIVE[$antes])) return $antes;
+    }
+    return $dia;
+}
+
+function negocio_dia_live(string $ts): string
+{
+    return negocio_dia_live_de_jornada(negocio_jornada($ts));
 }
 
 // Clave de cruce: 't' + últimos 10 dígitos. La 't' es a propósito: una clave
@@ -136,19 +174,30 @@ $st = $pdo->prepare(
      ) t
      WHERE primero >= :desde AND primero < :hasta"
 );
-$st->execute($rangoLive);
+$st->execute($rangoBusqueda);
 $convNuevas = 0;
 foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $primero) {
-    $dia = negocio_jornada((string)$primero);
-    if (isset($porDia[$dia])) $porDia[$dia]['conversaciones_nuevas']++;
+    $dia = negocio_dia_live((string)$primero);
+    if (!isset($porDia[$dia])) continue;
+    $porDia[$dia]['conversaciones_nuevas']++;
     $convNuevas++;
 }
+// Personas distintas que escribieron. Se agrupa por teléfono + día + si fue
+// antes o después del corte de las 8 pm (máx. 2 filas por número por día),
+// para no traer cada mensaje suelto.
 $st = $pdo->prepare(
-    "SELECT COUNT(DISTINCT telefono) FROM whatsapp_conversaciones
-     WHERE direccion = 'entrante' AND creado_en >= :desde AND creado_en < :hasta"
+    "SELECT telefono, DATE(creado_en) AS d, (HOUR(creado_en) >= " . NEGOCIO_HORA_CORTE_LIVE . ") AS tarde
+     FROM whatsapp_conversaciones
+     WHERE direccion = 'entrante' AND creado_en >= :desde AND creado_en < :hasta
+     GROUP BY telefono, DATE(creado_en), (HOUR(creado_en) >= " . NEGOCIO_HORA_CORTE_LIVE . ")"
 );
-$st->execute($rangoLive);
-$convTotales = (int)$st->fetchColumn();
+$st->execute($rangoBusqueda);
+$telefonosEscribieron = [];
+foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
+    $jornada = (int)$r['tarde'] ? (string)$r['d'] : date('Y-m-d', strtotime($r['d'] . ' -1 day'));
+    if (isset($porDia[negocio_dia_live_de_jornada($jornada)])) $telefonosEscribieron[(string)$r['telefono']] = true;
+}
+$convTotales = count($telefonosEscribieron);
 
 // ---------- 3. Pagos ----------
 $st = $pdo->prepare(
@@ -157,14 +206,17 @@ $st = $pdo->prepare(
      WHERE estado = 'confirmada' AND pagado_en >= :desde AND pagado_en < :hasta
      ORDER BY pagado_en"
 );
-$st->execute($rangoLive);
-$citas = $st->fetchAll(PDO::FETCH_ASSOC);
+$st->execute($rangoBusqueda);
+$citas = [];
+foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $c) {
+    $c['dia_live'] = negocio_dia_live((string)$c['pagado_en']);
+    if (isset($porDia[$c['dia_live']])) $citas[] = $c;
+}
 $ingresoAsesorias = 0.0;
 $personasPagaron = []; // tel10 => primer pago del periodo
 foreach ($citas as $c) {
     $ingresoAsesorias += (float)$c['monto'];
-    $diaC = negocio_jornada((string)$c['pagado_en']);
-    if (isset($porDia[$diaC])) $porDia[$diaC]['asesorias_pagadas']++;
+    $porDia[$c['dia_live']]['asesorias_pagadas']++;
     $t10 = negocio_tel_clave($c['telefono']);
     if ($t10 === '') continue;
     if (!isset($personasPagaron[$t10])) {
@@ -205,10 +257,11 @@ foreach (['documentos' => 'compras_documento_calculo', 'cursos' => 'compras_curs
             "SELECT pagado_en, monto FROM $tabla
              WHERE estado = 'confirmada' AND pagado_en >= :desde AND pagado_en < :hasta"
         );
-        $st->execute($rangoLive);
+        $st->execute($rangoBusqueda);
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            $dia = negocio_jornada((string)$r['pagado_en']);
-            if (isset($porDia[$dia])) $porDia[$dia][$clave . '_pagados']++;
+            $dia = negocio_dia_live((string)$r['pagado_en']);
+            if (!isset($porDia[$dia])) continue;
+            $porDia[$dia][$clave . '_pagados']++;
             $extras[$clave]['cantidad']++;
             $extras[$clave]['ingreso'] += (float)$r['monto'];
         }
@@ -266,6 +319,7 @@ respond([
     'tabla_lives_existe' => $tablaLivesExiste,
     'jornada_desde' => $rangoLive[':desde'],
     'jornada_hasta' => $rangoLive[':hasta'],
+    'dias_arrastre' => NEGOCIO_DIAS_ARRASTRE,
     'hora_corte' => NEGOCIO_HORA_CORTE_LIVE,
     'live' => $tot,
     'lives' => $lives,
