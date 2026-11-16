@@ -75,7 +75,7 @@ documento $49 / curso $299) → se volvieron juicio.
   **Migración 073 ya corrida por el usuario en `c1361311_exp` (16 nov 2026).** Captura del live **confirmada funcionando en vivo** (16 nov 2026; al principio falló porque `api/tiktok_lives_guardar.php` no se había subido -- "File not found"). Falta revisar con el usuario que los números del embudo (sobre todo "se volvieron juicio", que salió 0 en noviembre) cuadren con la realidad. Siguiente migración libre: 074.
 - **Material de marketing (16 nov 2026)**: fotos del Lic. Rubén para
   miniaturas/promoción en `marketing/fotos/` (`ruben_traje_negro.jpg`,
-  `ruben_traje_azul.jpg`, pedido explícito del usuario: "guárdalas para
+  `ruben_traje_azul.jpg`, `ruben_selfie_cerca.jpg` -- selfie en espejo; usar la versión volteada `ruben_selfie_cerca_derecha.jpg`, y su recorte en la miniatura deja fuera las fotos familiares de la pared --, pedido explícito del usuario: "guárdalas para
   usarlas"). Plantilla de miniatura de YouTube 1280x720 en
   `marketing/miniaturas/plantilla_te_despidieron.html` (se renderiza con
   Playwright a PNG; fuente Inter Display Black instalada en el contenedor;

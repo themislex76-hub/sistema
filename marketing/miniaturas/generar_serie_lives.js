@@ -6,6 +6,7 @@ const S=process.argv[2];
 const FOTOS={
   negro:{src:'../fotos/ruben_traje_negro.jpg',w:671,l:-60,t:-215},
   azul:{src:'../fotos/ruben_traje_azul.jpg',w:628,l:-12,t:-199},
+  selfie:{src:'../fotos/ruben_selfie_cerca_derecha.jpg',w:832,l:-192,t:-264,tapaDerecha:true},
 };
 const COLORES=[['#1f4e6b','#143650','#0b2233'],['#7a1a22','#4a0d14','#24060a'],['#17704a','#0e4a31','#062417'],['#5b3391','#3a1f63','#1b0d31'],['#b85a12','#7a3a0a','#331804'],['#126b78','#0b4650','#042226']];
 const FRASES=[
@@ -19,7 +20,7 @@ const PREGUNTAS=[
  ['¿Me pueden bajar el sueldo?','¿Finiquito o liquidación?','¿Y mi aguinaldo?','¿Me pagan horas extra?'],
 ];
 const DESDE=+(process.argv[3]||1), HASTA=+(process.argv[4]||6);
-const V=[];for(let n=DESDE;n<=HASTA;n++){const f=FRASES[(n-1)%FRASES.length];V.push({id:'live_'+n,num:n,foto:n%2?'negro':'azul',bg:COLORES[(n-1)%COLORES.length],...f,
+const V=[];for(let n=DESDE;n<=HASTA;n++){const f=FRASES[(n-1)%FRASES.length];V.push({id:'live_'+n,num:n,foto:n<=6?(n%2?'negro':'azul'):['selfie','negro','azul'][(n-7)%3],bg:COLORES[(n-1)%COLORES.length],...f,
  pillBg:(n-1)%COLORES.length===2?'#ffd21f':'#25b04f',pillC:(n-1)%COLORES.length===2?'#3a2a00':'#fff',
  preg:PREGUNTAS[(n-1)%PREGUNTAS.length],sub:'Despido, liquidación, aguinaldo, vacaciones y más',sub2:'Conforme a la Ley Federal del Trabajo'});}
 const html=v=>{const f=FOTOS[v.foto];return `<!doctype html><html><head><meta charset="utf-8"><style>
@@ -43,7 +44,7 @@ body{width:1280px;height:720px;overflow:hidden;font-family:'Inter Display','Inte
 .bar{position:absolute;left:0;right:0;bottom:0;height:116px;background:#0a1824;display:flex;align-items:center;padding:0 52px;gap:22px;border-top:5px solid #25b04f}
 .bar svg{width:66px;height:66px;flex:none}.bar .t{font-weight:800;font-size:30px;color:#cfe3ee}.bar .n{font-weight:900;font-size:62px;letter-spacing:1px;margin-left:auto}
 </style></head><body>
-<div class="foto"><img src="${f.src}"></div><img class="logo" src="logo_despacho.png">
+<div class="foto"><img src="${f.src}">${f.tapaDerecha?'<div style="position:absolute;right:0;top:0;bottom:0;width:70px;background:linear-gradient(to right,transparent,#0b1620 70%)"></div>':''}</div><img class="logo" src="logo_despacho.png">
 <div class="vivo"><i></i>${v.num?"LIVE #"+v.num:"EN VIVO"}</div>
 <div class="txt"><div class="l1" id="l1">${v.l1}</div><div class="l2" id="l2">${v.l2}</div><div class="pill" id="pill">${v.pill}</div>${v.preg?`<div class="chips">${v.preg.map(q=>`<span>${q}</span>`).join("")}</div>`:`<div class="sub">${v.sub}<span>${v.sub2}</span></div>`}</div>
 <div class="nombre">Lic. Rubén Buerhend<span>Abogado laboralista</span></div>
