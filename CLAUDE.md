@@ -69,6 +69,9 @@ documento $49 / curso $299) → se volvieron juicio.
   marca" al promocionar el propio servicio (si no, sale del "Para ti"); se le
   sugirió decir "orientación laboral GRATIS" (la asesoría telefónica cuesta
   $499, evitar que se reporte como engañoso).
+  Confirmado con SQL (16 nov 2026): hay UN solo usuario con rol
+  administrador (id 1, "Administrador", admin@expertoslaborales.com) -- el
+  usuario. Por eso `require_admin()` basta para "solo yo lo veo".
   **Migración 073 ya corrida por el usuario en `c1361311_exp` (16 nov 2026).** Captura del live **confirmada funcionando en vivo** (16 nov 2026; al principio falló porque `api/tiktok_lives_guardar.php` no se había subido -- "File not found"). Falta revisar con el usuario que los números del embudo (sobre todo "se volvieron juicio", que salió 0 en noviembre) cuadren con la realidad. Siguiente migración libre: 074.
 - Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
   saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar
