@@ -1,5 +1,41 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Conversación nueva "negocio" (16 nov 2026)
+El usuario abrió una 4ª conversación, **"negocio"**, para hacer crecer el
+negocio (lives de TikTok → bot de WhatsApp → asesoría pagada → juicio). Su
+primer proyecto es un **embudo con estadísticas por etapa**: conectados en el
+live → conversaciones nuevas de WhatsApp → pagaron (asesoría $499 /
+documento $49 / curso $299) → se volvieron juicio.
+- Ya existe un embudo parcial: `api/whatsapp_embudo.php` + su tabla en
+  `assets/app.js` (mensajes/números por día → prospectos → contactados →
+  convertidos). Le falta: estadísticas del live (TikTok no las da por API,
+  hay que capturarlas a mano), pagos y el paso de asesoría a juicio.
+- El paso de asesoría a juicio no está ligado directo: `expedientes.telefono` es
+  texto libre; hay que cruzarlo por los últimos 10 dígitos contra
+  `citas_asesoria.telefono` (o usar `prospectos.expediente_id` cuando se
+  convirtió desde Prospectos).
+- **Construido (16 nov 2026, `app.js?v=157`, migración 073)**: pantalla
+  nueva **"Embudo del negocio"** en el menú (solo Administrador,
+  `VIEW='negocio'`, `negocioEmbudoHTML()`/`bindNegocioEmbudo()`).
+  Endpoint `api/negocio_embudo.php` (periodo desde/hasta): espectadores
+  únicos del live → conversaciones NUEVAS de WhatsApp (primer mensaje
+  histórico de ese número) → personas que pagaron asesoría
+  (`citas_asesoria` confirmadas por `pagado_en`) → juicios (expediente con
+  el mismo teléfono, últimos 10 dígitos, dado de alta el día del pago o
+  después; también cuenta `prospectos.expediente_id`). Además, documentos
+  $49 y cursos como ingreso. Las estadísticas del live se capturan a mano
+  por día (tabla `tiktok_lives`, migración **073_tiktok_lives_estadisticas.sql**,
+  `api/tiktok_lives_guardar.php` upsert/borrar), con los mismos campos que
+  TikTok Live Center muestra por día. Confirmado por el usuario: TODOS los
+  que escriben por WhatsApp vienen del live (no filtrar ni preguntar el
+  origen) y en el sistema siempre se captura el teléfono del cliente en el
+  expediente. Bug real atrapado en la prueba: una clave de arreglo PHP con
+  solo dígitos se vuelve int -- por eso la clave de cruce es 't'+10 dígitos.
+  **Sin probar en vivo todavía**; siguiente migración libre: 074.
+- Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
+  saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar
+  a "negocio" (session_01C3deJav44xscTHSyeunJhm).
+
 ## Botón "Letra más grande" en el sidebar (15 nov 2026, `app.js?v=156`)
 Pedido explícito del usuario: usa lentes y las letras de la app en el
 celular se le ven muy chicas.
@@ -1013,7 +1049,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026. Ese mismo día el usuario confirmó subidos TODOS los archivos de la sesión "chats" hasta el commit `0482e7e` (`app.js?v=152`, ia_helpers, liquidacion_calculadora, configuracion_set, whatsapp_procesar, lft_helpers, revisión diaria del bot con su Cron Job). Siguiente migración libre: 073.** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
+**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026. Ese mismo día el usuario confirmó subidos TODOS los archivos de la sesión "chats" hasta el commit `0482e7e` (`app.js?v=152`, ia_helpers, liquidacion_calculadora, configuracion_set, whatsapp_procesar, lft_helpers, revisión diaria del bot con su Cron Job). Siguiente migración libre: 074 (la 073 la tomó "negocio", 16 nov 2026).** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
