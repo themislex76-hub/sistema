@@ -39,6 +39,13 @@ documento $49 / curso $299) → se volvieron juicio.
   pagaron 2+ veces en él. Los porcentajes de conversión comparan persona
   contra persona. El usuario es el único Administrador; la página se queda
   con `require_admin()`.
+  **Jornada del live (16 nov 2026, `app.js?v=159`), pedido del usuario**: el
+  live empieza ~8 pm, la gente escribe durante el live y al día siguiente (el
+  bot contesta fuera de horario desde las 8 am) y paga al día siguiente. Por
+  eso WhatsApp y pagos se asignan a la jornada de 20:00 del día D a 19:59 del
+  día D+1 (`NEGOCIO_HORA_CORTE_LIVE`, `negocio_jornada()`) y se comparan con el
+  live del día D. OJO: por eso los totales del embudo NO coinciden exacto con
+  "Ingresos por periodo" (que corta a medianoche).
   **Migración 073 ya corrida por el usuario en `c1361311_exp` (16 nov 2026).** Captura del live **confirmada funcionando en vivo** (16 nov 2026; al principio falló porque `api/tiktok_lives_guardar.php` no se había subido -- "File not found"). Falta revisar con el usuario que los números del embudo (sobre todo "se volvieron juicio", que salió 0 en noviembre) cuadren con la realidad. Siguiente migración libre: 074.
 - Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
   saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar

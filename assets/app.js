@@ -6219,7 +6219,8 @@ function negocioEmbudoHTML(){
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Cursos</div><div style="font-size:20px; font-weight:800;">${negocioNum(d.cursos?.cantidad)}</div><div style="font-size:11px;">${fmtMoney(d.cursos?.ingreso||0)}</div></div>
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Ingreso por bot (asesorías + documentos + cursos)</div><div style="font-size:20px; font-weight:800;">${fmtMoney(ingresoTotal)}</div></div>
     </div>
-    <div style="font-size:11px; color:var(--gray); margin-top:10px;">"Se volvieron juicio" cuenta a las personas que pagaron asesoría en este periodo; las asesorías muy recientes todavía pueden convertirse en juicio más adelante, así que este número sube con el tiempo.</div>`;
+    <div style="font-size:11px; color:var(--gray); margin-top:10px;">Cada live se compara con lo que generó: WhatsApp y pagos desde las ${d.hora_corte||20}:00 del día del live hasta las ${(d.hora_corte||20)-1}:59 del día siguiente (en este periodo: ${escapeHTML(String(d.jornada_desde||'').slice(0,16))} a ${escapeHTML(String(d.jornada_hasta||'').slice(0,16))}).</div>
+    <div style="font-size:11px; color:var(--gray); margin-top:6px;">"Se volvieron juicio" cuenta a las personas que pagaron asesoría en este periodo; las asesorías muy recientes todavía pueden convertirse en juicio más adelante, así que este número sube con el tiempo.</div>`;
 
   const e = NEGOCIO_EDITAR || {};
   const hoyISO = isoDate(new Date());
@@ -6259,7 +6260,7 @@ function negocioEmbudoHTML(){
   const filas = (d.por_dia||[]).filter(x=>x.live_capturado || x.conversaciones_nuevas || x.asesorias_pagadas || x.documentos_pagados || x.cursos_pagados).slice().reverse();
   const tablaDias = `
     <div style="overflow-x:auto;"><table>
-      <thead><tr><th>Fecha</th><th>Únicos live</th><th>WhatsApp nuevos</th><th>Asesorías pagadas</th><th>Documentos</th><th>Cursos</th></tr></thead>
+      <thead><tr><th>Live del día</th><th>Únicos live</th><th>WhatsApp nuevos</th><th>Asesorías pagadas</th><th>Documentos</th><th>Cursos</th></tr></thead>
       <tbody>${!filas.length ? `<tr><td colspan="6" class="empty">Sin actividad en este periodo.</td></tr>` : filas.map(x=>`<tr>
         <td>${fmtDate(x.dia)}</td><td>${x.live_capturado?negocioNum(x.espectadores_unicos):'—'}</td><td>${x.conversaciones_nuevas}</td>
         <td>${x.asesorias_pagadas}</td><td>${x.documentos_pagados}</td><td>${x.cursos_pagados}</td></tr>`).join('')}</tbody>
@@ -6287,7 +6288,7 @@ function negocioEmbudoHTML(){
     <div class="panel-body" style="padding:0;">${tablaJuicios}</div>
   </div>
   <div class="panel" style="margin-bottom:18px;">
-    <div class="panel-head"><h3>Detalle por día</h3></div>
+    <div class="panel-head"><h3>Detalle por live</h3><span class="count">WhatsApp y pagos de 8 pm del día del live a 7:59 pm del día siguiente</span></div>
     <div class="panel-body" style="padding:0;">${tablaDias}</div>
   </div>`;
 }

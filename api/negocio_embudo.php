@@ -15,6 +15,13 @@ require_once __DIR__ . '/config.php';
 //      también cuenta prospectos.expediente_id (prospecto convertido).
 // Todos los que escriben vienen del live (confirmado por el usuario, 16 nov
 // 2026), por eso no se filtra ni se pregunta el origen.
+//
+// "Jornada del live": el live empieza ~8 pm; la gente escribe durante el
+// live y al día siguiente (el bot contesta fuera de horario a partir de las
+// 8 am) y paga al día siguiente. Por eso TODO lo de WhatsApp y los pagos se
+// asigna a la jornada que va de las 20:00 del día D a las 19:59 del día D+1,
+// y se compara contra el live del día D (pedido del usuario, 16 nov 2026).
+// La hora del servidor ya es la de México (db.php).
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') fail('Método no permitido.', 405);
 require_admin();
 
@@ -30,6 +37,15 @@ if ($hasta > $hoy) $hasta = $hoy;
 if ($hasta < $desde) $hasta = $desde;
 $hastaExclusiva = date('Y-m-d', strtotime($hasta . ' +1 day'));
 $rango = [':desde' => $desde, ':hasta' => $hastaExclusiva];
+const NEGOCIO_HORA_CORTE_LIVE = 20;
+$corte = sprintf(' %02d:00:00', NEGOCIO_HORA_CORTE_LIVE);
+$rangoLive = [':desde' => $desde . $corte, ':hasta' => $hastaExclusiva . $corte];
+
+// Día del live al que pertenece un momento (jornada de 20:00 a 19:59 del día siguiente).
+function negocio_jornada(string $ts): string
+{
+    return date('Y-m-d', strtotime($ts) - NEGOCIO_HORA_CORTE_LIVE * 3600);
+}
 
 // Clave de cruce: 't' + últimos 10 dígitos. La 't' es a propósito: una clave
 // de arreglo PHP que es solo dígitos se convierte en int y rompe los tipos.
@@ -113,41 +129,42 @@ unset($l);
 // dentro del periodo. (Sin funciones de ventana: el MySQL del servidor no
 // las soporta.)
 $st = $pdo->prepare(
-    "SELECT DATE(primero) AS dia, COUNT(*) AS n FROM (
+    "SELECT primero FROM (
         SELECT telefono, MIN(creado_en) AS primero
         FROM whatsapp_conversaciones WHERE direccion = 'entrante'
         GROUP BY telefono
      ) t
-     WHERE primero >= :desde AND primero < :hasta
-     GROUP BY DATE(primero)"
+     WHERE primero >= :desde AND primero < :hasta"
 );
-$st->execute($rango);
+$st->execute($rangoLive);
 $convNuevas = 0;
-foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-    if (isset($porDia[$r['dia']])) $porDia[$r['dia']]['conversaciones_nuevas'] = (int)$r['n'];
-    $convNuevas += (int)$r['n'];
+foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $primero) {
+    $dia = negocio_jornada((string)$primero);
+    if (isset($porDia[$dia])) $porDia[$dia]['conversaciones_nuevas']++;
+    $convNuevas++;
 }
 $st = $pdo->prepare(
     "SELECT COUNT(DISTINCT telefono) FROM whatsapp_conversaciones
      WHERE direccion = 'entrante' AND creado_en >= :desde AND creado_en < :hasta"
 );
-$st->execute($rango);
+$st->execute($rangoLive);
 $convTotales = (int)$st->fetchColumn();
 
 // ---------- 3. Pagos ----------
 $st = $pdo->prepare(
-    "SELECT telefono, nombre_cliente, monto, pagado_en, DATE(pagado_en) AS dia
+    "SELECT telefono, nombre_cliente, monto, pagado_en
      FROM citas_asesoria
      WHERE estado = 'confirmada' AND pagado_en >= :desde AND pagado_en < :hasta
      ORDER BY pagado_en"
 );
-$st->execute($rango);
+$st->execute($rangoLive);
 $citas = $st->fetchAll(PDO::FETCH_ASSOC);
 $ingresoAsesorias = 0.0;
 $personasPagaron = []; // tel10 => primer pago del periodo
 foreach ($citas as $c) {
     $ingresoAsesorias += (float)$c['monto'];
-    if (isset($porDia[$c['dia']])) $porDia[$c['dia']]['asesorias_pagadas']++;
+    $diaC = negocio_jornada((string)$c['pagado_en']);
+    if (isset($porDia[$diaC])) $porDia[$diaC]['asesorias_pagadas']++;
     $t10 = negocio_tel_clave($c['telefono']);
     if ($t10 === '') continue;
     if (!isset($personasPagaron[$t10])) {
@@ -163,7 +180,7 @@ if ($personasPagaron) {
     $st = $pdo->prepare(
         "SELECT DISTINCT telefono FROM citas_asesoria WHERE estado = 'confirmada' AND pagado_en < :desde"
     );
-    $st->execute([':desde' => $desde]);
+    $st->execute([':desde' => $rangoLive[':desde']]);
     $antes = [];
     foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $tel) {
         $k = negocio_tel_clave($tel);
@@ -185,15 +202,15 @@ foreach (['documentos' => 'compras_documento_calculo', 'cursos' => 'compras_curs
     $extras[$clave] = ['cantidad' => 0, 'ingreso' => 0.0];
     try {
         $st = $pdo->prepare(
-            "SELECT DATE(pagado_en) AS dia, COUNT(*) AS n, SUM(monto) AS total FROM $tabla
-             WHERE estado = 'confirmada' AND pagado_en >= :desde AND pagado_en < :hasta
-             GROUP BY DATE(pagado_en)"
+            "SELECT pagado_en, monto FROM $tabla
+             WHERE estado = 'confirmada' AND pagado_en >= :desde AND pagado_en < :hasta"
         );
-        $st->execute($rango);
+        $st->execute($rangoLive);
         foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $r) {
-            if (isset($porDia[$r['dia']])) $porDia[$r['dia']][$clave . '_pagados'] = (int)$r['n'];
-            $extras[$clave]['cantidad'] += (int)$r['n'];
-            $extras[$clave]['ingreso'] += (float)$r['total'];
+            $dia = negocio_jornada((string)$r['pagado_en']);
+            if (isset($porDia[$dia])) $porDia[$dia][$clave . '_pagados']++;
+            $extras[$clave]['cantidad']++;
+            $extras[$clave]['ingreso'] += (float)$r['monto'];
         }
     } catch (PDOException $e) {
         // tabla inexistente en alguna instalación: se deja en 0
@@ -247,6 +264,9 @@ respond([
     'desde' => $desde,
     'hasta' => $hasta,
     'tabla_lives_existe' => $tablaLivesExiste,
+    'jornada_desde' => $rangoLive[':desde'],
+    'jornada_hasta' => $rangoLive[':hasta'],
+    'hora_corte' => NEGOCIO_HORA_CORTE_LIVE,
     'live' => $tot,
     'lives' => $lives,
     'conversaciones_nuevas' => $convNuevas,
