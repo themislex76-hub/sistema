@@ -73,6 +73,17 @@ documento $49 / curso $299) → se volvieron juicio.
   administrador (id 1, "Administrador", admin@expertoslaborales.com) -- el
   usuario. Por eso `require_admin()` basta para "solo yo lo veo".
   **Migración 073 ya corrida por el usuario en `c1361311_exp` (16 nov 2026).** Captura del live **confirmada funcionando en vivo** (16 nov 2026; al principio falló porque `api/tiktok_lives_guardar.php` no se había subido -- "File not found"). Falta revisar con el usuario que los números del embudo (sobre todo "se volvieron juicio", que salió 0 en noviembre) cuadren con la realidad. Siguiente migración libre: 074.
+- **Material de marketing (16 nov 2026)**: fotos del Lic. Rubén para
+  miniaturas/promoción en `marketing/fotos/` (`ruben_traje_negro.jpg`,
+  `ruben_traje_azul.jpg`, pedido explícito del usuario: "guárdalas para
+  usarlas"). Plantilla de miniatura de YouTube 1280x720 en
+  `marketing/miniaturas/plantilla_te_despidieron.html` (se renderiza con
+  Playwright a PNG; fuente Inter Display Black instalada en el contenedor;
+  logo sacado de `LOGO_DESPACHO_B64` de app.js). El usuario está subiendo
+  sus lives completos a YouTube y probando OpusClip (opus.pro, 1 crédito =
+  1 min de video) para sacar clips. No se pudo instalar `rembg` para
+  recortar el fondo de la foto (lo bloqueó el permiso automático), se usó
+  la foto con su fondo de oficina desvanecido.
 - Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
   saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar
   a "negocio" (session_01C3deJav44xscTHSyeunJhm).
