@@ -2971,6 +2971,18 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   promete que un abogado lo contactará y el prospecto no está pausado, se escala solo
   (`ia_registrar_prospecto_atorado`, log `[promesa_abogado_escalada]`). 68 casos en pruebas_bot.php.
 
+## Revisión del 15-nov (12 conversaciones, 5 marcadas) (16 nov 2026, conversación "chats")
+- Reales: plazo de 56 días a una clienta que mencionó un citatorio (posible conciliación) sin
+  preguntar; "demanda ante el Centro de Conciliación" (es solicitud; la demanda va al Tribunal);
+  "tienes todo el derecho de no presentarte" en día de descanso obligatorio (Art. 75: los
+  designados quedan obligados a trabajarlo). Criterios nuevos en el prompt.
+- Falsas alarmas calibradas en el revisor: el triple por día de descanso obligatorio SÍ es
+  correcto (Art. 75, "independientemente del salario... un salario doble"); salario diario
+  distinto del SDI de la calculadora no es error; no exigir pregunta de conciliación si el
+  despido fue ese día. Sin confirmar: plazo de "3 días" para audiencia presencial (caso
+  5215630024082). `debug_enviar_pdf_calculo.php` ahora es vista previa; manda solo con &enviar=1.
+  70 casos en pruebas_bot.php.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
