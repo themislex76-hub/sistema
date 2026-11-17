@@ -18,6 +18,19 @@ declare(strict_types=1);
 
 const IA_MODEL = 'claude-sonnet-5';
 
+// Modelo SOLO del bot de WhatsApp (ia_llamar_claude). Decisión del usuario
+// (17 nov 2026): Sonnet 5.5 con razonamiento en nivel bajo, para que piense
+// antes de citar un artículo o dar un monto (con Sonnet 5 el razonamiento
+// estaba apagado). Mismo precio que Sonnet 5 salvo la lectura de caché, que
+// cuesta la mitad -- ese ahorro paga el razonamiento. El resto del sistema
+// (resúmenes, etc.) sigue con IA_MODEL. Para regresar: cambiar estas 2
+// constantes a 'claude-sonnet-5' / null (null = razonamiento apagado).
+const IA_MODELO_BOT = 'claude-sonnet-5-5';
+const IA_MODELO_BOT_ESFUERZO = 'low';
+// Si Sonnet 5.5 declina contestar (stop_reason=refusal, sus filtros de
+// seguridad), se reintenta una vez con el modelo anterior sin razonamiento.
+const IA_MODELO_BOT_RESPALDO = 'claude-sonnet-5';
+
 // Respuesta de emergencia cuando la IA no pudo contestar (sin credenciales,
 // sin saldo, la API caída, etc.) — una sola constante para poder detectar
 // después, desde "Conversaciones (WhatsApp)", qué conversaciones se
@@ -1831,8 +1844,9 @@ function ia_con_cache_en_ultimo_mensaje(array $mensajes): array
  * Llama a la API de mensajes de Claude con el historial de mensajes dado.
  * Devuelve el arreglo decodificado de la respuesta, o null si falló.
  */
-function ia_llamar_claude(array $mensajes): ?array
+function ia_llamar_claude(array $mensajes, ?string $modelo = null): ?array
 {
+    $modelo = $modelo ?? IA_MODELO_BOT;
     // El system prompt y las tools son fijos — se mandan idénticos en cada
     // llamada. Poner cache_control en el bloque de system cachea tools+system
     // juntos (tools se renderiza antes que system en la solicitud a la API),
@@ -1857,7 +1871,7 @@ function ia_llamar_claude(array $mensajes): ?array
         . " Si saludas (buenos días/tardes/noches), básalo SIEMPRE en esta hora actual real, nunca en lo que haya"
         . " dicho el cliente antes en la conversación — pudo haber pasado tiempo (incluso horas) desde su último mensaje.";
     $payload = [
-        'model' => IA_MODEL,
+        'model' => $modelo,
         // Con 1500 se descubrió que el modelo a veces gasta TODO el límite
         // "pensando" (thinking) antes de escribir una sola palabra de
         // respuesta o llamar una herramienta — se queda sin espacio para
@@ -1865,8 +1879,16 @@ function ia_llamar_claude(array $mensajes): ?array
         // texto real). Se sube el límite y se apaga el razonamiento
         // extendido explícitamente: este bot necesita respuestas cortas de
         // WhatsApp, no requiere ese razonamiento, y cuesta tokens de más.
-        'max_tokens' => 4096,
-        'thinking' => ['type' => 'disabled'],
+        // 17 nov 2026: el bot pasa a Sonnet 5.5 con razonamiento adaptativo
+        // en esfuerzo BAJO (decisión del usuario, para que se equivoque menos
+        // en artículos y montos). Se sube max_tokens a 8000 para que el
+        // razonamiento + la respuesta quepan holgados (el razonamiento se
+        // cobra como texto de salida). Los bloques 'thinking' que regresa la
+        // API se reenvían SIN TOCAR dentro del ciclo de herramientas (los
+        // arma tal cual $bloques en ia_responder_whatsapp) -- la API exige
+        // que lleguen idénticos. ia_extraer_respuesta solo lee 'text' y
+        // 'tool_use', así que el razonamiento nunca se le manda al cliente.
+        'max_tokens' => 8000,
         'system' => [
             ['type' => 'text', 'text' => IA_SYSTEM_PROMPT, 'cache_control' => ['type' => 'ephemeral', 'ttl' => '1h']],
             ['type' => 'text', 'text' => $fechaTexto],
@@ -1874,6 +1896,12 @@ function ia_llamar_claude(array $mensajes): ?array
         'tools' => IA_TOOLS,
         'messages' => ia_con_cache_en_ultimo_mensaje($mensajes),
     ];
+    if ($modelo === IA_MODELO_BOT && IA_MODELO_BOT_ESFUERZO !== null) {
+        $payload['thinking'] = ['type' => 'adaptive'];
+        $payload['output_config'] = ['effort' => IA_MODELO_BOT_ESFUERZO];
+    } else {
+        $payload['thinking'] = ['type' => 'disabled'];
+    }
 
     $ch = curl_init('https://api.anthropic.com/v1/messages');
     curl_setopt_array($ch, [
@@ -1885,7 +1913,9 @@ function ia_llamar_claude(array $mensajes): ?array
             'content-type: application/json',
         ],
         CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE),
-        CURLOPT_TIMEOUT => 30,
+        // 60 s (antes 30): con razonamiento cada respuesta tarda unos
+        // segundos más.
+        CURLOPT_TIMEOUT => 60,
     ]);
     $raw = curl_exec($ch);
     $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -1894,11 +1924,24 @@ function ia_llamar_claude(array $mensajes): ?array
 
     if ($raw === false || $status !== 200) {
         file_put_contents(__DIR__ . '/ia_debug.log', date('c')
-            . " | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+            . " | model=$modelo | status=$status | curl=$curlError | body=" . (string)$raw . "\n", FILE_APPEND);
+        // Si el modelo nuevo falla por la API (no por la red), se reintenta
+        // una vez con el anterior para que el cliente no se quede sin
+        // respuesta mientras se revisa el log.
+        if ($raw !== false && $status >= 400 && $status < 500 && $modelo === IA_MODELO_BOT && IA_MODELO_BOT_RESPALDO !== IA_MODELO_BOT) {
+            return ia_llamar_claude($mensajes, IA_MODELO_BOT_RESPALDO);
+        }
         return null;
     }
 
     $data = json_decode($raw, true);
+
+    if (($data['stop_reason'] ?? '') === 'refusal' && $modelo === IA_MODELO_BOT && IA_MODELO_BOT_RESPALDO !== IA_MODELO_BOT) {
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [refusal] model=$modelo | detalle=" . json_encode($data['stop_details'] ?? null, JSON_UNESCAPED_UNICODE)
+            . " | se reintenta con " . IA_MODELO_BOT_RESPALDO . "\n", FILE_APPEND);
+        return ia_llamar_claude($mensajes, IA_MODELO_BOT_RESPALDO);
+    }
 
     // Log temporal para medir si los cambios de caché de arriba (TTL de 1h,
     // breakpoint en el historial de mensajes) de verdad están funcionando en
@@ -1909,6 +1952,7 @@ function ia_llamar_claude(array $mensajes): ?array
     $uso = $data['usage'] ?? [];
     if ($uso) {
         file_put_contents(__DIR__ . '/ia_cache_stats.log', date('c')
+            . " | model=$modelo"
             . " | cache_read=" . (int)($uso['cache_read_input_tokens'] ?? 0)
             . " | cache_creation=" . (int)($uso['cache_creation_input_tokens'] ?? 0)
             . " | input=" . (int)($uso['input_tokens'] ?? 0)

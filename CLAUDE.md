@@ -3108,6 +3108,26 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
 - Otros reales ya cubiertos por reglas del 15-16 nov (rescisión por cambio de jornada, Art. 73
   en vez de 75 para día festivo, horas extra calculadas a mano). 73 casos en pruebas_bot.php.
 
+## El bot de WhatsApp pasa a Sonnet 5.5 con razonamiento bajo (17 nov 2026, conversación "chats")
+- Decisión del usuario tras preguntar por qué el bot se equivoca tanto: el bot contestaba con
+  `claude-sonnet-5` y el razonamiento APAGADO. Ahora `ia_llamar_claude()` usa
+  `IA_MODELO_BOT = 'claude-sonnet-5-5'` con `thinking: adaptive` + `output_config.effort = 'low'`
+  (`IA_MODELO_BOT_ESFUERZO`), `max_tokens` 8000 y timeout 60 s. Solo el bot: el resto del
+  sistema sigue con `IA_MODEL` (Sonnet 5).
+- Costo estimado (con la bitácora real, ~$12-14 USD/día de toda la IA): Sonnet 5.5 cobra igual
+  salvo la lectura de caché, a la mitad ($0.10 vs $0.20 por millón) -- ese ahorro (~$1,900
+  MXN/mes) paga casi todo el razonamiento. Esperado: de $0 a ~$1,000 MXN/mes más. Medir con
+  `ia_cache_stats.log` (ahora trae `model=`) y la consola; si la revisión diaria no baja del 22%
+  de conversaciones marcadas (16-nov), siguiente opción a probar: Opus 5.5.
+- Los bloques `thinking` se reenvían SIN TOCAR dentro del ciclo de herramientas (la API lo
+  exige); `ia_extraer_respuesta()` solo lee `text`/`tool_use`. Si Sonnet 5.5 responde con error
+  4xx o `stop_reason=refusal`, se reintenta una vez con `IA_MODELO_BOT_RESPALDO`
+  (`claude-sonnet-5`, sin razonamiento) y queda en `ia_debug.log`. Para regresar del todo:
+  `IA_MODELO_BOT = 'claude-sonnet-5'` y `IA_MODELO_BOT_ESFUERZO = null`.
+- **Sin probar en vivo** (esta sesión no tiene la llave de la API): falta que el usuario suba
+  `api/ia_helpers.php` y confirmar en `ia_cache_stats.log` que salen líneas `model=claude-sonnet-5-5`
+  y en `ia_debug.log` que no hay `status=400`.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
