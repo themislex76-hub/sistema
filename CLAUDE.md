@@ -3091,6 +3091,19 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   5215630024082). `debug_enviar_pdf_calculo.php` ahora es vista previa; manda solo con &enviar=1.
   70 casos en pruebas_bot.php.
 
+## Revisión del 16-nov (36 conversaciones, 8 marcadas = 22%, bajó de 55% y 42%) (17 nov 2026, conversación "chats")
+- 2 candados nuevos en código (`api/ia_helpers.php`), por errores que se repitieron pese a
+  la regla del prompt: (1) `ia_texto_anuncia_sin_hacer()` -- si el texto final solo anuncia
+  "déjame calcular/confirmar" sin llamar herramientas, se le pide una vez que lo haga en ese
+  mismo turno (log `[anuncio_sin_hacer]`; 2 casos reales: cálculo nunca entregado y
+  fundamento de sustitución patronal nunca explicado). (2) `ia_conversacion_menciona_conciliacion()`
+  -- si el cliente mencionó conciliación/citatorio/audiencia y `calcular_plazo_demanda` se
+  llamó sin fecha de solicitud, el resultado trae `aviso_conciliacion` (caso real: "ya fui a
+  conciliación, audiencia el 2 de diciembre" y el bot le dijo que aún debía presentar su
+  solicitud). Prompt: el Art. 56 no es para cambios de horario/condiciones (error repetido).
+- Otros reales ya cubiertos por reglas del 15-16 nov (rescisión por cambio de jornada, Art. 73
+  en vez de 75 para día festivo, horas extra calculadas a mano). 73 casos en pruebas_bot.php.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado

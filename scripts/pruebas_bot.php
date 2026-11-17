@@ -193,5 +193,18 @@ echo "10) Revisión del 15-nov: día de descanso obligatorio y conciliación\n";
 caso('descanso obligatorio: triple es correcto, pero no "tienes derecho a no presentarte" (Art. 75)', strpos($p, 'quedarán obligados a prestar los servicios') !== false);
 caso('solicitud ante el Centro vs. demanda ante el Tribunal', strpos($p, 'la DEMANDA se') !== false);
 
+// ---------------------------------------------------------------------
+echo "11) Revisión del 16-nov: anuncios sin hacer y conciliación ignorada\n";
+caso('detecta "déjame calcular/confirmar" sin hacerlo',
+    ia_texto_anuncia_sin_hacer('Déjame calcular esto con los datos exactos.')
+    && ia_texto_anuncia_sin_hacer('Voy a calcularlo con el salario mínimo vigente real para que el número sea exacto.')
+    && ia_texto_anuncia_sin_hacer('Déjame confirmar el fundamento exacto antes de explicarte esto con precisión.')
+    && !ia_texto_anuncia_sin_hacer('Con lo que me cuentas, te corresponden 3 meses de salario. ¿Me confirmas tu fecha de ingreso?')
+    && !ia_texto_anuncia_sin_hacer('Voy a pedir que un abogado del despacho revise tu caso.'));
+caso('detecta que el cliente ya mencionó conciliación',
+    ia_conversacion_menciona_conciliacion([['role' => 'user', 'content' => 'Ya fui a conciliación y el día 2 de diciembre tengo la audiencia']])
+    && !ia_conversacion_menciona_conciliacion([['role' => 'user', 'content' => 'Me despidieron ayer sin razón']]));
+caso('Art. 56 no es para cambios de horario', strpos($p, 'El Art. 56 es de igualdad') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
