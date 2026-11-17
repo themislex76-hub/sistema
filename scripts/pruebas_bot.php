@@ -204,6 +204,7 @@ caso('detecta "déjame calcular/confirmar" sin hacerlo',
 caso('detecta que el cliente ya mencionó conciliación',
     ia_conversacion_menciona_conciliacion([['role' => 'user', 'content' => 'Ya fui a conciliación y el día 2 de diciembre tengo la audiencia']])
     && !ia_conversacion_menciona_conciliacion([['role' => 'user', 'content' => 'Me despidieron ayer sin razón']]));
+caso('recordatorio de pago y aviso de PDF también son mensajes automáticos', ia_es_mensaje_automatico('¡No se te vaya a ir tu horario! Te quedan 10 minutos') && ia_es_mensaje_automatico('📄 PDF de cálculo de liquidación enviado.'));
 caso('Art. 56 no es para cambios de horario', strpos($p, 'El Art. 56 es de igualdad') !== false);
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
