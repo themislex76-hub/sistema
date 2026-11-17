@@ -3136,10 +3136,28 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   región Ecatepec (Ecatepec, Apaxco, Coacalco, Hueypoxtla, Jaltenco, Nextlalpan, Tecámac,
   Tequixquiac, Tonanitla, Zumpango). Cuenta el municipio del CENTRO DE TRABAJO, nunca el
   domicilio del trabajador (aclaración explícita del usuario). Fuera de la lista: se orienta y se
-  ofrece la asesoría de $499, pero se le dice ANTES de pagar que el despacho no llevaría su
-  juicio allá. 2 casos nuevos en `scripts/pruebas_bot.php` (76).
+  ofrece la asesoría de $499 normal; el bot NO menciona la zona por su cuenta (ajuste del
+  usuario el mismo día: "si no perdemos asesorías") -- solo si la persona pregunta si el
+  despacho puede llevar/representar su caso aclara que allá no se litiga; nunca promete
+  representación fuera de la lista. 2 casos nuevos en `scripts/pruebas_bot.php` (76).
 - CDMX se tomó completa (todas las alcaldías) porque el usuario dijo "los municipios que ya
   conoces" y el bot ya decía CDMX; si alguna alcaldía no se lleva, corregir la lista.
+
+## Coach de tenis (Club Alpino): 4 arreglos del bot (17 nov 2026, conversación "chats")
+- Conversación real 13-nov (5215544741530): despido 14-ago-2026, ingreso feb-2020, ~$80k/mes
+  variable pagado por los socios. Errores del bot y arreglos:
+  1. Dijo que el plazo de 2 meses (Art. 518) venció y aun así sumó la indemnización de 3 meses a
+     "casi $367,000 en juego". Candado en código: `ia_bot_dijo_plazo_despido_vencido()` -- si un
+     mensaje anterior del bot ya dijo eso, el resultado de `calcular_estimado_liquidacion` trae
+     `aviso_plazo_vencido` (separar lo vigente; no presentar la indemnización como cobrable).
+  2. Citó el Art. 289 (agentes de comercio) para salario variable. La REGLA DURA de ingreso
+     variable ahora usa el Art. 89 (promedio de los 30 días efectivamente trabajados). Ya no se
+     cita el 289 en la herramienta `calcular_sdi_con_variable` (su cálculo a 365 días NO se tocó:
+     sigue pendiente la decisión del usuario sobre bonos anuales).
+  3. No sumó vacaciones de años anteriores aunque el cliente dijo que nunca las tomó: criterio
+     nuevo en CRITERIOS DEL DESPACHO (pasarlas en `dias_vacaciones_anteriores`).
+  4. Afirmó que "sin duda" es trabajador aunque le pagaban los socios: criterio nuevo (Arts. 82
+     y 21, no afirmarlo, lo valora el abogado). 80 casos en `scripts/pruebas_bot.php`.
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --

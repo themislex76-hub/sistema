@@ -224,7 +224,7 @@ function calcular_sdi_con_variable(float $salarioDiarioFijo, array $percepciones
         'pagos_fuera_de_rango_365_dias' => $pagosFueraDeRango,
         'promedio_diario_variable' => round($promedioDiarioVariable, 2),
         'salario_diario_a_usar' => round($salarioDiarioIntegrado, 2),
-        'nota' => 'Este es el salario diario (fijo + variable promediado a 365 días, Art. 289 LFT) que hay que pasar '
+        'nota' => 'Este es el salario diario (fijo + variable anual promediado a 365 días; no cites el Art. 289, que es solo para agentes de comercio) que hay que pasar '
             . 'como salario_diario a calcular_estimado_liquidacion -- esa herramienta ya le aplica encima, aparte, '
             . 'el factor de integración de aguinaldo/prima vacacional mínimos de ley, no lo agregues tú dos veces.',
     ];
