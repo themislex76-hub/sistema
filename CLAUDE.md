@@ -2964,6 +2964,10 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   (caso 5215626719440, 13-nov).
 - Verificar con el mismo SQL de diagnóstico unos días después de subir
   `api/whatsapp_procesar.php` (debería bajar a ~0 los casos a los :00/:15).
+- **Confirmado arreglado (17 nov 2026)**: el SQL de diagnóstico desde el 15-nov dio 0 duplicados
+  (antes ~50/semana); los 6 pares que salieron son mensajes legítimos (pago confirmado del
+  webhook, recordatorio de pago, 2 PDF mandados a mano). El revisor ahora también trata como
+  automáticos el recordatorio de pago y el aviso "PDF de cálculo enviado".
 
 ## Zona Libre de la Frontera Norte en el tope de la prima de antigüedad (14 nov 2026, conversación "chats", `app.js?v=152`)
 - Art. 486 LFT: el tope es el doble del salario mínimo del área geográfica

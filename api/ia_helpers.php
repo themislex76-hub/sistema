@@ -4764,6 +4764,8 @@ function ia_es_mensaje_automatico(string $texto): bool
         . '|^\s*(¡Hola[^!]{0,60}!\s*)?¡?Tu pago (del curso .{0,120}?)?quedó confirmado'
         . '|Tu asesoría con el abogado es en 1 hora'
         . '|Te recordamos que nuestro horario de atención'
+        . '|¡No se te vaya a ir tu horario!'
+        . '|^\\W*PDF de cálculo de liquidación enviado'
         . '|^\s*Por hoy ya platicamos bastante/u',
         $texto
     ) === 1;
