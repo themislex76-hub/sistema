@@ -4936,7 +4936,12 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         'model' => IA_MODELO_REVISION_BOT,
         'max_tokens' => 1500,
         'thinking' => ['type' => 'disabled'],
-        'system' => $system,
+        // Caché (17 nov 2026, para bajar el costo de la supervisión): las
+        // instrucciones del revisor + los criterios del despacho son
+        // idénticas para todas las conversaciones de una corrida, y el cron
+        // las revisa una tras otra (minutos de diferencia) -- con caché se
+        // pagan completas solo en la primera y ~10% en las demás.
+        'system' => [['type' => 'text', 'text' => $system, 'cache_control' => ['type' => 'ephemeral']]],
         'messages' => [['role' => 'user', 'content' => $contenido]],
     ];
     $ch = curl_init('https://api.anthropic.com/v1/messages');
