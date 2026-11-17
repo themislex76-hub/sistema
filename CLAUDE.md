@@ -3128,6 +3128,19 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   `api/ia_helpers.php` y confirmar en `ia_cache_stats.log` que salen líneas `model=claude-sonnet-5-5`
   y en `ia_debug.log` que no hay `status=400`.
 
+## Municipios donde el despacho SÍ lleva juicios (17 nov 2026, conversación "chats")
+- Lista dada por el usuario (Excel "competencia"), ya en el prompt del bot (REGLA DURA junto a la
+  de "cualquier estado"): CDMX + Edomex región Tlalnepantla (Tlalnepantla, Atizapán de Zaragoza,
+  Cuautitlán, Cuautitlán Izcalli, Coyotepec, Huixquilucan, Huehuetoca, Isidro Fabela, Jilotzingo,
+  Melchor Ocampo, Naucalpan, Nicolás Romero, Teoloyucan, Tepotzotlán, Tultepec, Tultitlán) +
+  región Ecatepec (Ecatepec, Apaxco, Coacalco, Hueypoxtla, Jaltenco, Nextlalpan, Tecámac,
+  Tequixquiac, Tonanitla, Zumpango). Cuenta el municipio del CENTRO DE TRABAJO, nunca el
+  domicilio del trabajador (aclaración explícita del usuario). Fuera de la lista: se orienta y se
+  ofrece la asesoría de $499, pero se le dice ANTES de pagar que el despacho no llevaría su
+  juicio allá. 2 casos nuevos en `scripts/pruebas_bot.php` (76).
+- CDMX se tomó completa (todas las alcaldías) porque el usuario dijo "los municipios que ya
+  conoces" y el bot ya decía CDMX; si alguna alcaldía no se lleva, corregir la lista.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado

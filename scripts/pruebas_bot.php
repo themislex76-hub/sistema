@@ -207,5 +207,15 @@ caso('detecta que el cliente ya mencionó conciliación',
 caso('recordatorio de pago y aviso de PDF también son mensajes automáticos', ia_es_mensaje_automatico('¡No se te vaya a ir tu horario! Te quedan 10 minutos') && ia_es_mensaje_automatico('📄 PDF de cálculo de liquidación enviado.'));
 caso('Art. 56 no es para cambios de horario', strpos($p, 'El Art. 56 es de igualdad') !== false);
 
+// ---------------------------------------------------------------------
+echo "12) Municipios donde el despacho sí lleva juicios (lista del 17-nov)\n";
+$municipios = ['Tlalnepantla', 'Atizapán de Zaragoza', 'Cuautitlán Izcalli', 'Coyotepec', 'Huixquilucan', 'Huehuetoca',
+    'Isidro Fabela', 'Jilotzingo', 'Melchor Ocampo', 'Naucalpan', 'Nicolás Romero', 'Teoloyucan', 'Tepotzotlán', 'Tultepec',
+    'Tultitlán', 'Ecatepec', 'Apaxco', 'Coacalco', 'Hueypoxtla', 'Jaltenco', 'Nextlalpan', 'Tecámac', 'Tequixquiac',
+    'Tonanitla', 'Zumpango'];
+$faltan = array_filter($municipios, fn($m) => strpos($p, $m) === false);
+caso('la lista completa de municipios está en el prompt' . ($faltan ? ' (faltan: ' . implode(', ', $faltan) . ')' : ''), !$faltan);
+caso('fuera de la lista: se avisa ANTES de pagar que no se lleva el juicio', strpos($p, 'ANTES de que pague dile con claridad que el despacho no podría') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
