@@ -311,6 +311,8 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   - Casos que NO pasan por conciliación (acoso u hostigamiento sexual,
     discriminación por embarazo, riesgos de trabajo y seguridad social,
     etc.): Art. 685 Ter.
+  - El Art. 56 es de igualdad y no discriminación: NO lo cites para
+    cambios de horario, jornada o condiciones (error real repetido).
   - Sustitución patronal: Art. 41. Descuentos al salario: Art. 110 (deudas
     y daños: fracc. I). Carga de la prueba del patrón: Art. 784; documentos
     que debe conservar: Art. 804.
@@ -1974,6 +1976,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // normal), ver el bug real "se nota que es la IA porque hace muy rápido
     // los cálculos".
     $usoCalculoLiquidacion = false;
+    $yaInsistioAnuncio = false;
 
     for ($ronda = 0; $ronda < $maxRondas; $ronda++) {
         $data = ia_llamar_claude($mensajesActuales);
@@ -1993,6 +1996,21 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         $rondasResumen[] = 'ronda' . $ronda . '=[' . implode(',', array_map(fn($b) => $b['name'] ?? '?', $toolUseBlocks))
             . ']' . (trim($textoRonda) !== '' ? '+texto' : '');
         if (!$toolUseBlocks) {
+            // Casos reales (revisión del 16-nov-2026): el bot terminó su
+            // turno con "Déjame calcular esto con los datos exactos" o
+            // "Déjame confirmar el fundamento exacto" SIN llamar ninguna
+            // herramienta -- el cliente se quedó esperando un cálculo o una
+            // explicación que nunca llegó. Si el texto final solo anuncia
+            // algo que iba a hacer, se le pide una vez que lo haga ya, en
+            // este mismo turno (el cliente solo recibe la respuesta nueva).
+            if (!$yaInsistioAnuncio && $ronda < $maxRondas - 1 && ia_texto_anuncia_sin_hacer($textoRonda)) {
+                $yaInsistioAnuncio = true;
+                file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+                    . " | [anuncio_sin_hacer] tel=$telefono | texto=\"" . $textoRonda . "\"\n", FILE_APPEND);
+                $mensajesActuales[] = ['role' => 'assistant', 'content' => $bloques];
+                $mensajesActuales[] = ['role' => 'user', 'content' => '[Aviso interno del sistema, no es del cliente y no lo menciones] Tu mensaje anterior NO se envió: solo anunciaba que ibas a calcular/confirmar/revisar algo, sin hacerlo. Hazlo AHORA, en este mismo turno, con las herramientas que necesites (calcular_estimado_liquidacion, consultar_articulo_lft, etc.), y escribe directo la respuesta completa al cliente, sin decir "déjame" ni "voy a". Si te falta un dato, pregúntalo.'];
+                continue;
+            }
             // No llamó ninguna herramienta — $textoRonda es la respuesta final.
             break;
         }
@@ -2095,6 +2113,13 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     trim((string)($in['fecha_solicitud_conciliacion'] ?? '')) ?: null,
                     trim((string)($in['fecha_fin_conciliacion'] ?? '')) ?: null
                 );
+                // Caso real (16-nov-2026): el cliente dijo "ya fui a
+                // conciliación y el 2 de diciembre tengo la audiencia" y el
+                // bot le calculó el plazo como si no hubiera iniciado nada.
+                if ($plazo !== null && trim((string)($in['fecha_solicitud_conciliacion'] ?? '')) === ''
+                    && ia_conversacion_menciona_conciliacion($mensajes)) {
+                    $plazo['aviso_conciliacion'] = 'OJO: la persona mencionó en la conversación conciliación, un citatorio, una audiencia o una constancia. Este cálculo supone que NO ha presentado solicitud de conciliación. Si ya la presentó, NO le des este plazo: pregúntale la fecha en que presentó la solicitud (y si ya le dieron la Constancia de No Conciliación, su fecha) y vuelve a calcular con esos datos. Nunca le digas que todavía tiene que presentar su solicitud si ya dijo que fue a conciliación.';
+                }
                 $contenido = $plazo !== null
                     ? json_encode($plazo, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Fecha de despido inválida o faltante.'], JSON_UNESCAPED_UNICODE);
@@ -2333,6 +2358,27 @@ function ia_texto_promete_abogado(string $texto): bool
         . '|un\s+abogad[oa](\s+del\s+despacho)?\s+(revis[ae]|atiend[ae])\s+tu\s+caso\s+(directamente|en\s+persona)/iu',
         $texto
     ) === 1;
+}
+
+// true si el texto solo ANUNCIA algo que el bot iba a hacer ("déjame
+// calcularlo", "voy a confirmar el fundamento") en vez de hacerlo.
+function ia_texto_anuncia_sin_hacer(string $texto): bool
+{
+    return preg_match(
+        '/\b(d[eé]jame|perm[ií]teme|voy a|ahorita te|en un momento te)\s+(lo\s+|te\s+lo\s+)?(calcul|confirm|verific|revis|consult|chec|sac)\w*(?!.{0,40}\babogad)/iu',
+        $texto
+    ) === 1;
+}
+
+// true si en lo que escribió el CLIENTE aparece conciliación, un citatorio,
+// una audiencia o la constancia de no conciliación.
+function ia_conversacion_menciona_conciliacion(array $mensajes): bool
+{
+    foreach ($mensajes as $m) {
+        if (($m['role'] ?? '') !== 'user' || !is_string($m['content'] ?? null)) continue;
+        if (preg_match('/concilia|citatorio|audiencia|constancia de no|centro de conciliaci/iu', $m['content'])) return true;
+    }
+    return false;
 }
 
 /**

@@ -1,5 +1,113 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Conversación nueva "negocio" (16 nov 2026)
+El usuario abrió una 4ª conversación, **"negocio"**, para hacer crecer el
+negocio (lives de TikTok → bot de WhatsApp → asesoría pagada → juicio). Su
+primer proyecto es un **embudo con estadísticas por etapa**: conectados en el
+live → conversaciones nuevas de WhatsApp → pagaron (asesoría $499 /
+documento $49 / curso $299) → se volvieron juicio.
+- Ya existe un embudo parcial: `api/whatsapp_embudo.php` + su tabla en
+  `assets/app.js` (mensajes/números por día → prospectos → contactados →
+  convertidos). Le falta: estadísticas del live (TikTok no las da por API,
+  hay que capturarlas a mano), pagos y el paso de asesoría a juicio.
+- El paso de asesoría a juicio no está ligado directo: `expedientes.telefono` es
+  texto libre; hay que cruzarlo por los últimos 10 dígitos contra
+  `citas_asesoria.telefono` (o usar `prospectos.expediente_id` cuando se
+  convirtió desde Prospectos).
+- **Construido (16 nov 2026, `app.js?v=157`, migración 073)**: pantalla
+  nueva **"Embudo del negocio"** en el menú (solo Administrador,
+  `VIEW='negocio'`, `negocioEmbudoHTML()`/`bindNegocioEmbudo()`).
+  Endpoint `api/negocio_embudo.php` (periodo desde/hasta): espectadores
+  únicos del live → conversaciones NUEVAS de WhatsApp (primer mensaje
+  histórico de ese número) → personas que pagaron asesoría
+  (`citas_asesoria` confirmadas por `pagado_en`) → juicios (expediente con
+  el mismo teléfono, últimos 10 dígitos, dado de alta el día del pago o
+  después; también cuenta `prospectos.expediente_id`). Además, documentos
+  $49 y cursos como ingreso. Las estadísticas del live se capturan a mano
+  por día (tabla `tiktok_lives`, migración **073_tiktok_lives_estadisticas.sql**,
+  `api/tiktok_lives_guardar.php` upsert/borrar), con los mismos campos que
+  TikTok Live Center muestra por día. Confirmado por el usuario: TODOS los
+  que escriben por WhatsApp vienen del live (no filtrar ni preguntar el
+  origen) y en el sistema siempre se captura el teléfono del cliente en el
+  expediente. Bug real atrapado en la prueba: una clave de arreglo PHP con
+  solo dígitos se vuelve int -- por eso la clave de cruce es 't'+10 dígitos.
+  **Ajuste el mismo día (`app.js?v=158`), pedido del usuario** ("algunos
+  clientes solicitan asesorías varias veces"): la etapa 2 ahora cuenta a
+  TODAS las personas que escribieron en el periodo (con desglose nuevas /
+  ya habían escrito) y la etapa 3 cuenta CADA asesoría pagada (`pagos`), con
+  desglose de personas, cuántas ya habían pagado antes del periodo y cuántas
+  pagaron 2+ veces en él. Los porcentajes de conversión comparan persona
+  contra persona. El usuario es el único Administrador; la página se queda
+  con `require_admin()`.
+  **Jornada del live (16 nov 2026, `app.js?v=159`), pedido del usuario**: el
+  live empieza ~8 pm, la gente escribe durante el live y al día siguiente (el
+  bot contesta fuera de horario desde las 8 am) y paga al día siguiente. Por
+  eso WhatsApp y pagos se asignan a la jornada de 20:00 del día D a 19:59 del
+  día D+1 (`NEGOCIO_HORA_CORTE_LIVE`, `negocio_jornada()`) y se comparan con el
+  live del día D. OJO: por eso los totales del embudo NO coinciden exacto con
+  "Ingresos por periodo" (que corta a medianoche).
+  **Arrastre de fin de semana (`app.js?v=160`), pedido del usuario**: "los
+  lives del viernes generan conversiones en sábado y domingo". Regla
+  general: todo lo que llega entre un live y el siguiente es del live
+  anterior -- si la jornada D no tiene live capturado, se le cuenta al
+  último live capturado hasta `NEGOCIO_DIAS_ARRASTRE` (3) días atrás
+  (`negocio_dia_live()`); más allá, se queda en su día. La búsqueda se
+  extiende 3 días después de 'hasta' (`$rangoBusqueda`). Consecuencia:
+  un live NO capturado se suma al anterior -- hay que capturarlos todos.
+  **Canal de llegada (`app.js?v=161`, YA HECHO pero NO ENTREGADO al usuario
+  todavía -- pidió dejarlo para cuando tenga más canales; por ahora solo usa
+  TikTok)**: `negocio_canal()` clasifica el PRIMER mensaje de cada número
+  (MIN(id)) según el texto prellenado del link de WhatsApp de cada canal;
+  panel "¿De dónde llegan?" (solo filas con gente). Número del bot:
+  **56 5273 6263**. Links acordados: `https://wa.me/525652736263?text=` +
+  "Hola, quiero orientación gratis" (perfil TikTok/lives) / "Hola, vi su
+  video" (videos FB/IG/YT) / "Hola, vengo de su página web" / "Hola, los
+  encontré en Google". La página expertoslaborales.com mostraba 55 4170 8184;
+  el usuario la va a cambiar para que todo mande al WhatsApp del bot.
+  Revisión de normas de TikTok (versión vigente 13-sep-2025): no prohíben el
+  teléfono del propio negocio; SÍ exigen marcar "contenido comercial → Tu
+  marca" al promocionar el propio servicio (si no, sale del "Para ti"); se le
+  sugirió decir "orientación laboral GRATIS" (la asesoría telefónica cuesta
+  $499, evitar que se reporte como engañoso).
+  Confirmado con SQL (16 nov 2026): hay UN solo usuario con rol
+  administrador (id 1, "Administrador", admin@expertoslaborales.com) -- el
+  usuario. Por eso `require_admin()` basta para "solo yo lo veo".
+  **Migración 073 ya corrida por el usuario en `c1361311_exp` (16 nov 2026).** Captura del live **confirmada funcionando en vivo** (16 nov 2026; al principio falló porque `api/tiktok_lives_guardar.php` no se había subido -- "File not found"). Falta revisar con el usuario que los números del embudo (sobre todo "se volvieron juicio", que salió 0 en noviembre) cuadren con la realidad. Siguiente migración libre: 074.
+- **Material de marketing (16 nov 2026)**: fotos del Lic. Rubén para
+  miniaturas/promoción en `marketing/fotos/` (`ruben_traje_negro.jpg`,
+  `ruben_traje_azul.jpg`, `ruben_selfie_cerca.jpg` -- selfie en espejo; usar la versión volteada `ruben_selfie_cerca_derecha.jpg`, y su recorte en la miniatura deja fuera las fotos familiares de la pared --, pedido explícito del usuario: "guárdalas para
+  usarlas"). Plantilla de miniatura de YouTube 1280x720 en
+  `marketing/miniaturas/plantilla_te_despidieron.html` (se renderiza con
+  Playwright a PNG; fuente Inter Display Black instalada en el contenedor;
+  logo sacado de `LOGO_DESPACHO_B64` de app.js). El usuario está subiendo
+  sus lives completos a YouTube y probando OpusClip (opus.pro, 1 crédito =
+  1 min de video) para sacar clips. No se pudo instalar `rembg` para
+  recortar el fondo de la foto (lo bloqueó el permiso automático), se usó
+  la foto con su fondo de oficina desvanecido. Miniaturas por tema
+  (aguinaldo, cuánto me toca, renuncia, corrieron de palabra) en
+  `generar_miniaturas.js` -- para CLIPS cortos de un solo tema. Para los
+  lives completos (el usuario contesta preguntas de todo, sin tema único)
+  se usa la serie numerada "LIVE #N" (`generar_serie_lives.js DESDE HASTA`,
+  ya generadas #1-#6) con título "Asesoría laboral GRATIS en vivo #N |
+  Respondo tus preguntas: despido, liquidación, aguinaldo y más".
+  **REGISTRO de miniaturas (pedido del usuario, 16 nov 2026)**:
+  `marketing/miniaturas/registro.json` (+ `registro.md` legible) guarda por
+  cada número de LIVE su combinación (color, frase, juego de preguntas,
+  foto) y el video de YouTube donde se usó. El generador elige la siguiente
+  combinación NO usada, distinta del live anterior en color/foto/frase/
+  preguntas; un número ya registrado se redibuja idéntico. **Flujo acordado:
+  el usuario avisa cada vez que sube un video -> correr
+  `cd marketing/miniaturas && node generar_serie_lives.js "$(pwd)" N`,
+  mandarle `live_N.png`, y anotar el video en `registro.json` ("video").**
+  Entregadas #1-#15 (el usuario tenía ~15 lives listos para subir). El generador elige los componentes MENOS usados y evita repetir color/foto/frase/preguntas con los 2 lives anteriores (la 1a versión solo alternaba azul/rojo, corregido).
+- **Métricas de redes** (YouTube/TikTok): `marketing/metricas_redes.md`,
+  punto de partida 16 nov 2026 (YouTube @rubenbuerhend: 24 suscriptores, 3
+  videos; TikTok: 104.1K seguidores). Agregar fila con cada captura nueva
+  que mande el usuario, para comparar contra ese día.
+- Si otra conversación toca `whatsapp_embudo.php`, el prompt del bot para
+  saber de dónde llega cada cliente, o la tabla del embudo en app.js, avisar
+  a "negocio" (session_01C3deJav44xscTHSyeunJhm).
+
 ## Botón "Letra más grande" en el sidebar (15 nov 2026, `app.js?v=156`)
 Pedido explícito del usuario: usa lentes y las letras de la app en el
 celular se le ven muy chicas.
@@ -1013,7 +1121,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026. Ese mismo día el usuario confirmó subidos TODOS los archivos de la sesión "chats" hasta el commit `0482e7e` (`app.js?v=152`, ia_helpers, liquidacion_calculadora, configuracion_set, whatsapp_procesar, lft_helpers, revisión diaria del bot con su Cron Job). Siguiente migración libre: 073.** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
+**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026. Ese mismo día el usuario confirmó subidos TODOS los archivos de la sesión "chats" hasta el commit `0482e7e` (`app.js?v=152`, ia_helpers, liquidacion_calculadora, configuracion_set, whatsapp_procesar, lft_helpers, revisión diaria del bot con su Cron Job). Siguiente migración libre: 074 (la 073 la tomó "negocio", 16 nov 2026).** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
@@ -2982,6 +3090,19 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   despido fue ese día. Sin confirmar: plazo de "3 días" para audiencia presencial (caso
   5215630024082). `debug_enviar_pdf_calculo.php` ahora es vista previa; manda solo con &enviar=1.
   70 casos en pruebas_bot.php.
+
+## Revisión del 16-nov (36 conversaciones, 8 marcadas = 22%, bajó de 55% y 42%) (17 nov 2026, conversación "chats")
+- 2 candados nuevos en código (`api/ia_helpers.php`), por errores que se repitieron pese a
+  la regla del prompt: (1) `ia_texto_anuncia_sin_hacer()` -- si el texto final solo anuncia
+  "déjame calcular/confirmar" sin llamar herramientas, se le pide una vez que lo haga en ese
+  mismo turno (log `[anuncio_sin_hacer]`; 2 casos reales: cálculo nunca entregado y
+  fundamento de sustitución patronal nunca explicado). (2) `ia_conversacion_menciona_conciliacion()`
+  -- si el cliente mencionó conciliación/citatorio/audiencia y `calcular_plazo_demanda` se
+  llamó sin fecha de solicitud, el resultado trae `aviso_conciliacion` (caso real: "ya fui a
+  conciliación, audiencia el 2 de diciembre" y el bot le dijo que aún debía presentar su
+  solicitud). Prompt: el Art. 56 no es para cambios de horario/condiciones (error repetido).
+- Otros reales ya cubiertos por reglas del 15-16 nov (rescisión por cambio de jornada, Art. 73
+  en vez de 75 para día festivo, horas extra calculadas a mano). 73 casos en pruebas_bot.php.
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --

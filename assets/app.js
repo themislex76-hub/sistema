@@ -3558,6 +3558,7 @@ function shellHTML(){
         <button data-v="alertas" class="${VIEW==='alertas'?'active':''}"><span class="ico">${ICONS.alertas}</span> Alertas de prescripción</button>
         <button data-v="preguntas_abogado" class="${VIEW==='preguntas_abogado'?'active':''}"><span class="ico">🧑‍⚖️</span> Preguntas al abogado ${preguntasAbogadoBadgeCount()>0?`<span class="nav-badge">${preguntasAbogadoBadgeCount()}</span>`:""}</button>
         <button data-v="cobros" class="${VIEW==='cobros'?'active':''}"><span class="ico">&#128176;</span> Cobros de convenios</button>
+        ${isAdmin ? `<button data-v="negocio" class="${VIEW==='negocio'?'active':''}"><span class="ico">&#128200;</span> Embudo del negocio</button>` : ""}
         ${isAdmin ? `<button data-v="ingresos" class="${VIEW==='ingresos'?'active':''}"><span class="ico">&#128202;</span> Ingresos por periodo</button>` : ""}
         <button data-v="demandados" class="${VIEW==='demandados'?'active':''}"><span class="ico">&#127970;</span> Empresas demandadas</button>
         <button data-v="exito" class="${VIEW==='exito'?'active':''}"><span class="ico">&#127942;</span> Tasa de éxito</button>
@@ -3601,6 +3602,7 @@ const VIEW_TITLES = {
   expedientes:["Expedientes", "Consulta, filtra y administra cada asunto"],
   alertas:["Alertas de prescripción", "Cómputo conforme al Título Décimo de la Ley Federal del Trabajo, según el tipo de cada asunto"],
   cobros:["Cobros de convenios", "Seguimiento de pagos pactados en convenios de conciliación"],
+  negocio:["Embudo del negocio", "Live de TikTok → conversaciones de WhatsApp → asesorías pagadas → juicios"],
   ingresos:["Ingresos por periodo", "Cuánto se ha cobrado, agrupado por el periodo que elijas"],
   demandados:["Empresas demandadas", "Qué demandados se repiten, cuánto han pagado y qué tanto negocian"],
   exito:["Tasa de éxito", "Qué tan seguido se resuelven los asuntos a favor del trabajador"],
@@ -3656,6 +3658,7 @@ function bindShell(){
     b.addEventListener('click', ()=>{
       VIEW = b.dataset.v; renderViewBody(); highlightNav(); closeMobileMenu();
       if(VIEW==='conversaciones' && !WA_EMBUDO) loadWhatsappEmbudo().then(renderViewBody);
+      if(VIEW==='negocio' && !NEGOCIO && !NEGOCIO_CARGANDO) loadNegocioEmbudo().then(renderViewBody);
     });
   });
   const pushNotifBtn = document.getElementById('pushNotifBtn');
@@ -3741,6 +3744,7 @@ function renderViewBody(){
   else if(VIEW==='alertas') el.innerHTML = alertasHTML();
   else if(VIEW==='cobros') el.innerHTML = cobrosHTML();
   else if(VIEW==='ingresos') el.innerHTML = ingresosHTML();
+  else if(VIEW==='negocio') el.innerHTML = (CURRENT_USER.role === 'Administrador') ? negocioEmbudoHTML() : '';
   else if(VIEW==='demandados') el.innerHTML = demandadosHTML();
   else if(VIEW==='exito') el.innerHTML = tasaExitoHTML();
   else if(VIEW==='manual') el.innerHTML = manualHTML();
@@ -6124,6 +6128,237 @@ function actividadPorDiaHTML(porDia){
   </div>`;
 }
 
+// ---------- Embudo del negocio (solo Administrador) ----------
+// Live de TikTok → conversaciones nuevas de WhatsApp → pagaron asesoría →
+// se volvieron juicio. Ver api/negocio_embudo.php. Las estadísticas del live
+// se capturan a mano (TikTok no las da por API), una fila por día
+// (api/tiktok_lives_guardar.php, tabla tiktok_lives, migración 073).
+let NEGOCIO = null;
+let NEGOCIO_PERIODO = 'mes_actual';
+let NEGOCIO_DESDE = '';
+let NEGOCIO_HASTA = '';
+let NEGOCIO_CARGANDO = false;
+let NEGOCIO_ERROR = '';
+let NEGOCIO_EDITAR = null; // fila de tiktok_lives cargada en el formulario
+
+async function loadNegocioEmbudo(){
+  NEGOCIO_CARGANDO = true; NEGOCIO_ERROR = '';
+  try{
+    const rango = NEGOCIO_PERIODO === 'semana'
+      ? rangoPeriodo('semana')
+      : rangoPeriodo(NEGOCIO_PERIODO, NEGOCIO_DESDE, NEGOCIO_HASTA);
+    NEGOCIO = await api('GET', 'negocio_embudo.php?desde=' + encodeURIComponent(rango.desde) + '&hasta=' + encodeURIComponent(rango.hasta));
+  }catch(e){ NEGOCIO = null; NEGOCIO_ERROR = e.message || 'No se pudo cargar el embudo.'; }
+  NEGOCIO_CARGANDO = false;
+}
+
+function negocioNum(n){ return Number(n||0).toLocaleString('es-MX'); }
+function negocioPct(num, den){
+  if(!den) return '—';
+  const p = num/den*100;
+  return (p < 1 ? p.toFixed(2) : p < 10 ? p.toFixed(1) : Math.round(p)) + '%';
+}
+
+function negocioEmbudoHTML(){
+  const chips = [
+    ['semana','Últimos 7 días'], ['mes_actual','Este mes'], ['mes_anterior','Mes anterior'],
+    ['anio_actual','Este año'], ['todo','Todo el histórico'], ['personalizado','Personalizado']
+  ];
+  const chipsHTML = `
+    <div class="filters" style="margin:0 0 12px;">
+      ${chips.map(([v,label])=>`<div class="chip ${NEGOCIO_PERIODO===v?'active':''}" data-negocio-periodo="${v}">${label}</div>`).join("")}
+    </div>
+    ${NEGOCIO_PERIODO==='personalizado' ? `
+    <div style="display:flex; gap:12px; align-items:end; margin-bottom:12px; flex-wrap:wrap;">
+      <div class="field"><label>Desde</label><input type="date" id="negocioDesde" value="${NEGOCIO_DESDE}"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="negocioHasta" value="${NEGOCIO_HASTA}"></div>
+      <button class="btn" id="negocioAplicarBtn">Aplicar</button>
+    </div>` : ''}`;
+
+  if(NEGOCIO_CARGANDO || !NEGOCIO){
+    return `<div class="panel"><div class="panel-body" style="padding:16px 18px;">${chipsHTML}
+      <div class="notice" style="margin:0;">${NEGOCIO_ERROR ? escapeHTML(NEGOCIO_ERROR) : 'Cargando...'}</div></div></div>`;
+  }
+  const d = NEGOCIO;
+  const live = d.live || {};
+  const ases = d.asesorias || {};
+  const juicios = d.juicios || [];
+  const sinLive = !live.dias_capturados;
+
+  const pasos = [
+    {titulo:'Espectadores únicos del live', valor: sinLive ? null : live.espectadores_unicos,
+     nota: sinLive ? 'Sin capturar en este periodo — usa el formulario de abajo' : `${negocioNum(live.dias_capturados)} día(s) capturado(s) · ${negocioNum(live.visualizaciones)} visualizaciones`, color:'#2563eb'},
+    {titulo:'Personas que escribieron por WhatsApp', valor: d.conversaciones_totales,
+     nota:`${negocioNum(d.conversaciones_nuevas)} nuevas · ${negocioNum(Math.max(0,(d.conversaciones_totales||0)-(d.conversaciones_nuevas||0)))} ya habían escrito antes`, color:'#0891b2'},
+    {titulo:'Asesorías pagadas', valor: ases.pagos, base: ases.personas,
+     nota:`${negocioNum(ases.personas)} persona(s) · ${negocioNum(ases.personas_ya_habian_pagado_antes)} ya habían pagado antes · ${negocioNum(ases.personas_pagaron_varias_en_periodo)} pagaron 2+ veces en el periodo · ${fmtMoney(ases.ingreso)}`, color:'#16a34a'},
+    {titulo:'Se volvieron juicio', valor: juicios.length,
+     nota:'Expediente dado de alta con su mismo teléfono, después del pago', color:'#b45309'},
+  ];
+  const anchos = [100, 82, 64, 46];
+  const embudo = pasos.map((p,i)=>{
+    // Se compara persona contra persona (una misma persona puede pagar varias asesorías).
+    const prev = i>0 ? (pasos[i-1].base ?? pasos[i-1].valor) : null;
+    const actual = p.base ?? p.valor;
+    const conv = i>0 ? `<div style="text-align:center; font-size:12px; color:var(--gray); margin:4px 0;">▼ ${(prev===null||actual===null)?'—':negocioPct(actual, prev)} de las personas pasa a esta etapa</div>` : '';
+    return `${conv}
+      <div style="width:${anchos[i]}%; margin:0 auto; background:${p.color}; color:#fff; border-radius:10px; padding:12px 16px; text-align:center;">
+        <div style="font-size:26px; font-weight:800;">${p.valor===null?'—':negocioNum(p.valor)}</div>
+        <div style="font-size:14px; font-weight:700;">${p.titulo}</div>
+        <div style="font-size:11px; opacity:.9; margin-top:2px;">${p.nota}</div>
+      </div>`;
+  }).join('');
+
+  const ingresoTotal = (ases.ingreso||0) + (d.documentos?.ingreso||0) + (d.cursos?.ingreso||0);
+  const resumen = `
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:16px;">
+      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Del live a juicio</div><div style="font-size:20px; font-weight:800;">${sinLive?'—':negocioPct(juicios.length, live.espectadores_unicos)}</div></div>
+      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">De WhatsApp a asesoría (personas)</div><div style="font-size:20px; font-weight:800;">${negocioPct(ases.personas, d.conversaciones_totales)}</div></div>
+      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">De asesoría a juicio (personas)</div><div style="font-size:20px; font-weight:800;">${negocioPct(juicios.length, ases.personas)}</div></div>
+      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Documentos $49</div><div style="font-size:20px; font-weight:800;">${negocioNum(d.documentos?.cantidad)}</div><div style="font-size:11px;">${fmtMoney(d.documentos?.ingreso||0)}</div></div>
+      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Cursos</div><div style="font-size:20px; font-weight:800;">${negocioNum(d.cursos?.cantidad)}</div><div style="font-size:11px;">${fmtMoney(d.cursos?.ingreso||0)}</div></div>
+      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Ingreso por bot (asesorías + documentos + cursos)</div><div style="font-size:20px; font-weight:800;">${fmtMoney(ingresoTotal)}</div></div>
+    </div>
+    <div style="font-size:11px; color:var(--gray); margin-top:10px;">Cada live se compara con lo que generó: todo lo que llega (WhatsApp y pagos) desde las ${d.hora_corte||20}:00 del día del live hasta que empieza el siguiente live. Si un día no hubo live (por ejemplo sábado y domingo), lo de ese día se le cuenta al último live, hasta ${d.dias_arrastre||3} días atrás. Por eso es importante capturar TODOS los lives: un live sin capturar se le suma al anterior.</div>
+    <div style="font-size:11px; color:var(--gray); margin-top:6px;">"Se volvieron juicio" cuenta a las personas que pagaron asesoría en este periodo; las asesorías muy recientes todavía pueden convertirse en juicio más adelante, así que este número sube con el tiempo.</div>`;
+
+  // ¿De dónde llegan? Cada canal tiene su link de WhatsApp con un mensaje ya
+  // escrito; se muestran solo los canales que ya trajeron gente.
+  const canales = (d.canales || []).filter(c => c.conversaciones_nuevas > 0);
+  const soloDirecto = canales.length <= 1 && (!canales.length || canales[0].canal === 'directo');
+  const tablaCanales = `
+    <div style="overflow-x:auto;"><table>
+      <thead><tr><th>Canal</th><th>Conversaciones nuevas</th><th>Pagaron asesoría</th><th>Conversión</th></tr></thead>
+      <tbody>${!canales.length ? `<tr><td colspan="4" class="empty">Sin conversaciones nuevas en este periodo.</td></tr>` : canales.map(c=>`<tr>
+        <td>${escapeHTML(c.nombre)}</td><td>${negocioNum(c.conversaciones_nuevas)}</td><td>${negocioNum(c.pagaron_asesoria)}</td>
+        <td>${negocioPct(c.pagaron_asesoria, c.conversaciones_nuevas)}</td></tr>`).join('')}</tbody>
+    </table></div>
+    ${soloDirecto ? `<div style="font-size:11px; color:var(--gray); padding:10px 16px;">Cuando uses un link de WhatsApp distinto por canal (perfil de TikTok, videos, página web, Google Maps), aquí se separa solo cuánta gente llega por cada uno y cuántos pagan.</div>` : ''}`;
+
+  const e = NEGOCIO_EDITAR || {};
+  const hoyISO = isoDate(new Date());
+  const v = (k)=> e[k]===null || e[k]===undefined ? '' : e[k];
+  const formLive = !d.tabla_lives_existe
+    ? `<div class="notice" style="margin:0;">Falta correr la migración <b>073_tiktok_lives_estadisticas.sql</b> en phpMyAdmin para poder capturar las estadísticas del live.</div>`
+    : `
+      <div style="font-size:12px; color:var(--gray); margin-bottom:10px;">Copia los datos de TikTok Live Center → Estadísticas, pasando el cursor sobre cada día de la gráfica. Si ya capturaste ese día, se reemplaza.</div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px;">
+        <div class="field"><label>Fecha</label><input type="date" id="liveFecha" value="${escapeHTML(v('fecha')||hoyISO)}"></div>
+        <div class="field"><label>Espectadores únicos *</label><input type="number" min="0" id="liveUnicos" value="${v('espectadores_unicos')}"></div>
+        <div class="field"><label>Visualizaciones</label><input type="number" min="0" id="liveVis" value="${v('visualizaciones')}"></div>
+        <div class="field"><label>Espectadores activos</label><input type="number" min="0" id="liveActivos" value="${v('espectadores_activos')}"></div>
+        <div class="field"><label>Duración media de visualización (min)</label><input type="number" min="0" step="0.01" id="liveDurMedia" value="${v('duracion_media_min')}"></div>
+        <div class="field"><label>Pico de espectadores simultáneos</label><input type="number" min="0" id="livePico" value="${v('pico_simultaneos')}"></div>
+        <div class="field"><label>Media de espectadores simultáneos</label><input type="number" min="0" id="liveMedia" value="${v('media_simultaneos')}"></div>
+        <div class="field"><label>Duración del live (min)</label><input type="number" min="0" id="liveDuracion" value="${v('duracion_live_min')}"></div>
+      </div>
+      <div class="field" style="margin-top:10px;"><label>Notas (tema del live, invitado, etc.)</label><input type="text" maxlength="255" id="liveNotas" value="${escapeHTML(String(v('notas')))}"></div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <button class="btn" id="liveGuardarBtn">Guardar día</button>
+        ${NEGOCIO_EDITAR ? `<button class="btn secondary" id="liveCancelarBtn">Cancelar edición</button>` : ''}
+      </div>`;
+
+  const lives = d.lives || [];
+  const tablaLives = !lives.length ? '' : `
+    <div style="overflow-x:auto; margin-top:14px;"><table>
+      <thead><tr><th>Fecha</th><th>Únicos</th><th>Visualizaciones</th><th>Activos</th><th>Dur. media</th><th>Pico</th><th>Media simult.</th><th>Duración live</th><th>Notas</th><th></th></tr></thead>
+      <tbody>${lives.map((l,i)=>`<tr>
+        <td>${fmtDate(l.fecha)}</td><td>${negocioNum(l.espectadores_unicos)}</td><td>${negocioNum(l.visualizaciones)}</td>
+        <td>${negocioNum(l.espectadores_activos)}</td><td>${l.duracion_media_min===null?'—':l.duracion_media_min+' min'}</td>
+        <td>${l.pico_simultaneos===null?'—':negocioNum(l.pico_simultaneos)}</td><td>${l.media_simultaneos===null?'—':negocioNum(l.media_simultaneos)}</td>
+        <td>${l.duracion_live_min===null?'—':l.duracion_live_min+' min'}</td><td>${escapeHTML(l.notas||'')}</td>
+        <td style="white-space:nowrap;"><button class="btn secondary" data-live-editar="${i}">Editar</button> <button class="btn secondary" data-live-borrar="${escapeHTML(l.fecha)}">Borrar</button></td>
+      </tr>`).join('')}</tbody></table></div>`;
+
+  const filas = (d.por_dia||[]).filter(x=>x.live_capturado || x.conversaciones_nuevas || x.asesorias_pagadas || x.documentos_pagados || x.cursos_pagados).slice().reverse();
+  const tablaDias = `
+    <div style="overflow-x:auto;"><table>
+      <thead><tr><th>Live del día</th><th>Únicos live</th><th>WhatsApp nuevos</th><th>Asesorías pagadas</th><th>Documentos</th><th>Cursos</th></tr></thead>
+      <tbody>${!filas.length ? `<tr><td colspan="6" class="empty">Sin actividad en este periodo.</td></tr>` : filas.map(x=>`<tr>
+        <td>${fmtDate(x.dia)}</td><td>${x.live_capturado?negocioNum(x.espectadores_unicos):'—'}</td><td>${x.conversaciones_nuevas}</td>
+        <td>${x.asesorias_pagadas}</td><td>${x.documentos_pagados}</td><td>${x.cursos_pagados}</td></tr>`).join('')}</tbody>
+    </table></div>`;
+
+  const tablaJuicios = `
+    <div style="overflow-x:auto;"><table>
+      <thead><tr><th>Cliente vs demandado</th><th>Expediente</th><th>Pagó asesoría</th><th>Alta del expediente</th><th>Días entre</th></tr></thead>
+      <tbody>${!juicios.length ? `<tr><td colspan="5" class="empty">Todavía ninguna asesoría de este periodo se ha vuelto juicio.</td></tr>` : juicios.map(j=>`<tr data-id="${j.expediente_id}" style="cursor:pointer;">
+        <td>${escapeHTML(j.actor||'')} vs ${escapeHTML(j.demandado||'')}</td><td>${escapeHTML(j.exp||'—')}</td>
+        <td>${fmtDate(j.asesoria_pagada_en)}</td><td>${fmtDate(j.expediente_creado_en)}</td><td>${j.dias_entre}</td></tr>`).join('')}</tbody>
+    </table></div>`;
+
+  return `
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>Embudo del negocio</h3><span class="count">${fmtDate(d.desde)} – ${fmtDate(d.hasta)}</span></div>
+    <div class="panel-body" style="padding:16px 18px;">${chipsHTML}${embudo}${resumen}</div>
+  </div>
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>¿De dónde llegan?</h3><span class="count">personas que escribieron por primera vez</span></div>
+    <div class="panel-body" style="padding:0;">${tablaCanales}</div>
+  </div>
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>${NEGOCIO_EDITAR ? 'Editar estadísticas del live' : 'Capturar estadísticas del live (TikTok)'}</h3></div>
+    <div class="panel-body" style="padding:16px 18px;">${formLive}${tablaLives}</div>
+  </div>
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>Juicios que salieron de asesorías de este periodo</h3><span class="count">${juicios.length}</span></div>
+    <div class="panel-body" style="padding:0;">${tablaJuicios}</div>
+  </div>
+  <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>Detalle por live</h3><span class="count">WhatsApp y pagos desde las 8 pm del live hasta el siguiente live</span></div>
+    <div class="panel-body" style="padding:0;">${tablaDias}</div>
+  </div>`;
+}
+
+function bindNegocioEmbudo(){
+  if(VIEW !== 'negocio') return;
+  document.querySelectorAll('.chip[data-negocio-periodo]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      NEGOCIO_PERIODO = el.dataset.negocioPeriodo;
+      if(NEGOCIO_PERIODO !== 'personalizado') loadNegocioEmbudo().then(renderViewBody);
+      renderViewBody();
+    });
+  });
+  const aplicar = document.getElementById('negocioAplicarBtn');
+  if(aplicar) aplicar.addEventListener('click', ()=>{
+    NEGOCIO_DESDE = document.getElementById('negocioDesde').value;
+    NEGOCIO_HASTA = document.getElementById('negocioHasta').value;
+    loadNegocioEmbudo().then(renderViewBody); renderViewBody();
+  });
+  const guardar = document.getElementById('liveGuardarBtn');
+  if(guardar) guardar.addEventListener('click', async ()=>{
+    const val = id => document.getElementById(id).value;
+    if(!val('liveFecha')){ alert('Falta la fecha.'); return; }
+    if(val('liveUnicos')===''){ alert('Falta el número de espectadores únicos.'); return; }
+    guardar.disabled = true; guardar.textContent = 'Guardando...';
+    try{
+      await api('POST', 'tiktok_lives_guardar.php', {
+        fecha: val('liveFecha'), espectadores_unicos: val('liveUnicos'), visualizaciones: val('liveVis'),
+        espectadores_activos: val('liveActivos'), duracion_media_min: val('liveDurMedia'),
+        pico_simultaneos: val('livePico'), media_simultaneos: val('liveMedia'),
+        duracion_live_min: val('liveDuracion'), notas: val('liveNotas'),
+      });
+      NEGOCIO_EDITAR = null;
+      await loadNegocioEmbudo(); renderViewBody();
+    }catch(e){ alert('No se pudo guardar: ' + e.message); guardar.disabled = false; guardar.textContent = 'Guardar día'; }
+  });
+  const cancelar = document.getElementById('liveCancelarBtn');
+  if(cancelar) cancelar.addEventListener('click', ()=>{ NEGOCIO_EDITAR = null; renderViewBody(); });
+  document.querySelectorAll('[data-live-editar]').forEach(el=>{
+    el.addEventListener('click', ()=>{
+      NEGOCIO_EDITAR = (NEGOCIO.lives||[])[Number(el.dataset.liveEditar)] || null;
+      renderViewBody(); window.scrollTo({top:0, behavior:'smooth'});
+    });
+  });
+  document.querySelectorAll('[data-live-borrar]').forEach(el=>{
+    el.addEventListener('click', async ()=>{
+      if(!confirm('¿Borrar las estadísticas del live del ' + fmtDate(el.dataset.liveBorrar) + '?')) return;
+      try{ await api('POST', 'tiktok_lives_guardar.php', {fecha: el.dataset.liveBorrar, eliminar: true}); await loadNegocioEmbudo(); renderViewBody(); }
+      catch(e){ alert('No se pudo borrar: ' + e.message); }
+    });
+  });
+}
+
 // ---------- Embudo de WhatsApp por fecha (periodo elegible) ----------
 let WA_EMBUDO = null;
 let WA_EMBUDO_PERIODO = 'mes_actual';
@@ -7539,6 +7774,7 @@ function clientePreviewHTML(){
 // Bindings de la vista activa (tabla, filas, chips)
 // ---------------------------------------------------------------
 function bindViewBody(){
+  bindNegocioEmbudo();
   const descargarPlantillaBtn = document.getElementById('descargarPlantillaBtn');
   if(descargarPlantillaBtn){
     descargarPlantillaBtn.addEventListener('click', ()=>{
