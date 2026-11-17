@@ -3136,8 +3136,10 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   región Ecatepec (Ecatepec, Apaxco, Coacalco, Hueypoxtla, Jaltenco, Nextlalpan, Tecámac,
   Tequixquiac, Tonanitla, Zumpango). Cuenta el municipio del CENTRO DE TRABAJO, nunca el
   domicilio del trabajador (aclaración explícita del usuario). Fuera de la lista: se orienta y se
-  ofrece la asesoría de $499, pero se le dice ANTES de pagar que el despacho no llevaría su
-  juicio allá. 2 casos nuevos en `scripts/pruebas_bot.php` (76).
+  ofrece la asesoría de $499 normal; el bot NO menciona la zona por su cuenta (ajuste del
+  usuario el mismo día: "si no perdemos asesorías") -- solo si la persona pregunta si el
+  despacho puede llevar/representar su caso aclara que allá no se litiga; nunca promete
+  representación fuera de la lista. 2 casos nuevos en `scripts/pruebas_bot.php` (76).
 - CDMX se tomó completa (todas las alcaldías) porque el usuario dijo "los municipios que ya
   conoces" y el bot ya decía CDMX; si alguna alcaldía no se lleva, corregir la lista.
 

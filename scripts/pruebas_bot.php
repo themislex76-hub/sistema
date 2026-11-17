@@ -215,7 +215,7 @@ $municipios = ['Tlalnepantla', 'Atizapán de Zaragoza', 'Cuautitlán Izcalli', '
     'Tonanitla', 'Zumpango'];
 $faltan = array_filter($municipios, fn($m) => strpos($p, $m) === false);
 caso('la lista completa de municipios está en el prompt' . ($faltan ? ' (faltan: ' . implode(', ', $faltan) . ')' : ''), !$faltan);
-caso('fuera de la lista: se avisa ANTES de pagar que no se lleva el juicio', strpos($p, 'ANTES de que pague dile con claridad que el despacho no podría') !== false);
+caso('fuera de la lista: solo se aclara si preguntan por representación, nunca se promete', strpos($p, 'NO saques el tema de la zona por tu cuenta') !== false && strpos($p, 'En ningún caso le prometas ni le insinúes') !== false);
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
