@@ -6188,17 +6188,19 @@ function negocioEmbudoHTML(){
   const pasos = [
     {titulo:'Espectadores únicos del live', valor: sinLive ? null : live.espectadores_unicos,
      nota: sinLive ? 'Sin capturar en este periodo — usa el formulario de abajo' : `${negocioNum(live.dias_capturados)} día(s) capturado(s) · ${negocioNum(live.visualizaciones)} visualizaciones`, color:'#2563eb'},
-    {titulo:'Conversaciones nuevas de WhatsApp', valor: d.conversaciones_nuevas,
-     nota:`Números que escribieron por primera vez · ${negocioNum(d.conversaciones_totales)} escribieron en total`, color:'#0891b2'},
-    {titulo:'Pagaron asesoría', valor: ases.personas,
-     nota:`${negocioNum(ases.pagos)} pago(s) · ${fmtMoney(ases.ingreso)}`, color:'#16a34a'},
+    {titulo:'Personas que escribieron por WhatsApp', valor: d.conversaciones_totales,
+     nota:`${negocioNum(d.conversaciones_nuevas)} nuevas · ${negocioNum(Math.max(0,(d.conversaciones_totales||0)-(d.conversaciones_nuevas||0)))} ya habían escrito antes`, color:'#0891b2'},
+    {titulo:'Asesorías pagadas', valor: ases.pagos, base: ases.personas,
+     nota:`${negocioNum(ases.personas)} persona(s) · ${negocioNum(ases.personas_ya_habian_pagado_antes)} ya habían pagado antes · ${negocioNum(ases.personas_pagaron_varias_en_periodo)} pagaron 2+ veces en el periodo · ${fmtMoney(ases.ingreso)}`, color:'#16a34a'},
     {titulo:'Se volvieron juicio', valor: juicios.length,
      nota:'Expediente dado de alta con su mismo teléfono, después del pago', color:'#b45309'},
   ];
   const anchos = [100, 82, 64, 46];
   const embudo = pasos.map((p,i)=>{
-    const prev = i>0 ? pasos[i-1].valor : null;
-    const conv = i>0 ? `<div style="text-align:center; font-size:12px; color:var(--gray); margin:4px 0;">▼ ${(prev===null||p.valor===null)?'—':negocioPct(p.valor, prev)} pasa a la siguiente etapa</div>` : '';
+    // Se compara persona contra persona (una misma persona puede pagar varias asesorías).
+    const prev = i>0 ? (pasos[i-1].base ?? pasos[i-1].valor) : null;
+    const actual = p.base ?? p.valor;
+    const conv = i>0 ? `<div style="text-align:center; font-size:12px; color:var(--gray); margin:4px 0;">▼ ${(prev===null||actual===null)?'—':negocioPct(actual, prev)} de las personas pasa a esta etapa</div>` : '';
     return `${conv}
       <div style="width:${anchos[i]}%; margin:0 auto; background:${p.color}; color:#fff; border-radius:10px; padding:12px 16px; text-align:center;">
         <div style="font-size:26px; font-weight:800;">${p.valor===null?'—':negocioNum(p.valor)}</div>
@@ -6211,13 +6213,27 @@ function negocioEmbudoHTML(){
   const resumen = `
     <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-top:16px;">
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Del live a juicio</div><div style="font-size:20px; font-weight:800;">${sinLive?'—':negocioPct(juicios.length, live.espectadores_unicos)}</div></div>
-      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">De WhatsApp a asesoría</div><div style="font-size:20px; font-weight:800;">${negocioPct(ases.personas, d.conversaciones_nuevas)}</div></div>
-      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">De asesoría a juicio</div><div style="font-size:20px; font-weight:800;">${negocioPct(juicios.length, ases.personas)}</div></div>
+      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">De WhatsApp a asesoría (personas)</div><div style="font-size:20px; font-weight:800;">${negocioPct(ases.personas, d.conversaciones_totales)}</div></div>
+      <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">De asesoría a juicio (personas)</div><div style="font-size:20px; font-weight:800;">${negocioPct(juicios.length, ases.personas)}</div></div>
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Documentos $49</div><div style="font-size:20px; font-weight:800;">${negocioNum(d.documentos?.cantidad)}</div><div style="font-size:11px;">${fmtMoney(d.documentos?.ingreso||0)}</div></div>
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Cursos</div><div style="font-size:20px; font-weight:800;">${negocioNum(d.cursos?.cantidad)}</div><div style="font-size:11px;">${fmtMoney(d.cursos?.ingreso||0)}</div></div>
       <div class="notice" style="margin:0;"><div style="font-size:11px; color:var(--gray);">Ingreso por bot (asesorías + documentos + cursos)</div><div style="font-size:20px; font-weight:800;">${fmtMoney(ingresoTotal)}</div></div>
     </div>
-    <div style="font-size:11px; color:var(--gray); margin-top:10px;">"Se volvieron juicio" cuenta a las personas que pagaron asesoría en este periodo; las asesorías muy recientes todavía pueden convertirse en juicio más adelante, así que este número sube con el tiempo.</div>`;
+    <div style="font-size:11px; color:var(--gray); margin-top:10px;">Cada live se compara con lo que generó: todo lo que llega (WhatsApp y pagos) desde las ${d.hora_corte||20}:00 del día del live hasta que empieza el siguiente live. Si un día no hubo live (por ejemplo sábado y domingo), lo de ese día se le cuenta al último live, hasta ${d.dias_arrastre||3} días atrás. Por eso es importante capturar TODOS los lives: un live sin capturar se le suma al anterior.</div>
+    <div style="font-size:11px; color:var(--gray); margin-top:6px;">"Se volvieron juicio" cuenta a las personas que pagaron asesoría en este periodo; las asesorías muy recientes todavía pueden convertirse en juicio más adelante, así que este número sube con el tiempo.</div>`;
+
+  // ¿De dónde llegan? Cada canal tiene su link de WhatsApp con un mensaje ya
+  // escrito; se muestran solo los canales que ya trajeron gente.
+  const canales = (d.canales || []).filter(c => c.conversaciones_nuevas > 0);
+  const soloDirecto = canales.length <= 1 && (!canales.length || canales[0].canal === 'directo');
+  const tablaCanales = `
+    <div style="overflow-x:auto;"><table>
+      <thead><tr><th>Canal</th><th>Conversaciones nuevas</th><th>Pagaron asesoría</th><th>Conversión</th></tr></thead>
+      <tbody>${!canales.length ? `<tr><td colspan="4" class="empty">Sin conversaciones nuevas en este periodo.</td></tr>` : canales.map(c=>`<tr>
+        <td>${escapeHTML(c.nombre)}</td><td>${negocioNum(c.conversaciones_nuevas)}</td><td>${negocioNum(c.pagaron_asesoria)}</td>
+        <td>${negocioPct(c.pagaron_asesoria, c.conversaciones_nuevas)}</td></tr>`).join('')}</tbody>
+    </table></div>
+    ${soloDirecto ? `<div style="font-size:11px; color:var(--gray); padding:10px 16px;">Cuando uses un link de WhatsApp distinto por canal (perfil de TikTok, videos, página web, Google Maps), aquí se separa solo cuánta gente llega por cada uno y cuántos pagan.</div>` : ''}`;
 
   const e = NEGOCIO_EDITAR || {};
   const hoyISO = isoDate(new Date());
@@ -6257,7 +6273,7 @@ function negocioEmbudoHTML(){
   const filas = (d.por_dia||[]).filter(x=>x.live_capturado || x.conversaciones_nuevas || x.asesorias_pagadas || x.documentos_pagados || x.cursos_pagados).slice().reverse();
   const tablaDias = `
     <div style="overflow-x:auto;"><table>
-      <thead><tr><th>Fecha</th><th>Únicos live</th><th>WhatsApp nuevos</th><th>Asesorías pagadas</th><th>Documentos</th><th>Cursos</th></tr></thead>
+      <thead><tr><th>Live del día</th><th>Únicos live</th><th>WhatsApp nuevos</th><th>Asesorías pagadas</th><th>Documentos</th><th>Cursos</th></tr></thead>
       <tbody>${!filas.length ? `<tr><td colspan="6" class="empty">Sin actividad en este periodo.</td></tr>` : filas.map(x=>`<tr>
         <td>${fmtDate(x.dia)}</td><td>${x.live_capturado?negocioNum(x.espectadores_unicos):'—'}</td><td>${x.conversaciones_nuevas}</td>
         <td>${x.asesorias_pagadas}</td><td>${x.documentos_pagados}</td><td>${x.cursos_pagados}</td></tr>`).join('')}</tbody>
@@ -6277,6 +6293,10 @@ function negocioEmbudoHTML(){
     <div class="panel-body" style="padding:16px 18px;">${chipsHTML}${embudo}${resumen}</div>
   </div>
   <div class="panel" style="margin-bottom:18px;">
+    <div class="panel-head"><h3>¿De dónde llegan?</h3><span class="count">personas que escribieron por primera vez</span></div>
+    <div class="panel-body" style="padding:0;">${tablaCanales}</div>
+  </div>
+  <div class="panel" style="margin-bottom:18px;">
     <div class="panel-head"><h3>${NEGOCIO_EDITAR ? 'Editar estadísticas del live' : 'Capturar estadísticas del live (TikTok)'}</h3></div>
     <div class="panel-body" style="padding:16px 18px;">${formLive}${tablaLives}</div>
   </div>
@@ -6285,7 +6305,7 @@ function negocioEmbudoHTML(){
     <div class="panel-body" style="padding:0;">${tablaJuicios}</div>
   </div>
   <div class="panel" style="margin-bottom:18px;">
-    <div class="panel-head"><h3>Detalle por día</h3></div>
+    <div class="panel-head"><h3>Detalle por live</h3><span class="count">WhatsApp y pagos desde las 8 pm del live hasta el siguiente live</span></div>
     <div class="panel-body" style="padding:0;">${tablaDias}</div>
   </div>`;
 }
