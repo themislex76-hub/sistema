@@ -293,6 +293,23 @@ piso de referencia, no lo que le corresponde con exactitud.
 CRITERIOS DEL DESPACHO PARA ORIENTAR CON PRECISIÓN (13-nov-2026) -- la
 orientación debe ser completa, pero cada afirmación legal tiene que ser
 exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
+· Vacaciones nunca disfrutadas (caso real, coach de tenis, 13-nov-2026):
+  si la persona dice que NO tomó vacaciones en años anteriores (o muy
+  pocas), pásale a calcular_estimado_liquidacion en
+  dias_vacaciones_anteriores los días que le correspondían por la tabla
+  del Art. 76 en los años de servicio YA cumplidos (al menos el último
+  año completo), menos los que sí tomó. La herramienta descarta sola los
+  prescritos. Nunca calcules solo las vacaciones proporcionales del año
+  en curso cuando ya te dijo que no tomó las anteriores.
+· Cuando le pagan TERCEROS (clientes, socios, alumnos, pasajeros) y la
+  persona misma cobra (caso real: coach de un club, pagado directo por
+  los socios): NO afirmes que "sin duda eres trabajador" ni que lo que
+  cobraba "es tu salario para la ley". El Art. 82 dice que el salario lo
+  paga el patrón, y el centro de trabajo puede alegar que era
+  independiente. Dile que la relación de trabajo se presume (Art. 21) y
+  que puede sostenerse con pruebas de subordinación (quién le fijaba
+  horario, lugar y órdenes, si el centro controlaba los cobros o la
+  caja), y que eso lo valora el abogado con sus pruebas.
 · Artículos: antes de mencionarle al cliente CUALQUIER número de
   artículo, consulta su texto oficial con consultar_articulo_lft (o
   buscar_en_lft si no sabes cuál es) en ese mismo turno, y cítalo solo
@@ -748,17 +765,20 @@ memoria — es la fuente más común de errores):
     calcular. Adivinar aquí es la fuente más común de que el cálculo
     cambie feo entre un mensaje y el siguiente, lo cual se ve muy poco
     profesional.
-    REGLA DURA — salario diario de comisionista o ingreso variable:
-    cuando la persona no tiene un sueldo fijo (comisiones, propinas,
-    ingreso variable), la ley usa el promedio de lo percibido en el
-    último año trabajado (o de todo el tiempo trabajado, si es menos de
-    un año) — Art. 289 LFT. Pídele el total percibido en un periodo
-    conocido (idealmente los últimos 12 meses; si no los tiene, usa los
-    meses que sí tenga, pero acláraselo así en tu respuesta: "con base
-    en tus últimos X meses, que es lo que me diste") y divide entre los
-    días naturales de ese mismo periodo (no siempre entre 30) para sacar
-    el salario diario — nunca lo dejes como una cuenta que puedas rehacer
-    distinto más adelante en la misma conversación.
+    REGLA DURA — salario diario de ingreso variable (comisiones,
+    propinas, pago por clase, por pieza o por servicio): el Art. 89 LFT
+    dice que, cuando la retribución es variable, se toma como salario
+    diario "el promedio de las percepciones obtenidas en los treinta días
+    efectivamente trabajados antes del nacimiento del derecho" (si en ese
+    lapso hubo aumento, el promedio desde la fecha del aumento). Pídele lo
+    que recibió en esos últimos 30 días trabajados antes del despido y
+    divídelo entre los días efectivamente trabajados de ese lapso. NO
+    cites el Art. 289 para esto: el 289 (promedio del último año) es
+    solo para agentes de comercio y otros semejantes (Capítulo IX del
+    Título Sexto). Si la persona solo sabe un promedio mensual general,
+    úsalo aclarándole que es aproximado y que el monto exacto sale de lo
+    que cobró en su último mes. Nunca lo dejes como una cuenta que puedas
+    rehacer distinto más adelante en la misma conversación.
     REGLA DURA — salario diario a partir de un pago SEMANAL: si la
     persona te da un monto semanal (ej. "$1,750 por semana"), NUNCA lo
     dividas entre 7 por default -- divide entre los días que de verdad
@@ -1680,7 +1700,7 @@ const IA_TOOLS = [
     ],
     [
         'name' => 'calcular_sdi_con_variable',
-        'description' => 'Calcula el salario diario a usar (con código real, no de memoria) cuando la persona tiene, además de su sueldo fijo, percepciones VARIABLES de periodicidad anual o esporádica (bono anual por objetivos, reparto de utilidades, comisión anual, etc.) -- promedia esos pagos sobre los últimos 365 días conforme al Art. 289 LFT. Llama esta herramienta SIEMPRE que haya un bono/percepción variable de este tipo de por medio, ANTES de llamar calcular_estimado_liquidacion -- NUNCA promedies tú mismo el bono a mano (bug real detectado en producción: la IA calculó un SDI "a mano" que salió distinto al de la herramienta, sin forma de saber cuál era el correcto, en un caso de $466,000 en juego). Si la persona tiene comisiones/variables que se pagan con frecuencia corta y regular (semanal/quincenal, no anual), NO uses esta herramienta -- ese promedio es distinto (30 días) y requiere revisión directa del abogado, dilo así.',
+        'description' => 'Calcula el salario diario a usar (con código real, no de memoria) cuando la persona tiene, además de su sueldo fijo, percepciones VARIABLES de periodicidad anual o esporádica (bono anual por objetivos, reparto de utilidades, comisión anual, etc.) -- promedia esos pagos sobre los últimos 365 días (no cites número de artículo para este promedio). Llama esta herramienta SIEMPRE que haya un bono/percepción variable de este tipo de por medio, ANTES de llamar calcular_estimado_liquidacion -- NUNCA promedies tú mismo el bono a mano (bug real detectado en producción: la IA calculó un SDI "a mano" que salió distinto al de la herramienta, sin forma de saber cuál era el correcto, en un caso de $466,000 en juego). Si la persona tiene comisiones/variables que se pagan con frecuencia corta y regular (semanal/quincenal, no anual), NO uses esta herramienta -- ese promedio es distinto (30 días) y requiere revisión directa del abogado, dilo así.',
         'input_schema' => [
             'type' => 'object',
             'properties' => [
@@ -2157,6 +2177,13 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     if ($ciudadFrontera !== null && empty($in['zona_libre_frontera_norte'])) {
                         $calc['aviso_zona_frontera'] = "El teléfono de esta persona es de lada de $ciudadFrontera (zona libre de la frontera norte). Si todavía no sabes en qué municipio TRABAJABA, pregúntaselo en este mismo mensaje; si confirma que trabajaba en un municipio de la frontera norte, vuelve a calcular con zona_libre_frontera_norte=true antes de darle cifras definitivas (cambia el tope de la prima de antigüedad, Art. 486 LFT). Si ya te dijo que trabaja en otro lugar, ignora este aviso.";
                     }
+                    // Caso real (coach de tenis, 13-nov-2026): el bot le dijo
+                    // que su plazo de 2 meses (Art. 518) ya había vencido y
+                    // después le sumó la indemnización de 3 meses a "lo que
+                    // tienes en juego" -- falsa expectativa.
+                    if (ia_bot_dijo_plazo_despido_vencido($mensajes)) {
+                        $calc['aviso_plazo_vencido'] = 'OJO: en esta conversación ya le dijiste a la persona que su plazo de 2 meses para demandar el despido (Art. 518) ya venció. Si eso sigue siendo así (no presentó solicitud de conciliación a tiempo), NO le presentes la indemnización de 3 meses (ni salarios caídos ni 20 días) como dinero que puede cobrar ni la sumes a un total "en juego": dale por separado solo lo que sigue vigente (finiquito, prima de antigüedad, aguinaldo y vacaciones no prescritos, que prescriben en 1 año, Art. 516) y dile que la indemnización depende de que el abogado revise si algo suspendió o interrumpió el plazo.';
+                    }
                     $contenido = json_encode($calc, JSON_UNESCAPED_UNICODE);
                     $usoCalculoLiquidacion = true;
                     // Se registra el cálculo (aunque la persona nunca llegue a
@@ -2451,6 +2478,19 @@ function ia_texto_anuncia_sin_hacer(string $texto): bool
 
 // true si en lo que escribió el CLIENTE aparece conciliación, un citatorio,
 // una audiencia o la constancia de no conciliación.
+/**
+ * true si en algún mensaje ANTERIOR del bot ya le dijo a la persona que su
+ * plazo para demandar el despido venció / prescribió.
+ */
+function ia_bot_dijo_plazo_despido_vencido(array $mensajes): bool
+{
+    foreach ($mensajes as $m) {
+        if (($m['role'] ?? '') !== 'assistant' || !is_string($m['content'] ?? null)) continue;
+        if (preg_match('/(plazo|t[ée]rmino|tiempo)[^.\n]{0,90}(venci[óo]|se agot[óo]|ya prescribi|ha prescrito|est[áa] prescrit)/iu', $m['content'])) return true;
+    }
+    return false;
+}
+
 function ia_conversacion_menciona_conciliacion(array $mensajes): bool
 {
     foreach ($mensajes as $m) {

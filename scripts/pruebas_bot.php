@@ -215,6 +215,16 @@ $municipios = ['Tlalnepantla', 'Atizapán de Zaragoza', 'Cuautitlán Izcalli', '
     'Tonanitla', 'Zumpango'];
 $faltan = array_filter($municipios, fn($m) => strpos($p, $m) === false);
 caso('la lista completa de municipios está en el prompt' . ($faltan ? ' (faltan: ' . implode(', ', $faltan) . ')' : ''), !$faltan);
+// ---------------------------------------------------------------------
+echo "13) Coach de tenis (13-nov): plazo vencido, Art. 89, vacaciones, pagos de terceros\n";
+caso('detecta que el bot ya dijo que el plazo del despido venció',
+    ia_bot_dijo_plazo_despido_vencido([['role' => 'assistant', 'content' => 'la ley (Art. 518 LFT) da un plazo de 2 meses para demandar un despido — ese plazo venció el 13 de octubre de 2026']])
+    && !ia_bot_dijo_plazo_despido_vencido([['role' => 'assistant', 'content' => 'Tienes 2 meses para demandar, todavía estás a tiempo.']])
+    && !ia_bot_dijo_plazo_despido_vencido([['role' => 'user', 'content' => 'creo que ya se me venció el plazo']]));
+caso('salario variable con Art. 89 (30 días), no Art. 289', strpos($p, 'treinta días') !== false && strpos($p, 'efectivamente trabajados antes del nacimiento del derecho') !== false && strpos($p, 'cites el Art. 289 para esto') !== false);
+caso('vacaciones nunca disfrutadas se pasan a la calculadora', strpos($p, 'Vacaciones nunca disfrutadas') !== false);
+caso('pagos de terceros: no afirmar que es trabajador', strpos($p, 'Cuando le pagan TERCEROS') !== false);
+
 caso('fuera de la lista: solo se aclara si preguntan por representación, nunca se promete', strpos($p, 'NO saques el tema de la zona por tu cuenta') !== false && strpos($p, 'En ningún caso le prometas ni le insinúes') !== false);
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
