@@ -510,7 +510,9 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   quedan o que ya se le pasó, pregúntale si presentó solicitud ante el
   Centro de Conciliación y en qué fecha, y si ya le dieron la Constancia
   de No Conciliación y cuándo -- la solicitud suspende el plazo de 2 meses
-  (Art. 518) y eso cambia la cuenta. Si ya mencionó que fue a conciliación,
+  (Art. 518) y eso cambia la cuenta. No conviertas los 2 meses en "60
+  días" (no es lo mismo): di el plazo como lo da la ley o la fecha exacta
+  que te regrese calcular_plazo_demanda. Si ya mencionó que fue a conciliación,
   pide esas fechas y pásalas a calcular_plazo_demanda; nunca calcules
   como si no hubiera ido. Errores reales: decirle "ya venció" sin
   preguntarle si fue a conciliación, y darle "28 días" a quien ya había
@@ -2917,6 +2919,29 @@ function ia_resultado_confirmar_compra_curso(PDO $pdo, string $telefono, string 
  * documento membretado. mercadopago_webhook.php confirma el pago y
  * manda el PDF regenerado con esos mismos datos por WhatsApp.
  */
+/**
+ * Compra del documento membretado ($49) CONFIRMADA para este teléfono en
+ * los últimos $dias días (por pagado_en), o null. La comparación de fechas
+ * se hace en PHP para no depender de funciones de fecha de MySQL.
+ */
+function ia_compra_documento_confirmada_reciente(PDO $pdo, string $telefono, int $dias): ?array
+{
+    $stmt = $pdo->prepare(
+        "SELECT * FROM compras_documento_calculo WHERE telefono = :t AND estado = 'confirmada'
+         ORDER BY pagado_en DESC LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono]);
+    $c = $stmt->fetch();
+    if (!$c || empty($c['pagado_en'])) {
+        return null;
+    }
+    $ts = strtotime((string)$c['pagado_en']);
+    if ($ts === false || $ts < time() - $dias * 86400) {
+        return null;
+    }
+    return $c;
+}
+
 function ia_resultado_confirmar_compra_documento_calculo(PDO $pdo, string $telefono): string
 {
     $stmt = $pdo->prepare(
@@ -2930,6 +2955,23 @@ function ia_resultado_confirmar_compra_documento_calculo(PDO $pdo, string $telef
         return json_encode([
             'ok' => false,
             'motivo' => 'No hay ningún cálculo de liquidación reciente guardado para este número -- vuelve a calcularlo con calcular_estimado_liquidacion antes de ofrecer el documento.',
+        ], JSON_UNESCAPED_UNICODE);
+    }
+
+    // Bug real (17-nov-2026, cajero de Los Mochis): el cliente pagó el
+    // primer link, el webhook le mandó su PDF, el bot recalculó (corrigió
+    // los días devengados) y generó un SEGUNDO link de $49; cuando el
+    // cliente dijo "ya pagué en el primer link", consultar_compra_documento
+    // _calculo solo miraba la compra más reciente (la nueva, sin pagar) y
+    // el bot le dijo que "no aparecía el pago". Si este número ya pagó el
+    // documento en los últimos 30 días, no se genera otro cobro.
+    $yaPagada = ia_compra_documento_confirmada_reciente($pdo, $telefono, 30);
+    if ($yaPagada) {
+        return json_encode([
+            'ok' => false,
+            'ya_pagado' => true,
+            'pagado_en' => $yaPagada['pagado_en'],
+            'motivo' => 'Este número YA PAGÓ el documento membretado (ver pagado_en) y el PDF ya se le mandó. NO le generes otro link ni le cobres otros $49. Si el documento que recibió tiene datos que ya cambiaron (por ejemplo corregiste días, salario o fechas), dile que su pago sí quedó registrado y usa escalar_a_humano para que el abogado le mande el documento corregido; nunca le digas que su pago no aparece.',
         ], JSON_UNESCAPED_UNICODE);
     }
 
@@ -3062,11 +3104,22 @@ function ia_resultado_consultar_cita_pago(PDO $pdo, string $telefono): string
  */
 function ia_resultado_consultar_compra_documento_calculo(PDO $pdo, string $telefono): string
 {
+    // Primero la compra CONFIRMADA más reciente, no la última creada: si
+    // después de pagar se generó otro link (bug real del 17-nov-2026), la
+    // última compra es la pendiente y escondía el pago real.
     $stmt = $pdo->prepare(
-        "SELECT * FROM compras_documento_calculo WHERE telefono = :t ORDER BY creado_en DESC LIMIT 1"
+        "SELECT * FROM compras_documento_calculo WHERE telefono = :t AND estado = 'confirmada'
+         ORDER BY pagado_en DESC LIMIT 1"
     );
     $stmt->execute([':t' => $telefono]);
     $compra = $stmt->fetch();
+    if (!$compra) {
+        $stmt = $pdo->prepare(
+            "SELECT * FROM compras_documento_calculo WHERE telefono = :t ORDER BY creado_en DESC LIMIT 1"
+        );
+        $stmt->execute([':t' => $telefono]);
+        $compra = $stmt->fetch();
+    }
 
     if (!$compra) {
         return json_encode([

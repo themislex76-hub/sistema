@@ -3227,3 +3227,13 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   embudo de WhatsApp): https://claude.ai/code/artifact/fdbe25d4-5fba-41f8-a0d3-f389dfb8cb61
   — actualizarla cuando el usuario mande una captura nueva del dashboard de
   Anthropic Console.
+
+## Documento de $49: un link nuevo escondía un pago ya confirmado (18 nov 2026, conversación "chats")
+- Caso real 17-nov (cajero de Los Mochis): pagó el 1er link, el webhook le mandó el PDF (1:13 pm),
+  el bot recalculó (corrigió días devengados) y generó un 2º link; al decir "ya pagué en el primer
+  link", `ia_resultado_consultar_compra_documento_calculo()` solo miraba la compra más reciente (la
+  pendiente) y el bot dijo que no aparecía el pago. Ahora busca primero la CONFIRMADA más reciente,
+  y `ia_resultado_confirmar_compra_documento_calculo()` no genera otro cobro si ya pagó en los
+  últimos 30 días (`ia_compra_documento_confirmada_reciente()`): si los datos cambiaron, escala para
+  que el abogado mande el documento corregido. Prompt: no convertir "2 meses" en "60 días".
+  87 casos en `scripts/pruebas_bot.php`.

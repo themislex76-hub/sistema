@@ -234,5 +234,22 @@ caso('presunción Art. 21 y comisiones Art. 84', strpos($p, 'Presunción de la r
 
 caso('fuera de la lista: solo se aclara si preguntan por representación, nunca se promete', strpos($p, 'NO saques el tema de la zona por tu cuenta') !== false && strpos($p, 'En ningún caso le prometas ni le insinúes') !== false);
 
+// ---------------------------------------------------------------------
+echo "15) Documento de \$49 (17-nov, cajero de Los Mochis): pagó el 1er link y el bot generó otro\n";
+$pdo = pdo_nuevo();
+$pdo->exec("CREATE TABLE compras_documento_calculo (id INTEGER PRIMARY KEY, telefono TEXT, calculo_json TEXT, salario_diario REAL, monto REAL, estado TEXT DEFAULT 'pendiente', pagado_en TEXT, creado_en TEXT, link_pago TEXT, mp_preference_id TEXT, nombre_cliente TEXT)");
+$pdo->exec("CREATE TABLE calculos_liquidacion (id INTEGER PRIMARY KEY, telefono TEXT, calculo_json TEXT, salario_diario REAL)");
+$pdo->exec("INSERT INTO calculos_liquidacion (telefono, calculo_json, salario_diario) VALUES ('M', '{}', 315)");
+$hace2 = date('Y-m-d H:i:s', strtotime('-2 minutes'));
+$pdo->exec("INSERT INTO compras_documento_calculo (telefono, calculo_json, salario_diario, monto, estado, pagado_en, creado_en) VALUES ('M', '{}', 315, 49, 'confirmada', '$hace2', '$hace2')");
+$pdo->exec("INSERT INTO compras_documento_calculo (telefono, calculo_json, salario_diario, monto, estado, creado_en, link_pago) VALUES ('M', '{}', 315, 49, 'pendiente', '" . date('Y-m-d H:i:s') . "', 'http://link2')");
+$r = json_decode(ia_resultado_consultar_compra_documento_calculo($pdo, 'M'), true);
+caso('consultar: un link nuevo sin pagar no esconde el pago del primero', !empty($r['documento_pagado']), json_encode($r, JSON_UNESCAPED_UNICODE));
+$r = json_decode(ia_resultado_confirmar_compra_documento_calculo($pdo, 'M'), true);
+$n = (int)$pdo->query("SELECT COUNT(*) FROM compras_documento_calculo")->fetchColumn();
+caso('confirmar: ya pagado en 30 días -> no genera otro cobro', empty($r['ok']) && !empty($r['ya_pagado']) && $n === 2, json_encode($r, JSON_UNESCAPED_UNICODE));
+$pdo->exec("UPDATE compras_documento_calculo SET pagado_en = '" . date('Y-m-d H:i:s', strtotime('-40 days')) . "' WHERE estado = 'confirmada'");
+caso('compra pagada hace 40 días ya no bloquea una nueva', ia_compra_documento_confirmada_reciente($pdo, 'M', 30) === null);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
