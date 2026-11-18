@@ -14,7 +14,7 @@ Cada combinación (color + frase + preguntas + foto) se usa una sola vez.
 | 8 | Rojo | TUS DUDAS LABORALES | Juego 2 | negro | 2026-11-16 | (pendiente) |
 | 9 | Verde | PREGÚNTAME LO QUE QUIERAS | Juego 3 | azul | 2026-11-16 | (pendiente) |
 | 10 | Morado | ¿PROBLEMAS EN TU TRABAJO? | Juego 1 | selfie | 2026-11-16 | (pendiente) |
-| 11 | Turquesa | TUS DUDAS LABORALES | Juego 2 | negro | 2026-11-16 | (pendiente) |
+| 11 | Turquesa | TUS DUDAS LABORALES | Juego 2 | gris | 2026-11-16 | (pendiente) |
 | 12 | Naranja | PREGÚNTAME LO QUE QUIERAS | Juego 3 | azul | 2026-11-16 | (pendiente) |
 | 13 | Rojo | ¿PROBLEMAS EN TU TRABAJO? | Juego 1 | selfie | 2026-11-16 | (pendiente) |
 | 14 | Azul | TUS DUDAS LABORALES | Juego 2 | negro | 2026-11-16 | (pendiente) |
