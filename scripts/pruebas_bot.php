@@ -225,6 +225,13 @@ caso('salario variable con Art. 89 (30 días), no Art. 289', strpos($p, 'treinta
 caso('vacaciones nunca disfrutadas se pasan a la calculadora', strpos($p, 'Vacaciones nunca disfrutadas') !== false);
 caso('pagos de terceros: no afirmar que es trabajador', strpos($p, 'Cuando le pagan TERCEROS') !== false);
 
+// ---------------------------------------------------------------------
+echo "14) Revisión del 17-nov: cierre, negociación, abandono, desglose completo\n";
+caso('cierre de empresa nunca "despido injustificado" (error repetido 17-nov)', strpos($p, 'NUNCA escribas "despido injustificado"') !== false);
+caso('no validar porcentajes de negociación con cifras', strpos($p, 'Escenarios de negociación') !== false);
+caso('dejó de ir por su cuenta: no estimado de rescisión', strpos($p, 'DEJÓ DE IR por su cuenta') !== false);
+caso('presunción Art. 21 y comisiones Art. 84', strpos($p, 'Presunción de la relación de trabajo: Art. 21') !== false);
+
 caso('fuera de la lista: solo se aclara si preguntan por representación, nunca se promete', strpos($p, 'NO saques el tema de la zona por tu cuenta') !== false && strpos($p, 'En ningún caso le prometas ni le insinúes') !== false);
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
