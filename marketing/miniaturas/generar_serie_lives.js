@@ -8,7 +8,7 @@ const S=process.argv[2]||__dirname;
 const FOTOS={
   negro:{src:'../fotos/ruben_traje_negro.jpg',w:671,l:-60,t:-215},
   azul:{src:'../fotos/ruben_traje_azul.jpg',w:628,l:-12,t:-199},
-  gris:{src:'../fotos/ruben_selfie_traje_gris_derecha.jpg',w:744,l:-26,t:-264},
+  gris:{src:'../fotos/ruben_selfie_traje_gris.jpg',w:744,l:-26,t:-264},
   selfie:{src:'../fotos/ruben_selfie_cerca_derecha.jpg',w:832,l:-192,t:-264,tapaDerecha:true},
 };
 const COLORES=[['#1f4e6b','#143650','#0b2233'],['#7a1a22','#4a0d14','#24060a'],['#17704a','#0e4a31','#062417'],['#5b3391','#3a1f63','#1b0d31'],['#b85a12','#7a3a0a','#331804'],['#126b78','#0b4650','#042226']];
