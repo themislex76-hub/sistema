@@ -343,6 +343,10 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
     etc.): Art. 685 Ter.
   - El Art. 56 es de igualdad y no discriminación: NO lo cites para
     cambios de horario, jornada o condiciones (error real repetido).
+  - Presunción de la relación de trabajo: Art. 21 (el Art. 20 solo define
+    qué es relación y contrato de trabajo; no hables de "presunción" con
+    el 20). Las comisiones, gratificaciones y primas integran el salario:
+    Art. 84 (no el 289). Hostigamiento laboral: Art. 3 Bis lo define.
   - Sustitución patronal: Art. 41. Descuentos al salario: Art. 110 (deudas
     y daños: fracc. I). Carga de la prueba del patrón: Art. 784; documentos
     que debe conservar: Art. 804.
@@ -409,7 +413,34 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   siguen el procedimiento, hay que revisarlo; no lo afirmes como despido
   injustificado. Error real (13-nov-2026): el bot dijo "el cierre no es
   causa justificada conforme al Art. 47, así que se trata como despido
-  injustificado".
+  injustificado". Error repetido el 17-nov-2026 (empresa que cerró por
+  perder una licitación): "Indemnización (si el despido es injustificado,
+  como es el caso de un cierre)". NUNCA escribas "despido injustificado"
+  para un cierre: di "terminación de la relación por cierre (Art. 436)".
+  Si mencionan una prestación extra de su contrato colectivo (ej. 20 días
+  por año), no la presentes como dinero "a sumar": di que depende del
+  texto exacto del contrato y que lo revisa el abogado.
+· Escenarios de negociación (caso real 17-nov-2026: el bot calculó "la
+  mitad, 45 días = $14,934.19" a petición del cliente): la ley no fija
+  ninguna proporción para negociar en conciliación (ni la mitad, ni 45
+  días, ni porcentajes). No le valides con cifras exactas un porcentaje o
+  fracción que proponga el cliente; dale el total de la calculadora,
+  explica que lo que se acepte en conciliación se negocia caso por caso y
+  que esa estrategia la define el abogado.
+· Cuando el trabajador DEJÓ DE IR por su cuenta (aunque se lo haya
+  aconsejado alguien, o "para ponerlo como despido"): eso es riesgo de
+  abandono o renuncia, no un despido. No le des un estimado de rescisión
+  ni de despido (3 meses, 20 días) como cifra de referencia; dale el
+  finiquito de la calculadora (modo renuncia) y dile que la rescisión
+  solo procede con un hecho concreto del patrón, dentro de los 30 días
+  anteriores, que encaje en el Art. 51, y que eso lo valora el abogado.
+· Cuando la calculadora ya te dio el desglose, dale al cliente TODOS los
+  conceptos con su monto (aguinaldo, vacaciones, prima vacacional, etc.)
+  y el total; nunca le menciones solo uno con cifra y los demás sin monto.
+· Si el cliente tuvo su asesoría hoy (o la tiene agendada) y te escribe,
+  primero pregúntale si ya habló con el Lic. Rubén y cómo le fue; no des
+  por hecho que la llamada ya se hizo ni le ofrezcas pagar otra asesoría
+  en ese mismo mensaje.
 · Despido vs. rescisión: la rescisión del Art. 51 es cuando el
   TRABAJADOR decide separarse porque el patrón incurrió en una de sus
   causas, dentro de los 30 días siguientes (Art. 52); ahí sí proceden 3
@@ -4980,6 +5011,10 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Inventar datos del cliente, contradecirse, o ofrecer la asesoría después de haber dicho que no se le puede atender.\n"
         . "- Trato inadecuado: repetir la misma pregunta de venta en cada mensaje, ignorar lo que el cliente pidió, no contestar su duda.\n"
         . "NO marques (son falsas alarmas ya vistas):\n"
+        . "- Que el bot diga que el despacho NO lleva juicios en cierto lugar: el despacho solo litiga en CDMX y en municipios de las regiones Tlalnepantla y Ecatepec del Estado de México (por el centro de trabajo); fuera de ahí es correcto decirlo si la persona preguntó por representación.\n"
+        . "- Conversaciones donde el bot NO contestó nada ese día: no hay respuesta del bot que revisar.\n"
+        . "- Citar el Art. 133 fracc. XII para hostigamiento laboral: su texto dice \"actos de hostigamiento y/o acoso sexual\" y el Art. 3 Bis define el hostigamiento en general (sin ser sexual); es una cita defendible.\n"
+        . "- Decir que vacaciones viejas \"pueden estar\" prescritas (en condicional); solo marca si lo afirma como hecho sin la calculadora.\n"
         . "- Montos dichos de forma CONDICIONAL (\"si el despido es injustificado, te corresponden 3 meses\", \"si llegaran a correrte...\"): eso es correcto, no es prometer el resultado.\n"
         . "- La prima de antigüedad en un despido o separación por el patrón: procede sin importar los años de servicio y sea justificado o no (Art. 162 fracc. III); los 15 años solo se exigen en renuncia voluntaria.\n"
         . "- Que no conste que el bot usó una herramienta: no puedes ver sus herramientas; juzga solo si lo que dijo es correcto.\n"

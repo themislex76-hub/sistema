@@ -3159,6 +3159,22 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   4. Afirmó que "sin duda" es trabajador aunque le pagaban los socios: criterio nuevo (Arts. 82
      y 21, no afirmarlo, lo valora el abogado). 80 casos en `scripts/pruebas_bot.php`.
 
+## Revisión del 17-nov (104 conversaciones, 13 marcadas = 12.5%, bajó de 22%) (18 nov 2026, conversación "chats")
+- Día mixto: la versión con Sonnet 5.5 se subió a media tarde del 17-nov.
+- Reales y arreglados en CRITERIOS DEL DESPACHO: cierre de empresa llamado otra vez "despido
+  injustificado" (ahora prohibida la frase para cierres; extra de contrato colectivo no "se suma");
+  "la mitad = 45 días = $14,934" validado con cifras (no hay proporción legal para negociar);
+  estimado de rescisión con 20 días a quien dejó de ir por su cuenta "para ponerlo como despido";
+  solo el aguinaldo con monto teniendo el desglose completo de la calculadora; "tu asesoría de hoy
+  ya quedó realizada" + ofrecer otra de $499 sin preguntar cómo le fue; Art. 20 por "presunción"
+  (es el 21) y Art. 289 para comisiones (es el 84) -- agregados a la guía de artículos verificados.
+- Falsas alarmas calibradas en el revisor: decir que el despacho no lleva juicios en Boca del Río
+  (correcto, lista de municipios); conversación sin respuesta del bot; Art. 133-XII para
+  hostigamiento (su texto dice "hostigamiento y/o acoso sexual" y el 3 Bis define hostigamiento
+  general -- cita defendible); vacaciones que "pueden estar" prescritas en condicional.
+- Sin cambio (mejoras, no errores): no analizar a fondo la rescisión de un caso ya en conciliación,
+  no recalcular con aguinaldo/prima de contrato colectivo, "estoy cubierto en vacaciones". 84 casos.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
