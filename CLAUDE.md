@@ -3237,3 +3237,36 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   últimos 30 días (`ia_compra_documento_confirmada_reciente()`): si los datos cambiaron, escala para
   que el abogado mande el documento corregido. Prompt: no convertir "2 meses" en "60 días".
   87 casos en `scripts/pruebas_bot.php`.
+
+## Robot Edomex correo: "primera barrida" nunca cargaba el historial completo de la bandeja (18 nov 2026, conversación "Bot")
+Reportado por el usuario: el expediente **Melesio Aguilar Romero vs Grupo Tensa, S.A. de C.V., Exp.
+1056/2026** (dado de alta en el sistema desde el 2 de junio 2026) trajo bien el acuerdo de HOY
+(18-nov) al correr el robot a mano, pero nunca había reportado un acuerdo real del 28-oct-2026
+(Acuerdo 17552/2026, confirmado con captura real de la notificación -- mismo expediente, mismo
+número, sin error de captura).
+- **Causa real, encontrada revisando el código** (no era credenciales -- ya confirmadas guardadas
+  desde el 8-nov en el panel "Credenciales de portales por abogado" -- ni el expediente dado de
+  alta tarde): `procesarCuenta()` solo contaba (`filas.count()`) las filas YA renderizadas de la
+  bandeja de Carbonio al cargar la página -- nunca hacía scroll para que cargara más correos
+  viejos. El usuario confirmó viendo la bandeja a mano: no hay botón de "Cargar más", la lista
+  solo crece con scroll infinito hacia abajo. Por eso el "barrer todo el historial" de la primera
+  vez que se revisa una cuenta (`ultimoVisto === null`, ver sección "Cómo capturar acuerdos
+  ANTERIORES" más abajo) en realidad solo veía el primer lote ya cargado -- cualquier acuerdo más
+  viejo que ya hubiera quedado "enterrado" bajo notificaciones más recientes de otros expedientes
+  se perdía para siempre, sin importar desde cuándo estuviera monitoreado el expediente.
+- **Corregido**: nuevo bloque en `procesarCuenta()` (`robots/edomex_correo/edomex_correo.js`) --
+  SOLO cuando `ultimoVisto === null` (primera vez para esa cuenta, o después de forzar un
+  re-barrido borrando `procesados_edomex_correo.json`), hace scroll al último correo visible
+  repetidamente (hasta 80 vueltas, 1.2s de espera cada una) hasta que el conteo de filas deja de
+  crecer 3 veces seguidas -- recién ahí cuenta y procesa. Las corridas normales (`ultimoVisto` ya
+  tiene un valor) NO necesitan este scroll: la bandeja ya viene ordenada del más nuevo al más
+  viejo, así que cualquier correo nuevo real queda arriba, visible sin bajar nada.
+- **Acción del usuario para este caso concreto**: ya había renombrado
+  `procesados_edomex_correo.json` como respaldo (mismo patrón de "forzar re-barrido" documentado
+  abajo) -- falta correr el robot una vez más con el código corregido para que esta vez sí baje
+  hasta el final y encuentre el acuerdo del 28-oct. El candado de duplicados (ver sección de abajo)
+  hace esto seguro: no va a duplicar nada de lo que ya tiene cargado.
+- Sin cambios de base de datos, sin tocar `app.js`/`ia_helpers.php` -- no aplica
+  `verificar_tags.js` ni `pruebas_bot.php` (es un robot de Node, no el bot de WhatsApp). `node
+  --check` limpio. **Sin confirmar en vivo todavía** que el scroll de verdad encuentre el acuerdo
+  del 28-oct -- pendiente de que el usuario corra el robot con el archivo nuevo y confirme.

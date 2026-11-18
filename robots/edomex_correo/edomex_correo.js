@@ -253,6 +253,32 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       return 0;
     }
 
+    if (ultimoVisto === null) {
+      // Primera vez que se revisa esta cuenta (o después de forzar un
+      // re-barrido borrando procesados_edomex_correo.json): la bandeja de
+      // Carbonio NO tiene botón de "cargar más" -- solo carga correos más
+      // viejos conforme se hace scroll hacia abajo (confirmado real por el
+      // usuario) -- sin esto, "barrer todo el historial" en realidad solo
+      // veía el primer lote ya renderizado al cargar la página, perdiendo
+      // para siempre cualquier acuerdo viejo que quedara más abajo (caso
+      // real: expediente 1056/2026, acuerdo del 28-oct-2026 nunca se
+      // reportó por este motivo, aunque el expediente llevaba meses
+      // monitoreado). Se baja hasta que el número de filas deja de crecer
+      // 3 veces seguidas (la bandeja ya cargó todo lo que tiene) o se
+      // llega a un tope de vueltas, por seguridad.
+      console.log('  Primera vez para esta cuenta -- se hace scroll hasta el final de la bandeja para cargar todo el historial.');
+      let conteoAnterior = -1;
+      let vecesIgual = 0;
+      for (let vuelta = 0; vuelta < 80 && vecesIgual < 3; vuelta++) {
+        const conteoActual = await filas.count();
+        vecesIgual = conteoActual === conteoAnterior ? vecesIgual + 1 : 0;
+        conteoAnterior = conteoActual;
+        await filas.last().scrollIntoViewIfNeeded().catch(() => {});
+        await page.waitForTimeout(1200);
+      }
+      console.log(`  Scroll terminado: ${await filas.count()} correo(s) cargado(s) en total.`);
+    }
+
     const n = await filas.count();
     console.log(`  ${n} correo(s) de "Notificacion Electronica Laboral" visibles en la bandeja.`);
     let maxVistoEstaCorrida = ultimoVisto;
