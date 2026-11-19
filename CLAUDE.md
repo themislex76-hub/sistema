@@ -45,6 +45,8 @@ activa por cuenta (ya documentado desde el 10 nov 2026 en la sección del robot)
     cerrar sesión con "Salir" al terminar) ya funcionan de punta a punta. **Pendiente**: que el
     usuario confirme que Lic. Lindsay Luna Maldonado ya puede entrar a su cuenta del Buzón desde
     otro dispositivo justo después de una corrida del robot.
+  - **Confirmado por el usuario (19 nov 2026): "listo ya quedo"** -- Lindsay ya puede entrar a su
+    cuenta del Buzón desde otro dispositivo después de correr el robot. Cerrado.
 
 ## Una fecha FUTURA en un acuerdo ya no se marca como "celebrada" (19 nov 2026, conversación "Bot")
 Reportado por el usuario: un robot bajó un acuerdo que señalaba la audiencia preliminar para el
