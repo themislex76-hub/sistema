@@ -821,7 +821,30 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
       return 0;
     }
     await page.waitForTimeout(500);
-    const entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false);
+    // Confirmado real (19 nov 2026): este clic puede tronar igual que el
+    // de "Consulta de Expediente Electrónico" de arriba (mismo tipo de
+    // error: "locator.click: Timeout 30000ms exceeded", click visible/
+    // habilitado/estable pero sin completarse -- probablemente un fondo/
+    // overlay que reaparece justo al hacer clic). Antes este clic no tenía
+    // NINGÚN reintento (a diferencia del de arriba, que sí) -- un solo
+    // tropiezo tiraba la sesión completa sin revisar ningún expediente.
+    // Mismo patrón de 3 intentos que ya usa el menú de arriba.
+    let entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false, 8000).catch(() => false);
+    if (!entroVistaGlobal) {
+      await cerrarCualquierModalAbierto(page);
+      entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false, 8000).catch(() => false);
+    }
+    if (!entroVistaGlobal) {
+      // Último recurso: recargar desde cero y volver a entrar al submenú
+      // completo, por si quedó algo atorado que la limpieza de modales no
+      // cubre.
+      await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
+      await cerrarModalSiAparece(page, etiquetaDebug);
+      await cerrarCualquierModalAbierto(page);
+      await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false).catch(() => false);
+      await page.waitForTimeout(500);
+      entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false).catch(() => false);
+    }
     if (!entroVistaGlobal) {
       console.log('  AVISO: no se encontró "Vista Global" dentro del submenú -- el portal pudo cambiar otra vez.');
       await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true, timeout: 90000 }).catch(() => {});

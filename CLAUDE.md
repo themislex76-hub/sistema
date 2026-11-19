@@ -1,5 +1,30 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Robot Federal: clic a "Vista Global" sin reintentos tiraba la sesión completa (19 nov 2026, conversación "Bot")
+Reportado por el usuario: el expediente **Anel Yadira Hernández Zaragoza vs Banco Nacional de
+México, Exp. 463/2026** (Tribunal ya bien capturado -- Decimoprimer Tribunal Laboral Federal --
+asignado a Lic. Lindsay Luna Maldonado) tiene acuerdos reales en el Portal Federal, pero el robot
+no lo reportó en 2 corridas seguidas.
+- **Causa real**: en la 1ª corrida, la cuenta del Administrador (buerhend) falló por errores de
+  red (`Timeout 30000ms exceeded` navegando, `Client network socket disconnected` en TLS) antes de
+  enumerar expedientes -- pero el 463/2026 está asignado a Lindsay, no al Administrador. En la 2ª
+  corrida, la cuenta de Lindsay (maluli20) SÍ llegó a la sesión "laboral" (la que ve expedientes
+  normales, no amparos), pero el clic a **"Vista Global"** (`federal.js`, dentro de
+  `procesarCuenta()`) tronó con el mismo error de siempre en este portal (`locator.click: Timeout
+  30000ms exceeded`, visible/habilitado/estable pero sin completarse -- probablemente un overlay
+  que reaparece justo al hacer clic) -- y, a diferencia del clic de arriba ("Consulta de
+  Expediente Electrónico", que SÍ reintenta 3 veces con limpieza de modales + recarga de último
+  recurso), este clic no tenía NINGÚN reintento: un solo tropiezo tiraba toda la sesión sin
+  revisar ni un expediente, así que el 463/2026 nunca llegó a buscarse.
+- **Corregido**: el clic a "Vista Global" ahora usa el mismo patrón de 3 intentos que ya tenía el
+  de arriba (timeout corto + limpieza de modal/backdrop atorado, y de último recurso recargar
+  desde cero y volver a entrar al submenú completo antes de darse por vencido).
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica `verificar_tags.js` ni
+  `pruebas_bot.php` (es un robot de Node, no el bot de WhatsApp). `node --check` limpio.
+  **Sin confirmar en vivo todavía** -- falta que el usuario reemplace `federal.js` y corra el
+  robot de nuevo para confirmar que la sesión "laboral" de Lindsay ya no truena en "Vista Global"
+  y que el 463/2026 aparece con sus acuerdos.
+
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
 Maldonado se quedaba con la sesión abierta -- "cuando abre el sistema de la CDMX se queda
