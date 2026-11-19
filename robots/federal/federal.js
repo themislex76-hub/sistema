@@ -629,6 +629,15 @@ async function leerTablaPorEncabezados(tabla) {
 async function leerFilasVistaGlobal(page) {
   const tabla = page.locator('table').filter({ has: page.getByText('Número de expediente') }).first();
   await tabla.waitFor({ timeout: 15000 });
+  // Confirmado real (19 nov 2026, captura del usuario): esta tabla SÍ pagina
+  // -- el expediente 463/2026 de Anel Yadira Hernández Zaragoza aparecía
+  // visible en el portal para la cuenta de Lindsay, pero el robot solo
+  // reportaba 10 expedientes en esa sesión (la primera página, default de
+  // DataTables) y nunca llegaba a verlo. A diferencia de la tabla de
+  // acuerdos de cada expediente (que sí llama maximizarEntradasPorPagina()
+  // antes de leer), esta lista principal nunca lo hacía -- se agrega aquí
+  // con el mismo patrón.
+  await maximizarEntradasPorPagina(page, tabla);
   return leerTablaPorEncabezados(tabla);
 }
 

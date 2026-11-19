@@ -54,6 +54,23 @@ no lo reportó en 2 corridas seguidas.
     problema es que su cuenta del portal no está registrada como apoderada en ese expediente
     (hay que presentar/confirmar la promoción de personalidad ante el Tribunal), no algo que el
     robot pueda corregir.
+- **Causa real de verdad encontrada (19 nov 2026)**: el usuario mandó una captura de la cuenta de
+  Lindsay en el Portal Federal -- el 463/2026 (Anel Yadira Hernández Zaragoza) SÍ está visible en
+  la lista real de "Vista Global", justo debajo de la página que el robot leyó (se ve también
+  "501/2026" más abajo) -- confirma que la tabla SÍ pagina de verdad, con más expedientes de los
+  10 que el robot reportó. **Bug real encontrado**: `leerFilasVistaGlobal()` (la función que lee
+  la tabla principal de "Vista Global" con TODOS los expedientes de la cuenta) nunca llamaba a
+  `maximizarEntradasPorPagina()` -- a diferencia de la tabla de acuerdos DENTRO de cada
+  expediente (`procesarExpediente()`), que sí la llama antes de leer. Por eso solo leía la
+  primera página (el default de DataTables, 10 filas), y cualquier expediente que quedara más
+  abajo en la lista de la cuenta -- como el 463/2026 -- nunca se llegaba a ver, sin importar que
+  el clic a "Vista Global" y el resto del flujo funcionaran perfecto.
+- **Corregido**: `leerFilasVistaGlobal()` ahora llama a `maximizarEntradasPorPagina()` antes de
+  leer la tabla, mismo patrón que ya usaba la tabla de acuerdos. `node --check` limpio.
+  **Sin confirmar en vivo todavía** -- falta que el usuario reemplace `federal.js` y corra el
+  robot de nuevo para confirmar que esta vez el 463/2026 sí sale en la lista de "Números vistos
+  en esta página" de la sesión "laboral" de Lindsay (y, si tiene acuerdos nuevos, que se
+  reporten).
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
