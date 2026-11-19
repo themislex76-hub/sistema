@@ -3330,5 +3330,11 @@ número, sin error de captura).
     (el aviso en sí debería quedar bloqueado solo por el candado de duplicados de
     `avisos_ingest.php`, pero el documento sí podría subir una copia de más) -- después de esa
     corrida de transición, el archivo ya queda en el formato nuevo y no debería repetirse.
-  - **Sin confirmar en vivo todavía** -- falta que el usuario corra el robot con este 4º
-    arreglo y confirme que ya no repite ningún aviso entre corridas.
+  - **Confirmado funcionando en vivo (19 nov 2026)**: la corrida de transición (formato viejo
+    -> nuevo) repitió 841/2026 una vez más, como se esperaba -- la SIGUIENTE corrida (ya con el
+    archivo en el formato nuevo) reportó "0 aviso(s) nuevo(s)" en ambas cuentas, sin ni un solo
+    correo procesado de nuevo (ni siquiera aparecen en el log -- se omiten todos en silencio por
+    `yaProcesados.has()`). Confirma que el candado de duplicados entre corridas ya funciona de
+    punta a punta. **Pendiente del usuario**: borrar a mano los documentos duplicados que
+    quedaron de las corridas de prueba (780/2026, 747/2026, 628/2026, 1056/2026, 841/2026 -- este
+    último con una copia extra de más por la corrida de transición).
