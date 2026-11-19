@@ -226,6 +226,20 @@ no lo reportó en 2 corridas seguidas.
       el usuario reemplace `federal.js` una vez más (puede dejar correr la corrida actual
       hasta el final primero, esto no afecta nada de lo ya confirmado) y mande el log
       completo de la siguiente corrida para ver qué dicen estos 3 diagnósticos nuevos.
+    - **✅ Corrida real (19 nov 2026) sin NI UN solo "no se pudo descargar el PDF"**: con el
+      archivo de diagnóstico puesto, la sesión "laboral" de Lindsay procesó los 7
+      expedientes pendientes (114/2026, 242/2026, 300/2026, 296/2026, 388/2026, 463/2026,
+      501/2026 -- **42 avisos nuevos en total**) sin que apareciera NINGUNA de las 3 líneas
+      de diagnóstico nuevas (ni "no se detectó ninguna petición de descarga", ni "reintento
+      directo..."), lo que significa que `intentarCapturarPdf()` tuvo éxito por el camino
+      NORMAL en los 42 acuerdos -- el reintento nuevo ni hizo falta. No se sabe con certeza
+      por qué el patrón cambió otra vez (el portal pudo haberse estabilizado del lado del
+      JS roto, o fue timing/suerte) -- no se tocó nada de código para esto, solo se
+      confirmó con el log. **Pendiente de confirmar por el usuario**: entrar al sistema y
+      revisar la pestaña Documentos de 1-2 de estos expedientes (ej. 463/2026, 114/2026)
+      para verificar que los PDFs de verdad se subieron y abren bien -- si se confirma, esta
+      sección queda 100% cerrada (463/2026 encontrado, abierto, con sus 4 acuerdos Y sus
+      PDFs reales).
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
