@@ -175,19 +175,29 @@ no lo reportó en 2 corridas seguidas.
       sin reportarse al inicio de esta investigación, YA aparece con sus 4 acuerdos reales
       (incluyendo "Admision D - BANCO banamex -reinstalacion" y 2 réplicas de la contestación
       de Banamex) dados de alta como avisos en el sistema.
-    - **Pendiente, aparte, NO bloquea nada de lo anterior**: la descarga de PDF sigue
-      fallando el 100% de las veces para TODOS los acuerdos nuevos de esta corrida (296, 300,
-      388, 463, 501/2026 -- ~20 documentos distintos, mismo patrón exacto siempre:
-      `net::ERR_ABORTED` en `serviciossige.oaj.gob.mx/wsFileManagerDownLoad/...`, el modal se
+    - **Pedido explícito del usuario, no se deja como pendiente aparte: "sin el pdf no sirve
+      este rollo"** -- la descarga de PDF seguía fallando el 100% de las veces para TODOS los
+      acuerdos nuevos de la corrida de arriba (296, 300, 388, 463, 501/2026 -- ~20 documentos
+      distintos, mismo patrón exacto siempre: `net::ERR_ABORTED` en
+      `serviciossige.oaj.gob.mx/wsFileManagerDownLoad/api/files/Download/<id>`, el modal se
       queda con el ícono de "cargando" -- `fa-spinner fa-pulse` -- en vez de mostrar el botón
-      de descarga). Como esto es sistemático y no solo con un expediente, parece un cambio
-      del lado del portal en este mecanismo específico de descarga (ya pasó antes con otras
-      pantallas de este mismo portal, ver más abajo "Reescrito por completo (8 nov 2026)") --
-      los avisos se siguen reportando igual, solo sin el PDF adjunto (mismo respaldo que ya
-      existía desde el 8 nov 2026). **Sin diagnosticar ni corregir todavía** -- queda como
-      tarea aparte para una próxima sesión si el usuario quiere recuperar los PDFs; no se
-      intentó un arreglo a ciegas por falta de evidencia suficiente (no se puede inspeccionar
-      el tráfico de red real del portal desde esta sesión).
+      de descarga). Como esto es sistemático, en varios expedientes y 2 sesiones distintas, y
+      nunca se vio ni un código de error HTTP (ningún `respuesta con error`, solo
+      cancelaciones), parece un bug del propio JS del portal que cancela la petición antes de
+      que llegue respuesta -- no necesariamente un rechazo real del servidor.
+    - **Intentado (19 nov 2026)**: nuevo respaldo en `descargarPdfAcuerdo()`, dentro del
+      camino del iframe -- se guarda la URL exacta de descarga que el clic dispara (se
+      reconoce por el patrón `wsFileManagerDownLoad/api/files/Download/`), y si el camino
+      normal (`intentarCapturarPdf()`) no trae nada, se vuelve a pedir esa MISMA URL directo
+      con `context.request.get()` (mismas cookies de la sesión del navegador) -- sin pasar
+      por el JS roto que la cancela. Si el servidor sí estaba dispuesto a responder bien (solo
+      el navegador la canceló de su lado), este segundo intento la recupera. `node --check`
+      limpio. **Sin confirmar en vivo todavía** -- falta que el usuario reemplace `federal.js`
+      y corra el robot de nuevo; si el servidor SÍ necesitaba una cookie propia de ese dominio
+      (`serviciossige.oaj.gob.mx`) que nunca se llegó a recibir por las cancelaciones previas,
+      este intento también puede fallar -- en ese caso, pedir el log completo otra vez
+      (buscar la línea nueva "PDF recuperado reintentando..." para confirmar si funcionó, o
+      seguir viendo "no se pudo descargar el PDF" si no).
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna

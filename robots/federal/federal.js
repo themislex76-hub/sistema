@@ -267,7 +267,34 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
       const botonDescarga = frame.locator('i.fa-download, i.iconDescarga').first();
       const hayBoton = await botonDescarga.waitFor({ state: 'visible', timeout: 10000 }).then(() => true).catch(() => false);
       if (hayBoton) {
+        // Confirmado real (19 nov 2026, muchas corridas, ~20 documentos
+        // distintos): la petición real de descarga que dispara este clic
+        // (`.../wsFileManagerDownLoad/api/files/Download/<id>`) truena
+        // SIEMPRE con "net::ERR_ABORTED" del lado del navegador, a la vez
+        // que la consola muestra "table.autoFill is not a function" --
+        // probablemente un bug del propio JS del portal que cancela la
+        // petición antes de que llegue respuesta, no un rechazo real del
+        // servidor (nunca se vio un código de error HTTP, solo la
+        // cancelación). Se guarda esa URL exacta mientras se intenta el
+        // camino normal, para poder volver a pedirla DIRECTO si el camino
+        // normal no trae nada -- mismas cookies de la sesión (misma
+        // técnica que ya usa `context.request` en otras partes de este
+        // archivo), sin pasar por el JS roto que la cancela.
+        let urlDescargaIntentada = null;
+        const verUrlDescarga = (req) => {
+          if (/wsFileManagerDownLoad\/api\/files\/Download\//i.test(req.url())) urlDescargaIntentada = req.url();
+        };
+        page.on('request', verUrlDescarga);
         pdf = await intentarCapturarPdf(context, page, () => botonDescarga.click({ timeout: 5000 }).catch(() => {}));
+        page.off('request', verUrlDescarga);
+        if (!pdf && urlDescargaIntentada) {
+          const r = await context.request.get(urlDescargaIntentada).catch(() => null);
+          const cuerpo = r ? await r.body().catch(() => null) : null;
+          if (pdfEsValido(cuerpo)) {
+            pdf = cuerpo;
+            console.log('    (PDF recuperado reintentando la URL de descarga directo, sin pasar por el JS del portal)');
+          }
+        }
       } else {
         console.log('    AVISO: no se encontró el ícono de descarga (i.fa-download) dentro del iframe.');
       }
