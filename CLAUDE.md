@@ -37,6 +37,23 @@ no lo reportó en 2 corridas seguidas.
   acuerdo guardado igual o mayor al real, o el expediente no tiene ningún acuerdo nuevo de verdad);
   si NO aparece, el expediente no está en la "LISTA DE BUZONES"/Vista Global de esa cuenta en el
   portal (revisar con el usuario si Lindsay de verdad ve ese expediente ahí).
+- **Diagnóstico confirmado con el log completo de la corrida (19 nov 2026)**: con el log nuevo
+  ya no hay NINGÚN error -- las 4 sesiones (buerhend laboral/amparo, Lindsay laboral/amparo)
+  enumeraron limpio. Pero el **463/2026 no aparece en NINGUNA de las 4 listas**:
+  - buerhend laboral: 242/2024, 371/2024, 125/2026
+  - buerhend amparo: 269/2025, 1300/2025, 1301/2025, 1292/2025
+  - Lindsay laboral: 57/2025, 193/2025, 320/2025, 319/2025, 347/2025, 378/2025, 397/2025,
+    451/2025, 114/2026, 242/2026
+  - Lindsay amparo: 1018/2025, 797/2026, 1028/2026, 3695/2026
+  - **Esto ya no es un bug del robot** -- confirma que NINGUNA de las 2 cuentas del Portal
+    Federal guardadas en el sistema (buerhend y maluli20/Lindsay) ve ese expediente en su
+    "Vista Global", aunque el sistema lo tenga asignado a Lindsay. Significa que, del lado del
+    PJF, ninguna de esas 2 cuentas está dada de alta como apoderado en el 463/2026 todavía.
+  - **Pendiente del usuario**: entrar a mano al Portal del PJF con la cuenta de Lindsay y
+    confirmar si el 463/2026 aparece ahí en "Vista Global" -- si no aparece tampoco a mano, el
+    problema es que su cuenta del portal no está registrada como apoderada en ese expediente
+    (hay que presentar/confirmar la promoción de personalidad ante el Tribunal), no algo que el
+    robot pueda corregir.
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
