@@ -3268,5 +3268,27 @@ número, sin error de captura).
   hace esto seguro: no va a duplicar nada de lo que ya tiene cargado.
 - Sin cambios de base de datos, sin tocar `app.js`/`ia_helpers.php` -- no aplica
   `verificar_tags.js` ni `pruebas_bot.php` (es un robot de Node, no el bot de WhatsApp). `node
-  --check` limpio. **Sin confirmar en vivo todavía** que el scroll de verdad encuentre el acuerdo
-  del 28-oct -- pendiente de que el usuario corra el robot con el archivo nuevo y confirme.
+  --check` limpio.
+- **Confirmado funcionando en vivo (18 nov 2026)**: el usuario corrió el robot con el archivo
+  corregido -- sí reportó el acuerdo real del 28-oct-2026 para el expediente 1056/2026 (Melesio
+  Aguilar Romero vs Grupo Tensa, correo `-3240`, PDF `16281236ACUD.pdf`), confirmando que el
+  scroll-hasta-el-final de verdad lo encontró.
+- **2º bug real encontrado de paso, mismo día**: en las 2 corridas reales, CADA correo se
+  procesaba 2 VECES seguidas (mismo id de conversación, mismo PDF extraído 2 veces, "Aviso
+  reportado" 2 veces) -- el locator `filas` (`text=/Notificacion Electronica Laboral/i`) hace
+  match más de una vez por renglón real en el DOM de Carbonio (motivo exacto en el DOM sin
+  confirmar). Esto subía el PDF 2 VECES por cada acuerdo nuevo al expediente (documento
+  duplicado) -- el aviso en sí probablemente se dedupeaba solo en el servidor (candado de
+  `avisos_ingest.php` ampliado el 13 nov), pero `documentos_subir_robot.php` no tiene ningún
+  candado de duplicados, así que el documento sí quedaba repetido. **Corregido** con un
+  candado nuevo, independiente de encontrar la causa exacta en el DOM: un `Set` de ids de
+  conversación ya procesados EN ESA MISMA CORRIDA (`vistosEstaCorrida`) -- si un id ya se
+  procesó, se omite sin volver a subir el PDF ni reportar el aviso otra vez, sin importar
+  cuántas veces aparezca en `filas`. `node --check` limpio. **Sin confirmar en vivo
+  todavía** -- falta que el usuario corra el robot de nuevo con este 2º arreglo y confirme que
+  cada acuerdo ya solo sale UNA vez en el log y en la pestaña Documentos del expediente.
+- **Limpieza pendiente del usuario**: los documentos duplicados que ya se subieron en las 2
+  corridas de prueba de hoy (antes de este 2º arreglo) -- por ejemplo el expediente 1056/2026
+  probablemente tiene 2 copias idénticas de `Acuerdo_Exp_1056-2026_-3240.pdf` -- borrar la
+  copia de más a mano desde la pestaña Documentos de cada expediente afectado (780/2026,
+  747/2026, 628/2026, 1056/2026, 841/2026).

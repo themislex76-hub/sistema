@@ -283,6 +283,14 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     console.log(`  ${n} correo(s) de "Notificacion Electronica Laboral" visibles en la bandeja.`);
     let maxVistoEstaCorrida = ultimoVisto;
     let yaAvisoDiagnostico = false;
+    // Candado contra duplicados: confirmado real (18 nov 2026) que cada
+    // correo se procesaba 2 veces seguidas (mismo id de conversación),
+    // subiendo el PDF 2 veces al expediente -- el locator `filas` hace match
+    // más de una vez por renglón real en el DOM de Carbonio (motivo exacto
+    // sin confirmar). En vez de depender de encontrar esa causa en el DOM,
+    // se evita procesar el mismo id de conversación 2 veces dentro de la
+    // misma corrida, sin importar cuántas veces aparezca en `filas`.
+    const vistosEstaCorrida = new Set();
     for (let i = 0; i < n; i++) {
       // Pausa chica entre fila y fila -- confirmado real: la página se
       // cayó ("Page crashed") después de varios clics seguidos sin
@@ -316,6 +324,10 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
         }
         continue;
       }
+      if (vistosEstaCorrida.has(idConversacion)) {
+        continue;
+      }
+      vistosEstaCorrida.add(idConversacion);
       if (ultimoVisto !== null && Number(idConversacion) <= Number(ultimoVisto)) {
         console.log(`    Correo ${idConversacion} ya visto antes (<= ${ultimoVisto}) -- la lista está ordenada del más nuevo al más viejo, se deja de revisar.`);
         break;
