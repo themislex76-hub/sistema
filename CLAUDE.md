@@ -118,6 +118,14 @@ no lo reportó en 2 corridas seguidas.
       reemplace `federal.js` y corra el robot de nuevo para confirmar que 296/2026, 388/2026 y
       sobre todo el propio 463/2026 (que viene justo después de 388/2026 en la lista de Lindsay)
       ya se abren sin tronar y, si tienen acuerdos nuevos, se reportan.
+    - **Confirmado con el log completo de esa misma corrida (código viejo, antes de este
+      arreglo)**: el expediente **463/2026 mismo** (`nth(14)`) y **501/2026** (`nth(15)`) también
+      tronaron con el idéntico `locator.click: Timeout 30000ms exceeded` justo después de
+      296/2026 y 388/2026 -- confirma la causa real exacta: 463/2026, el expediente que motivó
+      toda esta investigación, SÍ estaba siendo encontrado por fin (gracias al arreglo de
+      paginación de arriba) pero nunca se llegaba a ABRIR por este bug de locators. Con el
+      arreglo de `buscarFilaPorExpediente()` ya en el commit, falta la siguiente corrida real
+      para confirmarlo.
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
