@@ -670,6 +670,50 @@ async function leerFilasVistaGlobal(page) {
   return leerTodasLasFilasDataTable(page, tabla);
 }
 
+// Busca EN VIVO, pasando de página en página si hace falta, la fila de
+// Vista Global cuyo "Número de expediente" coincide con el buscado, y
+// regresa esa fila recién leída (con su propio locator de celda, válido en
+// este momento).
+//
+// Causa real encontrada el 19 nov 2026, con una corrida real: una vez que
+// la cuenta de Lindsay tuvo expedientes repartidos en más de una página de
+// Vista Global, el robot procesó bien el primer expediente de la 2ª página
+// (300/2026) pero tronó con "locator.click: Timeout 30000ms exceeded" en
+// los 2 siguientes (296/2026, 388/2026) -- ambos más allá de la fila 10.
+// Razón: `leerTablaPorEncabezados()` regresa locators por POSICIÓN
+// (`tbody tr`.nth(i)), que Playwright nunca "congela" -- se vuelven a
+// resolver contra el DOM en vivo justo en el momento del clic, no en el
+// momento en que se leyó la tabla. Como esos locators se armaron leyendo
+// VARIAS páginas seguidas (ej. la fila 11 venía de la página 2, posición 1
+// dentro de ESA página), y la tabla de Vista Global vuelve a su estado por
+// default (10 filas, página 1) cada vez que se regresa de ver un
+// expediente, para cuando el bucle llegaba a la fila 11 esa posición ya no
+// existía en la página 1 -- el clic esperaba en vano una fila que nunca
+// iba a aparecer ahí. Por eso ya no se reusa ningún locator capturado antes
+// del bucle -- cada expediente se vuelve a buscar aquí, fresco, justo antes
+// de dar el clic.
+async function buscarFilaPorExpediente(page, numExpBuscado) {
+  const tabla = page.locator('table').filter({ has: page.getByText('Número de expediente') }).first();
+  await tabla.waitFor({ timeout: 15000 });
+  await maximizarEntradasPorPagina(page, tabla);
+  const tablaId = await tabla.getAttribute('id').catch(() => null);
+  const siguiente = tablaId ? page.locator(`#${tablaId}_next`) : null;
+  const buscado = normalizeExp(numExpBuscado);
+  for (let i = 0; i < 50; i++) {
+    const filasPagina = await leerTablaPorEncabezados(tabla);
+    const encontrada = filasPagina.find(f => normalizeExp((f['Número de expediente'] || {}).texto || '') === buscado);
+    if (encontrada) return encontrada;
+    if (!siguiente) break;
+    const hay = await siguiente.count().catch(() => 0);
+    if (!hay) break;
+    const clase = await siguiente.getAttribute('class').catch(() => '') || '';
+    if (clase.includes('disabled')) break;
+    await siguiente.click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(700);
+  }
+  return null;
+}
+
 // Busca en la fila la celda que tenga el botón para ver/descargar el
 // documento del acuerdo. No se conoce el nombre exacto del encabezado (no
 // se pudo ver en vivo desde aquí) -- se intentan varios nombres probables
@@ -916,7 +960,16 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
       const match = porNumero.get(normalizeExp(numExp));
       if (!match) continue;
 
-      const botonVer = (fila['Ver Expediente Electrónico'] || {}).celda;
+      // Se vuelve a buscar esta fila EN VIVO en vez de reusar el locator
+      // que trajo `filas` (ver el comentario de `buscarFilaPorExpediente()`
+      // -- un locator por posición ya no sirve después de que la tabla
+      // pasó de página/regresó de ver otro expediente).
+      const filaViva = await buscarFilaPorExpediente(page, numExp).catch(() => null);
+      if (!filaViva) {
+        console.log(`    AVISO: no se volvió a encontrar el expediente ${numExp} en Vista Global al intentar abrirlo -- se omite esta vez.`);
+        continue;
+      }
+      const botonVer = (filaViva['Ver Expediente Electrónico'] || {}).celda;
       if (!botonVer) continue;
       const boton = botonVer.locator('button, a, [role="button"]').first();
       try {
@@ -941,7 +994,6 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
         await page.waitForTimeout(500);
         await clickTextoVisible(page, 'Vista Global', false).catch(() => false);
       }
-      await leerFilasVistaGlobal(page).catch(() => {});
     }
   } finally {
     await context.close();

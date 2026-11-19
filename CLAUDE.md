@@ -71,6 +71,53 @@ no lo reportó en 2 corridas seguidas.
   robot de nuevo para confirmar que esta vez el 463/2026 sí sale en la lista de "Números vistos
   en esta página" de la sesión "laboral" de Lindsay (y, si tiene acuerdos nuevos, que se
   reporten).
+- **Pedido explícito del usuario tras ese mismo arreglo: "t asegurate de que lea todo"** --
+  `maximizarEntradasPorPagina()` sola no basta si el máximo disponible en el selector (ej. 100)
+  sigue siendo menor que el total de expedientes/acuerdos reales. Nueva función
+  `leerTodasLasFilasDataTable()` -- maximiza Y además pasa de página en página con el botón
+  "Siguiente" de DataTables (detectado por su id fijo `<tablaId>_next`) hasta que se acabe o se
+  deshabilite -- aplicada tanto en `leerFilasVistaGlobal()` (lista de expedientes de la cuenta)
+  como dentro de `procesarExpediente()` (tabla de acuerdos de cada expediente, que antes solo
+  maximizaba sin paginar). `node --check` limpio.
+  - **Confirmado funcionando en vivo (19 nov 2026)**: nueva corrida -- la sesión "laboral" de
+    Lindsay ya enumeró **19 expedientes** (antes 10) y **el 463/2026 SÍ aparece** en la lista de
+    "Números vistos en esta página". El bug de paginación de la lista de expedientes queda
+    confirmado resuelto.
+  - **2 bugs NUEVOS encontrados al procesar los expedientes que solo se veían gracias a este
+    arreglo (más allá de los primeros 10)**:
+    1. **Descarga de PDF fallida para los 9 acuerdos del expediente 300/2026** -- el modal del
+       documento sí abrió, pero la petición real de descarga
+       (`serviciossige.oaj.gob.mx/wsFileManagerDownLoad/api/files/Download/...`) falló con
+       `net::ERR_ABORTED` (acompañada de un error de JS del propio portal, `table.autoFill is not
+       a function`, sin confirmar si está relacionado o es ruido aparte). Los 9 avisos SÍ se
+       reportaron igual (mismo respaldo que ya existía desde el 8 nov 2026: sin PDF válido, el
+       aviso se manda sin documento adjunto) -- no se pierde el aviso, solo el PDF. **Sin
+       diagnosticar ni corregir todavía** -- no se tocó nada de `descargarPdfAcuerdo()` esta vez,
+       falta decidir si vale la pena perseguir esto o si (como pasó antes con otros expedientes)
+       es un endpoint nuevo del portal que necesita su propio camino de descarga. Si vuelve a
+       pasar, pedir el volcado de "HTML real DENTRO del iframe" que ya imprime el código cuando
+       esto falla (no se alcanzó a revisar ese bloque en este log).
+    2. **Causa real encontrada y corregida -- "locator.click: Timeout 30000ms exceeded" en los
+       expedientes 296/2026 y 388/2026** (los 2 siguientes después de 300/2026 en la lista):
+       `leerTablaPorEncabezados()` regresa, para cada fila, un locator de Playwright por
+       POSICIÓN (`tbody tr`.nth(i)) -- estos locators NUNCA quedan "congelados" en el momento en
+       que se leyó la tabla, se vuelven a resolver contra el DOM EN VIVO justo cuando de verdad
+       se usan (el clic). El bucle de `procesarCuenta()` armaba la lista completa de expedientes
+       UNA sola vez al principio (leyendo varias páginas de Vista Global), pero cada vez que
+       terminaba de revisar un expediente y regresaba ("Regresar" o recargar desde cero), la
+       tabla de Vista Global volvía a su estado por default (10 filas, página 1) -- así que para
+       cuando el bucle llegaba a la fila 11 (296/2026, que venía de la página 2) esa posición ya
+       no existía en la página 1 recién reseteada, y el clic se quedaba esperando en vano una
+       fila que nunca iba a aparecer ahí. Mismo patrón de fondo que el bug de paginación de
+       arriba, pero del lado de los LOCATORS en vez de del lado de la LECTURA.
+    - **Corregido**: nueva función `buscarFilaPorExpediente()` -- en vez de reusar los locators
+      capturados antes del bucle, cada expediente se vuelve a buscar EN VIVO (maximizando y
+      paginando de nuevo si hace falta) justo antes de darle clic a su botón "Ver Expediente
+      Electrónico". Si no se vuelve a encontrar, se omite esa vez con un aviso en el log en vez
+      de tronar. `node --check` limpio. **Sin confirmar en vivo todavía** -- falta que el usuario
+      reemplace `federal.js` y corra el robot de nuevo para confirmar que 296/2026, 388/2026 y
+      sobre todo el propio 463/2026 (que viene justo después de 388/2026 en la lista de Lindsay)
+      ya se abren sin tronar y, si tienen acuerdos nuevos, se reportan.
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
