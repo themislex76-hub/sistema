@@ -3237,3 +3237,7 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   últimos 30 días (`ia_compra_documento_confirmada_reciente()`): si los datos cambiaron, escala para
   que el abogado mande el documento corregido. Prompt: no convertir "2 meses" en "60 días".
   87 casos en `scripts/pruebas_bot.php`.
+- **Decisión del usuario (19 nov 2026)**: se queda la regla de 30 días -- quien pagó el documento
+  de $49 en los últimos 30 días recibe correcciones GRATIS, aunque sea él quien cambie sus datos
+  ("para que la gente no se enoje"). Hoy el bot no la manda solo: escala y el abogado la manda con
+  `debug_enviar_pdf_calculo.php` (un PDF por modo/tipo; despido justificado = `tipo=justificado`).
