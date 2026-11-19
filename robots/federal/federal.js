@@ -626,6 +626,34 @@ async function leerTablaPorEncabezados(tabla) {
   return filas;
 }
 
+// Lee una tabla DataTables completa, pasando de página en página si hace
+// falta -- no basta con "maximizarEntradasPorPagina()" sola: si la opción
+// más grande del "Mostrar X entradas" (ej. 100) sigue siendo menor que el
+// total de filas reales, la tabla igual se queda paginada. Se detecta el
+// botón "Siguiente" por el id que DataTables le pone siempre
+// (`<tablaId>_next`) y se avanza hasta que quede deshabilitado (clase
+// "disabled") o se deje de ver -- tope de 50 páginas por seguridad, para
+// nunca quedarse en un ciclo infinito si algo raro pasa con el portal.
+async function leerTodasLasFilasDataTable(page, tabla) {
+  await maximizarEntradasPorPagina(page, tabla);
+  let filas = await leerTablaPorEncabezados(tabla);
+  const tablaId = await tabla.getAttribute('id').catch(() => null);
+  if (!tablaId) return filas;
+  const siguiente = page.locator(`#${tablaId}_next`);
+  for (let i = 0; i < 50; i++) {
+    const hay = await siguiente.count().catch(() => 0);
+    if (!hay) break;
+    const clase = await siguiente.getAttribute('class').catch(() => '') || '';
+    if (clase.includes('disabled')) break;
+    await siguiente.click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    const nuevas = await leerTablaPorEncabezados(tabla);
+    if (!nuevas.length) break;
+    filas = filas.concat(nuevas);
+  }
+  return filas;
+}
+
 async function leerFilasVistaGlobal(page) {
   const tabla = page.locator('table').filter({ has: page.getByText('Número de expediente') }).first();
   await tabla.waitFor({ timeout: 15000 });
@@ -635,10 +663,11 @@ async function leerFilasVistaGlobal(page) {
   // reportaba 10 expedientes en esa sesión (la primera página, default de
   // DataTables) y nunca llegaba a verlo. A diferencia de la tabla de
   // acuerdos de cada expediente (que sí llama maximizarEntradasPorPagina()
-  // antes de leer), esta lista principal nunca lo hacía -- se agrega aquí
-  // con el mismo patrón.
-  await maximizarEntradasPorPagina(page, tabla);
-  return leerTablaPorEncabezados(tabla);
+  // antes de leer), esta lista principal nunca lo hacía -- corregido con
+  // `leerTodasLasFilasDataTable()`, que además de maximizar entradas por
+  // página también pasa de página en página por si el máximo disponible no
+  // alcanza a cubrir todo.
+  return leerTodasLasFilasDataTable(page, tabla);
 }
 
 // Busca en la fila la celda que tenga el botón para ver/descargar el
@@ -668,8 +697,10 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
     return 0;
   }
   const tabla = page.locator('table').filter({ has: page.getByText('Fecha de Acuerdo') }).first();
-  await maximizarEntradasPorPagina(page, tabla);
-  const filas = await leerTablaPorEncabezados(tabla);
+  // Mismo candado que leerFilasVistaGlobal() (19 nov 2026): maximizar
+  // entradas por página no basta si un expediente acumula más acuerdos que
+  // el máximo disponible en el selector -- se pasa de página también aquí.
+  const filas = await leerTodasLasFilasDataTable(page, tabla);
 
   const key = normalizeExp(numeroExpediente);
   const ultimoVisto = estado[key] || 0;
