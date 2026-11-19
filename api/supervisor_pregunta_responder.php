@@ -73,7 +73,7 @@ if ($fechaMencionada && in_array($pregunta['etapa_key'], ETAPA_KEYS, true)) {
     // Nunca sobrescribe una etapa que ya tiene fecha capturada -- mismo
     // principio que cron_analizar_acuerdos_ia.php con los acuerdos de
     // boletín.
-    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha FROM expediente_etapas WHERE expediente_id = :eid');
+    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha, fecha_programada FROM expediente_etapas WHERE expediente_id = :eid');
     $etapasStmt->execute([':eid' => $pregunta['expediente_id']]);
     $etapasExistentes = $etapasStmt->fetchAll();
     $filaExistente = null;
@@ -81,6 +81,44 @@ if ($fechaMencionada && in_array($pregunta['etapa_key'], ETAPA_KEYS, true)) {
         if ($e['etapa_key'] === $pregunta['etapa_key']) { $filaExistente = $e; break; }
     }
     $tieneFecha = $filaExistente && !empty($filaExistente['fecha']) && $filaExistente['fecha'] !== '0000-00-00';
+
+    // Confirmado real (19 nov 2026): una fecha futura nunca es una
+    // confirmación de que la etapa YA ocurrió (ej. el abogado contesta
+    // "está agendada para el 11 de enero" en vez de confirmar lo ya
+    // pasado) -- nunca se aplica a "fecha"; se redirige a "fecha
+    // agendada" si la etapa lo soporta, o se rechaza.
+    if (!$tieneFecha && etapa_fecha_es_futura($fechaMencionada)) {
+        if (in_array($pregunta['etapa_key'], ETAPA_CALENDARIO_KEYS, true)) {
+            $yaProgramada = $filaExistente && !empty($filaExistente['fecha_programada']) && $filaExistente['fecha_programada'] !== '0000-00-00'
+                ? $filaExistente['fecha_programada'] : null;
+            if ($yaProgramada === null || $yaProgramada === $fechaMencionada) {
+                $pdo->prepare(
+                    'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha_programada)
+                     VALUES (:eid, :key, :fecha)
+                     ON DUPLICATE KEY UPDATE fecha_programada = VALUES(fecha_programada)'
+                )->execute([':eid' => $pregunta['expediente_id'], ':key' => $pregunta['etapa_key'], ':fecha' => $fechaMencionada]);
+                log_historial(
+                    $pdo, (int)$pregunta['expediente_id'], $user,
+                    'etapa_' . $pregunta['etapa_key'], null, "fecha agendada: $fechaMencionada (confirmado por el abogado al supervisor de IA)"
+                );
+                $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $pregunta['expediente_id']]);
+                $aplicado = true;
+            } else {
+                log_historial(
+                    $pdo, (int)$pregunta['expediente_id'], $user,
+                    'auditoria_ia_rechazo_' . $pregunta['etapa_key'], null,
+                    "fecha agendada $fechaMencionada (respuesta del abogado al supervisor) no se aplicó: la etapa ya tenía una fecha agendada distinta ($yaProgramada) -- posible conflicto, requiere revisión"
+                );
+            }
+        } else {
+            log_historial(
+                $pdo, (int)$pregunta['expediente_id'], $user,
+                'auditoria_ia_rechazo_' . $pregunta['etapa_key'], null,
+                "fecha futura $fechaMencionada (respuesta del abogado al supervisor) no se aplicó: esta etapa no tiene concepto de \"fecha agendada\", nunca se marca como celebrada con una fecha que todavía no llega -- se deja pendiente"
+            );
+        }
+        $tieneFecha = true; // ya se decidió qué hacer -- no caer al bloque normal de abajo
+    }
 
     // Mismo candado que en los demás mecanismos que llenan una etapa sola
     // (confirmado real que la IA puede atribuir una fecha a la etapa
@@ -103,7 +141,6 @@ if ($fechaMencionada && in_array($pregunta['etapa_key'], ETAPA_KEYS, true)) {
              ON DUPLICATE KEY UPDATE fecha = VALUES(fecha)'
         )->execute([':eid' => $pregunta['expediente_id'], ':key' => $pregunta['etapa_key'], ':fecha' => $fechaMencionada]);
 
-        $etiqueta = ETAPA_LABELS[$pregunta['etapa_key']] ?? $pregunta['etapa_key'];
         log_historial(
             $pdo, (int)$pregunta['expediente_id'], $user,
             'etapa_' . $pregunta['etapa_key'], null, "fecha: $fechaMencionada (confirmado por el abogado al supervisor de IA)"

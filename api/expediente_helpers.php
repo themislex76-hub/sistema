@@ -119,6 +119,22 @@ function motivo_sugiere_fecha_calculada(string $motivo): bool
     return false;
 }
 
+// Confirmado real (19 nov 2026): un acuerdo real señaló la audiencia
+// preliminar para una fecha FUTURA (11 de enero de 2027) y un mecanismo
+// automático la guardó en "fecha" (Fecha en que se celebró) -- imposible,
+// una fecha futura nunca es una confirmación de que algo YA ocurrió. Los
+// mecanismos que llenan una etapa sola a partir de un acuerdo/documento
+// usan esta función como candado: si la fecha es futura, NUNCA se aplica
+// a "fecha" -- si la etapa soporta "Fecha agendada"
+// (ETAPA_CALENDARIO_KEYS en api/ia_helpers.php), se redirige ahí en vez
+// (mismo campo/candado de "no sobrescribir una fecha agendada distinta
+// ya capturada" que ya usa cron_leer_google_calendar.php); si no la
+// soporta, se rechaza por completo y la etapa se queda libre/pendiente.
+function etapa_fecha_es_futura(string $fecha): bool
+{
+    return $fecha > date('Y-m-d');
+}
+
 // Panel "Posibles irregularidades" (12 nov 2026) -- a diferencia de
 // etapa_fecha_es_consistente() (que solo revisa una fecha NUEVA candidata
 // contra las ya registradas, usada por los 5 mecanismos de llenado

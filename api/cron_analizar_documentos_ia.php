@@ -101,7 +101,7 @@ foreach ($documentos as $doc) {
     $expediente = $expStmt->fetch();
     if (!$expediente) continue; // expediente borrado -- no debería pasar, pero no truena el lote por esto
 
-    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha FROM expediente_etapas WHERE expediente_id = :id');
+    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha, fecha_programada FROM expediente_etapas WHERE expediente_id = :id');
     $etapasStmt->execute([':id' => $doc['expediente_id']]);
     $etapas = $etapasStmt->fetchAll();
 
@@ -125,15 +125,63 @@ foreach ($documentos as $doc) {
                 break;
             }
         }
+        $usuarioLog = ['id' => null, 'nombre' => 'IA (lectura automática de documento)'];
+        $fechaEtapa = $resultado['fecha_mencionada'];
+
+        if (!$yaTieneFecha && etapa_fecha_es_futura($fechaEtapa)) {
+            // Confirmado real (19 nov 2026): un acuerdo real señaló una
+            // audiencia FUTURA (11 de enero de 2027) y por poco se
+            // guardaba como "ya celebrada" -- imposible por definición.
+            // Nunca se aplica a "fecha"; se redirige a "fecha agendada"
+            // si la etapa lo soporta, o se rechaza.
+            if (in_array($resultado['etapa_sugerida'], ETAPA_CALENDARIO_KEYS, true)) {
+                $yaProgramada = null;
+                foreach ($etapas as $e) {
+                    if ($e['etapa_key'] === $resultado['etapa_sugerida'] && !empty($e['fecha_programada']) && $e['fecha_programada'] !== '0000-00-00') {
+                        $yaProgramada = $e['fecha_programada'];
+                        break;
+                    }
+                }
+                if ($yaProgramada === null || $yaProgramada === $fechaEtapa) {
+                    $pdo->prepare(
+                        'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha_programada)
+                         VALUES (:eid, :key, :fecha)
+                         ON DUPLICATE KEY UPDATE fecha_programada = VALUES(fecha_programada)'
+                    )->execute([':eid' => $doc['expediente_id'], ':key' => $resultado['etapa_sugerida'], ':fecha' => $fechaEtapa]);
+                    log_historial(
+                        $pdo, (int)$doc['expediente_id'], $usuarioLog,
+                        'etapa_' . $resultado['etapa_sugerida'], null,
+                        "fecha agendada: $fechaEtapa (llenado automático a partir de '{$doc['nombre_archivo']}')"
+                    );
+                    $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $doc['expediente_id']]);
+                    $aplicado = true;
+                    $aplicados++;
+                } else {
+                    log_historial(
+                        $pdo, (int)$doc['expediente_id'], $usuarioLog,
+                        'auditoria_ia_rechazo_' . $resultado['etapa_sugerida'], null,
+                        "fecha agendada $fechaEtapa (de '{$doc['nombre_archivo']}') no se aplicó: la etapa ya tenía una fecha agendada distinta ($yaProgramada) -- posible conflicto, requiere revisión"
+                    );
+                }
+            } else {
+                log_historial(
+                    $pdo, (int)$doc['expediente_id'], $usuarioLog,
+                    'auditoria_ia_rechazo_' . $resultado['etapa_sugerida'], null,
+                    "fecha futura $fechaEtapa (de '{$doc['nombre_archivo']}') no se aplicó: esta etapa no tiene concepto de \"fecha agendada\", nunca se marca como celebrada con una fecha que todavía no llega -- se deja pendiente"
+                );
+            }
+            $yaTieneFecha = true; // ya se decidió qué hacer -- no caer al bloque normal de abajo
+        }
+
         // Confirmado real (10 nov 2026, en la auditoría integral): la IA
         // puede atribuir una fecha real a la etapa EQUIVOCADA, rompiendo
         // el orden cronológico del trámite. Mismo candado que en los
         // demás mecanismos que llenan una etapa sola.
-        if (!$yaTieneFecha && !etapa_fecha_es_consistente($resultado['etapa_sugerida'], $resultado['fecha_mencionada'], $etapas)) {
+        if (!$yaTieneFecha && !etapa_fecha_es_consistente($resultado['etapa_sugerida'], $fechaEtapa, $etapas)) {
             log_historial(
-                $pdo, (int)$doc['expediente_id'], ['id' => null, 'nombre' => 'IA (lectura automática de documento)'],
+                $pdo, (int)$doc['expediente_id'], $usuarioLog,
                 'auditoria_ia_rechazo_' . $resultado['etapa_sugerida'], null,
-                "fecha sugerida {$resultado['fecha_mencionada']} (de '{$doc['nombre_archivo']}') rechazada por romper el orden cronológico con otras etapas ya registradas"
+                "fecha sugerida $fechaEtapa (de '{$doc['nombre_archivo']}') rechazada por romper el orden cronológico con otras etapas ya registradas"
             );
             $yaTieneFecha = true; // reutiliza la misma rama de "no aplicar" de abajo
         }
@@ -142,12 +190,12 @@ foreach ($documentos as $doc) {
                 'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha)
                  VALUES (:eid, :key, :fecha)
                  ON DUPLICATE KEY UPDATE fecha = VALUES(fecha)'
-            )->execute([':eid' => $doc['expediente_id'], ':key' => $resultado['etapa_sugerida'], ':fecha' => $resultado['fecha_mencionada']]);
+            )->execute([':eid' => $doc['expediente_id'], ':key' => $resultado['etapa_sugerida'], ':fecha' => $fechaEtapa]);
 
             log_historial(
-                $pdo, (int)$doc['expediente_id'], ['id' => null, 'nombre' => 'IA (lectura automática de documento)'],
+                $pdo, (int)$doc['expediente_id'], $usuarioLog,
                 'etapa_' . $resultado['etapa_sugerida'], null,
-                "fecha: {$resultado['fecha_mencionada']} (llenado automático a partir de '{$doc['nombre_archivo']}')"
+                "fecha: $fechaEtapa (llenado automático a partir de '{$doc['nombre_archivo']}')"
             );
             $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $doc['expediente_id']]);
             $aplicado = true;

@@ -1,5 +1,39 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Una fecha FUTURA en un acuerdo ya no se marca como "celebrada" (19 nov 2026, conversación "Bot")
+Reportado por el usuario: un robot bajó un acuerdo que señalaba la audiencia preliminar para el
+11 de enero de 2027 (fecha futura), y el llenado automático de etapas guardó esa fecha en
+"Fecha en que se celebró" -- imposible por definición, una fecha futura nunca es una
+confirmación de que algo YA pasó. Pedido explícito: "cuando haya un acuerdo que señale fechas
+de alguna audiencia o diligencia que no las marque como celebradas o atendidas que las deje
+libres para que queden como pendientes".
+- **Causa real**: los 4 mecanismos que llenan una etapa SOLA a partir de IA
+  (`cron_analizar_acuerdos_ia.php`, `cron_analizar_documentos_ia.php`,
+  `cron_auditoria_expediente_ia.php`, `supervisor_pregunta_responder.php`) escriben la fecha que
+  la IA menciona directo en `fecha` (celebrada), sin revisar nunca si esa fecha ya pasó o no --
+  a diferencia de `cron_leer_google_calendar.php`, que SIEMPRE escribe en `fecha_programada`
+  (agendada) porque un evento de Google Calendar es por naturaleza algo programado, nunca una
+  confirmación de que ya ocurrió.
+- **Corregido**: nueva función `etapa_fecha_es_futura()` (`api/expediente_helpers.php`), candado
+  nuevo en los 4 mecanismos de arriba -- si la fecha que se va a aplicar es futura: (1) si la
+  etapa soporta "Fecha agendada" (`ETAPA_CALENDARIO_KEYS` en `api/ia_helpers.php`: los 4
+  citatorios/audiencias), se redirige a `fecha_programada` en vez de `fecha` -- mismo candado de
+  "no sobrescribir una fecha agendada distinta ya capturada" que ya usa
+  `cron_leer_google_calendar.php` (si hay conflicto, se rechaza y queda para revisión humana,
+  nunca se sobrescribe en silencio); (2) si la etapa NO soporta fecha agendada (es un trámite
+  binario -- ya pasó o no, como "Contestación recibida"), la fecha futura no tiene dónde
+  aplicarse con sentido -- se rechaza por completo y la etapa se queda libre/pendiente. El texto
+  del historial usa el prefijo exacto `"fecha agendada: ..."` (mismo que ya usa el sync de
+  Google Calendar) para que `cron_qa_irregularidades.php` siga excluyendo estos llenados del
+  chequeo de orden cronológico, como ya hace con los de calendario.
+- Sin cambios de base de datos, sin tocar `app.js`/`mergeTags()` -- no aplica
+  `verificar_tags.js` ni `pruebas_bot.php` (es lógica de llenado de etapas, no del bot de
+  WhatsApp). `php -l` limpio en los 5 archivos tocados. **Sin probar en vivo todavía** -- falta
+  que el usuario suba `api/expediente_helpers.php`, `api/cron_analizar_acuerdos_ia.php`,
+  `api/cron_analizar_documentos_ia.php`, `api/cron_auditoria_expediente_ia.php` y
+  `api/supervisor_pregunta_responder.php`, y se vea un caso real (ej. un acuerdo nuevo con una
+  fecha futura) donde quede como "Fecha agendada" en vez de "Fecha en que se celebró".
+
 ## Conversación nueva "negocio" (16 nov 2026)
 El usuario abrió una 4ª conversación, **"negocio"**, para hacer crecer el
 negocio (lives de TikTok → bot de WhatsApp → asesoría pagada → juicio). Su
