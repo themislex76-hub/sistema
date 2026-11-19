@@ -3550,18 +3550,48 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
 - Sin cambio (mejoras, no errores): no analizar a fondo la rescisión de un caso ya en conciliación,
   no recalcular con aguinaldo/prima de contrato colectivo, "estoy cubierto en vacaciones". 84 casos.
 
-## Revisión del 18-nov: 0 de 146 marcadas -- primera vez en cero (19 nov 2026, conversación "Bot")
-Corrida manual de `cron_revisar_conversaciones_bot.php` (el HTTP 500 que mostró el navegador en
-el primer intento fue solo el navegador cortando la espera -- el script sí terminó del lado del
-servidor; una segunda corrida ya encontró las 146 marcadas "ya revisada(s) antes", confirmando
-que no se perdió nada). **146 conversaciones del 18-nov, 0 marcadas** -- panel "Conversaciones
-del bot a revisar" en Equipo vacío. Tendencia: 55% y 42% (días previos) → 22% (16-nov) → 12.5%
-(17-nov, 104 conversaciones) → **0% (18-nov, 146 conversaciones)**. Coincide con el cambio a
-Sonnet 5.5 + razonamiento subido a media tarde del 17-nov (ver sección "El bot de WhatsApp pasa
-a Sonnet 5.5" más abajo) -- buena señal de que el cambio de modelo sí está ayudando, aunque no
-se confirmó directamente revisando `ia_cache_stats.log`/`ia_debug.log` (ese pendiente de esa
-sección sigue abierto). Si el 19-nov también sale en cero o muy bajo, se puede dar por
-confirmado el efecto del cambio de modelo sin necesidad de revisar los logs a mano.
+## Revisión del 18-nov: CORRECCIÓN -- fueron 35 de 146 marcadas, no 0 (19 nov 2026, conversación "Bot")
+**Entrada anterior de esta misma sección quedó MAL** -- "0 revisada(s) con IA, 0 con algo que
+revisar" de la segunda corrida manual solo significaba que ESA corrida puntual no encontró nada
+NUEVO que revisar (el 100% de las 146 ya se había revisado en la primera corrida, la que mostró
+HTTP 500 en el navegador del usuario pero sí terminó del lado del servidor) -- no que el día
+completo saliera limpio. El usuario pegó el panel real: **"Conversaciones del bot a revisar 35
+... Última revisión: 18 nov 2026 -- 146 conversación(es) revisada(s), 35 con algo que revisar."**
+Tendencia real: 55%/42% → 22% (16-nov) → 12.5% (17-nov) → **24% (18-nov, 35/146)** -- SUBIÓ, no
+bajó. El cambio a Sonnet 5.5 (subido a media tarde del 17-nov) **NO** parece haber ayudado tanto
+como se pensó -- o el 18-nov tuvo un lote de casos genuinamente más difícil. Pendiente seguir
+viendo el 19-nov antes de sacar conclusiones firmes sobre el modelo.
+- **Revisión de las 35 marcadas (verificadas por categoría, no caso por caso) -- patrones reales
+  que se repiten varias veces, candidatos a candado de CÓDIGO (no solo prompt, ya que el prompt
+  ya los prohibía y el bot los sigue violando)**:
+  1. **"Vacaciones anteriores" no disfrutadas -- el criterio del 17-nov (caso "coach de tenis")
+     sigue sin aplicarse de forma consistente**: al menos 4-5 de las 35 marcadas son el cliente
+     diciendo "nunca tomé vacaciones" / "solo tomé N días" y el bot sacando solo el proporcional
+     del periodo en curso en vez de pasar los días de años YA CUMPLIDOS a
+     `dias_vacaciones_anteriores`. El patrón más repetido de los 35.
+  2. **Plazo de demanda calculado A MANO (sin `calcular_plazo_demanda`) con cifras a veces
+     CONTRADICTORIAS en el mismo mensaje** (un caso dio "37 días" y "15 días" en el mismo turno;
+     otro reconvirtió "2 meses" en "60 días" explícitamente, violando una regla YA escrita en el
+     prompt desde el 18-nov por el caso del documento de $49).
+  3. **Montos calculados A MANO en vez de con `calcular_estimado_liquidacion`**: horas extra con
+     2 divisores distintos dando 2 totales muy distintos ($10,400 vs $15,600 en el mismo
+     mensaje), salarios caídos a mano, validar cifras del patrón sin correr la calculadora.
+  4. **Cita de jurisprudencia con número de registro inventado** sin haber llamado
+     `buscar_jurisprudencia` ese turno -- regla ya en el prompt, violada igual.
+  5. **Montos de exención de ISR afirmados de memoria** (cifras de "veces UMA") -- regla ya en
+     el prompt desde el 14-nov, violada igual.
+  6. Oferta de la asesoría de $499 repetida 2-3 veces en la misma conversación aunque el cliente
+     ya contestó o no la mencionó -- patrón ya señalado el 17-18 nov, sigue repitiéndose.
+  7. Varios casos de juicio legal más fino (rescisión vs abandono, despido disfrazado de
+     renuncia, riesgo de trabajo/incapacidad) donde el bot no advirtió con suficiente fuerza la
+     ambigüedad de los hechos -- más difíciles de resolver con un candado determinista, mejor
+     reforzar el prompt caso por caso según seAtrapado en la próxima revisión.
+- **Pendiente de decidir con el usuario**: si se construyen candados de código nuevos para los
+  patrones 2, 3, 4 y 5 (como ya se hizo antes con `ia_texto_anuncia_sin_hacer()`,
+  `ia_texto_confirma_pago_sin_evidencia()`, etc. en `api/ia_helpers.php`) -- esto normalmente se
+  trabaja desde la conversación "chats" (dueña de `ia_helpers.php`/`pruebas_bot.php`), así que
+  si se hace desde aquí ("Bot") hay que fusionar esa rama primero para no pisar trabajo
+  concurrente. Sin cambios de código todavía en esta sección -- solo se corrigió el diagnóstico.
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
