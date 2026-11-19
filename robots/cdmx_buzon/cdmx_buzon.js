@@ -497,6 +497,32 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     console.log(`  Error con la cuenta de ${cuenta.nombre}: ${e.message}`);
     await page.screenshot({ path: path.join(__dirname, `debug_error_${sanitizarParaArchivo(cuenta.cdmx_buzon_usuario)}.png`), fullPage: true }).catch(() => {});
   } finally {
+    // Pedido explícito del usuario (19 nov 2026): el portal solo permite UNA
+    // sesión activa por cuenta -- si el robot no cierra sesión al terminar,
+    // la abogada dueña de la cuenta no puede entrar desde otro dispositivo
+    // hasta que esa sesión expire sola del lado del servidor (cerrar el
+    // navegador de Playwright, como ya hacía `context.close()` de abajo, NO
+    // cierra esa sesión -- mismo motivo de fondo que "Romper sesión" al
+    // INICIO del login, ver más arriba). Se intenta cerrar sesión con
+    // "Salir" (confirmado real por captura: visible en el menú de la cuenta,
+    // junto a "Cambiar contraseña") antes de cerrar el navegador --
+    // best-effort, nunca se trata como error si no se encuentra (el
+    // navegador se cierra igual, la sesión solo tarda más en expirar sola).
+    let salioSesion = await clickTextoVisible(page, 'Salir', false, 5000);
+    if (!salioSesion) {
+      // "Salir" puede estar escondido dentro de un menú que se abre al
+      // dar clic en el correo/ícono de la cuenta -- se intenta abrir ese
+      // menú primero.
+      await clickTextoVisible(page, cuenta.cdmx_buzon_usuario, false, 5000);
+      salioSesion = await clickTextoVisible(page, 'Salir', false, 5000);
+    }
+    if (salioSesion) {
+      await page.waitForTimeout(1500); // margen para que el portal procese el cierre de sesión del lado del servidor
+      console.log('  Sesión cerrada en el portal al terminar -- la cuenta queda libre para otros dispositivos.');
+    } else {
+      console.log('  AVISO: no se encontró "Salir" para cerrar la sesión -- revisa debug_sesion_abierta_<cuenta>.png. La cuenta puede seguir bloqueada para otros dispositivos hasta que la sesión expire sola.');
+      await page.screenshot({ path: path.join(__dirname, `debug_sesion_abierta_${sanitizarParaArchivo(cuenta.cdmx_buzon_usuario)}.png`), fullPage: true }).catch(() => {});
+    }
     await context.close();
   }
   console.log(`  ${reportados} aviso(s) nuevo(s) para esta cuenta.`);

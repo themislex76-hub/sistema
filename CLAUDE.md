@@ -1,5 +1,29 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
+Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
+Maldonado se quedaba con la sesión abierta -- "cuando abre el sistema de la CDMX se queda
+abierta y Lindsay no puede entrar desde otros dispositivos". El portal solo permite UNA sesión
+activa por cuenta (ya documentado desde el 10 nov 2026 en la sección del robot).
+- **Causa real**: `procesarCuenta()` (`robots/cdmx_buzon/cdmx_buzon.js`) solo hacía
+  `context.close()` al terminar -- eso cierra el NAVEGADOR de Playwright, pero no la sesión del
+  lado del SERVIDOR del portal (mismo motivo de fondo ya documentado para "Romper sesión" al
+  INICIO del login: la app guarda la sesión activa en el servidor, no solo en una cookie que
+  desaparece al cerrar el navegador).
+- **Corregido**: en el `finally` de `procesarCuenta()`, antes de `context.close()`, se intenta
+  cerrar sesión con el link "Salir" (confirmado real por la captura del usuario -- visible en el
+  menú de la cuenta, junto a "Cambiar contraseña"). Si "Salir" no aparece directo, primero
+  intenta abrir ese menú dándole clic al correo de la cuenta. Best-effort: si no lo encuentra,
+  no se trata como error (el navegador se cierra igual, deja una captura
+  `debug_sesion_abierta_<cuenta>.png` para diagnosticar). El listener de diálogos del navegador
+  que ya existía (acepta automáticamente cualquier `confirm()`/`alert()`, agregado para "Romper
+  sesión") cubre también a "Salir" sin cambios, por si dispara uno igual.
+- Sin cambios de base de datos, sin tocar `app.js` -- no aplica `verificar_tags.js` ni
+  `pruebas_bot.php` (es un robot de Node, no el bot de WhatsApp). `node --check` limpio.
+  **Sin confirmar en vivo todavía** -- falta que el usuario reemplace el archivo y corra el
+  robot una vez más para confirmar que el log dice "Sesión cerrada en el portal al terminar" y
+  que Lindsay ya puede entrar desde otro dispositivo justo después.
+
 ## Una fecha FUTURA en un acuerdo ya no se marca como "celebrada" (19 nov 2026, conversación "Bot")
 Reportado por el usuario: un robot bajó un acuerdo que señalaba la audiencia preliminar para el
 11 de enero de 2027 (fecha futura), y el llenado automático de etapas guardó esa fecha en
