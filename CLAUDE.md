@@ -210,6 +210,22 @@ no lo reportó en 2 corridas seguidas.
       reemplace `federal.js` una vez más y corra el robot de nuevo; si vuelve a colgarse sin
       ningún mensaje de error, es una señal de que hay OTRO punto sin timeout en algún lado,
       pedir en qué expediente/acuerdo se quedó exactamente para localizarlo.
+    - **Confirmado funcionando en vivo (19 nov 2026): el timeout sí evitó el colgado** --
+      nueva corrida con el archivo corregido, avanzó de 114/2026 hasta 242/2026 sin volver a
+      trabarse. Pero el patrón de la falla de PDF cambió: ahora que el ícono de descarga
+      carga completo (ya no se queda en el spinner de antes), el log YA NO muestra ningún
+      "net::ERR_ABORTED" en absoluto -- ni un solo "[petición fallida]" en ~16 intentos
+      seguidos, aunque sigue fallando el 100% de las veces ("no se pudo descargar el PDF").
+      Esto significa que el clic al ícono completo ya NO dispara el mismo tipo de petición
+      de red que antes (o no dispara ninguna detectable) -- hace falta más diagnóstico antes
+      de intentar otro arreglo a ciegas. **Agregados 3 logs de diagnóstico nuevos** justo
+      antes/durante el reintento directo: (1) si se detectó o no alguna petición de descarga
+      tras el clic (y cuál URL, si la hubo), (2) si el reintento directo con
+      `context.request.get()` mismo respondió algo (status/bytes/content-type) o si tronó con
+      qué error exacto. `node --check` limpio. **Sin confirmar en vivo todavía** -- falta que
+      el usuario reemplace `federal.js` una vez más (puede dejar correr la corrida actual
+      hasta el final primero, esto no afecta nada de lo ya confirmado) y mande el log
+      completo de la siguiente corrida para ver qué dicen estos 3 diagnósticos nuevos.
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna

@@ -287,6 +287,14 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
         page.on('request', verUrlDescarga);
         pdf = await intentarCapturarPdf(context, page, () => botonDescarga.click({ timeout: 5000 }).catch(() => {}));
         page.off('request', verUrlDescarga);
+        if (!pdf) {
+          // Diagnóstico (19 nov 2026): con el ícono de descarga ya
+          // cargado del todo (ya no el spinner de antes), el patrón de
+          // falla cambió -- ya no se ve "net::ERR_ABORTED" en el log,
+          // así que hace falta confirmar si el clic de verdad disparó
+          // ALGUNA petición a esta URL o si no disparó nada en absoluto.
+          console.log(`    (diagnóstico: ${urlDescargaIntentada ? `sí se detectó una petición de descarga -- ${urlDescargaIntentada}` : 'NO se detectó ninguna petición de descarga tras el clic'})`);
+        }
         if (!pdf && urlDescargaIntentada) {
           // Candado real (19 nov 2026): sin un timeout explícito aquí, el
           // robot se quedó COLGADO para siempre en una corrida real -- si
@@ -294,8 +302,12 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
           // contesta nada (en vez de abortarla, como hace el navegador),
           // `context.request.get()` esperaba indefinidamente. 15s y se
           // rinde, igual que el resto de los intentos de este archivo.
-          const r = await context.request.get(urlDescargaIntentada, { timeout: 15000 }).catch(() => null);
+          const r = await context.request.get(urlDescargaIntentada, { timeout: 15000 }).catch((e) => {
+            console.log(`    (reintento directo también falló: ${e.message})`);
+            return null;
+          });
           const cuerpo = r ? await r.body().catch(() => null) : null;
+          if (r) console.log(`    (reintento directo respondió: status=${r.status()}, ${cuerpo ? cuerpo.length : 0} bytes, content-type=${r.headers()['content-type'] || '?'})`);
           if (pdfEsValido(cuerpo)) {
             pdf = cuerpo;
             console.log('    (PDF recuperado reintentando la URL de descarga directo, sin pasar por el JS del portal)');
