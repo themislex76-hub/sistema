@@ -20,9 +20,21 @@ activa por cuenta (ya documentado desde el 10 nov 2026 en la sección del robot)
   sesión") cubre también a "Salir" sin cambios, por si dispara uno igual.
 - Sin cambios de base de datos, sin tocar `app.js` -- no aplica `verificar_tags.js` ni
   `pruebas_bot.php` (es un robot de Node, no el bot de WhatsApp). `node --check` limpio.
-  **Sin confirmar en vivo todavía** -- falta que el usuario reemplace el archivo y corra el
-  robot una vez más para confirmar que el log dice "Sesión cerrada en el portal al terminar" y
-  que Lindsay ya puede entrar desde otro dispositivo justo después.
+- **Primera corrida real tras el arreglo (19 nov 2026)**: el robot NUNCA llegó a cerrar sesión
+  porque nunca llegó a abrirla -- el login mismo falló las 5 veces (`AVISO: no se encontró el
+  menú "Consulta de expedientes"...`). Captura real del usuario confirma la causa: el aviso rojo
+  "No puede ingresar por que cuenta con una sesion activa..." SÍ estaba bloqueando, pero apareció
+  DESPUÉS de llenar usuario/contraseña y darle "ENTRAR" -- el diagnóstico que ya existía (texto
+  "sesión activa" + conteo de "Romper sesión") solo revisaba esto ANTES de llenar el formulario
+  (con un margen fijo de 2.5s), y esta vez el aviso tardó más que eso en aparecer, así que las 5
+  veces dio "false"/"0" y nunca le dio clic a "Romper sesión" -- la cuenta se quedó bloqueada las
+  5 veces sin que el robot lo notara a tiempo.
+  - **Corregido**: se agregó la misma revisión ("Romper sesión" visible) también justo DESPUÉS de
+    enviar el login (antes de darse por vencido buscando el menú) -- si aparece ahí, le da clic,
+    recarga, y reintenta en vez de agotar el intento esperando en vano un menú que ya no va a
+    salir. `node --check` limpio. **Sin confirmar en vivo todavía** -- falta que el usuario
+    reemplace el archivo y corra el robot de nuevo para confirmar que esta vez sí entra al
+    "LISTA DE BUZONES" y, al terminar, cierra sesión con "Salir" como ya se esperaba.
 
 ## Una fecha FUTURA en un acuerdo ya no se marca como "celebrada" (19 nov 2026, conversación "Bot")
 Reportado por el usuario: un robot bajó un acuerdo que señalaba la audiencia preliminar para el

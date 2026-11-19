@@ -351,6 +351,23 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       if (!entroPorBoton) await campoPassword.press('Enter').catch(() => {});
       await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
 
+      // Confirmado real (19 nov 2026): el aviso de "sesión activa" puede
+      // tardar en aparecer MÁS de los 2500ms que ya se esperaban arriba --
+      // en una corrida real, el diagnóstico de ANTES de llenar el formulario
+      // dio "false" las 5 veces seguidas, y aun así la captura final (tras
+      // agotar los 5 intentos) mostró el aviso bloqueado con los campos
+      // vacíos -- se reveló DESPUÉS de enviar usuario/contraseña, no antes.
+      // Se revisa otra vez aquí, justo después de enviar el login, antes de
+      // darse por vencido buscando el menú (si está bloqueado, el menú
+      // nunca va a aparecer por más que se espere).
+      const bloqueadoTrasLogin = await clickTextoVisible(page, 'Romper sesión', false, 6000);
+      if (bloqueadoTrasLogin) {
+        console.log('  [login] el aviso de sesión activa apareció DESPUÉS de enviar el login -- se rompió, recargando antes de reintentar.');
+        await page.waitForTimeout(3000);
+        await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+        continue;
+      }
+
       // Confirmado real (10 nov 2026): saltar directo con page.goto() a la
       // URL de "Consulta de expedientes" a veces pierde la sesión recién
       // iniciada (el portal regresa "Error 102 Por favor inicie sesión",
