@@ -280,6 +280,18 @@ el robot de cdmx este viendo todos los asuntos y todas las paginas y el del edom
   el robot de nuevo -- si en el log aparece alguna vez "Página 2 de acuerdos" o más, confirma que
   el hueco era real y que la corrección ya lo cubre; si nunca aparece, no hay forma de confirmar
   que de verdad funciona hasta que un expediente real tenga suficientes acuerdos.
+- **Confirmado SIN ROMPER NADA en vivo (19 nov 2026)**: primera corrida real con el arreglo
+  puesto -- expediente 1139/2026 (5 acuerdos, ya vistos de antes) detectó correctamente "Página
+  1 de acuerdos: 5 fila(s)" y el log mostró "[paginación] ya está en la última página (1 de 1)"
+  para el MODAL de acuerdos, un número DISTINTO al "(2 de 2)" que mostró la lista de atrás
+  ("LISTA DE BUZONES") en el mismo momento -- confirma que `localizarModalAcuerdos()` sí acotó
+  bien el contenedor del modal, sin confundirse con la paginación de la lista detrás. 0 avisos
+  nuevos (esperado, ya los tenía todos). **Sigue pendiente de confirmar el caso real** (un
+  expediente con más acuerdos de los que caben en una página del modal) -- no se ha dado
+  todavía, así que falta ver el log pasar de verdad a "Página 2 de acuerdos" para cerrar esta
+  sección al 100%. Esta corrida solo tenía 1 cuenta del Buzón CDMX guardada (Administrador) --
+  si otros abogados también deben tener la suya, revisar el panel "Credenciales de portales por
+  abogado" en Equipo.
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
