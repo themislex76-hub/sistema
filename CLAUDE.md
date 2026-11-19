@@ -235,11 +235,17 @@ no lo reportó en 2 corridas seguidas.
       NORMAL en los 42 acuerdos -- el reintento nuevo ni hizo falta. No se sabe con certeza
       por qué el patrón cambió otra vez (el portal pudo haberse estabilizado del lado del
       JS roto, o fue timing/suerte) -- no se tocó nada de código para esto, solo se
-      confirmó con el log. **Pendiente de confirmar por el usuario**: entrar al sistema y
-      revisar la pestaña Documentos de 1-2 de estos expedientes (ej. 463/2026, 114/2026)
-      para verificar que los PDFs de verdad se subieron y abren bien -- si se confirma, esta
-      sección queda 100% cerrada (463/2026 encontrado, abierto, con sus 4 acuerdos Y sus
-      PDFs reales).
+      confirmó con el log. **✅ CONFIRMADO POR EL USUARIO CON CAPTURA REAL (19 nov 2026) --
+      sección 100% cerrada**: 463/2026 muestra sus 4 PDFs reales en la pestaña Documentos
+      (`Acuerdo_No_1..4_Exp_463-2026.pdf`, 576.4-633.0 KB cada uno) y 114/2026 muestra 47
+      documentos subidos con tamaños reales (500-666 KB cada uno, no archivos vacíos ni
+      corruptos). Con esto se da por resuelta de punta a punta toda esta investigación: el
+      463/2026 (Anel Yadira Hernández Zaragoza vs Banco Nacional de México) se encuentra, se
+      abre, se le leen sus acuerdos, y sus PDFs se descargan y suben bien al expediente. No
+      se identificó con certeza por qué las descargas de PDF fallaban 100% de las veces en
+      corridas anteriores y luego dejaron de fallar sin cambio de código -- si vuelve a
+      fallar en el futuro, el reintento directo + los 3 logs de diagnóstico ya agregados
+      quedan listos para usarse de nuevo.
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
