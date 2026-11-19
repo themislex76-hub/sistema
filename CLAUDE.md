@@ -165,6 +165,29 @@ no lo reportó en 2 corridas seguidas.
       por vencido. `node --check` limpio. **Sin confirmar en vivo todavía** -- falta que el
       usuario reemplace `federal.js` y corra el robot de nuevo (puede que necesite más de 1
       corrida si el portal sigue inestable en red esta noche).
+    - **✅ CONFIRMADO FUNCIONANDO DE PUNTA A PUNTA (19 nov 2026) -- se da por resuelto el
+      pendiente original de esta sección**: nueva corrida con los 2 arreglos de arriba
+      puestos (`regresarAVistaGlobal()` + reintento de la primera navegación) -- la sesión
+      "laboral" de Lindsay enumeró los 19 expedientes de siempre y esta vez **388/2026 (6
+      acuerdos), 463/2026 (4 acuerdos) y 501/2026 (1 acuerdo) se abrieron y procesaron SIN
+      tronar, los 3 uno tras otro** -- 11 avisos nuevos en total en esa sesión. El 463/2026
+      (Anel Yadira Hernández Zaragoza vs Banco Nacional de México), que llevaba 2 corridas
+      sin reportarse al inicio de esta investigación, YA aparece con sus 4 acuerdos reales
+      (incluyendo "Admision D - BANCO banamex -reinstalacion" y 2 réplicas de la contestación
+      de Banamex) dados de alta como avisos en el sistema.
+    - **Pendiente, aparte, NO bloquea nada de lo anterior**: la descarga de PDF sigue
+      fallando el 100% de las veces para TODOS los acuerdos nuevos de esta corrida (296, 300,
+      388, 463, 501/2026 -- ~20 documentos distintos, mismo patrón exacto siempre:
+      `net::ERR_ABORTED` en `serviciossige.oaj.gob.mx/wsFileManagerDownLoad/...`, el modal se
+      queda con el ícono de "cargando" -- `fa-spinner fa-pulse` -- en vez de mostrar el botón
+      de descarga). Como esto es sistemático y no solo con un expediente, parece un cambio
+      del lado del portal en este mecanismo específico de descarga (ya pasó antes con otras
+      pantallas de este mismo portal, ver más abajo "Reescrito por completo (8 nov 2026)") --
+      los avisos se siguen reportando igual, solo sin el PDF adjunto (mismo respaldo que ya
+      existía desde el 8 nov 2026). **Sin diagnosticar ni corregir todavía** -- queda como
+      tarea aparte para una próxima sesión si el usuario quiere recuperar los PDFs; no se
+      intentó un arreglo a ciegas por falta de evidencia suficiente (no se puede inspeccionar
+      el tráfico de red real del portal desde esta sesión).
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
