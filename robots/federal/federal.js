@@ -714,6 +714,39 @@ async function buscarFilaPorExpediente(page, numExpBuscado) {
   return null;
 }
 
+// Regresa de ver un expediente a la tabla de Vista Global, y CONFIRMA que
+// de verdad se llegó ahí antes de seguir -- no basta con que el clic en
+// "Regresar" no haya tronado.
+//
+// Causa real encontrada el 19 nov 2026, con una corrida real: tras abrir 4
+// acuerdos seguidos del expediente 296/2026 (cada uno con un intento de
+// descarga de PDF fallido, dejando en la consola "table.autoFill is not a
+// function" las 4 veces), el clic en "Regresar" ya no tronaba, pero la
+// tabla de Vista Global quedaba en un estado roto del lado del portal --
+// los 3 expedientes siguientes (388/2026, 463/2026, 501/2026, el propio
+// 463/2026 que motivó toda esta investigación entre ellos) ya no se volvían
+// a encontrar NUNCA, aunque seguían apareciendo en la lista de "Números
+// vistos" de esa misma cuenta. Por eso ya no basta con que "Regresar" no
+// haya lanzado un error -- se confirma que la tabla de Vista Global
+// de verdad está ahí (con un timeout corto) antes de seguir; si no, se cae
+// al respaldo de recargar desde cero y volver a entrar al submenú completo.
+async function regresarAVistaGlobal(page) {
+  const regreso = await clickTextoVisible(page, 'Regresar', false).catch(() => false);
+  if (regreso) {
+    const ok = await page.locator('table').filter({ has: page.getByText('Número de expediente') }).first()
+      .waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
+    if (ok) return true;
+  }
+  await cerrarCualquierModalAbierto(page);
+  // Respaldo: si no hay botón "Regresar" visible, o si lo hubo pero la
+  // tabla de Vista Global no quedó en buen estado, se vuelve a entrar al
+  // menú desde cero.
+  await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
+  await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false).catch(() => false);
+  await page.waitForTimeout(500);
+  return await clickTextoVisible(page, 'Vista Global', false).catch(() => false);
+}
+
 // Busca en la fila la celda que tenga el botón para ver/descargar el
 // documento del acuerdo. No se conoce el nombre exacto del encabezado (no
 // se pudo ver en vivo desde aquí) -- se intentan varios nombres probables
@@ -981,19 +1014,7 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
       }
 
       // Regresa a la vista global para poder abrir el siguiente expediente.
-      // Si algo (ej. un modal que quedó atorado) truena aquí, no debe
-      // tirar TODO el resto de los expedientes de esta cuenta -- se limpia
-      // y se cae al respaldo de volver a entrar desde cero.
-      const regreso = await clickTextoVisible(page, 'Regresar', false).catch(() => false);
-      if (!regreso) {
-        await cerrarCualquierModalAbierto(page);
-        // Respaldo: si no hay botón "Regresar" visible, se vuelve a entrar
-        // al menú desde cero.
-        await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
-        await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false).catch(() => false);
-        await page.waitForTimeout(500);
-        await clickTextoVisible(page, 'Vista Global', false).catch(() => false);
-      }
+      await regresarAVistaGlobal(page);
     }
   } finally {
     await context.close();

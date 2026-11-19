@@ -126,6 +126,34 @@ no lo reportó en 2 corridas seguidas.
       paginación de arriba) pero nunca se llegaba a ABRIR por este bug de locators. Con el
       arreglo de `buscarFilaPorExpediente()` ya en el commit, falta la siguiente corrida real
       para confirmarlo.
+    - **Confirmado PARCIAL en vivo (19 nov 2026)**: nueva corrida con el arreglo de
+      `buscarFilaPorExpediente()` ya puesto -- esta vez **296/2026 SÍ se abrió bien** (sin
+      tronar, 4 acuerdos nuevos encontrados y reportados -- primera vez que se llega a ver
+      este expediente de punta a punta). Pero **388/2026, 463/2026 y 501/2026** (los 3
+      siguientes en la lista, 463/2026 entre ellos otra vez) salieron con un mensaje nuevo:
+      "AVISO: no se volvió a encontrar el expediente ... en Vista Global al intentar abrirlo
+      -- se omite esta vez" -- `buscarFilaPorExpediente()` ya no tronaba con timeout, pero
+      tampoco encontraba la fila, aunque sigue apareciendo en "Números vistos en esta
+      página".
+      - **Causa real encontrada**: después de procesar los 4 acuerdos de 296/2026 (cada uno
+        con un intento de descarga de PDF fallido, dejando "table.autoFill is not a function"
+        en la consola las 4 veces -- ver el bug de PDF de arriba), el clic en "Regresar" ya
+        NO tronaba, pero la tabla de Vista Global quedaba en un estado roto del lado del
+        portal -- probablemente relacionado con el mismo error de JS repetido. El código
+        solo revisaba que el clic en "Regresar" no lanzara una excepción, nunca confirmaba
+        que la tabla de verdad hubiera quedado bien después.
+      - **Corregido**: nueva función `regresarAVistaGlobal()` -- después del clic en
+        "Regresar", confirma que la tabla de Vista Global de verdad aparece (timeout corto);
+        si no, cae al mismo respaldo de recargar desde cero y volver a entrar al submenú
+        completo que ya existía (antes solo se usaba si "Regresar" mismo fallaba, nunca si
+        "funcionaba" pero dejaba la tabla rota). `node --check` limpio. **Sin confirmar en
+        vivo todavía** -- falta que el usuario reemplace `federal.js` y corra el robot de
+        nuevo para confirmar que 388/2026, 463/2026 y 501/2026 ya se abren bien después de
+        296/2026.
+    - **Aparte, sigue sin corregirse** (ver más abajo el bug de PDF de 300/2026): los 4
+      acuerdos de 296/2026 tampoco lograron descargar su PDF (mismo patrón exacto:
+      `net::ERR_ABORTED` en `serviciossige.oaj.gob.mx`, spinner que nunca resuelve) -- los 4
+      avisos sí se reportaron igual, sin el PDF adjunto.
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
