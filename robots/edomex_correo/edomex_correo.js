@@ -253,31 +253,31 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       return 0;
     }
 
-    if (ultimoVisto === null) {
-      // Primera vez que se revisa esta cuenta (o después de forzar un
-      // re-barrido borrando procesados_edomex_correo.json): la bandeja de
-      // Carbonio NO tiene botón de "cargar más" -- solo carga correos más
-      // viejos conforme se hace scroll hacia abajo (confirmado real por el
-      // usuario) -- sin esto, "barrer todo el historial" en realidad solo
-      // veía el primer lote ya renderizado al cargar la página, perdiendo
-      // para siempre cualquier acuerdo viejo que quedara más abajo (caso
-      // real: expediente 1056/2026, acuerdo del 28-oct-2026 nunca se
-      // reportó por este motivo, aunque el expediente llevaba meses
-      // monitoreado). Se baja hasta que el número de filas deja de crecer
-      // 3 veces seguidas (la bandeja ya cargó todo lo que tiene) o se
-      // llega a un tope de vueltas, por seguridad.
-      console.log('  Primera vez para esta cuenta -- se hace scroll hasta el final de la bandeja para cargar todo el historial.');
-      let conteoAnterior = -1;
-      let vecesIgual = 0;
-      for (let vuelta = 0; vuelta < 80 && vecesIgual < 3; vuelta++) {
-        const conteoActual = await filas.count();
-        vecesIgual = conteoActual === conteoAnterior ? vecesIgual + 1 : 0;
-        conteoAnterior = conteoActual;
-        await filas.last().scrollIntoViewIfNeeded().catch(() => {});
-        await page.waitForTimeout(1200);
-      }
-      console.log(`  Scroll terminado: ${await filas.count()} correo(s) cargado(s) en total.`);
+    // La bandeja de Carbonio NO tiene botón de "cargar más" -- solo carga
+    // correos más viejos conforme se hace scroll hacia abajo (confirmado
+    // real por el usuario). Se baja hasta el final SIEMPRE, en cada
+    // corrida (no solo la primera vez) -- confirmado real (18 nov 2026)
+    // que el orden de la bandeja NO es estrictamente del más nuevo al más
+    // viejo (un mismo id de conversación puede reaparecer en una posición
+    // muy distinta del listado entre una lectura y otra, probablemente
+    // porque Carbonio ordena por actividad de la conversación, no por el
+    // id), así que detenerse en cuanto aparece un id "ya visto" ya no es
+    // seguro -- un acuerdo real podría quedar más abajo de uno viejo y
+    // nunca llegar a revisarse si solo se carga el primer lote. Se baja
+    // hasta que el número de filas deja de crecer 3 veces seguidas (la
+    // bandeja ya cargó todo lo que tiene) o se llega a un tope de vueltas,
+    // por seguridad.
+    console.log('  Se hace scroll hasta el final de la bandeja para cargar todo el historial.');
+    let conteoAnterior = -1;
+    let vecesIgual = 0;
+    for (let vuelta = 0; vuelta < 80 && vecesIgual < 3; vuelta++) {
+      const conteoActual = await filas.count();
+      vecesIgual = conteoActual === conteoAnterior ? vecesIgual + 1 : 0;
+      conteoAnterior = conteoActual;
+      await filas.last().scrollIntoViewIfNeeded().catch(() => {});
+      await page.waitForTimeout(1200);
     }
+    console.log(`  Scroll terminado: ${await filas.count()} correo(s) cargado(s) en total.`);
 
     const n = await filas.count();
     console.log(`  ${n} correo(s) de "Notificacion Electronica Laboral" visibles en la bandeja.`);
@@ -329,8 +329,11 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       }
       vistosEstaCorrida.add(idConversacion);
       if (ultimoVisto !== null && Number(idConversacion) <= Number(ultimoVisto)) {
-        console.log(`    Correo ${idConversacion} ya visto antes (<= ${ultimoVisto}) -- la lista está ordenada del más nuevo al más viejo, se deja de revisar.`);
-        break;
+        // Ya NO se corta el ciclo aquí (ver comentario del scroll más
+        // arriba) -- el orden de la bandeja no garantiza que todo lo que
+        // sigue sea igual de viejo, así que solo se omite este correo y
+        // se sigue revisando el resto de la lista completa.
+        continue;
       }
 
       const texto = await leerTextoCompleto(page, 'EXPEDIENTE');

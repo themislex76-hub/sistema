@@ -3292,3 +3292,21 @@ número, sin error de captura).
   probablemente tiene 2 copias idénticas de `Acuerdo_Exp_1056-2026_-3240.pdf` -- borrar la
   copia de más a mano desde la pestaña Documentos de cada expediente afectado (780/2026,
   747/2026, 628/2026, 1056/2026, 841/2026).
+- **3er ajuste, mismo día, pedido explícito del usuario tras ver que un mismo id de
+  conversación reaparecía en posiciones MUY distintas del listado** (ej. expediente 1576/2025
+  visto cerca del principio de la bandeja de Lindsay y de nuevo varias filas más abajo, sin
+  ser un duplicado consecutivo de los que ya arregla el candado de arriba) -- "tiene que
+  escrolear la lista completa y buscar en todos los acuerdos". Esto confirma que Carbonio NO
+  ordena la bandeja estrictamente del más nuevo al más viejo por id de conversación (parece
+  ordenar por actividad de la conversación) -- así que el atajo de "se deja de revisar en
+  cuanto se encuentra uno ya visto" (`break`) ya NO es seguro: un acuerdo real podría quedar
+  más abajo de uno viejo en el listado y nunca llegar a revisarse.
+  - El scroll-hasta-el-final (antes solo la primera vez por cuenta) ahora se hace SIEMPRE, en
+    cada corrida -- no cuesta más con el tamaño real de estas bandejas (20-22 correos en
+    total por cuenta).
+  - El `break` al encontrar un id ya visto se cambió a `continue` -- ya no se corta el ciclo,
+    se sigue revisando la lista COMPLETA cada vez (el candado de duplicados dentro de la misma
+    corrida y el de "ya visto en una corrida anterior" siguen evitando reprocesar lo mismo,
+    solo que ahora sin asumir nada sobre el orden).
+  - `node --check` limpio. **Sin confirmar en vivo todavía** -- falta que el usuario corra el
+    robot con este 3er arreglo.
