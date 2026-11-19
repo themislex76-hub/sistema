@@ -24,6 +24,19 @@ no lo reportó en 2 corridas seguidas.
   **Sin confirmar en vivo todavía** -- falta que el usuario reemplace `federal.js` y corra el
   robot de nuevo para confirmar que la sesión "laboral" de Lindsay ya no truena en "Vista Global"
   y que el 463/2026 aparece con sus acuerdos.
+- **Confirmado PARCIAL en vivo (19 nov 2026)**: nueva corrida -- la sesión "laboral" de Lindsay ya
+  NO tronó en "Vista Global" (arreglo confirmado funcionando), llegó a enumerar sus 10 expedientes
+  y terminó limpio con "0 aviso(s) nuevo(s)". Pero no se pudo confirmar si el 463/2026 de verdad
+  estaba entre esos 10 o si el robot lo vio y no encontró acuerdos nuevos -- el log nunca imprime
+  qué números de expediente salieron en la página cuando ninguno hace match (`continue` silencioso
+  en el bucle de `procesarCuenta()`). **Agregado un log de diagnóstico** justo después de "N
+  expediente(s) visibles..." que lista los números de expediente vistos en esa página, para la
+  próxima corrida. `node --check` limpio. **Pendiente**: que el usuario corra el robot una vez más
+  con este archivo y confirme si "463/2026" aparece en esa lista -- si SÍ aparece pero sigue en "0
+  avisos", el problema está en otro lado (ej. `procesados_federal.json` ya tiene un número de
+  acuerdo guardado igual o mayor al real, o el expediente no tiene ningún acuerdo nuevo de verdad);
+  si NO aparece, el expediente no está en la "LISTA DE BUZONES"/Vista Global de esa cuenta en el
+  portal (revisar con el usuario si Lindsay de verdad ve ese expediente ahí).
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna

@@ -866,6 +866,10 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
       return 0;
     }
     console.log(`  ${filas.length} expediente(s) visibles en el portal para esta cuenta.`);
+    // Diagnóstico (19 nov 2026): sin esto no hay forma de saber, por el
+    // log, si un expediente monitoreado específico salió en esta página o
+    // no -- el "continue" de abajo cuando no hay match es silencioso.
+    console.log(`    Números vistos en esta página: ${filas.map(f => (f['Número de expediente'] || {}).texto || '?').join(', ') || '(ninguno)'}`);
 
     for (const fila of filas) {
       const numExp = (fila['Número de expediente'] || {}).texto || '';
