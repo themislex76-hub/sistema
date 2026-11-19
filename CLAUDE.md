@@ -3550,6 +3550,19 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
 - Sin cambio (mejoras, no errores): no analizar a fondo la rescisión de un caso ya en conciliación,
   no recalcular con aguinaldo/prima de contrato colectivo, "estoy cubierto en vacaciones". 84 casos.
 
+## Revisión del 18-nov: 0 de 146 marcadas -- primera vez en cero (19 nov 2026, conversación "Bot")
+Corrida manual de `cron_revisar_conversaciones_bot.php` (el HTTP 500 que mostró el navegador en
+el primer intento fue solo el navegador cortando la espera -- el script sí terminó del lado del
+servidor; una segunda corrida ya encontró las 146 marcadas "ya revisada(s) antes", confirmando
+que no se perdió nada). **146 conversaciones del 18-nov, 0 marcadas** -- panel "Conversaciones
+del bot a revisar" en Equipo vacío. Tendencia: 55% y 42% (días previos) → 22% (16-nov) → 12.5%
+(17-nov, 104 conversaciones) → **0% (18-nov, 146 conversaciones)**. Coincide con el cambio a
+Sonnet 5.5 + razonamiento subido a media tarde del 17-nov (ver sección "El bot de WhatsApp pasa
+a Sonnet 5.5" más abajo) -- buena señal de que el cambio de modelo sí está ayudando, aunque no
+se confirmó directamente revisando `ia_cache_stats.log`/`ia_debug.log` (ese pendiente de esa
+sección sigue abierto). Si el 19-nov también sale en cero o muy bajo, se puede dar por
+confirmado el efecto del cambio de modelo sin necesidad de revisar los logs a mano.
+
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
   a diferencia de `whatsapp_enviar()`, SÍ llegan aunque ya se haya cerrado
