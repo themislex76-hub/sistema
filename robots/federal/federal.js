@@ -288,7 +288,13 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
         pdf = await intentarCapturarPdf(context, page, () => botonDescarga.click({ timeout: 5000 }).catch(() => {}));
         page.off('request', verUrlDescarga);
         if (!pdf && urlDescargaIntentada) {
-          const r = await context.request.get(urlDescargaIntentada).catch(() => null);
+          // Candado real (19 nov 2026): sin un timeout explícito aquí, el
+          // robot se quedó COLGADO para siempre en una corrida real -- si
+          // el servidor no rechaza la petición sino que simplemente nunca
+          // contesta nada (en vez de abortarla, como hace el navegador),
+          // `context.request.get()` esperaba indefinidamente. 15s y se
+          // rinde, igual que el resto de los intentos de este archivo.
+          const r = await context.request.get(urlDescargaIntentada, { timeout: 15000 }).catch(() => null);
           const cuerpo = r ? await r.body().catch(() => null) : null;
           if (pdfEsValido(cuerpo)) {
             pdf = cuerpo;

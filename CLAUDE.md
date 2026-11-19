@@ -198,6 +198,18 @@ no lo reportó en 2 corridas seguidas.
       este intento también puede fallar -- en ese caso, pedir el log completo otra vez
       (buscar la línea nueva "PDF recuperado reintentando..." para confirmar si funcionó, o
       seguir viendo "no se pudo descargar el PDF" si no).
+    - **Bug real encontrado en vivo (19 nov 2026): el robot se quedó COLGADO para siempre**
+      -- confirmado por el usuario ("aqui se quedo"), el log se detuvo a medio expediente
+      114/2026 (sesión "laboral" de Lindsay) sin ningún error, sin avanzar más. Causa real:
+      el `context.request.get(urlDescargaIntentada)` agregado en el intento de arriba NO
+      tenía ningún timeout explícito -- si el servidor no rechaza la petición (como sí hace
+      el navegador con `net::ERR_ABORTED`) sino que simplemente nunca contesta nada, la
+      llamada se queda esperando indefinidamente. **Corregido**: se le agregó
+      `{ timeout: 15000 }`, mismo límite que usa el resto de los intentos de este archivo.
+      `node --check` limpio. **Sin confirmar en vivo todavía** -- falta que el usuario
+      reemplace `federal.js` una vez más y corra el robot de nuevo; si vuelve a colgarse sin
+      ningún mensaje de error, es una señal de que hay OTRO punto sin timeout en algún lado,
+      pedir en qué expediente/acuerdo se quedó exactamente para localizarlo.
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
