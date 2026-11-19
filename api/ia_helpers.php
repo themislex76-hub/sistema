@@ -293,14 +293,20 @@ piso de referencia, no lo que le corresponde con exactitud.
 CRITERIOS DEL DESPACHO PARA ORIENTAR CON PRECISIÓN (13-nov-2026) -- la
 orientación debe ser completa, pero cada afirmación legal tiene que ser
 exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
-· Vacaciones nunca disfrutadas (caso real, coach de tenis, 13-nov-2026):
-  si la persona dice que NO tomó vacaciones en años anteriores (o muy
-  pocas), pásale a calcular_estimado_liquidacion en
+· Vacaciones nunca disfrutadas (caso real, coach de tenis, 13-nov-2026;
+  se repitió en al menos 5 conversaciones más de la revisión del
+  18-nov-2026): si la persona dice que NO tomó vacaciones en años
+  anteriores (o muy pocas), pásale a calcular_estimado_liquidacion en
   dias_vacaciones_anteriores los días que le correspondían por la tabla
   del Art. 76 en los años de servicio YA cumplidos (al menos el último
   año completo), menos los que sí tomó. La herramienta descarta sola los
   prescritos. Nunca calcules solo las vacaciones proporcionales del año
-  en curso cuando ya te dijo que no tomó las anteriores.
+  en curso cuando ya te dijo que no tomó las anteriores. Si lleva MENOS
+  de 1 año de antigüedad (sin ningún aniversario cumplido todavía), el
+  proporcional del periodo SÍ es lo correcto -- pero dilo explícitamente
+  ("como todavía no cumples tu primer año, lo que te corresponde es el
+  proporcional, que ya cubre todo lo que llevas sin tomar"), no solo des
+  la cifra sin aclarar ese punto.
 · Cuando le pagan TERCEROS (clientes, socios, alumnos, pasajeros) y la
   persona misma cobra (caso real: coach de un club, pagado directo por
   los socios): NO afirmes que "sin duda eres trabajador" ni que lo que
@@ -480,6 +486,14 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   $64,361 de prima calculada a mano sobre $680 diarios sin ese tope).
   Si sumas algo que la herramienta no calcula (ej. horas extra), dilo
   como estimado aparte. Nunca digas que la asesoría "asegura" un monto.
+  Errores reales de la revisión del 18-nov-2026: horas extra calculadas
+  a mano con 2 divisores distintos del salario diario, dando 2 totales
+  distintos en el mismo mensaje ($10,400 y $15,600) -- si calculas algo
+  aparte, da UN solo estimado con UN solo método, nunca un "rango"
+  construido con matemática inconsistente. Tampoco valides como
+  "razonable" un monto que reporta el patrón, una hoja de nómina o una
+  captura informal sin antes correr calcular_estimado_liquidacion con el
+  salario y la antigüedad reales de la persona.
 · Frontera norte: si el resultado de calcular_estimado_liquidacion trae
   aviso_zona_frontera (teléfono con lada fronteriza), pregunta en qué
   municipio TRABAJABA; si fue en la Zona Libre de la Frontera Norte,
@@ -549,7 +563,12 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   sin repetir la oferta en cada respuesta, y vuelve a ofrecerla solo si
   ella la menciona o al cerrar la conversación. Queja real (13-nov-2026):
   una clienta dijo que "la atendió una IA porque le contestan lo mismo"
-  -- el bot cerró 4 respuestas seguidas con la misma pregunta.
+  -- el bot cerró 4 respuestas seguidas con la misma pregunta. Esto
+  incluye repetir el PRECIO de la asesoría ($499) o del curso/documento
+  en mensajes seguidos de la misma conversación sin que la persona lo
+  haya vuelto a preguntar -- error real repetido en la revisión del
+  18-nov-2026 (el precio mencionado 3 veces en la misma conversación
+  mientras la clienta solo agradecía y seguía otro tema).
 · Si ya le dijiste a la persona que el despacho no puede atender su caso
   (fuera de materia, Apartado B confirmado, etc.), sé consistente: no le
   ofrezcas después la asesoría ni horarios en la misma conversación.
@@ -2108,6 +2127,13 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // normal), ver el bug real "se nota que es la IA porque hace muy rápido
     // los cálculos".
     $usoCalculoLiquidacion = false;
+    // Revisión del 18-nov-2026: tocar si esta respuesta llamó de verdad
+    // calcular_plazo_demanda/calcular_plazo_prestaciones o
+    // buscar_jurisprudencia -- se usan más abajo para recortar cifras de
+    // plazo en días o citas de jurisprudencia que el bot haya inventado a
+    // mano sin pasar por la herramienta correspondiente.
+    $usoCalculoPlazo = false;
+    $usoBuscarJurisprudencia = false;
     $yaInsistioAnuncio = false;
 
     for ($ronda = 0; $ronda < $maxRondas; $ronda++) {
@@ -2217,6 +2243,19 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     if (ia_bot_dijo_plazo_despido_vencido($mensajes)) {
                         $calc['aviso_plazo_vencido'] = 'OJO: en esta conversación ya le dijiste a la persona que su plazo de 2 meses para demandar el despido (Art. 518) ya venció. Si eso sigue siendo así (no presentó solicitud de conciliación a tiempo), NO le presentes la indemnización de 3 meses (ni salarios caídos ni 20 días) como dinero que puede cobrar ni la sumes a un total "en juego": dale por separado solo lo que sigue vigente (finiquito, prima de antigüedad, aguinaldo y vacaciones no prescritos, que prescriben en 1 año, Art. 516) y dile que la indemnización depende de que el abogado revise si algo suspendió o interrumpió el plazo.';
                     }
+                    // Caso real (18-nov-2026, al menos 5 conversaciones de
+                    // la revisión diaria de ese día): el cliente dijo que
+                    // nunca tomó/disfrutó vacaciones y el bot solo calculó
+                    // el proporcional del periodo en curso, sin pasar los
+                    // días de años YA CUMPLIDOS a dias_vacaciones_anteriores
+                    // (criterio ya escrito en el prompt desde el caso del
+                    // coach de tenis, 17-nov-2026, pero seguía sin
+                    // aplicarse). Igual que aviso_zona_frontera/
+                    // aviso_plazo_vencido: se le avisa a la IA justo cuando
+                    // el riesgo real se presenta, no solo en el prompt.
+                    if ((float)($in['dias_vacaciones_anteriores'] ?? 0) <= 0 && ia_cliente_dijo_no_tomo_vacaciones($mensajes)) {
+                        $calc['aviso_vacaciones_anteriores'] = 'OJO: en esta conversación el cliente dijo que nunca tomó/disfrutó vacaciones, pero este cálculo no incluyó ningún día en dias_vacaciones_anteriores. Si ya tiene al menos 1 año cumplido de antigüedad, antes de dar este resultado como final vuelve a calcular pasando en dias_vacaciones_anteriores los días que le correspondían por la tabla del Art. 76 en cada año YA CUMPLIDO (menos los que sí haya tomado) -- la herramienta descarta sola los prescritos. Si lleva menos de 1 año de antigüedad, el proporcional ya es correcto y no hace falta nada más (pero dile explícitamente que, al no haber cumplido un año, el proporcional ya cubre todo lo no disfrutado, para que quede claro).';
+                    }
                     $contenido = json_encode($calc, JSON_UNESCAPED_UNICODE);
                     $usoCalculoLiquidacion = true;
                     // Se registra el cálculo (aunque la persona nunca llegue a
@@ -2247,6 +2286,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ], JSON_UNESCAPED_UNICODE);
                 }
             } elseif ($bloque['name'] === 'calcular_plazo_demanda') {
+                $usoCalculoPlazo = true;
                 $plazo = calcular_plazo_demanda(
                     (string)($in['fecha_despido'] ?? ''),
                     trim((string)($in['fecha_solicitud_conciliacion'] ?? '')) ?: null,
@@ -2263,6 +2303,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ? json_encode($plazo, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Fecha de despido inválida o faltante.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'calcular_plazo_prestaciones') {
+                $usoCalculoPlazo = true;
                 $plazoPrestaciones = calcular_plazo_prestaciones(
                     (string)($in['fecha_baja'] ?? ''),
                     trim((string)($in['fecha_solicitud_conciliacion'] ?? '')) ?: null,
@@ -2302,6 +2343,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             } elseif ($bloque['name'] === 'buscar_en_lft') {
                 $contenido = json_encode(lft_buscar_texto($pdo, (string)($in['tema'] ?? '')), JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'buscar_jurisprudencia') {
+                $usoBuscarJurisprudencia = true;
                 $contenido = json_encode(jurisprudencia_buscar_para_bot($pdo, (string)($in['terminos'] ?? '')), JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'confirmar_compra_documento_calculo') {
                 $contenido = ia_resultado_confirmar_compra_documento_calculo($pdo, $telefono);
@@ -2447,6 +2489,41 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         file_put_contents(__DIR__ . '/ia_debug.log', date('c')
             . " | [calculo_gratis_bloqueado] tel=$telefono | texto_bloqueado=\"" . $texto . "\"\n", FILE_APPEND);
         $texto = 'El cálculo estimado siempre es gratis, no tiene ningún costo -- cuéntame tu caso (qué pasó, tu salario, las fechas) y te lo calculo aquí mismo. Lo único que sí tiene costo es la asesoría personalizada con el Lic. Rubén Buerhend, si más adelante quieres que revise tu caso a fondo.';
+    }
+
+    // 4 candados nuevos de la revisión del 18-nov-2026 (35 de 146
+    // conversaciones marcadas, el día más alto desde el cambio a Sonnet
+    // 5.5) -- los 4 patrones ya estaban prohibidos EXPLÍCITAMENTE en el
+    // prompt (CRITERIOS DEL DESPACHO) y el bot los siguió violando, así
+    // que --igual que los candados de arriba-- se recortan aquí mismo en
+    // vez de confiar solo en que la IA recuerde la regla. A diferencia de
+    // los candados de pago/cita (que sustituyen TODO el mensaje por ser
+    // temas de alto riesgo), aquí solo se quita la ORACIÓN problemática
+    // con ia_texto_quitar_oraciones() -- el resto de la respuesta, que
+    // suele ser correcta, se manda igual.
+    if (ia_texto_convierte_meses_en_dias($texto)) {
+        $textoAntes = $texto;
+        $texto = ia_texto_quitar_oraciones($texto, '/\bson\s+\d{1,3}\s*d[ií]as\b/iu');
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [meses_a_dias_recortado] tel=$telefono | antes=\"" . $textoAntes . "\" | despues=\"" . $texto . "\"\n", FILE_APPEND);
+    }
+    if (!$usoCalculoPlazo && ia_texto_da_plazo_en_dias_sin_herramienta($texto)) {
+        $textoAntes = $texto;
+        $texto = ia_texto_quitar_oraciones($texto, '/\b(te\s+)?quedar[aá]n?\s*\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b|\bquedan\s*\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b|\bplazo\s+(de\s+)?\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b/iu');
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [plazo_dias_sin_herramienta_recortado] tel=$telefono | antes=\"" . $textoAntes . "\" | despues=\"" . $texto . "\"\n", FILE_APPEND);
+    }
+    if (!$usoBuscarJurisprudencia && ia_texto_cita_jurisprudencia_concreta($texto)) {
+        $textoAntes = $texto;
+        $texto = ia_texto_quitar_oraciones($texto, '/registro\s+digital\s*\d*|tesis\s+(aislada|de\s+jurisprudencia)|(suprema\s+corte|poder\s+judicial|tribunales?\s+colegiados?)\s+(de\s+\w+\s+)?ha[n]?\s+(resuelto|sostenido|establecido|determinado)/iu');
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [jurisprudencia_sin_herramienta_recortada] tel=$telefono | antes=\"" . $textoAntes . "\" | despues=\"" . $texto . "\"\n", FILE_APPEND);
+    }
+    if (ia_texto_afirma_exencion_isr($texto)) {
+        $textoAntes = $texto;
+        $texto = ia_texto_quitar_oraciones($texto, '/\d+\s*veces\s+(la\s+)?UMA|UMA\b.{0,60}exen|exent\w*.{0,60}\bUMA\b|(probable|probablemente|seguro|seguramente)[^.]{0,40}(quede|est[eé])[^.]{0,20}exent/iu');
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [isr_exencion_recortada] tel=$telefono | antes=\"" . $textoAntes . "\" | despues=\"" . $texto . "\"\n", FILE_APPEND);
     }
 
     // Caso real (14-nov-2026): el bot escribió "voy a pedir que un abogado
@@ -2645,6 +2722,116 @@ function ia_texto_niega_calculo_gratis(string $texto): bool
 
     return preg_match(
         '/ya\s+no\s+(manejamos|hacemos|ofrecemos|hay)\s+c[aá]lculos?|no\s+(ofrece|ofrecemos|manejamos|hacemos)\s+c[aá]lculos?|c[aá]lculo.{0,40}(es|forma)\s+parte\s+de.{0,20}asesor|c[aá]lculo.{0,25}(tiene|con)\s*(un\s*)?costo|c[aá]lculo.{0,25}no\s+es\s+gratis|para.{0,30}c[aá]lculo.{0,30}(pagar|asesor[ií]a)/iu',
+        $texto
+    ) === 1;
+}
+
+/**
+ * true si en algún mensaje del CLIENTE aparece que nunca tomó/disfrutó
+ * vacaciones -- caso real recurrente (coach de tenis, 17-nov-2026, y al
+ * menos 5 casos más en la revisión del 18-nov-2026): el bot calculaba
+ * solo el proporcional del periodo en curso sin pasar los días de años
+ * YA CUMPLIDOS a dias_vacaciones_anteriores. Se usa para avisarle a la
+ * IA justo cuando llama calcular_estimado_liquidacion sin ese dato, ver
+ * ia_responder_whatsapp() arriba.
+ */
+function ia_cliente_dijo_no_tomo_vacaciones(array $mensajes): bool
+{
+    foreach ($mensajes as $m) {
+        if (($m['role'] ?? '') !== 'user' || !is_string($m['content'] ?? null)) continue;
+        if (preg_match('/no\s+(he\s+|las\s+)?tom[eé]\s+(ning[uú]n\s*d[ií]a\s+de\s+)?vacacion|nunca\s+tom[eé]\s+vacacion|no\s+(he\s+)?disfrutad[oa]\s+(mis\s+|ninguna\s+)?vacacion|sin\s+tomar\s+(ninguna\s+)?vacacion|no\s+tengo\s+vacaciones\s+tomadas/iu', $m['content'])) return true;
+    }
+    return false;
+}
+
+/**
+ * Quita del texto cada "oración" (separada por punto/signo de
+ * puntuación) que haga match con $patron, dejando el resto del mensaje
+ * intacto -- a diferencia de los candados de pago/cita (que sustituyen
+ * TODO el mensaje por ser temas de alto riesgo), estos 4 candados nuevos
+ * de la revisión del 18-nov-2026 solo recortan la frase problemática,
+ * porque el resto de la respuesta del bot suele ser correcto. Si al
+ * quitar todo el texto se queda vacío, regresa el original sin tocar --
+ * mejor un error que se queda y se registra en el log, que un mensaje en
+ * blanco que deja al cliente sin respuesta.
+ */
+function ia_texto_quitar_oraciones(string $texto, string $patron): string
+{
+    $oraciones = preg_split('/(?<=[.!?])\s+/u', $texto, -1, PREG_SPLIT_NO_EMPTY);
+    if (!$oraciones) return $texto;
+    $limpio = array_filter($oraciones, fn($o) => !preg_match($patron, $o));
+    $resultado = trim(implode(' ', $limpio));
+    return $resultado !== '' ? $resultado : $texto;
+}
+
+/**
+ * true si $texto da por hecho que un plazo legal de "meses" (Art. 518, 2
+ * meses) equivale a un número fijo de días ("Son 60 días") -- los meses
+ * se cuentan de calendario, no como un número fijo de días; esta regla
+ * YA estaba escrita en el prompt (18-nov-2026, caso del documento de
+ * $49) y el bot la siguió violando en la revisión del 18-nov-2026.
+ */
+function ia_texto_convierte_meses_en_dias(string $texto): bool
+{
+    // No exige que la palabra "meses" aparezca en ESTE mismo mensaje --
+    // en el caso real, el plazo de "2 meses" se había mencionado en un
+    // turno anterior de la conversación. Basta con la frase "Son N días"
+    // como oración propia (después de un punto) junto con contexto de
+    // plazo/demanda en el mismo mensaje.
+    if (!preg_match('/\.\s*Son\s+\d{1,3}\s*d[ií]as\.?/u', $texto)) return false;
+    return preg_match('/demand|tribunal|plazo|presentar/iu', $texto) === 1;
+}
+
+/**
+ * true si $texto da un número de días concreto de plazo para presentar
+ * la demanda/solicitud ("te quedan 56 días", "el plazo es de 24 días")
+ * -- solo tiene sentido llamarla cuando esta misma respuesta NO llamó
+ * calcular_plazo_demanda ni calcular_plazo_prestaciones, ver el caso
+ * real (18-nov-2026, varios con cifras contradictorias en el mismo
+ * mensaje) en ia_responder_whatsapp().
+ */
+function ia_texto_da_plazo_en_dias_sin_herramienta(string $texto): bool
+{
+    // Hasta 25 caracteres cualesquiera (sin cruzar punto) entre la palabra
+    // clave y el número de días -- cubre variantes como "plazo es de 24
+    // días" o "te quedarán *56 días*" sin exigir una redacción exacta.
+    return preg_match(
+        '/\bquedar[aá]n?\b[^.\n]{0,25}\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b'
+        . '|\bquedan\b[^.\n]{0,25}\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b'
+        . '|\bplazo\b[^.\n]{0,25}\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b/iu',
+        $texto
+    ) === 1;
+}
+
+/**
+ * true si $texto cita una tesis/jurisprudencia concreta (registro, "tesis
+ * aislada", "el Poder Judicial/la Suprema Corte ha resuelto...") -- solo
+ * tiene sentido llamarla cuando esta misma respuesta NO llamó
+ * buscar_jurisprudencia, ver el caso real (18-nov-2026, registro digital
+ * inventado) en ia_responder_whatsapp().
+ */
+function ia_texto_cita_jurisprudencia_concreta(string $texto): bool
+{
+    return preg_match(
+        '/registro\s+digital\s*\d*'
+        . '|tesis\s+(aislada|de\s+jurisprudencia)'
+        . '|(suprema\s+corte|poder\s+judicial|tribunales?\s+colegiados?)\s+(de\s+\w+\s+)?ha[n]?\s+(resuelto|sostenido|establecido|determinado)/iu',
+        $texto
+    ) === 1;
+}
+
+/**
+ * true si $texto afirma cifras de exención de ISR (veces UMA, "buena
+ * parte quedará exenta") -- regla ya escrita en el prompt desde el
+ * 14-nov-2026, violada igual en la revisión del 18-nov-2026.
+ */
+function ia_texto_afirma_exencion_isr(string $texto): bool
+{
+    return preg_match(
+        '/\d+\s*veces\s+(la\s+)?UMA'
+        . '|UMA\b.{0,60}exen'
+        . '|exent\w*.{0,60}\bUMA\b'
+        . '|(probable|probablemente|seguro|seguramente)[^.]{0,40}(quede|est[eé])[^.]{0,20}exent/iu',
         $texto
     ) === 1;
 }

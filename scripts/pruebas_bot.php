@@ -251,5 +251,51 @@ caso('confirmar: ya pagado en 30 días -> no genera otro cobro', empty($r['ok'])
 $pdo->exec("UPDATE compras_documento_calculo SET pagado_en = '" . date('Y-m-d H:i:s', strtotime('-40 days')) . "' WHERE estado = 'confirmada'");
 caso('compra pagada hace 40 días ya no bloquea una nueva', ia_compra_documento_confirmada_reciente($pdo, 'M', 30) === null);
 
+// ---------------------------------------------------------------------
+echo "16) Revisión del 18-nov (35 de 146 marcadas): candados nuevos\n";
+caso('cliente dijo que nunca tomó vacaciones',
+    ia_cliente_dijo_no_tomo_vacaciones([['role' => 'user', 'content' => 'No tome ningún día de vacaciones en todo este tiempo']])
+    && ia_cliente_dijo_no_tomo_vacaciones([['role' => 'user', 'content' => 'nunca tomé vacaciones']])
+    && !ia_cliente_dijo_no_tomo_vacaciones([['role' => 'user', 'content' => 'tomé 8 días de vacaciones el año pasado']])
+    && !ia_cliente_dijo_no_tomo_vacaciones([['role' => 'assistant', 'content' => 'no tomé vacaciones']]));
+caso('detecta "son N días" como conversión de meses a días',
+    ia_texto_convierte_meses_en_dias('tienes hasta el 18 de enero de 2027 para presentar tu demanda. Son 60 días.')
+    && !ia_texto_convierte_meses_en_dias('tienes hasta el 18 de enero de 2027 para presentar tu demanda.')
+    && !ia_texto_convierte_meses_en_dias('te quedan 15 días de vacaciones pendientes.'));
+caso('quitar oración recorta solo la frase problemática, deja el resto',
+    ia_texto_quitar_oraciones('Tienes hasta el 18 de enero de 2027 para demandar. Son 60 días. Cualquier duda, aquí estoy.', '/\bson\s+\d{1,3}\s*d[ií]as\b/iu')
+        === 'Tienes hasta el 18 de enero de 2027 para demandar. Cualquier duda, aquí estoy.');
+caso('quitar oración nunca deja el mensaje vacío',
+    ia_texto_quitar_oraciones('Son 60 días.', '/\bson\s+\d{1,3}\s*d[ií]as\b/iu') === 'Son 60 días.');
+caso('detecta un plazo en días dado a mano',
+    ia_texto_da_plazo_en_dias_sin_herramienta('te quedarán *56 días* para presentar tu demanda ante el Tribunal')
+    && ia_texto_da_plazo_en_dias_sin_herramienta('el plazo es de 24 días para presentar la solicitud')
+    && !ia_texto_da_plazo_en_dias_sin_herramienta('tienes hasta el 18 de enero de 2027 para presentar tu demanda.')
+    && !ia_texto_da_plazo_en_dias_sin_herramienta('llevas trabajando 56 días en la empresa'));
+caso('detecta jurisprudencia citada de memoria (registro, tesis aislada)',
+    ia_texto_cita_jurisprudencia_concreta('el Poder Judicial ha resuelto que ese tiempo sí cuenta (registro digital 243342, tesis aislada)')
+    && ia_texto_cita_jurisprudencia_concreta('la Suprema Corte ha sostenido ese criterio en diversas tesis')
+    && !ia_texto_cita_jurisprudencia_concreta('eso lo debe valorar el abogado con las pruebas disponibles')
+    && !ia_texto_cita_jurisprudencia_concreta('hay criterios judiciales sobre el tema, pero no tengo uno específico a la mano'));
+caso('detecta cifras de exención de ISR inventadas',
+    ia_texto_afirma_exencion_isr('el aguinaldo y la prima vacacional tienen exención hasta 30 y 15 veces la UMA respectivamente')
+    && ia_texto_afirma_exencion_isr('es probable que buena parte quede exenta de ISR')
+    && !ia_texto_afirma_exencion_isr('la Ley del ISR exenta una parte de la indemnización según los años de servicio'));
+caso('prompt: vacaciones <1 año -- aclarar explícitamente que el proporcional ya cubre todo', strpos($p, 'como todavía no cumples tu primer año') !== false);
+caso('prompt: no 2 totales distintos de horas extra con divisores distintos', strpos($p, '2 divisores distintos del salario diario') !== false);
+caso('prompt: no repetir el precio en mensajes seguidos', strpos($p, 'repetir el PRECIO de la asesoría') !== false);
+caso('calculadora: aviso_vacaciones_anteriores cuando el cliente dijo que nunca tomó y no se pasó el dato',
+    (function () {
+        $pdoV = pdo_nuevo();
+        $pdoV->exec("CREATE TABLE configuracion (clave TEXT, valor TEXT)");
+        $pdoV->exec("INSERT INTO configuracion VALUES ('salario_minimo_diario','315.04')");
+        // Se simula directo el candado (la inyección de aviso_vacaciones_anteriores vive
+        // en ia_responder_whatsapp(), que necesita la API real) -- aquí se confirma que
+        // el candado de detección y la condición del monto funcionan igual que ahí.
+        $dias = 0.0;
+        $mensajesV = [['role' => 'user', 'content' => 'no tome ningún día de vacaciones']];
+        return $dias <= 0 && ia_cliente_dijo_no_tomo_vacaciones($mensajesV);
+    })());
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

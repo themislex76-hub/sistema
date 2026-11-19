@@ -3586,12 +3586,61 @@ viendo el 19-nov antes de sacar conclusiones firmes sobre el modelo.
      renuncia, riesgo de trabajo/incapacidad) donde el bot no advirtió con suficiente fuerza la
      ambigüedad de los hechos -- más difíciles de resolver con un candado determinista, mejor
      reforzar el prompt caso por caso según seAtrapado en la próxima revisión.
-- **Pendiente de decidir con el usuario**: si se construyen candados de código nuevos para los
-  patrones 2, 3, 4 y 5 (como ya se hizo antes con `ia_texto_anuncia_sin_hacer()`,
-  `ia_texto_confirma_pago_sin_evidencia()`, etc. en `api/ia_helpers.php`) -- esto normalmente se
-  trabaja desde la conversación "chats" (dueña de `ia_helpers.php`/`pruebas_bot.php`), así que
-  si se hace desde aquí ("Bot") hay que fusionar esa rama primero para no pisar trabajo
-  concurrente. Sin cambios de código todavía en esta sección -- solo se corrigió el diagnóstico.
+- **Candados de código construidos (19 nov 2026, hecho desde "Bot" -- pedido explícito del
+  usuario: "si hay que hacer lo necesario para que no cometa esos errores y avisa a las demas
+  conversaciones")**. Antes de tocar `api/ia_helpers.php`/`scripts/pruebas_bot.php` (normalmente
+  territorio de la conversación "chats") se revisó `git log HEAD..origin/<otra-rama>` contra las
+  2 otras ramas (`claude/hola-i5mb6q`, `claude/magical-albattani-ephif7`) -- ninguna tenía commits
+  sin fusionar sobre estos 2 archivos, así que se editó directo sin riesgo de pisar nada
+  concurrente. Mismo patrón ya usado varias veces en este archivo (funciones `ia_texto_*()` +
+  aviso inyectado en el resultado de la herramienta + refuerzo del prompt). Cubre los patrones
+  1-5 de la lista de arriba (el 6 y 7 quedaron solo como refuerzo de prompt, ver abajo):
+  1. **Vacaciones anteriores no disfrutadas**: `ia_cliente_dijo_no_tomo_vacaciones()` detecta en
+     el historial si el cliente dijo "nunca tomé vacaciones"/"no las disfruté"; si es así y el
+     cálculo no trae `dias_vacaciones_anteriores > 0`, se inyecta `aviso_vacaciones_anteriores`
+     en el resultado de `calcular_estimado_liquidacion` pidiendo recalcular con esos días (o, si
+     lleva menos de 1 año, aclarar explícitamente que el proporcional ya cubre todo). Reforzado
+     también en el prompt (bullet de "Vacaciones nunca disfrutadas").
+  2. **Plazo en días calculado a mano**: 2 funciones nuevas, ambas recortan solo la oración
+     problemática con el helper compartido `ia_texto_quitar_oraciones()` (nunca reemplazan todo
+     el mensaje, a diferencia de los candados de pago/cita de hace unos días -- aquí el resto del
+     mensaje suele estar bien, es una sola frase la que sobra):
+     - `ia_texto_convierte_meses_en_dias()` -- detecta la oración "Son N días." (propia, tras un
+       punto) junto con contexto de demanda/plazo/Tribunal en el mismo mensaje (no exige que la
+       palabra "meses" aparezca en ese mismo mensaje -- en el caso real el plazo de "2 meses" se
+       había mencionado en un turno anterior).
+     - `ia_texto_da_plazo_en_dias_sin_herramienta()` -- detecta "quedan"/"quedarán"/"plazo" + un
+       número de días a hasta 25 caracteres de distancia (cubre variantes como "el plazo es de 24
+       días", no solo "plazo de N días"), solo cuando `calcular_plazo_demanda`/
+       `calcular_plazo_prestaciones` NO se llamaron en esa respuesta (nuevos flags
+       `$usoCalculoPlazo`).
+  3. **Montos calculados a mano**: sin candado de código nuevo (difícil de detectar por texto sin
+     falsos positivos) -- solo refuerzo de prompt (bullet "Montos": prohíbe 2 totales distintos de
+     horas extra con divisores distintos, y validar cifras del patrón/informales sin correr la
+     calculadora).
+  4. **Jurisprudencia citada de memoria**: `ia_texto_cita_jurisprudencia_concreta()` detecta
+     número de registro/"tesis aislada"/afirmaciones concretas de criterio judicial; si
+     `buscar_jurisprudencia` NO se llamó en la respuesta (`$usoBuscarJurisprudencia`), se recorta
+     la oración.
+  5. **Exención de ISR inventada**: `ia_texto_afirma_exencion_isr()` detecta cifras de "veces
+     UMA"/montos exentos afirmados como dato -- se recorta la oración (ya existía la regla en el
+     prompt desde el 14-nov, el bot la seguía violando).
+  6. **Oferta repetida de $499**: solo refuerzo de prompt (bullet "No suenes a robot": prohíbe
+     repetir el precio en mensajes consecutivos).
+  7. **Casos de juicio legal fino** (rescisión vs abandono, despido disfrazado de renuncia,
+     riesgo de trabajo): sin tocar -- más difíciles de resolver con un candado determinista,
+     reforzar caso por caso en la próxima revisión si se repiten.
+  - 11 casos nuevos en `scripts/pruebas_bot.php` (sección "16) Revisión del 18-nov..."), **98 de
+    98 casos pasan** (incluyendo los 87 ya existentes). `php -l` limpio en `api/ia_helpers.php`.
+  - Sin cambios de base de datos, sin tocar `app.js` -- no aplica cache-bust ni
+    `verificar_tags.js` (no toca `mergeTags()`/tags de demanda). **Sin probar en vivo todavía** --
+    esta sesión no tiene acceso a la base de datos ni a la llave de la API, así que no se puede
+    confirmar con un caso real. Falta que el usuario suba `api/ia_helpers.php` y que la próxima
+    revisión diaria automática (madrugada del 20-nov, sobre las conversaciones del 19-nov) se vea
+    si estos 5 patrones (sobre todo el 1 y el 2, los más repetidos) bajan de los ~9-10 casos del
+    18-nov. Si alguno de los 2 candados que recortan oración (`ia_texto_convierte_meses_en_dias`/
+    `ia_texto_da_plazo_en_dias_sin_herramienta`) corta de más y deja un mensaje confuso en un caso
+    real, avisar para ajustar la ventana de `[^.\n]{0,25}` o el patrón exacto.
 
 ## Plantillas de WhatsApp aprobadas por Meta
 - Se mandan con `whatsapp_enviar_plantilla()` (api/whatsapp_helpers.php) --
