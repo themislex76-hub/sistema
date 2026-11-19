@@ -247,6 +247,40 @@ no lo reportó en 2 corridas seguidas.
       fallar en el futuro, el reintento directo + los 3 logs de diagnóstico ya agregados
       quedan listos para usarse de nuevo.
 
+## Robot Buzón CDMX: la lista de acuerdos DENTRO de cada expediente nunca paginaba (19 nov 2026, conversación "Bot")
+Pedido explícito del usuario tras cerrarse la investigación del robot Federal: "debes revisar que
+el robot de cdmx este viendo todos los asuntos y todas las paginas y el del edomex tambien".
+- **Edomex correo revisado -- ya está cubierto, sin cambios**: hace scroll hasta el final de la
+  bandeja en CADA corrida (no solo la primera vez), nunca se corta al encontrar un correo ya
+  visto (usa `continue`, no `break`, desde el arreglo del 19 nov documentado arriba) y guarda el
+  conjunto completo de ids ya procesados -- ya confirmado funcionando en vivo ("0 aviso(s)
+  nuevo(s)" en ambas cuentas tras la corrida de transición). No se encontró ningún hueco.
+- **CDMX Buzón: hueco real encontrado, mismo patrón exacto que el bug de Federal** --
+  `leerFilasBuzones()`/`avanzarPagina()` (lista "LISTA DE BUZONES", los expedientes de la
+  cuenta) SÍ paginaba bien de punta a punta. Pero la lista de acuerdos DENTRO de cada
+  expediente (modal "LISTA DE ACUERDOS") nunca llamaba a `avanzarPagina()` -- solo leía lo que
+  estuviera visible al abrir el modal, sin pasar de página. Nunca se notó en vivo porque los
+  expedientes revisados hasta hoy solo tenían pocos acuerdos (ej. 5 en 1139/2026) -- si algún
+  expediente del Buzón tiene más acuerdos de los que caben en una sola página del modal, el
+  robot se los perdería en silencio, igual que pasó con Vista Global en Federal antes del
+  arreglo del 19 nov.
+- **Corregido**: la lectura de acuerdos ahora corre en un `while` que pagina con
+  `avanzarPagina()` hasta agotar las páginas del modal, igual que ya hacía la lista de arriba.
+  Para no confundir la paginación del modal con la de "LISTA DE BUZONES" que sigue en el DOM
+  detrás (el modal se abre ENCIMA, no reemplaza la página), `avanzarPagina()` ahora acepta un
+  `scope` opcional (Locator acotado en vez de la página completa) y nueva función
+  `localizarModalAcuerdos()` intenta encontrar el contenedor real del modal (clase `.modal`/rol
+  `dialog`, típico de Bootstrap, o subiendo por los ancestros del título "LISTA DE ACUERDOS"
+  hasta dar con uno que también contenga un "Ver acuerdo") -- si no lo encuentra, cae de
+  regreso a buscar en toda la página (mismo comportamiento de antes, nunca peor). `node --check`
+  limpio. **Sin confirmar en vivo todavía** -- no se ha visto un expediente real con más de una
+  página de acuerdos en el Buzón, así que esta corrección es preventiva (mismo criterio que ya
+  se aplicó con éxito en Federal, donde la paginación de Vista Global sí resultó estar truncando
+  expedientes reales como el 463/2026). Falta que el usuario reemplace `cdmx_buzon.js` y corra
+  el robot de nuevo -- si en el log aparece alguna vez "Página 2 de acuerdos" o más, confirma que
+  el hueco era real y que la corrección ya lo cubre; si nunca aparece, no hay forma de confirmar
+  que de verdad funciona hasta que un expediente real tenga suficientes acuerdos.
+
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna
 Maldonado se quedaba con la sesión abierta -- "cuando abre el sistema de la CDMX se queda

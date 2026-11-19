@@ -211,8 +211,13 @@ async function leerFilasBuzones(page) {
 // class="page-link"> con nombre de accesibilidad en INGLÉS aunque el resto
 // de la pantalla esté en español: "Next" para ›, "Last" para ». Se usa
 // el rol de accesibilidad directo, sin adivinar posición.
-async function avanzarPagina(page) {
-  const textoPagina = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => null);
+// `scope` es `page` por default (lista "LISTA DE BUZONES"), pero también
+// acepta un Locator acotado (ver localizarModalAcuerdos()) para paginar
+// DENTRO de un modal sin confundirse con la paginación de la lista que
+// queda detrás -- Playwright permite encadenar getByText()/getByRole()
+// sobre un Locator igual que sobre la page completa.
+async function avanzarPagina(page, scope = page) {
+  const textoPagina = await scope.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => null);
   if (!textoPagina) {
     console.log('      [paginación] no se encontró el texto "Página X de Y" -- no se puede avanzar.');
     return false;
@@ -235,9 +240,9 @@ async function avanzarPagina(page) {
   // clic no tira error -- el elemento existe y es clicable -- pero el
   // texto "Página X de Y" no cambia). En vez de apostarle a uno solo, se
   // prueban todos los visibles en orden hasta que alguno sí tenga efecto.
-  const candidatos = page.getByRole('link', { name: 'Next', exact: true });
+  const candidatos = scope.getByRole('link', { name: 'Next', exact: true });
   const nCandidatos = await candidatos.count();
-  console.log(`      [paginación] "${textoPagina}" -- ${nCandidatos} enlace(s) "Next" en el DOM.`);
+  console.log(`      [paginación] "${textoPagina}" -- ${nCandidatos} enlace(s) "Next" en el DOM${scope !== page ? ' (acotado al modal)' : ''}.`);
   if (!nCandidatos) {
     console.log('      [paginación] no se encontró ningún enlace con nombre de accesibilidad "Next".');
     return false;
@@ -259,7 +264,7 @@ async function avanzarPagina(page) {
     let textoPaginaDespues = textoPagina;
     for (let intento = 0; intento < 6; intento++) {
       await page.waitForTimeout(600);
-      textoPaginaDespues = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => textoPagina);
+      textoPaginaDespues = await scope.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => textoPagina);
       if (textoPaginaDespues !== textoPagina) break;
     }
     if (textoPaginaDespues !== textoPagina) {
@@ -271,6 +276,35 @@ async function avanzarPagina(page) {
 
   console.log('      [paginación] ningún candidato "Next" avanzó de página de verdad.');
   return false;
+}
+
+// El modal "LISTA DE ACUERDOS" se abre ENCIMA de "LISTA DE BUZONES" -- si
+// ese modal también pagina (mismo bug de fondo ya encontrado y corregido
+// en el robot Federal: una tabla anidada que nunca se paginaba, truncando
+// expedientes con muchos acuerdos a la primera página), buscar "Página X
+// de Y" en TODA la página podría encontrar por error el paginador de la
+// lista de ATRÁS en vez del propio modal. Se intenta acotar la búsqueda al
+// contenedor real del modal (clase ".modal"/rol "dialog", típico de
+// Bootstrap -- el mismo framework que ya se confirmó real en el robot
+// Federal para sus propios modales); si no se encuentra ninguno así, se
+// sube por los ancestros del título "LISTA DE ACUERDOS" hasta dar con uno
+// que también contenga al menos un "Ver acuerdo" (el contenedor real, sin
+// saber su clase exacta). Si ninguna de las 2 formas encuentra nada, se
+// regresa null y el llamador cae de regreso a buscar en toda la página
+// (mismo riesgo de antes, pero mejor que no intentar paginar nada).
+async function localizarModalAcuerdos(page) {
+  const titulo = page.getByText(/LISTA DE ACUERDOS/i).first();
+  for (const selector of ['.modal', '[role="dialog"]']) {
+    const candidato = page.locator(selector).filter({ has: titulo });
+    const hay = await candidato.count().catch(() => 0);
+    if (hay) return candidato.first();
+  }
+  for (let nivel = 1; nivel <= 8; nivel++) {
+    const ancestro = titulo.locator(`xpath=ancestor::*[${nivel}]`);
+    const tieneAcuerdos = await ancestro.locator('text=/Ver acuerdo/i').count().catch(() => 0);
+    if (tieneAcuerdos > 0) return ancestro;
+  }
+  return null;
 }
 
 async function procesarCuenta(cuenta, porNumero, estado, browser) {
@@ -446,59 +480,75 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
           continue;
         }
 
-        // Confirmado real (10 nov 2026): el modal "LISTA DE ACUERDOS" puede
-        // mostrarse con su título antes de que la tabla de acuerdos termine
-        // de cargar sus filas (misma carrera que ya se vio en la lista
-        // principal "LISTA DE BUZONES") -- contar los links "Ver acuerdo"
-        // de inmediato dio 0 aunque el expediente sí tenía un acuerdo real
-        // (confirmado con captura). Se espera a que el número de filas se
-        // quede estable entre lecturas antes de confiar en el conteo.
-        await page.waitForTimeout(1200);
-        let nAcuerdos = await page.locator('text=/Ver acuerdo/i').count();
-        for (let intento = 0; intento < 6; intento++) {
-          await page.waitForTimeout(700);
-          const nSiguiente = await page.locator('text=/Ver acuerdo/i').count();
-          if (nSiguiente === nAcuerdos) break;
-          nAcuerdos = nSiguiente;
+        // Acota la paginación de acuerdos al modal mismo (si se encuentra
+        // su contenedor) -- evita confundirse con la paginación de "LISTA
+        // DE BUZONES" que sigue en el DOM detrás del modal.
+        const modalAcuerdos = await localizarModalAcuerdos(page);
+        if (!modalAcuerdos) {
+          console.log('      [paginación acuerdos] no se pudo acotar el contenedor del modal -- se busca "Página X de Y" en toda la página (mismo riesgo de siempre).');
         }
-        console.log(`      ${nAcuerdos} acuerdo(s) en la lista de este expediente.`);
-        const filasAcuerdo = page.locator('text=/Ver acuerdo/i');
-        for (let i = 0; i < nAcuerdos; i++) {
-          const linkVerAcuerdo = filasAcuerdo.nth(i);
-          const filaAcuerdo = linkVerAcuerdo.locator('xpath=ancestor::tr[1]');
-          const textoFilaAcuerdo = await filaAcuerdo.innerText().catch(() => '');
-          const matchId = /(\d+\/\d{4}-\d+)/.exec(textoFilaAcuerdo);
-          const matchFecha = /(\d{4}-\d{2}-\d{2})/.exec(textoFilaAcuerdo);
-          if (!matchId) continue;
-          const acuerdoId = matchId[1];
-          const fechaPublicacion = matchFecha ? matchFecha[1] : null;
+        const scopeAcuerdos = modalAcuerdos || page;
 
-          if (vistos[acuerdoId]) continue; // ya reportado en una corrida anterior
+        let paginaAcuerdos = 1;
+        let seguirAcuerdos = true;
+        while (seguirAcuerdos) {
+          // Confirmado real (10 nov 2026): el modal "LISTA DE ACUERDOS" puede
+          // mostrarse con su título antes de que la tabla de acuerdos termine
+          // de cargar sus filas (misma carrera que ya se vio en la lista
+          // principal "LISTA DE BUZONES") -- contar los links "Ver acuerdo"
+          // de inmediato dio 0 aunque el expediente sí tenía un acuerdo real
+          // (confirmado con captura). Se espera a que el número de filas se
+          // quede estable entre lecturas antes de confiar en el conteo.
+          await page.waitForTimeout(1200);
+          let nAcuerdos = await page.locator('text=/Ver acuerdo/i').count();
+          for (let intento = 0; intento < 6; intento++) {
+            await page.waitForTimeout(700);
+            const nSiguiente = await page.locator('text=/Ver acuerdo/i').count();
+            if (nSiguiente === nAcuerdos) break;
+            nAcuerdos = nSiguiente;
+          }
+          console.log(`      Página ${paginaAcuerdos} de acuerdos: ${nAcuerdos} fila(s).`);
+          const filasAcuerdo = page.locator('text=/Ver acuerdo/i');
+          for (let i = 0; i < nAcuerdos; i++) {
+            const linkVerAcuerdo = filasAcuerdo.nth(i);
+            const filaAcuerdo = linkVerAcuerdo.locator('xpath=ancestor::tr[1]');
+            const textoFilaAcuerdo = await filaAcuerdo.innerText().catch(() => '');
+            const matchId = /(\d+\/\d{4}-\d+)/.exec(textoFilaAcuerdo);
+            const matchFecha = /(\d{4}-\d{2}-\d{2})/.exec(textoFilaAcuerdo);
+            if (!matchId) continue;
+            const acuerdoId = matchId[1];
+            const fechaPublicacion = matchFecha ? matchFecha[1] : null;
 
-          console.log(`      Acuerdo nuevo: ${acuerdoId} (${fechaPublicacion || 'sin fecha'})`);
-          const pdfBuffer = await descargarPdfDesdeLink(context, page, linkVerAcuerdo);
-          let documentoId = null;
-          if (pdfEsValido(pdfBuffer)) {
-            documentoId = await subirPdfAlSistema(pdfBuffer, expedienteSistema.id, `Acuerdo_${sanitizarParaArchivo(acuerdoId)}.pdf`);
-          } else {
-            console.log('      (no se pudo descargar un PDF válido para este acuerdo -- se reporta el aviso sin documento adjunto)');
+            if (vistos[acuerdoId]) continue; // ya reportado en una corrida anterior
+
+            console.log(`      Acuerdo nuevo: ${acuerdoId} (${fechaPublicacion || 'sin fecha'})`);
+            const pdfBuffer = await descargarPdfDesdeLink(context, page, linkVerAcuerdo);
+            let documentoId = null;
+            if (pdfEsValido(pdfBuffer)) {
+              documentoId = await subirPdfAlSistema(pdfBuffer, expedienteSistema.id, `Acuerdo_${sanitizarParaArchivo(acuerdoId)}.pdf`);
+            } else {
+              console.log('      (no se pudo descargar un PDF válido para este acuerdo -- se reporta el aviso sin documento adjunto)');
+            }
+
+            try {
+              await reportarAviso(
+                expedienteSistema.id,
+                `Acuerdo ${acuerdoId} del expediente ${expedienteSistema.exp || fila.expTexto}.`,
+                fechaPublicacion,
+                documentoId
+              );
+              reportados++;
+            } catch (e) {
+              console.log(`      (no se pudo reportar el aviso: ${e.message})`);
+            }
+
+            vistos[acuerdoId] = true;
+            estado[cuenta.cdmx_buzon_usuario] = vistos;
+            guardarProcesados(estado); // se guarda en cada acuerdo, no solo al final -- mismo criterio que edomex_correo.js
           }
 
-          try {
-            await reportarAviso(
-              expedienteSistema.id,
-              `Acuerdo ${acuerdoId} del expediente ${expedienteSistema.exp || fila.expTexto}.`,
-              fechaPublicacion,
-              documentoId
-            );
-            reportados++;
-          } catch (e) {
-            console.log(`      (no se pudo reportar el aviso: ${e.message})`);
-          }
-
-          vistos[acuerdoId] = true;
-          estado[cuenta.cdmx_buzon_usuario] = vistos;
-          guardarProcesados(estado); // se guarda en cada acuerdo, no solo al final -- mismo criterio que edomex_correo.js
+          seguirAcuerdos = await avanzarPagina(page, scopeAcuerdos);
+          if (seguirAcuerdos) paginaAcuerdos++;
         }
 
         // Cierra el modal antes de seguir con el siguiente expediente de
