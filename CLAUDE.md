@@ -35,6 +35,16 @@ activa por cuenta (ya documentado desde el 10 nov 2026 en la sección del robot)
     salir. `node --check` limpio. **Sin confirmar en vivo todavía** -- falta que el usuario
     reemplace el archivo y corra el robot de nuevo para confirmar que esta vez sí entra al
     "LISTA DE BUZONES" y, al terminar, cierra sesión con "Salir" como ya se esperaba.
+  - **Confirmado funcionando en vivo (19 nov 2026)**: nueva corrida real -- el aviso de sesión
+    activa apareció otra vez justo después de enviar el login, el candado nuevo lo detectó, le dio
+    clic a "Romper sesión" (diálogo nativo aceptado: "Se rompió la sesion exitosamente"), recargó,
+    reintentó y esta vez SÍ entró -- paginó "LISTA DE BUZONES" (2 páginas), encontró el expediente
+    1139/2026, revisó sus 5 acuerdos (0 nuevos, ya los tenía todos vistos de corridas anteriores) y
+    terminó con **"Sesión cerrada en el portal al terminar -- la cuenta queda libre para otros
+    dispositivos."** -- confirma que los 2 arreglos del día (detectar la sesión activa tardía +
+    cerrar sesión con "Salir" al terminar) ya funcionan de punta a punta. **Pendiente**: que el
+    usuario confirme que Lic. Lindsay Luna Maldonado ya puede entrar a su cuenta del Buzón desde
+    otro dispositivo justo después de una corrida del robot.
 
 ## Una fecha FUTURA en un acuerdo ya no se marca como "celebrada" (19 nov 2026, conversación "Bot")
 Reportado por el usuario: un robot bajó un acuerdo que señalaba la audiencia preliminar para el
