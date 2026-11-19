@@ -154,6 +154,17 @@ no lo reportó en 2 corridas seguidas.
       acuerdos de 296/2026 tampoco lograron descargar su PDF (mismo patrón exacto:
       `net::ERR_ABORTED` en `serviciossige.oaj.gob.mx`, spinner que nunca resuelve) -- los 4
       avisos sí se reportaron igual, sin el PDF adjunto.
+    - **Nueva corrida (19 nov 2026, con `regresarAVistaGlobal()` ya puesto)**: esta vez NO se
+      llegó a probar nada de lo anterior -- la sesión "laboral" de Lindsay (la que ve el
+      463/2026) murió de entrada con `page.goto: Timeout 30000ms exceeded` navegando a
+      `OpcionesFirel`, justo DESPUÉS del login exitoso -- mismo tropiezo de red genérico ya
+      documentado varias veces en este portal (sin relación con nada de lo arreglado hoy),
+      pero esta era la ÚNICA navegación de toda la sesión SIN ningún reintento -- un solo
+      tropiezo tiraba la sesión completa antes de leer ni un expediente. **Corregido**: esa
+      navegación ahora reintenta hasta 3 veces (3s de espera entre cada una) antes de darse
+      por vencido. `node --check` limpio. **Sin confirmar en vivo todavía** -- falta que el
+      usuario reemplace `federal.js` y corra el robot de nuevo (puede que necesite más de 1
+      corrida si el portal sigue inestable en red esta noche).
 
 ## Robot Buzón CDMX: ahora cierra sesión al terminar (19 nov 2026, conversación "Bot")
 Reportado por el usuario con captura real: tras correr el robot, el Buzón de Lic. Lindsay Luna

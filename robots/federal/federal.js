@@ -861,7 +861,23 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
   page.on('response', (resp) => { if (resp.status() >= 400) console.log(`    [respuesta con error ${resp.status()}] ${resp.url()}`); });
   let reportados = 0;
   try {
-    await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' });
+    // Confirmado real varias veces en este portal (ver CLAUDE.md): un
+    // "Timeout 30000ms exceeded" navegando aquí, sin relación con nada que
+    // el robot haga, es un simple tropiezo de red -- pero como ésta es la
+    // PRIMERA navegación de la sesión, sin ningún reintento se perdía toda
+    // la sesión completa de la cuenta (incluyendo, una vez, la que SÍ ve
+    // el 463/2026) por un solo tropiezo. 2 intentos más antes de rendirse.
+    let navegoOk = false;
+    for (let intento = 0; intento < 3 && !navegoOk; intento++) {
+      try {
+        await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle', timeout: 30000 });
+        navegoOk = true;
+      } catch (e) {
+        if (intento === 2) throw e;
+        console.log(`    AVISO: tropiezo de red navegando al portal (intento ${intento + 1}/3: ${e.message}) -- reintentando...`);
+        await page.waitForTimeout(3000);
+      }
+    }
     await cerrarModalSiAparece(page, etiquetaDebug);
     // De respaldo, por si quedó huérfano el fondo oscuro del modal que se
     // acaba de cerrar (confirmado real: pasó en las 2 cuentas de la misma
