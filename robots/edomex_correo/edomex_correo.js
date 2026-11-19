@@ -199,7 +199,16 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
   page.on('pageerror', (err) => console.log(`    [error de JS en la página] ${err.message}`));
   let reportados = 0;
   const key = normalizeExp(cuenta.edomex_correo_usuario); // solo para el estado por cuenta, no un expediente
-  const ultimoVisto = estado[cuenta.edomex_correo_usuario] || null;
+  // Antes se guardaba solo el id MÁS GRANDE visto (una especie de "marca de
+  // agua"), asumiendo que un id mayor siempre es más nuevo y que la
+  // bandeja está ordenada de forma monótona -- confirmado real (19 nov
+  // 2026, mismo expediente 841/2026 reportado 2 veces en corridas
+  // distintas) que esa suposición no es segura: no se puede confiar en
+  // que "mayor" signifique "más nuevo" para estos ids, ni en el orden de
+  // la bandeja. Ahora se guarda el conjunto COMPLETO de ids ya procesados
+  // por esta cuenta, para siempre, y se compara por pertenencia -- sin
+  // asumir nada sobre el orden ni sobre qué id es más nuevo.
+  const yaProcesados = new Set(Array.isArray(estado[cuenta.edomex_correo_usuario]) ? estado[cuenta.edomex_correo_usuario] : []);
   try {
     // El login exacto (nombres de los campos) no se pudo ver en vivo desde
     // aquí -- se intenta por el texto de la etiqueta ("Nombre de usuario"/
@@ -281,16 +290,7 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
 
     const n = await filas.count();
     console.log(`  ${n} correo(s) de "Notificacion Electronica Laboral" visibles en la bandeja.`);
-    let maxVistoEstaCorrida = ultimoVisto;
     let yaAvisoDiagnostico = false;
-    // Candado contra duplicados: confirmado real (18 nov 2026) que cada
-    // correo se procesaba 2 veces seguidas (mismo id de conversación),
-    // subiendo el PDF 2 veces al expediente -- el locator `filas` hace match
-    // más de una vez por renglón real en el DOM de Carbonio (motivo exacto
-    // sin confirmar). En vez de depender de encontrar esa causa en el DOM,
-    // se evita procesar el mismo id de conversación 2 veces dentro de la
-    // misma corrida, sin importar cuántas veces aparezca en `filas`.
-    const vistosEstaCorrida = new Set();
     for (let i = 0; i < n; i++) {
       // Pausa chica entre fila y fila -- confirmado real: la página se
       // cayó ("Page crashed") después de varios clics seguidos sin
@@ -324,17 +324,22 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
         }
         continue;
       }
-      if (vistosEstaCorrida.has(idConversacion)) {
+      if (yaProcesados.has(idConversacion)) {
+        // Ya se vio este id antes -- en esta misma corrida (el locator
+        // `filas` confirmado real que hace match más de una vez por
+        // renglón, ver abajo) o en una corrida anterior. Se omite sin
+        // volver a subir el PDF ni reportar el aviso otra vez.
         continue;
       }
-      vistosEstaCorrida.add(idConversacion);
-      if (ultimoVisto !== null && Number(idConversacion) <= Number(ultimoVisto)) {
-        // Ya NO se corta el ciclo aquí (ver comentario del scroll más
-        // arriba) -- el orden de la bandeja no garantiza que todo lo que
-        // sigue sea igual de viejo, así que solo se omite este correo y
-        // se sigue revisando el resto de la lista completa.
-        continue;
-      }
+      // Se marca como visto y se guarda EN CUANTO se identifica el id (no
+      // solo si matchea un expediente monitoreado, ni solo al final del
+      // ciclo) -- confirmado real: si la página truena a medio lote (ej.
+      // "Target page, context or browser has been closed"), el error salta
+      // al catch de afuera y el ciclo nunca llega más allá de donde iba,
+      // así que sin guardar aquí mismo los correos ya procesados en ese
+      // lote se repetirían (duplicados) en la siguiente corrida.
+      yaProcesados.add(idConversacion);
+      estado[cuenta.edomex_correo_usuario] = Array.from(yaProcesados);
 
       const texto = await leerTextoCompleto(page, 'EXPEDIENTE');
       if (!texto) {
@@ -393,16 +398,6 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
         console.log(`    Aviso reportado: expediente ${expedienteTexto} (correo ${idConversacion}).`);
       }
 
-      if (maxVistoEstaCorrida === null || Number(idConversacion) > Number(maxVistoEstaCorrida)) {
-        maxVistoEstaCorrida = idConversacion;
-        // Se guarda en CADA correo procesado, no solo al final del ciclo
-        // -- confirmado real: si la página truena a medio lote (ej. "Target
-        // page, context or browser has been closed"), el error salta a este
-        // catch y el ciclo nunca llega a la línea de después del `for`, así
-        // que sin esto los avisos ya reportados en ese lote se repetirían
-        // (duplicados) en la siguiente corrida.
-        if (maxVistoEstaCorrida !== null) estado[cuenta.edomex_correo_usuario] = maxVistoEstaCorrida;
-      }
     }
   } catch (e) {
     console.log(`  Error con la cuenta de ${cuenta.nombre}: ${e.message}`);

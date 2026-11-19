@@ -3308,5 +3308,27 @@ número, sin error de captura).
     se sigue revisando la lista COMPLETA cada vez (el candado de duplicados dentro de la misma
     corrida y el de "ya visto en una corrida anterior" siguen evitando reprocesar lo mismo,
     solo que ahora sin asumir nada sobre el orden).
-  - `node --check` limpio. **Sin confirmar en vivo todavía** -- falta que el usuario corra el
-    robot con este 3er arreglo.
+  - `node --check` limpio.
+- **4º ajuste, mismo día, encontrado al confirmar el 3er arreglo**: en la corrida de prueba, el
+  expediente 841/2026 se volvió a reportar como aviso NUEVO aunque ya se había reportado en la
+  corrida inmediata anterior -- debía haberse omitido por "ya visto". Causa real: el candado de
+  "ya visto" guardaba solo el id MÁS GRANDE encontrado (una "marca de agua"), asumiendo que un
+  id mayor siempre es más nuevo -- la misma suposición de orden que ya se había descartado en
+  el 3er ajuste (el orden de la bandeja no es confiable) también invalida esto, porque no hay
+  garantía de que "mayor" signifique "más nuevo". **Corregido de raíz**: ya no se guarda un
+  solo id-marca por cuenta -- se guarda el conjunto COMPLETO de ids de conversación ya
+  procesados, para siempre (`estado[cuenta] = Array.from(yaProcesados)`, un arreglo en el json
+  en vez de un solo valor), y se compara por pertenencia (`yaProcesados.has(id)`) en vez de por
+  comparación numérica -- sin asumir nada sobre el orden ni sobre qué id es "mayor". Esto
+  también reemplaza y absorbe el candado de duplicados-en-la-misma-corrida del 2º ajuste (ya
+  no hace falta un Set aparte, es el mismo mecanismo). `node --check` limpio.
+  - **Costo de la migración, avisado**: el archivo `procesados_edomex_correo.json` ya existente
+    tiene el formato VIEJO (un solo valor por cuenta, no un arreglo) -- al cargarlo con el
+    código nuevo, se interpreta como "sin historial" (arreglo vacío) y se reconstruye solo con
+    lo que se vaya encontrando de aquí en adelante. Esto puede hacer que, en la PRÓXIMA corrida
+    únicamente, se vuelvan a reportar como "nuevos" 1-2 avisos que ya se habían visto antes
+    (el aviso en sí debería quedar bloqueado solo por el candado de duplicados de
+    `avisos_ingest.php`, pero el documento sí podría subir una copia de más) -- después de esa
+    corrida de transición, el archivo ya queda en el formato nuevo y no debería repetirse.
+  - **Sin confirmar en vivo todavía** -- falta que el usuario corra el robot con este 4º
+    arreglo y confirme que ya no repite ningún aviso entre corridas.
