@@ -78,94 +78,36 @@ foreach ($avisos as $aviso) {
         continue; // se reintenta en la siguiente corrida (ia_analizado_en se queda NULL)
     }
 
-    $aplicado = false;
+    // Un mismo documento puede confirmar VARIAS etapas a la vez (ej. una
+    // constancia del Secretario que certifica tanto el emplazamiento como
+    // la contestación, cada una con su propia fecha -- caso real 20 nov
+    // 2026, Exp. 463/2026, Anel Yadira Hernández Zaragoza) -- se procesan
+    // todas con el mismo candado (ia_aplicar_etapa_sugerida(), en
+    // api/expediente_helpers.php: nunca sobrescribe una fecha ya
+    // capturada, nunca aplica una fecha futura como "ya celebrada", nunca
+    // rompe el orden cronológico).
+    $eventosDetectados = [];
     if ($resultado['etapa_sugerida']) {
-        $yaTieneFecha = false;
-        foreach ($etapas as $e) {
-            if ($e['etapa_key'] === $resultado['etapa_sugerida'] && !empty($e['fecha']) && $e['fecha'] !== '0000-00-00') {
-                $yaTieneFecha = true;
-                break;
-            }
-        }
-        if (!$yaTieneFecha) {
-            // Fecha a capturar: la que el documento menciona literalmente
-            // si la hay; si no, la fecha de publicación del boletín (dato
-            // real, no inventado) como mejor referencia disponible.
-            $fechaEtapa = $resultado['fecha_mencionada'] ?: $aviso['fecha_publicacion'];
-            $usuarioLog = ['id' => null, 'nombre' => 'IA (lectura automática del boletín)'];
+        $eventosDetectados[] = ['etapa' => $resultado['etapa_sugerida'], 'fecha' => $resultado['fecha_mencionada']];
+    }
+    foreach (($resultado['eventos_adicionales'] ?? []) as $ev) {
+        $eventosDetectados[] = $ev;
+    }
 
-            if ($fechaEtapa && etapa_fecha_es_futura($fechaEtapa)) {
-                // Confirmado real (19 nov 2026): un acuerdo real señaló una
-                // audiencia FUTURA (11 de enero de 2027) y por poco se
-                // guardaba como "ya celebrada" -- imposible por definición.
-                // Nunca se aplica a "fecha"; se redirige a "fecha
-                // agendada" si la etapa lo soporta, o se rechaza.
-                if (in_array($resultado['etapa_sugerida'], ETAPA_CALENDARIO_KEYS, true)) {
-                    $yaProgramada = null;
-                    foreach ($etapas as $e) {
-                        if ($e['etapa_key'] === $resultado['etapa_sugerida'] && !empty($e['fecha_programada']) && $e['fecha_programada'] !== '0000-00-00') {
-                            $yaProgramada = $e['fecha_programada'];
-                            break;
-                        }
-                    }
-                    if ($yaProgramada === null || $yaProgramada === $fechaEtapa) {
-                        $pdo->prepare(
-                            'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha_programada)
-                             VALUES (:eid, :key, :fecha)
-                             ON DUPLICATE KEY UPDATE fecha_programada = VALUES(fecha_programada)'
-                        )->execute([':eid' => $aviso['expediente_id'], ':key' => $resultado['etapa_sugerida'], ':fecha' => $fechaEtapa]);
-                        log_historial(
-                            $pdo, (int)$aviso['expediente_id'], $usuarioLog,
-                            'etapa_' . $resultado['etapa_sugerida'], null, "fecha agendada: $fechaEtapa (llenado automático a partir del acuerdo del boletín)"
-                        );
-                        $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $aviso['expediente_id']]);
-                        $aplicado = true;
-                        $aplicados++;
-                    } else {
-                        log_historial(
-                            $pdo, (int)$aviso['expediente_id'], $usuarioLog,
-                            'auditoria_ia_rechazo_' . $resultado['etapa_sugerida'], null,
-                            "fecha agendada $fechaEtapa (acuerdo del boletín) no se aplicó: la etapa ya tenía una fecha agendada distinta ($yaProgramada) -- posible conflicto, requiere revisión"
-                        );
-                    }
-                } else {
-                    log_historial(
-                        $pdo, (int)$aviso['expediente_id'], $usuarioLog,
-                        'auditoria_ia_rechazo_' . $resultado['etapa_sugerida'], null,
-                        "fecha futura $fechaEtapa (acuerdo del boletín) no se aplicó: esta etapa no tiene concepto de \"fecha agendada\", nunca se marca como celebrada con una fecha que todavía no llega -- se deja pendiente"
-                    );
-                }
-            } else {
-                // Confirmado real (10 nov 2026, en la auditoría integral): la
-                // IA puede atribuir una fecha real a la etapa EQUIVOCADA,
-                // rompiendo el orden cronológico del trámite (ej. "Objeciones
-                // y réplica" con fecha anterior a "Contestación recibida",
-                // imposible por ley). Mismo candado ahí también, no solo en
-                // la auditoría.
-                if ($fechaEtapa && !etapa_fecha_es_consistente($resultado['etapa_sugerida'], $fechaEtapa, $etapas)) {
-                    log_historial(
-                        $pdo, (int)$aviso['expediente_id'], $usuarioLog,
-                        'auditoria_ia_rechazo_' . $resultado['etapa_sugerida'], null,
-                        "fecha sugerida $fechaEtapa rechazada por romper el orden cronológico con otras etapas ya registradas"
-                    );
-                    $fechaEtapa = null;
-                }
-                if ($fechaEtapa) {
-                    $pdo->prepare(
-                        'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha)
-                         VALUES (:eid, :key, :fecha)
-                         ON DUPLICATE KEY UPDATE fecha = VALUES(fecha)'
-                    )->execute([':eid' => $aviso['expediente_id'], ':key' => $resultado['etapa_sugerida'], ':fecha' => $fechaEtapa]);
-
-                    log_historial(
-                        $pdo, (int)$aviso['expediente_id'], $usuarioLog,
-                        'etapa_' . $resultado['etapa_sugerida'], null, "fecha: $fechaEtapa (llenado automático a partir del acuerdo del boletín)"
-                    );
-                    $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $aviso['expediente_id']]);
-                    $aplicado = true;
-                    $aplicados++;
-                }
-            }
+    $aplicado = false;
+    $usuarioLog = ['id' => null, 'nombre' => 'IA (lectura automática del boletín)'];
+    foreach ($eventosDetectados as $ev) {
+        // Fecha a capturar: la que el documento menciona literalmente si
+        // la hay; si no, la fecha de publicación del boletín (dato real,
+        // no inventado) como mejor referencia disponible -- solo este
+        // cron usa este respaldo, a diferencia de cron_analizar_
+        // documentos_ia.php, que nunca lo usa.
+        if (ia_aplicar_etapa_sugerida(
+            $pdo, (int)$aviso['expediente_id'], $ev['etapa'], $ev['fecha'],
+            $aviso['fecha_publicacion'], $etapas, $usuarioLog, 'a partir del acuerdo del boletín'
+        )) {
+            $aplicado = true;
+            $aplicados++;
         }
     }
 

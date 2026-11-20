@@ -4099,38 +4099,50 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
         . 'resolvió el Tribunal/Juzgado, qué ordenó, qué acredita, o qué pide. No repitas datos genéricos (nombre '
         . 'de archivo, categoría) que ya se conocen aparte -- concéntrate en el CONTENIDO real.'
         . "\n\n"
-        . 'PARTE 2 -- etapa sugerida: si este documento corresponde CLARAMENTE a una de estas etapas del '
-        . "vocabulario del sistema y esa etapa coincide con la \"Siguiente etapa esperada\" que te di (o es "
-        . "razonable que sea la que sigue), responde su clave exacta. Vocabulario completo: $vocabularioEtapas. "
-        . 'Si el documento es un trámite intermedio que no corresponde a ninguna de esas etapas (ej. solo admite '
-        . 'una prueba, da vista a la contraparte, notifica algo menor, es solo evidencia/pruebas sin relación con '
-        . 'el trámite), o si no estás seguro, responde (ninguna) -- NUNCA adivines ni fuerces una etapa que no '
-        . 'calza con claridad.'
-        . "\n\n"
-        . 'PARTE 3 -- fecha mencionada: SOLO si el documento menciona LITERALMENTE una fecha asociada a la etapa '
-        . 'que sugeriste (ej. "se señala la audiencia para el día..."), dámela en formato YYYY-MM-DD. Si no hay '
-        . 'una fecha así de explícita, o tendrías que calcularla/inferirla, responde (ninguna) -- NUNCA calcules '
-        . 'ni inventes una fecha.'
-        . "\n\n"
+        . 'PARTE 2 -- eventos del trámite detectados: lee el documento COMPLETO (incluida cualquier constancia o '
+        . 'certificación que contenga, no solo el acuerdo/resolución principal) y busca CADA etapa de este '
+        . 'vocabulario que el documento represente con claridad -- puede haber MÁS DE UNA en el mismo documento '
+        . '(ej. una constancia que certifica tanto el emplazamiento como la contestación, cada una con su propia '
+        . 'fecha) -- repórtalas todas, no solo la primera o la más obvia. Vocabulario completo: $vocabularioEtapas. '
+        . 'Para que una etapa cuente, debe o bien coincidir con la "Siguiente etapa esperada" que te di (o ser '
+        . 'razonable que sea la que sigue), o el documento debe CONFIRMAR explícitamente que ya ocurrió (ver reglas '
+        . 'abajo). Si el documento es un trámite intermedio que no corresponde a ninguna de esas etapas (ej. solo '
+        . 'admite una prueba, da vista a la contraparte, notifica algo menor), o no estás seguro, no la reportes -- '
+        . 'NUNCA adivines ni fuerces una etapa que no calza con claridad.'
+        . "\n"
+        . 'Para cada etapa que reportes, da también su fecha: SOLO si el documento menciona LITERALMENTE la fecha '
+        . 'en que el ACTO mismo ocurrió (cuándo se presentó/notificó/surtió efectos -- NO la fecha en que el '
+        . 'Tribunal/Secretario dictó o firmó el documento que lo certifica, si son distintas), dala en formato '
+        . 'YYYY-MM-DD; si no hay una fecha así de explícita, o tendrías que calcularla/inferirla, escribe '
+        . '(ninguna) -- NUNCA calcules ni inventes una fecha.'
+        . "\n"
+        . 'Regla de confirmación: una ORDEN o instrucción de que algo se haga a futuro ("se ordena emplazar", '
+        . '"concediéndole 15 días para contestar") NUNCA confirma por sí sola que el acto ya ocurrió -- solo indica '
+        . 'que se espera que ocurra; en ese caso, si de todos modos quieres reportar la etapa porque es razonable '
+        . 'que sea la siguiente, repórtala con fecha (ninguna).'
+        . "\n"
         . 'IMPORTANTE sobre constancias/certificaciones del Secretario Instructor (muy comunes en el Portal '
         . 'Federal, formato distinto a un "ACUERDO" con encabezado claro de resolución): a veces el documento es '
         . 'una CERTIFICACIÓN que dice algo como "CERTIFICO: a) ... b) El escrito de contestación/réplica... se '
         . 'presentó el [fecha]..." o "la notificación fue personal el [fecha]... surtió efectos..." -- esto SÍ es '
-        . 'una confirmación LITERAL de que ese acto procesal (contestación recibida, réplica presentada, '
-        . 'emplazamiento realizado, etc.) ya ocurrió, con su fecha exacta -- no lo descartes solo porque no tiene '
-        . 'la redacción de "el Tribunal admite/ordena...". Usa la fecha en que el acto se PRESENTÓ/NOTIFICÓ según '
-        . 'esa certificación, no la fecha en que el Secretario firmó/certificó el documento (pueden ser días '
-        . 'distintos). Estos documentos suelen terminar con un bloque largo de metadatos de firma electrónica '
-        . '("EVIDENCIA CRIPTOGRÁFICA", números de serie, hashes) -- ignora ese bloque por completo, la fecha que '
-        . 'importa siempre está en el cuerpo del texto, antes de ese bloque.'
+        . 'una confirmación LITERAL válida con fecha, no la descartes solo porque no tiene la redacción de "el '
+        . 'Tribunal admite/ordena...". Estos documentos suelen terminar con un bloque largo de metadatos de firma '
+        . 'electrónica ("EVIDENCIA CRIPTOGRÁFICA", números de serie, hashes) -- ignora ese bloque por completo, la '
+        . 'fecha que importa siempre está en el cuerpo del texto, antes de ese bloque.'
+        . "\n"
+        . 'Por cada etapa que reportes, agrega una línea con este formato exacto: "EVENTO: <clave_etapa> | FECHA: '
+        . 'YYYY-MM-DD" o "EVENTO: <clave_etapa> | FECHA: (ninguna)" (puedes repetir esta línea tantas veces como '
+        . 'etapas distintas encuentres). Si no encuentras ninguna, escribe una sola línea "EVENTO: (ninguno)".'
         . "\n\n"
-        . 'PARTE 4 -- categoría sugerida: el documento se guardó con la categoría "' . ($categoria ?: '(sin definir)') . '". '
+        . 'PARTE 3 -- categoría sugerida: el documento se guardó con la categoría "' . ($categoria ?: '(sin definir)') . '". '
         . "Si el CONTENIDO deja clarísimo que corresponde a otra categoría del vocabulario del sistema, responde esa "
         . "clave exacta. Vocabulario: $vocabularioCategorias. Si la categoría actual ya es razonable, o el contenido "
         . 'no deja una categoría obvia, responde (ninguna) -- NUNCA sugieras solo por parecido superficial.'
         . "\n\n"
         . "Responde EXACTAMENTE en este formato (las líneas en mayúsculas son literales):\n\n"
-        . "RESUMEN: [tu resumen aquí]\nETAPA: [clave exacta, o (ninguna)]\nFECHA: [YYYY-MM-DD, o (ninguna)]\nCATEGORIA: [clave exacta, o (ninguna)]";
+        . "RESUMEN: [tu resumen aquí]\nEVENTO: [clave exacta] | FECHA: [YYYY-MM-DD o (ninguna)]\n(repite la línea "
+        . "EVENTO si hay más de una etapa, o escribe una sola línea \"EVENTO: (ninguno)\")\nCATEGORIA: [clave "
+        . "exacta, o (ninguna)]";
 
     $contentBlocks = [];
     if ($esPdf) {
@@ -4194,16 +4206,46 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
     if ($texto === '') return null;
 
     $resumen = null;
-    $etapaSugerida = null;
-    $fechaMencionada = null;
     $categoriaSugerida = null;
     if (preg_match('/RESUMEN:\s*(.+?)(?:\n[A-Z]+:|$)/s', $texto, $m)) $resumen = trim($m[1]);
-    if (preg_match('/ETAPA:\s*([a-z_]+)/i', $texto, $m) && in_array($m[1], $ordenEtapas, true)) $etapaSugerida = $m[1];
-    if (preg_match('/FECHA:\s*(\d{4}-\d{2}-\d{2})/', $texto, $m)) $fechaMencionada = $m[1];
     if (preg_match('/CATEGORIA:\s*([a-z_]+)/i', $texto, $m) && in_array($m[1], $categoriasValidas, true) && $m[1] !== $categoria) $categoriaSugerida = $m[1];
 
+    // Uno o más "EVENTO: <clave_etapa> | FECHA: YYYY-MM-DD" (o "FECHA:
+    // (ninguna)" si la etapa calza pero no hay fecha literal) -- un mismo
+    // documento puede confirmar varios eventos distintos (ej. una
+    // constancia que certifica emplazamiento Y contestación a la vez, caso
+    // real Exp. 463/2026). Se descarta cualquier clave que no esté en el
+    // vocabulario y cualquier duplicado de la misma etapa (se queda con la
+    // primera que mencione, prefiriendo quedarse con una que sí traiga
+    // fecha si la hay).
+    $eventos = [];
+    if (preg_match_all('/EVENTO:\s*([a-z_]+)\s*\|\s*FECHA:\s*(\d{4}-\d{2}-\d{2}|\(ninguna\))/i', $texto, $ms, PREG_SET_ORDER)) {
+        foreach ($ms as $m) {
+            $etapaKey = strtolower($m[1]);
+            if (!in_array($etapaKey, $ordenEtapas, true)) continue;
+            $fecha = strtolower($m[2]) === '(ninguna)' ? null : $m[2];
+            $yaEsta = false;
+            foreach ($eventos as &$ev) {
+                if ($ev['etapa'] === $etapaKey) {
+                    $yaEsta = true;
+                    if ($ev['fecha'] === null && $fecha !== null) $ev['fecha'] = $fecha;
+                    break;
+                }
+            }
+            unset($ev);
+            if ($yaEsta) continue;
+            $eventos[] = ['etapa' => $etapaKey, 'fecha' => $fecha];
+        }
+    }
+
     if ($resumen === null) return null;
-    return ['resumen' => $resumen, 'etapa_sugerida' => $etapaSugerida, 'fecha_mencionada' => $fechaMencionada, 'categoria_sugerida' => $categoriaSugerida];
+    return [
+        'resumen' => $resumen,
+        'etapa_sugerida' => $eventos[0]['etapa'] ?? null,
+        'fecha_mencionada' => $eventos[0]['fecha'] ?? null,
+        'eventos_adicionales' => array_slice($eventos, 1),
+        'categoria_sugerida' => $categoriaSugerida,
+    ];
 }
 
 // Supervisor por IA: dado un asunto ESTANCADO (ya detectado por
