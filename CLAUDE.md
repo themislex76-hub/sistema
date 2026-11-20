@@ -3957,3 +3957,45 @@ número, sin error de captura).
     punta a punta. **Pendiente del usuario**: borrar a mano los documentos duplicados que
     quedaron de las corridas de prueba (780/2026, 747/2026, 628/2026, 1056/2026, 841/2026 -- este
     último con una copia extra de más por la corrida de transición).
+
+## 3 de los 5 robots llevaban sin correr solos: les faltaba su `run_diario.bat` en la máquina del usuario (20 nov 2026, conversación "Bot")
+Pregunta del usuario: "como podemos saber si los robots si estan corriendo diario". Se revisó en
+vivo con `schtasks` (PowerShell como administrador) en su máquina de Windows.
+- Los 5 robots se veían "Listo" en la lista general (`schtasks /query /fo table`), pero el detalle
+  de cada tarea (`schtasks /query /tn "<nombre>" /v /fo list`) mostró **"Último resultado: 1"**
+  (código de error -- 0 es éxito) en la corrida automática del día anterior (19-nov) para 3 de los
+  5: **Robot Federal** (6:40am), **Robot CDMX** (6:00am) y **Robot Edomex** (9:30am). Los otros 2
+  (Buzón CDMX, Jurisprudencia) sí mostraban "0" (corrida exitosa).
+- **Causa real**: a los 3 les faltaba FÍSICAMENTE su archivo lanzador `run_diario.bat` en la
+  carpeta local del robot (`C:\Users\Ruben\Desktop\ROBOTS\<robot>\`) -- confirmado con `dir`, el
+  archivo simplemente no estaba ahí, así que Windows ni siquiera podía encontrar qué ejecutar.
+  Este archivo SÍ está versionado en este repo (`robots/federal/run_diario.bat`,
+  `robots/cdmx/run_diario.bat`, `robots/edomex_correo/run_diario.bat`) -- se perdió de la carpeta
+  local del usuario en algún momento sin que nadie lo notara (el flujo normal de entrega de este
+  proyecto solo manda por `SendUserFile` los `.js`/`.json`/`README.md` de cada robot, nunca el
+  `.bat` -- ver "Robots locales" más abajo -- así que una vez perdido de la carpeta local, ninguna
+  entrega posterior lo iba a restaurar solo).
+- **No se pudo precisar desde cuándo** llevaban sin correr -- `schtasks` solo guarda el resultado
+  de la ÚLTIMA corrida, no el historial completo; no se revisó el Visor de eventos de Windows (que
+  sí guarda el historial día por día) para acotar la fecha exacta en que desapareció cada archivo.
+- **Corregido en vivo**: se recrearon los 3 archivos directo en la carpeta del usuario (con
+  Notepad, abierto desde PowerShell) con el mismo contenido funcional que ya tiene este repo
+  (`@echo off` + entrar a la carpeta del robot + `node <robot>.js >> robot.log 2>&1`) -- con una
+  diferencia cosmética sin impacto práctico: se escribió la ruta completa a mano
+  (`cd /d "C:\Users\Ruben\Desktop\ROBOTS\FEDERAL"`) en vez de `cd /d "%~dp0"` (la ruta del propio
+  `.bat`) que usa la versión de este repo; funcionan igual mientras la carpeta no cambie de lugar,
+  no se corrigió este detalle para no arriesgar otra ronda de Notepad por algo cosmético.
+- **Confirmado funcionando de punta a punta los 3** con una corrida manual
+  (`node federal.js`/`cdmx.js`/`edomex_correo.js` directo en PowerShell, sin pasar por el `.bat`):
+  Federal encontró 1 aviso nuevo real (expediente 501/2026, acuerdo No. 2); CDMX y Edomex correo no
+  encontraron ninguno nuevo (sin evidencia de un backlog grande acumulado, pero tampoco se puede
+  descartar del todo sin saber desde cuándo faltaba el archivo).
+- Sin cambios de código en este repo -- los `.bat` ya estaban bien ahí desde siempre, el bug vivía
+  solo en la carpeta local de la máquina del usuario (archivo borrado/perdido fuera de git). No
+  aplica `php -l`/`node --check`/`verificar_tags.js`/`pruebas_bot.php`.
+- **Pendiente**: confirmar más tarde el mismo día (20-nov, después de las 9:30 am) que las 3 tareas
+  programadas ya muestren "Último resultado: 0" por sí solas (se dejó un recordatorio programado en
+  esta misma sesión para revisarlo con el usuario). Si en el futuro un robot "deja de avisar" sin
+  ningún error de código visible, revisar PRIMERO si su `run_diario.bat` sigue existiendo en la
+  carpeta local antes de sospechar de un bug nuevo -- mismo patrón de diagnóstico barato ya
+  documentado para otros huecos de este archivo (migración no corrida, archivo no resubido).
