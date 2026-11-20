@@ -457,6 +457,23 @@ async function reportarTesis(lote) {
   }
 }
 
+// Le avisa al sistema que este robot corrió (con éxito o con error) --
+// pedido explícito del usuario (20 nov 2026) tras descubrir que otros
+// robots llevaban sin correr en automático por un run_diario.bat faltante
+// y nadie lo notó. Nunca debe tronar el robot si esto falla (ej. sin
+// internet en ese momento) -- se atrapa y se sigue de largo.
+async function reportarHeartbeat(ok, resumen) {
+  try {
+    await axios.post(config.sistema.apiBase + '/robot_heartbeat.php', {
+      robot: 'jurisprudencia',
+      ok: ok ? 1 : 0,
+      resumen: String(resumen || '').slice(0, 250),
+    }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
+  } catch (e) {
+    console.log('  (no se pudo avisar el heartbeat al sistema: ' + e.message + ')');
+  }
+}
+
 // Se manda en lotes (no todo junto hasta el final) por dos razones: en una
 // corrida grande (primera vez, historial completo) un solo POST con miles
 // de tesis con texto completo podria exceder los limites de tamano del
@@ -540,9 +557,13 @@ async function main() {
     await browser.close();
   }
   console.log('Listo.');
+  return totalGuardadas + ' tesis nueva(s) guardada(s)';
 }
 
-main().catch(err => {
-  console.error('Error en checker de jurisprudencia:', err.message);
-  process.exit(1);
-});
+main()
+  .then(resumen => reportarHeartbeat(true, resumen))
+  .catch(async err => {
+    console.error('Error en checker de jurisprudencia:', err.message);
+    await reportarHeartbeat(false, 'Error: ' + err.message);
+    process.exit(1);
+  });

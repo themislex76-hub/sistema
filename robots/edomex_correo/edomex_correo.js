@@ -135,6 +135,23 @@ async function reportarAviso(expedienteId, resumen, fecha, documentoId) {
   }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
 }
 
+// Le avisa al sistema que este robot corrió (con éxito o con error) --
+// pedido explícito del usuario (20 nov 2026) tras descubrir que otros 2
+// robots llevaban sin correr en automático por un run_diario.bat faltante
+// y nadie lo notó. Nunca debe tronar el robot si esto falla (ej. sin
+// internet en ese momento) -- se atrapa y se sigue de largo.
+async function reportarHeartbeat(ok, resumen) {
+  try {
+    await axios.post(`${config.sistema.apiBase}/robot_heartbeat.php`, {
+      robot: 'edomex_correo',
+      ok: ok ? 1 : 0,
+      resumen: String(resumen || '').slice(0, 250),
+    }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
+  } catch (e) {
+    console.log('  (no se pudo avisar el heartbeat al sistema: ' + e.message + ')');
+  }
+}
+
 // Mismo problema ya documentado en los otros robots: un texto puede existir
 // duplicado en el DOM, o aparecer un instante después de lo que isVisible()
 // cree -- se espera de verdad a que exista al menos un candidato visible.
@@ -426,7 +443,7 @@ async function main() {
   console.log(`${cuentas.length} cuenta(s) de correo de notificaciones guardada(s).`);
   if (!cuentas.length) {
     console.log('Nadie ha guardado su correo de notificaciones de Edomex en "Mi cuenta" -- nada que revisar.');
-    return;
+    return 'sin cuentas guardadas -- nada que revisar';
   }
 
   const estado = cargarProcesados();
@@ -443,9 +460,13 @@ async function main() {
   await browser.close();
 
   console.log(`Listo. ${totalReportados} aviso(s) nuevo(s) reportado(s) en total.`);
+  return `${totalReportados} aviso(s) nuevo(s)`;
 }
 
-main().catch(err => {
-  console.error('Error en el robot de correo Edomex:', err.message);
-  process.exit(1);
-});
+main()
+  .then(resumen => reportarHeartbeat(true, resumen))
+  .catch(async err => {
+    console.error('Error en el robot de correo Edomex:', err.message);
+    await reportarHeartbeat(false, 'Error: ' + err.message);
+    process.exit(1);
+  });

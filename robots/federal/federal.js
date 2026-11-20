@@ -106,6 +106,23 @@ async function reportarAviso(expedienteId, resumen, fecha, documentoId) {
   }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
 }
 
+// Le avisa al sistema que este robot corrió (con éxito o con error) --
+// pedido explícito del usuario (20 nov 2026) tras descubrir que este
+// mismo robot llevaba sin correr en automático por un run_diario.bat
+// faltante y nadie lo notó. Nunca debe tronar el robot si esto falla
+// (ej. sin internet en ese momento) -- se atrapa y se sigue de largo.
+async function reportarHeartbeat(ok, resumen) {
+  try {
+    await axios.post(`${config.sistema.apiBase}/robot_heartbeat.php`, {
+      robot: 'federal',
+      ok: ok ? 1 : 0,
+      resumen: String(resumen || '').slice(0, 250),
+    }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
+  } catch (e) {
+    console.log('  (no se pudo avisar el heartbeat al sistema: ' + e.message + ')');
+  }
+}
+
 // Sube el PDF del acuerdo (ya descargado del portal) al mismo almacén de
 // documentos que usa cada expediente -- regresa el id del documento, o null
 // si algo falla (nunca debe tronar el reporte del aviso por esto).
@@ -1111,7 +1128,7 @@ async function main() {
   console.log(`${cuentas.length} cuenta(s) del Portal Federal guardada(s).`);
   if (!cuentas.length) {
     console.log('Nadie ha guardado su cuenta del Portal Federal en "Mi cuenta" todavía.');
-    return;
+    return 'sin cuentas guardadas -- nada que revisar';
   }
 
   const estado = cargarProcesados();
@@ -1130,9 +1147,13 @@ async function main() {
     await browser.close();
   }
   console.log(`Listo. ${totalReportados} aviso(s) nuevo(s) reportado(s) en total.`);
+  return `${totalReportados} aviso(s) nuevo(s)`;
 }
 
-main().catch(err => {
-  console.error('Error en checker Federal:', err.message);
-  process.exit(1);
-});
+main()
+  .then(resumen => reportarHeartbeat(true, resumen))
+  .catch(async err => {
+    console.error('Error en checker Federal:', err.message);
+    await reportarHeartbeat(false, 'Error: ' + err.message);
+    process.exit(1);
+  });

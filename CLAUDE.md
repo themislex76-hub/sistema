@@ -4001,3 +4001,42 @@ vivo con `schtasks` (PowerShell como administrador) en su máquina de Windows.
   revisar PRIMERO si su `run_diario.bat` sigue existiendo en la carpeta local antes de sospechar
   de un bug nuevo -- mismo patrón de diagnóstico barato ya documentado para otros huecos de este
   archivo (migración no corrida, archivo no resubido).
+
+## Nuevo: "Robots de monitoreo" dentro del sistema -- heartbeat + alerta automática (20 nov 2026, `app.js?v=162`, migración 074)
+Pedido explícito del usuario tras la investigación de arriba: "podemos poner algo en el sistema
+que nos avise cuando fue la última vez que corrieron los robots" -- hasta hoy, la única forma de
+saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
+- **Migración 074**: tabla nueva `robot_heartbeats` (una fila por robot --
+  `federal`/`cdmx`/`cdmx_buzon`/`edomex_correo`/`jurisprudencia` -- con su última corrida, si
+  terminó bien o con error, y un resumen corto).
+- **`api/robot_heartbeat.php`** (nuevo, protegido con la llave de robot): cada uno de los 5
+  robots lo llama al terminar, con éxito o con error -- nunca debe tronar el robot si esto
+  falla (ej. sin internet justo en ese momento), se atrapa y se sigue de largo.
+- **`api/robot_helpers.php`** (nuevo, compartido): `ROBOTS_DEF` define cuánto se espera que tarde
+  cada robot en volver a correr (30h para los 4 diarios, con margen; 192h/8 días para
+  Jurisprudencia, que es semanal) y `robots_estado()` calcula si alguno ya se pasó de ese margen
+  ("vencido").
+- **`api/robot_heartbeats_list.php`** (nuevo, solo Administrador) + panel nuevo **"Robots de
+  monitoreo"** en "Equipo" (entre "Credenciales de portales por abogado" y "Validación de
+  Tribunal"): tabla con cada robot, su última corrida, y una insignia "✓ al día" / "⚠ corrió con
+  error" / "✗ atrasado".
+- **`api/cron_verificar_robots.php`** (nuevo, correr 1 vez al día a media mañana, ej. 11:00 am --
+  después de que los 5 robots ya debieron correr): si alguno está "vencido", manda push al
+  Administrador con la lista (reusa `push_armar_cuerpo()`, ya existente) -- así no hace falta
+  entrar al panel ni a `schtasks` para enterarse, el sistema mismo avisa solo.
+- **Los 5 robots** (`robots/federal/federal.js`, `robots/cdmx/cdmx.js`,
+  `robots/cdmx_buzon/cdmx_buzon.js`, `robots/edomex_correo/edomex_correo.js`,
+  `robots/jurisprudencia/jurisprudencia.js`) ahora reportan su heartbeat al terminar --
+  `main().then(resumen => reportarHeartbeat(true, resumen)).catch(async err => {...; await
+  reportarHeartbeat(false, ...); process.exit(1);})`, así se reporta tanto éxito como error (un
+  robot que corre pero truena a medias ya no se queda en silencio, se ve "corrió con error" en
+  vez de simplemente no aparecer).
+- `php -l`/`node --check` limpios en los 4 archivos PHP nuevos, los 5 robots y `assets/app.js`.
+  Sin tocar `mergeTags()`/tags de demanda -- no aplica `verificar_tags.js`/`pruebas_bot.php`.
+- **Pendiente**: que el usuario corra la migración 074, suba los 4 archivos PHP nuevos, los 5
+  robots (los `.js` sueltos, no van en el `.zip` de `assets/app.js`/`sw.js`), `assets/app.js`,
+  `index.html` y `sw.js`, y dé de alta `api/cron_verificar_robots.php` en el Cron Job de Ferozo
+  (1 vez al día). Falta confirmar en vivo: que el panel "Robots de monitoreo" se llene solo tras
+  la siguiente corrida de cada robot, y que el cron de verificación mande push si alguno se
+  atrasa (forzar una prueba sería borrar o adelantar a mano la fecha de un heartbeat en la base y
+  correr el cron, para ver la alerta sin esperar días).

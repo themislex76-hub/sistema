@@ -2489,6 +2489,22 @@ async function loadCredencialesPortales(){
     CREDENCIALES_PORTALES = d.usuarios;
   }catch(e){ CREDENCIALES_PORTALES = []; }
 }
+// Panel "Robots de monitoreo" (20 nov 2026) -- pedido explícito del
+// usuario tras descubrir a mano, con el Programador de tareas de Windows,
+// que 3 de los 5 robots llevaban sin correr por un archivo lanzador
+// faltante y nadie lo notó: "podemos poner algo en el sistema que nos
+// avise cuando fue la última vez que corrieron los robots". Cada robot
+// avisa solo al terminar (api/robot_heartbeat.php); este panel solo
+// muestra lo que ya quedó guardado -- el cron diario
+// (api/cron_verificar_robots.php) es el que de verdad avisa por push si
+// alguno se atrasa, sin que nadie tenga que entrar a revisar esto.
+let ROBOTS_HEARTBEATS = [];
+async function loadRobotsHeartbeats(){
+  try{
+    const d = await api('GET', 'robot_heartbeats_list.php');
+    ROBOTS_HEARTBEATS = d.data;
+  }catch(e){ ROBOTS_HEARTBEATS = []; }
+}
 // Se abrió el sistema desde el push de una pregunta nueva (ver
 // cron_generar_preguntas_supervisor.php) -- lleva a "Preguntas al
 // abogado" y marca cuál enfocar; bindViewBody() hace el scroll/foco real
@@ -2978,6 +2994,7 @@ async function refreshBootstrap(){
     await loadGoogleCalendariosMapeo();
     await loadIaActividad();
     await loadCredencialesPortales();
+    await loadRobotsHeartbeats();
     await loadBotRevisiones();
   }
   await loadDiasInhabiles();
@@ -7657,6 +7674,24 @@ function equipoHTML(){
         </tr>`;
       }).join("")}
     </tbody></table>` : '<div class="empty">Sin abogados activos.</div>'}
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Robots de monitoreo</div>
+    <div class="notice" style="margin-bottom:14px;">Cada robot (Federal, CDMX, Buzón CDMX, Edomex, Jurisprudencia) corre solo en la computadora del despacho -- aquí se ve la última vez que cada uno avisó al sistema que terminó. Si alguno lleva más tiempo del esperado sin avisar, también se manda un push diario al Administrador (sin tener que revisar esto a mano).</div>
+    ${ROBOTS_HEARTBEATS.length ? `
+    <table><thead><tr><th>Robot</th><th>Última corrida</th><th>Resultado</th></tr></thead><tbody>
+      ${ROBOTS_HEARTBEATS.map(r=>{
+        const fecha = r.ultima_corrida_en ? new Date(r.ultima_corrida_en.replace(' ','T')).toLocaleString('es-MX',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'nunca ha reportado';
+        const estadoBadge = r.vencido
+          ? `<span class="badge crit">✗ atrasado</span>`
+          : (r.ultimo_ok === false ? `<span class="badge warn">⚠ corrió con error</span>` : `<span class="badge ok">✓ al día</span>`);
+        return `<tr>
+          <td style="font-size:12.5px;">${escapeHTML(r.nombre)}</td>
+          <td style="font-size:12px; white-space:nowrap;">${fecha}</td>
+          <td style="font-size:12.5px;">${estadoBadge}${r.ultimo_resumen ? `<div style="font-size:11px; color:var(--gray); margin-top:2px;">${escapeHTML(r.ultimo_resumen)}</div>` : ''}</td>
+        </tr>`;
+      }).join("")}
+    </tbody></table>` : '<div class="empty">Sin datos todavía -- se llenan solos en la próxima corrida de cada robot.</div>'}
   </div></div>
   ${tribunalValidacionHTML()}
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">
