@@ -4112,6 +4112,18 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
         . 'una fecha así de explícita, o tendrías que calcularla/inferirla, responde (ninguna) -- NUNCA calcules '
         . 'ni inventes una fecha.'
         . "\n\n"
+        . 'IMPORTANTE sobre constancias/certificaciones del Secretario Instructor (muy comunes en el Portal '
+        . 'Federal, formato distinto a un "ACUERDO" con encabezado claro de resolución): a veces el documento es '
+        . 'una CERTIFICACIÓN que dice algo como "CERTIFICO: a) ... b) El escrito de contestación/réplica... se '
+        . 'presentó el [fecha]..." o "la notificación fue personal el [fecha]... surtió efectos..." -- esto SÍ es '
+        . 'una confirmación LITERAL de que ese acto procesal (contestación recibida, réplica presentada, '
+        . 'emplazamiento realizado, etc.) ya ocurrió, con su fecha exacta -- no lo descartes solo porque no tiene '
+        . 'la redacción de "el Tribunal admite/ordena...". Usa la fecha en que el acto se PRESENTÓ/NOTIFICÓ según '
+        . 'esa certificación, no la fecha en que el Secretario firmó/certificó el documento (pueden ser días '
+        . 'distintos). Estos documentos suelen terminar con un bloque largo de metadatos de firma electrónica '
+        . '("EVIDENCIA CRIPTOGRÁFICA", números de serie, hashes) -- ignora ese bloque por completo, la fecha que '
+        . 'importa siempre está en el cuerpo del texto, antes de ese bloque.'
+        . "\n\n"
         . 'PARTE 4 -- categoría sugerida: el documento se guardó con la categoría "' . ($categoria ?: '(sin definir)') . '". '
         . "Si el CONTENIDO deja clarísimo que corresponde a otra categoría del vocabulario del sistema, responde esa "
         . "clave exacta. Vocabulario: $vocabularioCategorias. Si la categoría actual ya es razonable, o el contenido "
