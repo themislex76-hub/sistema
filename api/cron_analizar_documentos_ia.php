@@ -1,6 +1,12 @@
 <?php
 declare(strict_types=1);
 
+// DIAGNÓSTICO TEMPORAL (20 nov 2026) -- este script venía dando HTTP 500 sin
+// log visible; se activa display_errors SOLO aquí para ver la causa real en
+// el navegador. Quitar estas 2 líneas en cuanto se identifique el error.
+ini_set('display_errors', '1');
+error_reporting(E_ALL);
+
 // Script pensado para correr solo, vía un Cron Job (cada 15-30 minutos,
 // junto con cron_analizar_acuerdos_ia.php) -- NO se abre desde el
 // navegador ni tiene sesión. Lee con IA CUALQUIER documento que un
