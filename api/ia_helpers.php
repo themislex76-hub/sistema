@@ -4122,7 +4122,12 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
         . 'el documento completo para ESE evento en particular -- no te quedes con "(ninguna)" solo porque ya '
         . 'encontraste la fecha de otro evento más visible; la fecha de un evento puede venir en una TABLA (ej. '
         . 'columnas "Notificación / Surtió efectos / Transcurrió término", donde "Notificación Personal [fecha]" es '
-        . 'la fecha en que se notificó/emplazó) en vez de en una oración narrativa -- cuenta igual de literal.'
+        . 'la fecha en que se notificó/emplazó) en vez de en una oración narrativa -- cuenta igual de literal. Un '
+        . 'mismo evento puede aparecer mencionado DOS VECES de forma distinta en el mismo documento: una vez con su '
+        . 'fecha exacta (ej. en esa tabla de cómputo de plazo) y otra vez solo como referencia administrativa sin '
+        . 'fecha (ej. "se agrega a los autos la constancia de emplazamiento con folio SIGE 1234" -- un número de '
+        . 'folio NUNCA es una fecha). Si encuentras ambas menciones del mismo evento, usa SIEMPRE la que sí trae '
+        . 'fecha exacta -- NUNCA reportes (ninguna) solo porque la segunda mención (la del folio) no la tiene.'
         . "\n"
         . 'Regla de confirmación: una ORDEN o instrucción de que algo se haga a futuro ("se ordena emplazar", '
         . '"concediéndole 15 días para contestar") NUNCA confirma por sí sola que el acto ya ocurrió -- solo indica '
