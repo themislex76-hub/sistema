@@ -4037,9 +4037,13 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
   confirmado con captura real de phpMyAdmin -- tabla `robot_heartbeats` creada limpio), los 4
   archivos PHP nuevos + los 5 robots (esta vez entregados en un solo `.zip` a petición explícita
   del usuario, excepción puntual a la convención de mandarlos sueltos) + `assets/app.js`/
-  `index.html`/`sw.js` ya subidos, y `api/cron_verificar_robots.php` ya dado de alta como Cron
-  Job diario en Ferozo. **Pendiente real todavía**: confirmar en vivo que el panel "Robots de
-  monitoreo" en Equipo se llene solo tras la siguiente corrida programada de cada robot (CDMX/
-  Buzón CDMX 6am, Federal 6:40am, Edomex 9:30am, Jurisprudencia lunes 7am), y que el cron de
-  verificación mande push si alguno se atrasa (forzar una prueba sería borrar o adelantar a mano
-  la fecha de un heartbeat en la base y correr el cron, para ver la alerta sin esperar días).
+  `index.html`/`sw.js` ya subidos. **`api/cron_verificar_robots.php` confirmado dado de alta como
+  Cron Job en Ferozo (captura real: minuto 0, hora 11, resto `*`, comando
+  `php /home/c1361311/public_html/sistema/api/cron_verificar_robots.php`)** -- el usuario
+  inicialmente reportó esto como ya hecho sin serlo todavía (confusión aclarada el mismo día,
+  ahora sí confirmado con captura). **Pendiente real todavía**: confirmar en vivo que el panel
+  "Robots de monitoreo" en Equipo se llene solo tras la siguiente corrida programada de cada
+  robot (CDMX/Buzón CDMX 6am, Federal 6:40am, Edomex 9:30am, Jurisprudencia lunes 7am), y que el
+  cron de verificación mande push si alguno se atrasa (forzar una prueba sería borrar o adelantar
+  a mano la fecha de un heartbeat en la base y correr el cron, para ver la alerta sin esperar
+  días).
