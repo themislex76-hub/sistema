@@ -81,6 +81,11 @@ foreach ($documentos as $doc) {
             ':aplicado' => $doc['aviso_ia_aplicado'],
             ':id' => $doc['id'],
         ]);
+        // El resumen copiado también es información nueva para el Informe
+        // Ejecutivo (lee expediente_documentos.ia_resumen) -- sin esto,
+        // un documento sin etapa que llenar nunca quedaba reflejado ahí
+        // (mismo hueco real que en cron_analizar_acuerdos_ia.php).
+        $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $doc['expediente_id']]);
         $copiados++;
         continue;
     }
@@ -225,6 +230,13 @@ foreach ($documentos as $doc) {
         ':id' => $doc['id'],
     ]);
     if ($categoriaSugerida) $sugerenciasCategoria++;
+
+    // Mismo bump que en cron_analizar_acuerdos_ia.php: el resumen en sí ya
+    // es novedad para el Informe Ejecutivo, aunque no se haya llenado
+    // ninguna etapa sola.
+    if (!$aplicado) {
+        $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $doc['expediente_id']]);
+    }
 }
 
 echo count($documentos) . " documento(s) en el lote, " . $analizados . " analizado(s) con IA, "

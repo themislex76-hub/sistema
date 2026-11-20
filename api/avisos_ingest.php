@@ -58,6 +58,12 @@ $stmt->execute([
 
 $avisoId = (int)$pdo->lastInsertId();
 
+// Mismo motivo que documentos_upload.php/documentos_subir_robot.php: un
+// aviso de boletín nuevo es justo el tipo de novedad que el Informe
+// Ejecutivo debe reflejar -- sin esto, actualizado_en nunca se movía
+// cuando un robot reportaba algo, así que el informe nunca se enteraba.
+$pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $expedienteId]);
+
 // Avisa por push al Administrador y al/los abogado(s) asignados al
 // expediente -- mismo criterio de "quién debe enterarse" que ya usa
 // jurisprudencia_cruce_helpers.php, pero aquí siempre se incluye al

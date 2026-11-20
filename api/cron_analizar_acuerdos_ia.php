@@ -180,6 +180,17 @@ foreach ($avisos as $aviso) {
         ':aplicado' => $aplicado ? 1 : 0,
         ':id' => $aviso['id'],
     ]);
+
+    // Bumpea actualizado_en aunque NO se haya llenado ninguna etapa sola --
+    // el resumen de la IA en sí ya es información nueva para el Informe
+    // Ejecutivo (que lee avisos_boletin.ia_resumen), y antes solo se
+    // bumpeaba cuando $aplicado era true, así que un acuerdo real sin
+    // etapa que llenar (la mayoría) nunca llegaba a verse reflejado ahí
+    // (caso real 20 nov 2026, Exp. 463/2026: Anel Yadira Hernández
+    // Zaragoza -- sus 4 acuerdos nunca aparecieron en el Informe Ejecutivo).
+    if (!$aplicado) {
+        $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $aviso['expediente_id']]);
+    }
 }
 
 echo count($avisos) . " aviso(s) en el lote, " . $analizados . " analizado(s), "

@@ -1,5 +1,50 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Documentos/avisos de boletín nuevos no bumpeaban `actualizado_en` -- el Informe Ejecutivo nunca se enteraba (20 nov 2026, conversación "Bot")
+Reportado por el usuario viendo el expediente **Anel Yadira Hernández Zaragoza vs Banco Nacional
+de México, Exp. 463/2026**: sus 4 PDFs de acuerdo (subidos el 19-nov por el robot Federal,
+confirmados reales y legibles ese mismo día) no mostraban ningún resumen de IA en la pestaña
+"Documentos" ni se reflejaban en el "Informe del juicio". Pregunta explícita: "porque la ia no ha
+actualizado el contenido de los documentos y porque no los ha mostrado en el resumen ejecutivo".
+- **Causa real, mismo patrón ya repetido varias veces en este archivo** (notas de seguimiento el
+  13-nov, botón "Guardar pendientes" el 12-nov): **ningún camino que crea un documento o aviso
+  nuevo bumpeaba `expedientes.actualizado_en`** -- ni la subida manual del abogado
+  (`documentos_upload.php`), ni la subida de un robot (`documentos_subir_robot.php`), ni la
+  creación del aviso (`avisos_ingest.php`). El Informe Ejecutivo (`expediente_resumen_
+  ejecutivo.php`) solo se regenera si `actualizado_en` es más reciente que
+  `resumen_ejecutivo_generado_en` -- sin este bump, por más documentos/avisos nuevos que llegaran,
+  el informe seguía mostrando el mismo texto viejo para siempre.
+- **Segundo hueco encontrado en los 2 crons que SÍ leen el contenido con IA**
+  (`cron_analizar_acuerdos_ia.php`/`cron_analizar_documentos_ia.php`): solo bumpeaban
+  `actualizado_en` cuando el resultado llenaba una etapa SOLA (`$aplicado = true`) -- pero la
+  mayoría de los acuerdos (ej. una réplica de contestación, un acuerdo de trámite sin fecha
+  nueva que capturar) no llenan ninguna etapa, así que aunque la IA sí generaba su resumen
+  (`ia_resumen`, visible en la tarjeta del aviso), ese resumen tampoco avisaba al Informe
+  Ejecutivo que había algo nuevo que leer -- exactamente el caso real del expediente 463/2026:
+  sus 4 acuerdos SÍ tenían PDF válido y probablemente ya fueron analizados por el cron, pero sin
+  ninguna etapa nueva que llenar el bump nunca ocurrió.
+- **Corregido, 5 archivos**: `documentos_upload.php` y `documentos_subir_robot.php` ahora
+  bumpean `actualizado_en` justo después de insertar el documento; `avisos_ingest.php` lo
+  bumpea tras insertar un aviso nuevo (no duplicado); `cron_analizar_acuerdos_ia.php` y
+  `cron_analizar_documentos_ia.php` ahora bumpean también cuando `$aplicado` es `false` (el
+  resumen de la IA en sí ya es información nueva, no solo cuando se llena una etapa) -- incluida
+  la rama de "copiado" (cuando un documento ya viene de un robot de boletín y solo se copia el
+  resultado en vez de volver a mandarlo a la IA).
+- `php -l` limpio en los 5 archivos. Sin cambios de base de datos, sin tocar `app.js`/
+  `mergeTags()` -- no aplica `verificar_tags.js` ni `pruebas_bot.php` (no es lógica del bot de
+  WhatsApp). Se revisaron las otras 2 ramas (`claude/hola-i5mb6q`, `claude/magical-albattani-
+  ephif7`) antes de tocar estos archivos -- ninguna tenía commits sin fusionar sobre ellos.
+- **Sin probar en vivo todavía** -- falta que el usuario suba los 5 archivos
+  (`api/documentos_upload.php`, `api/documentos_subir_robot.php`, `api/avisos_ingest.php`,
+  `api/cron_analizar_acuerdos_ia.php`, `api/cron_analizar_documentos_ia.php`) y confirme: (1)
+  que el expediente 463/2026 (o cualquier otro con documentos/avisos recientes) ya muestre el
+  resumen de IA debajo de cada archivo en "Documentos" -- si sigue sin aparecer después de subir
+  esto, sospechar que el Cron Job de `cron_analizar_acuerdos_ia.php`/`cron_analizar_documentos_
+  ia.php` en Ferozo no está corriendo cada 15-30 min como se esperaba (confirmar en el panel de
+  Tareas programadas); (2) que, una vez subidos los archivos y con documentos ya analizados,
+  darle "Actualizar" en "Informe del juicio" de ese expediente refleje el contenido real de los
+  4 acuerdos (ej. la admisión de Banamex y las réplicas de contestación).
+
 ## Robot Federal: clic a "Vista Global" sin reintentos tiraba la sesión completa (19 nov 2026, conversación "Bot")
 Reportado por el usuario: el expediente **Anel Yadira Hernández Zaragoza vs Banco Nacional de
 México, Exp. 463/2026** (Tribunal ya bien capturado -- Decimoprimer Tribunal Laboral Federal --
