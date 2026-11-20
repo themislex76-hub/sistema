@@ -4033,10 +4033,13 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
   vez de simplemente no aparecer).
 - `php -l`/`node --check` limpios en los 4 archivos PHP nuevos, los 5 robots y `assets/app.js`.
   Sin tocar `mergeTags()`/tags de demanda -- no aplica `verificar_tags.js`/`pruebas_bot.php`.
-- **Pendiente**: que el usuario corra la migración 074, suba los 4 archivos PHP nuevos, los 5
-  robots (los `.js` sueltos, no van en el `.zip` de `assets/app.js`/`sw.js`), `assets/app.js`,
-  `index.html` y `sw.js`, y dé de alta `api/cron_verificar_robots.php` en el Cron Job de Ferozo
-  (1 vez al día). Falta confirmar en vivo: que el panel "Robots de monitoreo" se llene solo tras
-  la siguiente corrida de cada robot, y que el cron de verificación mande push si alguno se
-  atrasa (forzar una prueba sería borrar o adelantar a mano la fecha de un heartbeat en la base y
-  correr el cron, para ver la alerta sin esperar días).
+- **Confirmado (20 nov 2026)**: migración 074 corrida en la base correcta (`c1361311_exp`,
+  confirmado con captura real de phpMyAdmin -- tabla `robot_heartbeats` creada limpio), los 4
+  archivos PHP nuevos + los 5 robots (esta vez entregados en un solo `.zip` a petición explícita
+  del usuario, excepción puntual a la convención de mandarlos sueltos) + `assets/app.js`/
+  `index.html`/`sw.js` ya subidos, y `api/cron_verificar_robots.php` ya dado de alta como Cron
+  Job diario en Ferozo. **Pendiente real todavía**: confirmar en vivo que el panel "Robots de
+  monitoreo" en Equipo se llene solo tras la siguiente corrida programada de cada robot (CDMX/
+  Buzón CDMX 6am, Federal 6:40am, Edomex 9:30am, Jurisprudencia lunes 7am), y que el cron de
+  verificación mande push si alguno se atrasa (forzar una prueba sería borrar o adelantar a mano
+  la fecha de un heartbeat en la base y correr el cron, para ver la alerta sin esperar días).
