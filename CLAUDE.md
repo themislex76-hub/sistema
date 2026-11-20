@@ -3993,9 +3993,11 @@ vivo con `schtasks` (PowerShell como administrador) en su máquina de Windows.
 - Sin cambios de código en este repo -- los `.bat` ya estaban bien ahí desde siempre, el bug vivía
   solo en la carpeta local de la máquina del usuario (archivo borrado/perdido fuera de git). No
   aplica `php -l`/`node --check`/`verificar_tags.js`/`pruebas_bot.php`.
-- **Pendiente**: confirmar más tarde el mismo día (20-nov, después de las 9:30 am) que las 3 tareas
-  programadas ya muestren "Último resultado: 0" por sí solas (se dejó un recordatorio programado en
-  esta misma sesión para revisarlo con el usuario). Si en el futuro un robot "deja de avisar" sin
-  ningún error de código visible, revisar PRIMERO si su `run_diario.bat` sigue existiendo en la
-  carpeta local antes de sospechar de un bug nuevo -- mismo patrón de diagnóstico barato ya
-  documentado para otros huecos de este archivo (migración no corrida, archivo no resubido).
+- **✅ CONFIRMADO FUNCIONANDO DE PUNTA A PUNTA EN AUTOMÁTICO (20 nov 2026)**: tras pasar las 3
+  horas programadas de hoy (6:00/6:40/9:30 am), el usuario revisó de nuevo con `schtasks` y los 3
+  mostraron **"Último resultado: 0"** con fecha de hoy -- las corridas AUTOMÁTICAS (no manuales)
+  del Programador de tareas de Windows ya funcionan solas los 3. Se da por cerrada esta
+  investigación. Si en el futuro un robot "deja de avisar" sin ningún error de código visible,
+  revisar PRIMERO si su `run_diario.bat` sigue existiendo en la carpeta local antes de sospechar
+  de un bug nuevo -- mismo patrón de diagnóstico barato ya documentado para otros huecos de este
+  archivo (migración no corrida, archivo no resubido).
