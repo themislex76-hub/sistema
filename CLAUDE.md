@@ -88,33 +88,43 @@ actualizado el contenido de los documentos y porque no los ha mostrado en el res
     octubre de 2026**. Las 3 las capturó el usuario a mano en "Etapas del juicio" para desbloquear
     el expediente de inmediato.
   - **Corregido (20 nov 2026), pedido explícito del usuario: "necesito que arregles que si lo
-    lea y que lo llene solo para que no ocurra nuevamente... el sistema debe ser autonomo"** --
-    reforzado el prompt de `ia_analizar_acuerdo_boletin()` con el patrón real encontrado hoy:
-    nuevo párrafo que le explica a la IA que una CERTIFICACIÓN del Secretario Instructor ("CERTIFICO:
-    a)... b) El escrito de contestación/réplica... se presentó el [fecha]...", o "la notificación
-    fue personal el [fecha]... surtió efectos...") SÍ cuenta como confirmación literal de que el
-    acto procesal ya ocurrió (no solo un "ACUERDO" con redacción de "el Tribunal admite/ordena...),
-    que debe usar la fecha de PRESENTACIÓN/NOTIFICACIÓN del acto (no la fecha en que el Secretario
-    firmó la certificación, que puede ser distinta), y que debe ignorar por completo el bloque
-    largo de metadatos de firma electrónica/certificado criptográfico ("EVIDENCIA CRIPTOGRÁFICA",
-    hashes) que estos documentos suelen traer al final -- la fecha que importa está en el cuerpo
-    del texto, antes de ese bloque.
-  - `php -l` limpio en `api/ia_helpers.php`. Sin cambios de base de datos, sin tocar `app.js` --
-    no aplica cache-bust ni `verificar_tags.js` (no toca `mergeTags()`). No aplica
-    `pruebas_bot.php` tampoco -- esa suite cubre el bot de WhatsApp (`ia_responder_whatsapp()`),
-    no `ia_analizar_acuerdo_boletin()` (usada por los crons de documentos/acuerdos de boletín),
-    que no tiene suite de pruebas propia.
-  - **Sin confirmar en vivo todavía** -- falta que el usuario suba `api/ia_helpers.php` y se dé
-    un caso real nuevo (otra constancia de este tipo, en cualquier expediente) donde la etapa
-    correspondiente quede llenada sola en vez de en blanco. No se puede forzar una confirmación
-    con los 2 documentos de hoy (Acuerdo_No_2/No_4 de 463/2026) porque ya están
-    `ia_analizado_en` marcados y las 3 etapas ya se capturaron a mano -- si se quisiera
-    confirmar con ESTOS 2 documentos en concreto, habría que resetear a mano
-    `ia_analizado_en = NULL` para esos 2 ids en `expediente_documentos` (SQL en phpMyAdmin) y
-    volver a correr `cron_analizar_documentos_ia.php`, pero como las etapas ya están capturadas
-    el candado de "nunca sobrescribe una fecha que ya tiene" no aplicaría nada aunque la IA
-    ahora sí las reconociera -- solo serviría para CONFIRMAR el arreglo, no para que aporte nada
-    nuevo a este expediente en particular. Mejor esperar a que aparezca un caso real distinto.
+    lea y que lo llene solo para que no ocurra nuevamente... el sistema debe ser autonomo"**.
+    Primer intento: reforzar el prompt de `ia_analizar_acuerdo_boletin()` con el patrón de la
+    constancia ("CERTIFICO: a)... b) El escrito de contestación/réplica... se presentó el
+    [fecha]...", ignorar el bloque de metadatos de firma electrónica al final). **Confirmado en
+    vivo que SÍ funcionó para "Contestación recibida" (22-sept) y "Objeciones y réplica"
+    (8-oct)** -- resetear `ia_analizado_en` de esos 2 documentos en phpMyAdmin y volver a correr
+    `cron_analizar_documentos_ia.php` dio "2 etapa(s) llenada(s) sola(s)", ambas correctas.
+  - **Pero faltó "Emplazamiento"** -- causa real encontrada revisando el dato crudo en
+    phpMyAdmin (`SELECT ... FROM expediente_documentos`): el Acuerdo_No_2 (constancia) en
+    realidad confirma DOS eventos distintos con fecha propia en el MISMO texto -- parte (a)
+    certifica el emplazamiento a Banamex (notificación personal 27-ago-2026) y parte (b)
+    certifica la contestación (presentada 22-sept-2026) -- pero `ia_analizar_acuerdo_boletin()`
+    (y los 2 crons que la llaman) solo estaban diseñados para devolver/aplicar UNA sola
+    etapa+fecha por documento, así que se quedó solo con la de "Contestación" (el título del
+    documento) e ignoró la del emplazamiento, aunque estuviera en el mismo texto.
+  - **Corregido de fondo (mismo día, pedido explícito "resuelvelo")**: `ia_analizar_acuerdo_
+    boletin()` ahora puede devolver VARIOS eventos (etapa+fecha) por documento -- el prompt pide
+    una lista repetible ("EVENTO: <etapa> | FECHA: YYYY-MM-DD o (ninguna)") en vez de un solo
+    par, y el parseo arma un arreglo `eventos_adicionales`. Nueva función compartida
+    `ia_aplicar_etapa_sugerida()` (`api/expediente_helpers.php`) saca a un solo lugar la lógica
+    de candados que antes se repetía completa en los 2 crons (nunca sobrescribe fecha ya
+    capturada, nunca aplica fecha futura como "ya celebrada" -- redirige a "fecha agendada" o
+    rechaza --, nunca rompe el orden cronológico, registra en `log_historial`, bumpea
+    `actualizado_en`) -- así un mismo documento puede aplicar varias etapas sin duplicar ese
+    bloque por cada una. `cron_analizar_acuerdos_ia.php`/`cron_analizar_documentos_ia.php`
+    reescritos para iterar sobre TODOS los eventos detectados (el principal + los adicionales),
+    conservando su diferencia de siempre (el de boletín cae a la fecha de publicación como
+    respaldo si no hay fecha literal; el de documentos nunca usa respaldo).
+  - `php -l` limpio en los 4 archivos tocados (`api/ia_helpers.php`, `api/expediente_helpers.php`,
+    `api/cron_analizar_acuerdos_ia.php`, `api/cron_analizar_documentos_ia.php`). Sin cambios de
+    base de datos, sin tocar `app.js` -- no aplica cache-bust ni `verificar_tags.js`. No aplica
+    `pruebas_bot.php` tampoco -- esa suite cubre el bot de WhatsApp, no estas funciones.
+  - **Sin probar en vivo todavía** este 2º arreglo (el de múltiples eventos por documento) --
+    falta que el usuario suba los 4 archivos y confirme con un caso real (puede repetir el mismo
+    truco de resetear `ia_analizado_en` del Acuerdo_No_2 -- id a confirmar de nuevo tras el
+    reset anterior -- y volver a correr `cron_analizar_documentos_ia.php`) que esta vez SÍ salen
+    2 etapas aplicadas de ese único documento (emplazamiento Y contestación), no solo una.
 
 ## Robot Federal: clic a "Vista Global" sin reintentos tiraba la sesión completa (19 nov 2026, conversación "Bot")
 Reportado por el usuario: el expediente **Anel Yadira Hernández Zaragoza vs Banco Nacional de
