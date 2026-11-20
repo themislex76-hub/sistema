@@ -23,6 +23,9 @@ const FRASES=[
  {l1:'¿TU PATRÓN NO TE PAGA?',l2:'AQUÍ TE ORIENTO',pill:'ASESORÍA GRATIS'},
  {l1:'ABOGADO LABORAL',l2:'RESPONDE EN VIVO',pill:'ORIENTACIÓN GRATIS'},
  {l1:'DEFIENDE TU TRABAJO',l2:'RESOLVEMOS TUS DUDAS',pill:'EN VIVO Y GRATIS'},
+ {l1:'TRABAJADOR, NO ESTÁS SOLO',l2:'TE ORIENTO EN VIVO',pill:'ASESORÍA GRATIS'},
+ {l1:'PREGUNTA SIN PENA',l2:'TE RESPONDO EN VIVO',pill:'ORIENTACIÓN GRATIS'},
+ {l1:'ANTES DE FIRMAR',l2:'ESCUCHA ESTO',pill:'ASESORÍA GRATIS'},
 ];
 const PREGUNTAS=[
  ['¿Me pueden correr sin aviso?','¿Cuánto me toca?','¿Y mi aguinaldo?','¿Firmo mi renuncia?'],
