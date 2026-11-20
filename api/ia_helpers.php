@@ -4103,7 +4103,11 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
         . 'certificación que contenga, no solo el acuerdo/resolución principal) y busca CADA etapa de este '
         . 'vocabulario que el documento represente con claridad -- puede haber MÁS DE UNA en el mismo documento '
         . '(ej. una constancia que certifica tanto el emplazamiento como la contestación, cada una con su propia '
-        . 'fecha) -- repórtalas todas, no solo la primera o la más obvia. Vocabulario completo: $vocabularioEtapas. '
+        . 'fecha) -- repórtalas todas, no solo la primera o la más obvia, INCLUSO si alguna ya parece "vieja" o '
+        . 'superada por una etapa posterior que también detectes en el mismo documento -- nunca omitas una '
+        . 'confirmación real solo porque otra etapa más reciente también calce. Vocabulario completo (usa la CLAVE '
+        . 'EXACTA tal cual aparece aquí, nunca la abrevies -- ej. "contestacion_recibida", NUNCA solo '
+        . "\"contestacion\"): $vocabularioEtapas. "
         . 'Para que una etapa cuente, debe o bien coincidir con la "Siguiente etapa esperada" que te di (o ser '
         . 'razonable que sea la que sigue), o el documento debe CONFIRMAR explícitamente que ya ocurrió (ver reglas '
         . 'abajo). Si el documento es un trámite intermedio que no corresponde a ninguna de esas etapas (ej. solo '
@@ -4223,11 +4227,24 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
     // vocabulario y cualquier duplicado de la misma etapa (se queda con la
     // primera que mencione, prefiriendo quedarse con una que sí traiga
     // fecha si la hay).
+    //
+    // Confirmado real (20 nov 2026): la IA a veces abrevia la clave (dio
+    // "contestacion" en vez de "contestacion_recibida") y el match exacto
+    // la descartaba en silencio. Si la clave abreviada es inicio de
+    // EXACTAMENTE una sola clave real del vocabulario (nunca si hay 2+
+    // candidatas, ej. "conciliacion"/"demanda"/"audiencia" -- ahí sería
+    // ambiguo y se descarta igual que antes), se corrige sola.
+    $corregirClaveAbreviada = function (string $clave) use ($ordenEtapas): ?string {
+        if (in_array($clave, $ordenEtapas, true)) return $clave;
+        $candidatas = array_values(array_filter($ordenEtapas, fn($k) => str_starts_with($k, $clave . '_')));
+        return count($candidatas) === 1 ? $candidatas[0] : null;
+    };
+
     $eventos = [];
     if (preg_match_all('/EVENTO:\s*([a-z_]+)\s*\|\s*FECHA:\s*(\d{4}-\d{2}-\d{2}|\(ninguna\))/i', $texto, $ms, PREG_SET_ORDER)) {
         foreach ($ms as $m) {
-            $etapaKey = strtolower($m[1]);
-            if (!in_array($etapaKey, $ordenEtapas, true)) continue;
+            $etapaKey = $corregirClaveAbreviada(strtolower($m[1]));
+            if ($etapaKey === null) continue;
             $fecha = strtolower($m[2]) === '(ninguna)' ? null : $m[2];
             $yaEsta = false;
             foreach ($eventos as &$ev) {
