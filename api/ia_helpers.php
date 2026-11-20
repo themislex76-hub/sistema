@@ -4118,7 +4118,11 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
         . 'en que el ACTO mismo ocurrió (cuándo se presentó/notificó/surtió efectos -- NO la fecha en que el '
         . 'Tribunal/Secretario dictó o firmó el documento que lo certifica, si son distintas), dala en formato '
         . 'YYYY-MM-DD; si no hay una fecha así de explícita, o tendrías que calcularla/inferirla, escribe '
-        . '(ninguna) -- NUNCA calcules ni inventes una fecha.'
+        . '(ninguna) -- NUNCA calcules ni inventes una fecha. Busca la fecha de CADA evento por separado, releyendo '
+        . 'el documento completo para ESE evento en particular -- no te quedes con "(ninguna)" solo porque ya '
+        . 'encontraste la fecha de otro evento más visible; la fecha de un evento puede venir en una TABLA (ej. '
+        . 'columnas "Notificación / Surtió efectos / Transcurrió término", donde "Notificación Personal [fecha]" es '
+        . 'la fecha en que se notificó/emplazó) en vez de en una oración narrativa -- cuenta igual de literal.'
         . "\n"
         . 'Regla de confirmación: una ORDEN o instrucción de que algo se haga a futuro ("se ordena emplazar", '
         . '"concediéndole 15 días para contestar") NUNCA confirma por sí sola que el acto ya ocurrió -- solo indica '
