@@ -34,16 +34,35 @@ actualizado el contenido de los documentos y porque no los ha mostrado en el res
   `mergeTags()` -- no aplica `verificar_tags.js` ni `pruebas_bot.php` (no es lógica del bot de
   WhatsApp). Se revisaron las otras 2 ramas (`claude/hola-i5mb6q`, `claude/magical-albattani-
   ephif7`) antes de tocar estos archivos -- ninguna tenía commits sin fusionar sobre ellos.
-- **Sin probar en vivo todavía** -- falta que el usuario suba los 5 archivos
-  (`api/documentos_upload.php`, `api/documentos_subir_robot.php`, `api/avisos_ingest.php`,
-  `api/cron_analizar_acuerdos_ia.php`, `api/cron_analizar_documentos_ia.php`) y confirme: (1)
-  que el expediente 463/2026 (o cualquier otro con documentos/avisos recientes) ya muestre el
-  resumen de IA debajo de cada archivo en "Documentos" -- si sigue sin aparecer después de subir
-  esto, sospechar que el Cron Job de `cron_analizar_acuerdos_ia.php`/`cron_analizar_documentos_
-  ia.php` en Ferozo no está corriendo cada 15-30 min como se esperaba (confirmar en el panel de
-  Tareas programadas); (2) que, una vez subidos los archivos y con documentos ya analizados,
-  darle "Actualizar" en "Informe del juicio" de ese expediente refleje el contenido real de los
-  4 acuerdos (ej. la admisión de Banamex y las réplicas de contestación).
+- **Causa real de fondo encontrada al probar en vivo (20 nov 2026)**: al correr
+  `cron_analizar_documentos_ia.php` a mano (`documentos` tab de 463/2026 seguía sin ningún
+  resumen), tronó con `HTTP ERROR 500` sin ningún `error_log` visible en el hosting -- se
+  activó `display_errors` temporalmente en el script para ver la causa real, confirmando
+  `PDOException: SQLSTATE[42S22]: Column not found: 1054 Unknown column 'ia_categoria_sugerida'`.
+  **La migración 065 (`065_ia_sugiere_categoria_documento.sql`) nunca llegó de verdad a la base
+  de datos en vivo** (`c1361311_exp`), aunque este mismo archivo decía desde el 10-11 nov 2026
+  que ya estaba corrida -- mismo patrón de confusión ya documentado varias veces aquí (base
+  equivocada / entrega incompleta). Como esta columna la espera el `UPDATE` de CADA documento
+  que el cron analiza (no solo los que llenan una etapa), el cron llevaba probablemente DÍAS o
+  semanas tronando en silencio en cada corrida programada -- nadie lo notó porque el Cron Job
+  no manda ningún aviso de error, solo deja de avanzar.
+  - **Corregido**: el usuario corrió el `ALTER TABLE expediente_documentos ADD COLUMN
+    ia_categoria_sugerida VARCHAR(40) NULL AFTER ia_analizado_en;` directo en phpMyAdmin,
+    confirmado en la base correcta. Se quitó el diagnóstico temporal de `display_errors` del
+    script (ya cumplió su función).
+  - **Confirmado funcionando en vivo tras la corrección**: primera corrida real reportó "15
+    documento(s) en el lote, 15 analizado(s) con IA... 0 fallido(s)" -- sin tronar. Como el cron
+    llevaba tiempo sin poder completar ni un solo documento, hay un backlog acumulado en TODO el
+    sistema (no solo en 463/2026) -- hace falta correrlo varias veces más (o esperar a que el
+    Cron Job programado lo vaya vaciando solo) hasta que diga "Sin documentos pendientes de
+    analizar", y ahí sí confirmar que el expediente 463/2026 ya muestra el resumen de IA debajo
+    de sus 4 PDFs en "Documentos" y que "Informe del juicio" → "Actualizar" ya refleja su
+    contenido real. **Pendiente de esa confirmación final del usuario.**
+  - Lección para la próxima vez que un cron de este sistema parezca "no hacer nada" en corridas
+    sucesivas sin ningún error visible: sospechar primero de una migración que el archivo dice
+    "ya corrida" pero nunca llegó a la base correcta -- el patrón de `display_errors` temporal
+    (activarlo solo en el script sospechoso, nunca dejarlo puesto) es la forma más rápida de
+    confirmarlo cuando el hosting no deja ver un `error_log` físico.
 
 ## Robot Federal: clic a "Vista Global" sin reintentos tiraba la sesión completa (19 nov 2026, conversación "Bot")
 Reportado por el usuario: el expediente **Anel Yadira Hernández Zaragoza vs Banco Nacional de
