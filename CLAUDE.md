@@ -87,13 +87,34 @@ actualizado el contenido de los documentos y porque no los ha mostrado en el res
     de septiembre de 2026** ("en tiempo"); Objeciones y réplica = firma electrónica del **8 de
     octubre de 2026**. Las 3 las capturó el usuario a mano en "Etapas del juicio" para desbloquear
     el expediente de inmediato.
-  - **Pendiente real para la próxima vez que se toque `ia_analizar_acuerdo_boletin()`
-    (`api/ia_helpers.php`)**: reforzar el prompt para reconocer este patrón de "constancia de
-    transcurso de plazo"/certificación del Secretario Instructor como confirmación válida del
-    evento procesal que certifica (igual criterio que ya se usó para distinguir "orden" de "ya se
-    hizo" con el caso de Zeltzin Monserrat) -- si vuelve a aparecer un caso real con este mismo
-    patrón (una constancia de este tipo que el sistema no reconozca), juntar 2-3 ejemplos reales
-    antes de tocar el prompt a ciegas.
+  - **Corregido (20 nov 2026), pedido explícito del usuario: "necesito que arregles que si lo
+    lea y que lo llene solo para que no ocurra nuevamente... el sistema debe ser autonomo"** --
+    reforzado el prompt de `ia_analizar_acuerdo_boletin()` con el patrón real encontrado hoy:
+    nuevo párrafo que le explica a la IA que una CERTIFICACIÓN del Secretario Instructor ("CERTIFICO:
+    a)... b) El escrito de contestación/réplica... se presentó el [fecha]...", o "la notificación
+    fue personal el [fecha]... surtió efectos...") SÍ cuenta como confirmación literal de que el
+    acto procesal ya ocurrió (no solo un "ACUERDO" con redacción de "el Tribunal admite/ordena...),
+    que debe usar la fecha de PRESENTACIÓN/NOTIFICACIÓN del acto (no la fecha en que el Secretario
+    firmó la certificación, que puede ser distinta), y que debe ignorar por completo el bloque
+    largo de metadatos de firma electrónica/certificado criptográfico ("EVIDENCIA CRIPTOGRÁFICA",
+    hashes) que estos documentos suelen traer al final -- la fecha que importa está en el cuerpo
+    del texto, antes de ese bloque.
+  - `php -l` limpio en `api/ia_helpers.php`. Sin cambios de base de datos, sin tocar `app.js` --
+    no aplica cache-bust ni `verificar_tags.js` (no toca `mergeTags()`). No aplica
+    `pruebas_bot.php` tampoco -- esa suite cubre el bot de WhatsApp (`ia_responder_whatsapp()`),
+    no `ia_analizar_acuerdo_boletin()` (usada por los crons de documentos/acuerdos de boletín),
+    que no tiene suite de pruebas propia.
+  - **Sin confirmar en vivo todavía** -- falta que el usuario suba `api/ia_helpers.php` y se dé
+    un caso real nuevo (otra constancia de este tipo, en cualquier expediente) donde la etapa
+    correspondiente quede llenada sola en vez de en blanco. No se puede forzar una confirmación
+    con los 2 documentos de hoy (Acuerdo_No_2/No_4 de 463/2026) porque ya están
+    `ia_analizado_en` marcados y las 3 etapas ya se capturaron a mano -- si se quisiera
+    confirmar con ESTOS 2 documentos en concreto, habría que resetear a mano
+    `ia_analizado_en = NULL` para esos 2 ids en `expediente_documentos` (SQL en phpMyAdmin) y
+    volver a correr `cron_analizar_documentos_ia.php`, pero como las etapas ya están capturadas
+    el candado de "nunca sobrescribe una fecha que ya tiene" no aplicaría nada aunque la IA
+    ahora sí las reconociera -- solo serviría para CONFIRMAR el arreglo, no para que aporte nada
+    nuevo a este expediente en particular. Mejor esperar a que aparezca un caso real distinto.
 
 ## Robot Federal: clic a "Vista Global" sin reintentos tiraba la sesión completa (19 nov 2026, conversación "Bot")
 Reportado por el usuario: el expediente **Anel Yadira Hernández Zaragoza vs Banco Nacional de
