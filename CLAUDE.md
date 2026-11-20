@@ -63,6 +63,37 @@ actualizado el contenido de los documentos y porque no los ha mostrado en el res
     "ya corrida" pero nunca llegó a la base correcta -- el patrón de `display_errors` temporal
     (activarlo solo en el script sospechoso, nunca dejarlo puesto) es la forma más rápida de
     confirmarlo cuando el hosting no deja ver un `error_log` físico.
+  - **Pendiente nuevo encontrado al confirmar el arreglo de arriba (20 nov 2026)**: con
+    `actualizado_en` ya corrigiéndose, el Informe Ejecutivo de 463/2026 sí leyó el contenido real
+    de los 4 acuerdos y narró bien la secuencia (emplazamiento, contestación, réplica, vista para
+    contrarréplica) -- pero "Etapas del juicio" seguía con `Emplazamiento`/`Contestación de
+    demanda recibida`/`Objeciones y réplica` en blanco. Se forzó una corrida a mano de
+    `cron_auditoria_expediente_ia.php` (el que SÍ llena etapas) -- "1 candidato(s), 1
+    auditado(s), 0 etapa(s) llenada(s)". Revisado "Actividad de la IA" (últimos 30 días): **este
+    expediente no aparece NI UNA vez** -- ni aplicado ni rechazado por ningún candado. No es un
+    candado bloqueando algo detectado (como sí pasó con Isabel Torres Arizmendi/Alejandro
+    Hernández en esa misma lista); la IA simplemente nunca reconoció la confirmación al leer esos
+    2 documentos específicos (Acuerdo_No_2 y Acuerdo_No_4, Exp. 463/2026).
+  - **Causa probable (sin confirmar con certeza, pendiente de investigar más si se repite)**:
+    Acuerdo_No_2/No_4 no son un "ACUERDO" clásico del Tribunal (los que sí reconoce bien, ej. "el
+    Tribunal admite...") -- son **constancias/certificaciones del Secretario Instructor** sobre
+    el transcurso de un plazo ("CERTIFICO: a... b. El escrito de contestación... se presentó
+    el..."), con tabla de cómputo de días inhábiles, y terminan con un bloque largo (~60 líneas)
+    de metadatos de firma electrónica/certificado criptográfico que puede estar diluyendo la
+    atención del modelo sobre la fecha real, enterrada en medio de un párrafo de certificación en
+    vez de un encabezado claro. El texto del PDF SÍ trae las 3 fechas literales e inequívocas
+    (confirmado leyendo el documento completo): Emplazamiento = notificación **personal el 27 de
+    agosto de 2026** (ahí "surtió efectos"); Contestación recibida = escrito presentado el **22
+    de septiembre de 2026** ("en tiempo"); Objeciones y réplica = firma electrónica del **8 de
+    octubre de 2026**. Las 3 las capturó el usuario a mano en "Etapas del juicio" para desbloquear
+    el expediente de inmediato.
+  - **Pendiente real para la próxima vez que se toque `ia_analizar_acuerdo_boletin()`
+    (`api/ia_helpers.php`)**: reforzar el prompt para reconocer este patrón de "constancia de
+    transcurso de plazo"/certificación del Secretario Instructor como confirmación válida del
+    evento procesal que certifica (igual criterio que ya se usó para distinguir "orden" de "ya se
+    hizo" con el caso de Zeltzin Monserrat) -- si vuelve a aparecer un caso real con este mismo
+    patrón (una constancia de este tipo que el sistema no reconozca), juntar 2-3 ejemplos reales
+    antes de tocar el prompt a ciegas.
 
 ## Robot Federal: clic a "Vista Global" sin reintentos tiraba la sesión completa (19 nov 2026, conversación "Bot")
 Reportado por el usuario: el expediente **Anel Yadira Hernández Zaragoza vs Banco Nacional de
