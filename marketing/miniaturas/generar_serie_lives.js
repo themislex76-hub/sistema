@@ -26,6 +26,8 @@ const FRASES=[
  {l1:'TRABAJADOR, NO ESTÁS SOLO',l2:'TE ORIENTO EN VIVO',pill:'ASESORÍA GRATIS'},
  {l1:'PREGUNTA SIN PENA',l2:'TE RESPONDO EN VIVO',pill:'ORIENTACIÓN GRATIS'},
  {l1:'ANTES DE FIRMAR',l2:'ESCUCHA ESTO',pill:'ASESORÍA GRATIS'},
+ {l1:'NO TE DEJES',l2:'CONOCE LO QUE TE TOCA',pill:'ASESORÍA GRATIS'},
+ {l1:'¿DUDAS CON TU TRABAJO?',l2:'RESUÉLVELAS AQUÍ',pill:'ORIENTACIÓN GRATIS'},
 ];
 const PREGUNTAS=[
  ['¿Me pueden correr sin aviso?','¿Cuánto me toca?','¿Y mi aguinaldo?','¿Firmo mi renuncia?'],
