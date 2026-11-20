@@ -116,15 +116,41 @@ actualizado el contenido de los documentos y porque no los ha mostrado en el res
     reescritos para iterar sobre TODOS los eventos detectados (el principal + los adicionales),
     conservando su diferencia de siempre (el de boletín cae a la fecha de publicación como
     respaldo si no hay fecha literal; el de documentos nunca usa respaldo).
+  - **3 vueltas más hasta cerrarlo de verdad, con log de diagnóstico temporal
+    (`ia_analizar_debug.log`, ya quitado) para ver la respuesta cruda de la IA en cada intento**:
+    1. Primera corrida del arreglo de "varios eventos" dio 0 etapas llenadas -- el log mostró que
+       la IA respondió `EVENTO: contestacion | FECHA: 2026-09-22` (sin el sufijo `_recibida`) --
+       mi validación exacta (`in_array` contra el vocabulario) descartaba en silencio cualquier
+       clave que no calzara letra por letra, así que ni siquiera la contestación (que ya tenía
+       fecha capturada, de cualquier forma) se reconocía, y el emplazamiento ni se mencionó.
+       **Corregido**: nueva normalización en el parseo -- si la clave que da la IA es un prefijo
+       único de EXACTAMENTE una clave real del vocabulario (nunca si hay 2+ candidatas, ej.
+       "conciliacion"/"demanda"/"audiencia", ahí se sigue descartando), se corrige sola. Reforzado
+       también el prompt para pedir la clave exacta sin abreviar.
+    2. Con eso ya detectó bien `emplazamiento` como etapa, pero con `FECHA: (ninguna)` -- el
+       documento SÍ trae la fecha (27-ago-2026), pero en una TABLA de cómputo de plazo
+       ("Notificación Personal 27 de agosto de 2026..."), no en una oración narrativa. Reforzado
+       el prompt para buscar la fecha de cada evento por separado y reconocer una tabla como
+       fuente igual de literal que una oración.
+    3. Seguía en `(ninguna)` -- causa real: el documento menciona el emplazamiento DOS VECES
+       distintas (la tabla CON fecha, y al final "se agrega la constancia de emplazamiento con
+       folio SIGE 7325" SIN fecha) -- la IA se quedaba con la segunda mención. Reforzado el
+       prompt explícitamente: un número de folio nunca es una fecha, usar siempre la mención que
+       sí trae fecha exacta si el mismo evento aparece más de una vez.
+  - **✅ CONFIRMADO FUNCIONANDO DE PUNTA A PUNTA (20 nov 2026)**: tras el 3er refuerzo, la corrida
+    dio **"1 etapa(s) llenada(s) sola(s)"** -- "Emplazamiento a la demandada realizado" quedó con
+    `27/08/2026`, confirmado por el usuario viendo "Etapas del juicio". Con esto, las 3 etapas que
+    motivaron toda esta investigación (emplazamiento, contestación, objeciones y réplica) del
+    Exp. 463/2026 quedan confirmadas llenándose solas a partir de un único documento con eventos
+    múltiples -- el pedido explícito del usuario ("el sistema debe ser autosuficiente") se da por
+    cumplido para este caso real. Se quitó el log de diagnóstico temporal una vez confirmado.
   - `php -l` limpio en los 4 archivos tocados (`api/ia_helpers.php`, `api/expediente_helpers.php`,
     `api/cron_analizar_acuerdos_ia.php`, `api/cron_analizar_documentos_ia.php`). Sin cambios de
     base de datos, sin tocar `app.js` -- no aplica cache-bust ni `verificar_tags.js`. No aplica
     `pruebas_bot.php` tampoco -- esa suite cubre el bot de WhatsApp, no estas funciones.
-  - **Sin probar en vivo todavía** este 2º arreglo (el de múltiples eventos por documento) --
-    falta que el usuario suba los 4 archivos y confirme con un caso real (puede repetir el mismo
-    truco de resetear `ia_analizado_en` del Acuerdo_No_2 -- id a confirmar de nuevo tras el
-    reset anterior -- y volver a correr `cron_analizar_documentos_ia.php`) que esta vez SÍ salen
-    2 etapas aplicadas de ese único documento (emplazamiento Y contestación), no solo una.
+  - **Pendiente**: que el usuario suba la versión final de `api/ia_helpers.php` (sin el log de
+    diagnóstico) -- las últimas 2-3 entregas que mandé mientras se ajustaba el prompt en vivo ya
+    traían el log puesto; esta última ya no.
 
 ## Robot Federal: clic a "Vista Global" sin reintentos tiraba la sesión completa (19 nov 2026, conversación "Bot")
 Reportado por el usuario: el expediente **Anel Yadira Hernández Zaragoza vs Banco Nacional de

@@ -4218,11 +4218,6 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
     $texto = trim($texto);
     if ($texto === '') return null;
 
-    // DIAGNÓSTICO TEMPORAL (20 nov 2026) -- para ver exactamente qué está
-    // respondiendo la IA cuando parece no detectar todos los eventos de un
-    // documento. Quitar en cuanto se confirme/corrija.
-    file_put_contents(__DIR__ . '/ia_analizar_debug.log', date('c') . " | archivo=$nombreArchivo\n$texto\n---\n", FILE_APPEND);
-
     $resumen = null;
     $categoriaSugerida = null;
     if (preg_match('/RESUMEN:\s*(.+?)(?:\n[A-Z]+:|$)/s', $texto, $m)) $resumen = trim($m[1]);
