@@ -76,6 +76,15 @@ $resumenCalculo = function (?string $json): string {
     ] as $k => $etq) {
         if (isset($c[$k]) && is_numeric($c[$k]) && (float)$c[$k] > 0) $partes[] = "$etq $" . number_format((float)$c[$k], 2);
     }
+    // Días de vacaciones y lo que la calculadora descartó (20-nov-2026): sin
+    // esto el revisor no podía saber si el bot sí pasó las vacaciones de
+    // años anteriores y marcaba "solo calculó el último año" a ciegas.
+    if (!empty($c['antiguedad_texto'])) $partes[] = 'antigüedad ' . $c['antiguedad_texto'];
+    if (isset($c['vacaciones_dias'])) $partes[] = 'días de vacaciones contados ' . $c['vacaciones_dias'];
+    foreach (['vacaciones_anteriores_dias_prescritos' => 'días de vacaciones anteriores PRESCRITOS (descartados por la calculadora)',
+              'vacaciones_anteriores_dias_excedentes' => 'días de vacaciones anteriores EXCEDENTES (reportó más de lo que da la ley)'] as $k => $etq) {
+        if (isset($c[$k]) && (float)$c[$k] > 0) $partes[] = "$etq " . $c[$k];
+    }
     return implode(', ', $partes);
 };
 $guardar = $pdo->prepare(

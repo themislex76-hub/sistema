@@ -251,5 +251,18 @@ caso('confirmar: ya pagado en 30 días -> no genera otro cobro', empty($r['ok'])
 $pdo->exec("UPDATE compras_documento_calculo SET pagado_en = '" . date('Y-m-d H:i:s', strtotime('-40 days')) . "' WHERE estado = 'confirmada'");
 caso('compra pagada hace 40 días ya no bloquea una nueva', ia_compra_documento_confirmada_reciente($pdo, 'M', 30) === null);
 
+// ---------------------------------------------------------------------
+echo "16) Revisión del 19-nov: vacaciones de todos los años, accidente de trabajo, revisor calibrado\n";
+$p = IA_SYSTEM_PROMPT;
+caso('pregunta por TODOS los años anteriores y pasa la suma', strpos($p, 'TODOS los años anteriores') !== false && strpos($p, 'SUMA de lo no tomado') !== false);
+caso('antes del primer año: el proporcional cubre todo', strpos($p, 'Si aún NO cumple su primer año') !== false);
+caso('accidente de trabajo: orientación mínima y Art. 685 Ter fracc. III', strpos($p, 'Art. 685 Ter fracc. III') !== false);
+caso('cifras exactas de la herramienta', strpos($p, 'Copia las cifras EXACTAS') !== false);
+$src = file_get_contents($base . '/api/ia_helpers.php');
+caso('revisor: no marca "solo el último año" si no aplica', strpos($src, 'Solo calculó las vacaciones del último año') !== false);
+caso('revisor: tabla del Art. 76 hasta 30 años', strpos($src, 'de 16 a 20 = 26, de 21 a 25 = 28') !== false);
+$cron = file_get_contents($base . '/api/cron_revisar_conversaciones_bot.php');
+caso('revisor recibe días de vacaciones y prescritos de la calculadora', strpos($cron, 'vacaciones_anteriores_dias_prescritos') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

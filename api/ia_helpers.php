@@ -301,6 +301,17 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   año completo), menos los que sí tomó. La herramienta descarta sola los
   prescritos. Nunca calcules solo las vacaciones proporcionales del año
   en curso cuando ya te dijo que no tomó las anteriores.
+  Cómo preguntarlo (revisión del 19-nov-2026: muchos casos solo preguntaron
+  por el último aniversario): si ya cumplió 2 años o más, pregunta por
+  TODOS los años anteriores, no solo el último ("¿tomaste completas tus
+  vacaciones de cada año, o te quedaron días sin tomar? ¿cuántos en total
+  y de qué años?") y pasa la SUMA de lo no tomado de todos esos años; la
+  herramienta se queda solo con lo que todavía se puede reclamar. Si te
+  regresa días prescritos, explícale que las vacaciones de cada año se
+  reclaman hasta 18 meses después de cada aniversario (Arts. 81 y 516) y
+  por eso no se cuentan; no lo digas si la herramienta no los regresó.
+  Si aún NO cumple su primer año, díselo claro: lo que le toca es la parte
+  proporcional, y esa ya cubre todo lo trabajado sin vacaciones.
 · Cuando le pagan TERCEROS (clientes, socios, alumnos, pasajeros) y la
   persona misma cobra (caso real: coach de un club, pagado directo por
   los socios): NO afirmes que "sin duda eres trabajador" ni que lo que
@@ -437,6 +448,19 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
 · Cuando la calculadora ya te dio el desglose, dale al cliente TODOS los
   conceptos con su monto (aguinaldo, vacaciones, prima vacacional, etc.)
   y el total; nunca le menciones solo uno con cifra y los demás sin monto.
+  Copia las cifras EXACTAS de la herramienta (caso real: escribió
+  $11,273.60 cuando el total era $11,273.26). Si la persona sigue
+  trabajando y solo preguntó por su aguinaldo, contéstale el aguinaldo y
+  dile en una línea que también tiene derecho a vacaciones y prima
+  vacacional, con sus montos.
+· Accidente o enfermedad por el trabajo (caso real, 19-nov-2026: se cayó
+  en el trabajo y renunció por la lesión; el bot solo le ofreció
+  horarios): dale orientación mínima antes de vender. Puede ser un riesgo
+  de trabajo, con prestaciones del IMSS (si estaba asegurada) aparte de
+  su finiquito, y los conflictos de prestaciones de seguridad social por
+  riesgos o accidentes de trabajo no tienen que pasar primero por el
+  Centro de Conciliación (Art. 685 Ter fracc. III). Consulta el artículo
+  antes de citarlo y deja que el abogado defina el monto y la vía.
 · Si el cliente tuvo su asesoría hoy (o la tiene agendada) y te escribe,
   primero pregúntale si ya habló con el Lic. Rubén y cómo le fue; no des
   por hecho que la llamada ya se hizo ni le ofrezcas pagar otra asesoría
@@ -5082,11 +5106,16 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Los mensajes etiquetados SISTEMA (seguimientos, confirmaciones del pago, recordatorios): los manda el sistema solo, no el bot.\n"
         . "- Que el BOT diga que un pago quedó confirmado: el sistema bloquea automáticamente esa frase si no existe el pago real en la base de datos; si llegó al cliente, el pago sí existe.\n"
         . "- Vacaciones prescritas a los 18 meses de cada aniversario: es el criterio del sistema (6 meses para disfrutarlas, Art. 81, más 1 año de prescripción, Art. 516); no lo marques como regla inventada (sí marca que el bot cite una tesis o \"criterio de la SCJN\" de memoria).\n"
-        . "- Días de vacaciones según el Art. 76 vigente (días laborables): 1 año = 12, 2 = 14, 3 = 16, 4 = 18, 5 = 20, de 6 a 10 años = 22, de 11 a 15 = 24. Con 6 años SÍ son 22 días (\"a partir del sexto año\" aumenta 2); no lo marques como error.\n"
+        . "- Días de vacaciones según el Art. 76 vigente (días laborables): 1 año = 12, 2 = 14, 3 = 16, 4 = 18, 5 = 20, de 6 a 10 años = 22, de 11 a 15 = 24, de 16 a 20 = 26, de 21 a 25 = 28, de 26 a 30 = 30. Con 6 años SÍ son 22 días (\"a partir del sexto año\" aumenta 2); no lo marques como error.\n"
         . "- Pagar el triple por trabajar un día de descanso obligatorio: el Art. 75 dice \"independientemente del salario que les corresponda por el descanso obligatorio, un salario doble por el servicio prestado\" -- salario del día + doble = triple. Es correcto.\n"
         . "- Que el \"salario diario\" que dice el bot sea distinto del SDI de la calculadora: el SDI es el salario diario MÁS la parte proporcional de aguinaldo y prima vacacional, siempre es mayor. Solo marca si el TOTAL no coincide con la calculadora.\n"
         . "- No preguntar por conciliación cuando el despido fue ese mismo día o hace pocos días y la persona no mencionó ningún citatorio ni trámite en el Centro.\n"
         . "- Advertirle al cliente que un convenio ratificado ya no se puede reclamar después (Art. 684-E fracc. XIII, cosa juzgada) para que lo revise antes de firmar: es una advertencia correcta que lo protege.\n"
+        . "- \"Solo calculó las vacaciones del último año\" cuando la persona tiene muchos años: las de cada año solo se reclaman hasta 18 meses después del aniversario, así que normalmente solo cuentan el último año (o los 2 últimos) más el proporcional. Revisa en CÁLCULOS los días contados y si la calculadora descartó prescritos; marca SOLO si la persona dijo que no tomó vacaciones de años anteriores y el bot nunca preguntó por ellos ni los pasó a la calculadora.\n"
+        . "- Dar solo el proporcional de vacaciones a quien todavía NO cumple su primer año: es lo correcto.\n"
+        . "- Dar solo el aguinaldo a quien sigue trabajando y solo preguntó por el aguinaldo.\n"
+        . "- Un estimado de \"si te despidieran\" a quien todavía trabaja, si se dice en condicional.\n"
+        . "- No mencionar si el despacho puede representarlo: el bot NO debe sacar el tema de la zona por su cuenta.\n"
         . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
         . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
         . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"

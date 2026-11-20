@@ -3241,3 +3241,17 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   de $49 en los últimos 30 días recibe correcciones GRATIS, aunque sea él quien cambie sus datos
   ("para que la gente no se enoje"). Hoy el bot no la manda solo: escala y el abogado la manda con
   `debug_enviar_pdf_calculo.php` (un PDF por modo/tipo; despido justificado = `tipo=justificado`).
+
+## Revisión del 19-nov (120 conversaciones, 27 marcadas = 22.5%) (20 nov 2026, conversación "chats")
+- Subió de 12.5% porque 12 de las 27 eran de VACACIONES DE AÑOS ANTERIORES: el revisor aplicaba el
+  criterio del coach de tenis a ciegas (no veía qué días pasó el bot a la calculadora). Reales: el
+  bot solo preguntaba por el último aniversario. Arreglos: criterio del bot -- preguntar por TODOS
+  los años y pasar la SUMA (la calculadora descarta prescritos); antes del 1er año decir que el
+  proporcional cubre todo; cifras EXACTAS de la herramienta; si solo preguntó por aguinaldo y sigue
+  trabajando, dar aguinaldo + mencionar vacaciones/prima con monto; accidente de trabajo:
+  orientación mínima (riesgo de trabajo, Art. 685 Ter fracc. III, sin conciliación previa).
+  Revisor: el cron ahora le pasa antigüedad, días de vacaciones contados y prescritos/excedentes
+  de cada cálculo; 5 "NO marques" nuevos; tabla del Art. 76 hasta 30 años. 94 casos.
+- Otros reales sin regla nueva (ya cubiertos): SDI sustituido a mano por el salario mínimo
+  (5212741129456), horas extra a mano (5215527036503), comparación de aguinaldo a mano
+  (5217712452069), "no hay problema con tu plazo" con la conciliación en trámite (5219619968095).
