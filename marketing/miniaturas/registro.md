@@ -18,4 +18,4 @@ Cada combinación (color + frase + preguntas + foto) se usa una sola vez.
 | 12 | Naranja | CONOCE TUS DERECHOS | Juego 3 | gris | 2026-11-16 | (pendiente) |
 | 13 | Rojo | DEFIENDE TU TRABAJO | Juego 1 | gris2 | 2026-11-16 | (pendiente) |
 | 14 | Azul | NO TE DEJES | Juego 2 | lila | 2026-11-16 | (pendiente) |
-| 15 | Morado | PREGÚNTAME LO QUE QUIERAS | Juego 3 | azul | 2026-11-16 | (pendiente) |
+| 15 | Morado | ¿CUÁNTO TE DEBEN? | Juego 3 | azul | 2026-11-23 | (pendiente) |
