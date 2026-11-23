@@ -28,6 +28,8 @@ const FRASES=[
  {l1:'ANTES DE FIRMAR',l2:'ESCUCHA ESTO',pill:'ASESORÍA GRATIS'},
  {l1:'NO TE DEJES',l2:'CONOCE LO QUE TE TOCA',pill:'ASESORÍA GRATIS'},
  {l1:'¿DUDAS CON TU TRABAJO?',l2:'RESUÉLVELAS AQUÍ',pill:'ORIENTACIÓN GRATIS'},
+ {l1:'¿CUÁNTO TE DEBEN?',l2:'TE LO EXPLICO EN VIVO',pill:'ASESORÍA GRATIS'},
+ {l1:'TUS DERECHOS NO SE NEGOCIAN',l2:'TE ORIENTO EN VIVO',pill:'ASESORÍA GRATIS'},
 ];
 const PREGUNTAS=[
  ['¿Me pueden correr sin aviso?','¿Cuánto me toca?','¿Y mi aguinaldo?','¿Firmo mi renuncia?'],
