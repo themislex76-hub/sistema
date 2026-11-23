@@ -3255,3 +3255,22 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
 - Otros reales sin regla nueva (ya cubiertos): SDI sustituido a mano por el salario mínimo
   (5212741129456), horas extra a mano (5215527036503), comparación de aguinaldo a mano
   (5217712452069), "no hay problema con tu plazo" con la conciliación en trámite (5219619968095).
+
+## Revisión del 19-22 nov (54 marcadas; 22-nov: 3 de 16) (23 nov 2026, conversación "chats")
+- Error más repetido: cifras con centavos hechas a mano (día festivo, horas extra, quincenas
+  adeudadas, salarios caídos, aguinaldo "duplicado"). Candado nuevo en código:
+  `ia_montos_sin_respaldo()` -- si el texto final trae montos con centavos que no están en la
+  conversación, en `calculos_liquidacion` (30 días) ni en los resultados de herramientas del
+  turno, se le pide UNA vez que los calcule con la herramienta o los dé redondeados como
+  aproximación (log `[montos_a_mano]`).
+- Criterios nuevos: reestructura/recorte/"se acabó el proyecto" sin cierre (dos escenarios,
+  Arts. 434-436 vs despido; no prometer salarios caídos; preguntar si era contrato por obra o
+  tiempo determinado); trabajo del hogar (Arts. 331-343, la calculadora usa reglas generales).
+- `cron_seguimiento_cursos.php`: ya no le vende el curso a quien dijo que pagó / mandó
+  comprobante ni a quien tiene otro prospecto pausado (caso real ChuyNg 21-nov).
+- Revisor: no marca plazos en días (salen de calcular_plazo_demanda), Apartado B en el TFCA,
+  ni "reestructura no es causa del Art. 47". 101 casos en `scripts/pruebas_bot.php`.
+- **Pregunta abierta al Lic. Rubén**: el Art. 521 fracc. III vigente dice que la solicitud de
+  conciliación INTERRUMPE la prescripción y que la interrupción cesa al día siguiente de la
+  constancia; `calcular_plazo_demanda()` y el prompt la tratan como SUSPENSIÓN (pausa con los
+  días que quedaban). No se cambió nada sin su criterio.

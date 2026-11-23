@@ -52,6 +52,13 @@ $stmt = $pdo->prepare(
        AND p.estatus = 'nuevo'
        AND p.seguimiento_en IS NULL
        AND p.pausado_bot = 0
+       -- Caso real (21-nov-2026): el cliente ya había pagado y mandado su
+       -- comprobante (su conversación estaba escalada, pausada en OTRO
+       -- prospecto del mismo teléfono) y este recordatorio le volvió a
+       -- vender el curso.
+       AND NOT EXISTS (
+         SELECT 1 FROM prospectos p2 WHERE p2.telefono = p.telefono AND p2.pausado_bot = 1
+       )
        AND p.actualizado_en <= NOW() - INTERVAL 3 HOUR
        AND p.actualizado_en >= NOW() - INTERVAL 20 HOUR
        AND NOT EXISTS (
@@ -75,6 +82,21 @@ foreach ($prospectos as $p) {
     $chkUltimo->execute([':t' => $p['telefono']]);
     $ultimoTexto = $chkUltimo->fetchColumn();
     if ($ultimoTexto !== false && whatsapp_texto_parece_declinar((string)$ultimoTexto)) {
+        $pdo->prepare('UPDATE prospectos SET seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $p['id']]);
+        continue;
+    }
+
+    // Si en sus últimos mensajes dice que ya pagó o mandó comprobante, no se
+    // le vuelve a vender aunque el pago todavía no se haya confirmado.
+    $chkPago = $pdo->prepare(
+        "SELECT texto FROM whatsapp_conversaciones WHERE telefono = :t AND direccion = 'entrante' ORDER BY id DESC LIMIT 10"
+    );
+    $chkPago->execute([':t' => $p['telefono']]);
+    $yaDijoQuePago = false;
+    foreach ($chkPago->fetchAll(PDO::FETCH_COLUMN) as $tx) {
+        if (preg_match('/\b(pagu[eé]|ya\s+(lo\s+)?pag|comprobante|transfer[ií]|deposit[eé])/iu', (string)$tx)) { $yaDijoQuePago = true; break; }
+    }
+    if ($yaDijoQuePago) {
         $pdo->prepare('UPDATE prospectos SET seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $p['id']]);
         continue;
     }

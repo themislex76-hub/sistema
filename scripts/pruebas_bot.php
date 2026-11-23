@@ -264,5 +264,18 @@ caso('revisor: tabla del Art. 76 hasta 30 años', strpos($src, 'de 16 a 20 = 26,
 $cron = file_get_contents($base . '/api/cron_revisar_conversaciones_bot.php');
 caso('revisor recibe días de vacaciones y prescritos de la calculadora', strpos($cron, 'vacaciones_anteriores_dias_prescritos') !== false);
 
+// ---------------------------------------------------------------------
+echo "17) Revisión del 19-22 nov: montos a mano, reestructura, trabajo del hogar, curso pagado\n";
+$resp = json_encode([['role' => 'assistant', 'content' => 'Total estimado: $67,166.59']]) . ' {"total_estimado":115672.98,"aguinaldo_monto":2187.74}';
+caso('cifra con centavos hecha a mano se detecta', ia_montos_sin_respaldo('serían hasta $1,070.01', $resp) === ['$1,070.01']);
+caso('cifra de la calculadora (JSON sin comas) no se marca', ia_montos_sin_respaldo('Total: $115,672.98 y aguinaldo $2,187.74', $resp) === []);
+caso('cifra ya dicha en la conversación no se marca', ia_montos_sin_respaldo('Como te dije, $67,166.59', $resp) === []);
+caso('aproximación sin centavos no se marca', ia_montos_sin_respaldo('serían unos $6,000 a la semana', $resp) === []);
+$p = IA_SYSTEM_PROMPT;
+caso('reestructura: dos escenarios y sin salarios caídos', strpos($p, 'Reestructura, recorte de personal') !== false && strpos($p, 'NO prometas salarios caídos en este caso') !== false);
+caso('trabajo del hogar: capítulo especial Arts. 331 a 343', strpos($p, 'Arts. 331 a 343') !== false);
+$cron = file_get_contents($base . '/api/cron_seguimiento_cursos.php');
+caso('seguimiento de curso no le vende a quien ya dijo que pagó', strpos($cron, 'yaDijoQuePago') !== false && strpos($cron, 'p2.pausado_bot = 1') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
