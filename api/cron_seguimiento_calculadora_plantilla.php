@@ -24,14 +24,15 @@ declare(strict_types=1);
 // ya esté APROBADA en Meta (Administrador de WhatsApp -> Mensajería ->
 // Plantillas de mensajes) ANTES de dar de alta este Cron Job -- si Meta
 // exige un nombre técnico distinto al propuesto, ajustar la constante. ***
-// Texto propuesto para someter a aprobación (categoría probable:
+// Texto propuesto para someter a aprobación (24-nov-2026, tono más
+// natural/humano pedido explícito por el usuario -- categoría probable:
 // Marketing, no Utilidad -- es un reenganche de venta, no una
 // confirmación de algo ya agendado; ver nota de costo en CLAUDE.md):
-//   "Hola, sigo al pendiente de tu caso laboral — tu estimado es de
-//   aproximadamente ${{1}}. Si quieres que el Lic. Rubén Buerhend, con
-//   25 años de experiencia en derecho laboral, lo revise a fondo por
-//   teléfono (asesoría de $499), contesta este mensaje y te paso los
-//   horarios disponibles."
+//   "Hola, ¿cómo estás? Quería darte seguimiento a tu caso laboral --
+//   según lo que platicamos, tu estimado ronda los ${{1}}. Si en algún
+//   momento quieres que el Lic. Rubén Buerhend lo revise contigo a
+//   fondo por teléfono, contéstame este mensaje y con gusto te paso los
+//   horarios que tiene disponibles."
 //
 // Config del Cron Job: comando "php /ruta/completa/a/este/archivo.php",
 // frecuencia 1 vez al día (ej. a media mañana).
@@ -118,7 +119,7 @@ foreach ($calculos as $c) {
     if ($enviado) {
         $enviados++;
         $ins = $pdo->prepare("INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')");
-        $ins->execute([':t' => $c['telefono'], ':texto' => "¡Hola! Sigo al pendiente de tu caso -- tu estimado sigue siendo de aproximadamente \$$montoFmt. Si quieres que el Lic. Rubén Buerhend lo revise a fondo por teléfono, contesta este mensaje."]);
+        $ins->execute([':t' => $c['telefono'], ':texto' => "¡Hola! Sigo al pendiente de tu caso -- ¿cómo estás? Quería darte seguimiento a tu caso laboral -- según lo que platicamos, tu estimado ronda los \$$montoFmt. Si en algún momento quieres que el Lic. Rubén Buerhend lo revise contigo a fondo por teléfono, contéstame este mensaje y con gusto te paso los horarios que tiene disponibles."]);
     } else {
         $omitidos++;
     }

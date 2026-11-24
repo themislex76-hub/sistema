@@ -21,11 +21,13 @@ soy un abogado reconocido en el ámbito" + "vale la pena hacer una plantilla de 
   aprobación en Meta (Administrador de WhatsApp → Mensajería → Plantillas de mensajes) la
   plantilla **`seguimiento_calculo_laboral`** con este texto (categoría probable: Marketing, no
   Utilidad -- mismo costo más alto que `sin_respuesta_llamada`, ~$0.73 MXN/mensaje en vez de
-  ~$0.16):
-  > "Hola, sigo al pendiente de tu caso laboral — tu estimado es de aproximadamente ${{1}}. Si
-  > quieres que el Lic. Rubén Buerhend, con 25 años de experiencia en derecho laboral, lo revise
-  > a fondo por teléfono (asesoría de $499), contesta este mensaje y te paso los horarios
-  > disponibles."
+  ~$0.16). **Ajustado el mismo día, pedido explícito del usuario: "no me gustó este texto,
+  hazlo más natural que no parezca un robot"** -- versión más cálida/conversacional, sin el
+  "sigo al pendiente de tu caso" que sonaba a plantilla automática:
+  > "Hola, ¿cómo estás? Quería darte seguimiento a tu caso laboral — según lo que platicamos,
+  > tu estimado ronda los ${{1}}. Si en algún momento quieres que el Lic. Rubén Buerhend lo
+  > revise contigo a fondo por teléfono, contéstame este mensaje y con gusto te paso los
+  > horarios que tiene disponibles."
 
   Si Meta pide ajustes al texto o asigna un nombre técnico distinto, avisar para ajustar la
   constante `PLANTILLA_SEGUIMIENTO_CALCULO` en el cron. Aprobación toma días -- **no dar de alta
