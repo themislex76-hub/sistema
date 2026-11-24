@@ -1,5 +1,47 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Investigación: caída real de ventas de asesoría desde el 13-nov (24 nov 2026, conversación "Bot")
+Pedido explícito del usuario: "revisa porfa si hay algún tema por el cual el bot esté vendiendo
+menos asesorías, llevamos días bajos". Sin acceso a la base en vivo desde esta sesión -- se le
+pidió al usuario correr SQL en phpMyAdmin con los resultados reales.
+- **Datos reales (asesorías confirmadas, noviembre 2026)**: 1-12 nov = 46 asesorías en 12 días
+  (**3.83/día** promedio, varios días con 5-8 ventas) → 13-24 nov = 16 asesorías en 12 días
+  (**1.33/día**, caída de ~65%). El corte es casi exacto el 12/13-nov, no gradual, y **sigue bajo
+  hasta el 22-24-nov** -- más allá de cuando ya había pasado el puente/Buen Fin (el usuario
+  sugirió esa explicación primero; los datos no la sostienen por sí sola, aunque pudo sumar en
+  los primeros días de la caída).
+- **Causa real más probable, encontrada revisando el código y CLAUDE.md fecha por fecha**: el
+  corte coincide con 2 cambios reales del 12-13 nov en la conversación "chats" -- (1) la
+  corrección del bug de "trabajador de confianza" (20 días sumados de más en un despido, caso
+  real de Norma: el estimado pasó de ~$571,486 a ~$262,161 real) y (2), como consecuencia directa
+  de ESE bug, `cron_seguimiento_calculadora.php` **dejó de mencionar el monto del cálculo** en
+  los 2 recordatorios automáticos que se le mandan a quien calculó su liquidación y se quedó
+  callado sin agendar -- el bug estaba en que el monto guardado (`monto_total`) salía INFLADO,
+  no en mencionarlo; al quitar la cifra por completo (en vez de solo corregir el cálculo de
+  origen) se le restó el principal gancho de urgencia a ese seguimiento automático, justo el
+  mismo día que arrancó la caída.
+- **Corregido (24 nov 2026)**: `api/cron_seguimiento_calculadora.php` vuelve a incluir el monto
+  (`calculos_liquidacion.monto_total`) en los 2 recordatorios -- ahora es seguro, porque el bug de
+  origen (el CÁLCULO, no la mención) ya está corregido desde el 12-nov, mismo criterio que ya usa
+  el cierre en vivo del bot (la REGLA DURA de "Lead 2" en `ia_helpers.php` ya ancla el precio de
+  $499 contra el monto real calculado -- eso nunca se tocó, solo el seguimiento automático se
+  había quedado sin esa cifra). Los 2 mensajes siguen empezando con el mismo prefijo literal
+  exacto ("¡Hola! Sigo al pendiente de tu caso" / "¡Hola de nuevo! Sigo por aquí") que
+  `ia_es_mensaje_automatico()` necesita para que el revisor diario del bot no los evalúe como una
+  respuesta nueva de la IA (confirmado con una prueba manual en PHP, no solo leído). `php -l`
+  limpio, `php scripts/pruebas_bot.php` sigue con sus 98 casos pasando (no se tocó ninguna otra
+  regla del prompt, el `ia_montos_sin_respaldo()` nuevo de "chats" no aplica aquí -- ese candado
+  solo revisa texto generado por la IA en vivo, no estos 2 mensajes fijos de PHP).
+- **A propósito NO se tocó nada de la "Precisión del bot" (criterios más estrictos, tope de
+  prima de antigüedad con el salario mínimo de la fecha del despido, etc.)** -- son correcciones
+  legales deliberadas del despacho, no bugs; revertirlas solo para subir ventas sería dar
+  información incorrecta a los clientes. El único cambio fue restaurar un gancho de venta que se
+  quitó como efecto secundario de corregir un bug distinto, ahora que ese bug ya no existe.
+- **Sin probar en vivo todavía** -- falta que el usuario suba `api/cron_seguimiento_calculadora.php`
+  y se confirme en unos días (comparando contra la tendencia de estos últimos 12 días) si las
+  asesorías vuelven a subir. Si no sube, revisar también el cambio de modelo a Sonnet 5.5 con
+  razonamiento bajo (17-nov, nunca confirmado en vivo) como siguiente sospechoso.
+
 ## Dominio del sistema en vivo
 `https://sistema.expertoslaborales.com/sistema/` -- confirmado por el usuario (24 nov 2026).
 Ninguna sesión de Claude tiene credenciales de Administrador para entrar ahí -- para cualquier
