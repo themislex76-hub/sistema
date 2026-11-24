@@ -2341,7 +2341,24 @@ function etapaLabelPorKey(key){
   return def ? def.label : key;
 }
 function avisoIaHTML(a){
-  if(!a.ia_resumen) return '';
+  if(!a.ia_resumen){
+    // Bug real reportado por el usuario (24 nov 2026, Exp. 388/2026,
+    // Acuerdos No. 7 y 8 del Tribunal Federal): el robot reportó el aviso
+    // pero no logró adjuntar el PDF (patrón ya documentado varias veces en
+    // CLAUDE.md -- descargas de PDF fallidas en el Portal Federal). Sin
+    // documento no hay nada que la IA pueda leer, así que
+    // cron_analizar_acuerdos_ia.php nunca llega a analizarlo ni a llenar
+    // ninguna etapa sola -- y la tarjeta se veía EXACTAMENTE igual que una
+    // ya procesada, así que un abogado le podía dar "Marcar revisado" sin
+    // darse cuenta de que faltaba el documento real. Ahora se avisa aquí
+    // mismo: el abogado puede subir el PDF a mano desde "Documentos"
+    // (categoría "Acuerdo (boletín)") -- cron_analizar_documentos_ia.php
+    // SÍ lo analiza con IA igual, sin necesitar que venga de un robot.
+    if(!a.documento_id && a.origen==='automatico'){
+      return `<div class="aviso-ia" style="color:var(--red);">⚠ El robot no pudo adjuntar el documento de este acuerdo -- consíguelo a mano en el portal de origen y súbelo en "Documentos" (categoría "Acuerdo (boletín)") para que la IA lo lea y actualice el expediente.</div>`;
+    }
+    return '';
+  }
   return `<div class="aviso-ia">🤖 ${escapeHTML(a.ia_resumen)}${a.ia_aplicado && a.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(a.ia_etapa_sugerida))}</span>` : ''}</div>`;
 }
 function documentoIaHTML(d){

@@ -1,5 +1,52 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Avisos sin documento adjunto quedaban invisibles -- "REVISADO" no significaba "resuelto" (24 nov 2026, conversación "Bot", `app.js?v=163`)
+Reportado por el usuario viendo el expediente **Escalona Jimenez Yuliana Yadira vs New Dynacast
+de México, S.A. de C.V. y Automotive Quality Shield, S.A. de C.V., Exp. 388/2026**: "el bot
+encontro acuerdos de ayer y creo que del 18 de noviembre los señalo para que los revisara y los
+revise pero no adjunto el documento ni actualizo el sistema ni agendo a consecuencia". Capturas
+reales confirmaron: Acuerdo No. 7 y No. 8 (ambos del Tribunal Federal, 19/11/2026, encontrados
+24/11/2026) con badge **REVISADO** en el Boletín -- pero la pestaña Documentos solo tiene 5
+archivos, el más reciente "Acuerdo_No_5...", sin ningún PDF para el 7 ni el 8.
+- **Causa real, confirmada leyendo el código (no la base de datos -- esta sesión no tiene acceso
+  en vivo)**: "REVISADO" es un estado que solo pone un HUMANO con el botón "Marcar revisado"
+  (`api/avisos_mark.php`) -- nunca lo pone la IA sola. El robot Federal sí reportó el aviso (vía
+  `api/avisos_ingest.php`, que siempre inserta el registro aunque no traiga PDF -- "no se pierde
+  el aviso, solo el PDF", comportamiento ya documentado/aceptado desde el 8 nov 2026), pero sin
+  lograr adjuntar el PDF real (`documento_id` queda `NULL`) -- mismo patrón de fondo, ya repetido
+  varias veces en este archivo, de fallas de descarga de PDF del Portal Federal
+  (`net::ERR_ABORTED`, spinner que nunca resuelve, etc.). Como `cron_analizar_acuerdos_ia.php`
+  solo toma avisos con `documento_id IS NOT NULL`, un aviso sin documento **nunca se analiza, nunca
+  llena ninguna etapa, nunca agenda nada** -- se queda huérfano para siempre.
+  - **El hueco real que dejó esto invisible**: `avisoIaHTML()` (`assets/app.js`) regresaba
+    `''` (nada) cuando no había `ia_resumen` todavía -- la tarjeta de un aviso SIN documento se
+    veía EXACTAMENTE igual que una recién creada esperando su análisis normal (que tarda minutos).
+    Un abogado le daba "Marcar revisado" sin ninguna señal de que el robot nunca pudo adjuntar el
+    documento real -- por eso "REVISADO" se veía, pero no se había hecho nada de fondo.
+- **Corregido**: `avisoIaHTML()` ahora distingue este caso -- si el aviso es automático
+  (`origen==='automatico'`, viene de un robot) y nunca tuvo documento (`documento_id` nulo), se
+  muestra un aviso en rojo: "⚠ El robot no pudo adjuntar el documento de este acuerdo -- consíguelo
+  a mano en el portal de origen y súbelo en 'Documentos' (categoría 'Acuerdo (boletín)') para que
+  la IA lo lea y actualice el expediente." -- en vez de quedar en silencio. Esta función la
+  comparten los 2 lugares donde se ve un aviso (Agenda general y la pestaña Boletín del
+  expediente), así que el arreglo cubre ambos sin tocar nada más.
+- **Camino de recuperación ya existente, sin necesidad de código nuevo**: `cron_analizar_
+  documentos_ia.php` lee con IA CUALQUIER documento subido a mano en "Documentos" (no exige que
+  venga ligado a un aviso de boletín) -- si el abogado consigue el PDF real del Acuerdo No. 7/8
+  en el Portal Federal y lo sube ahí (categoría "Acuerdo (boletín)"), el sistema SÍ lo analiza y
+  puede llenar una etapa sola, igual que si lo hubiera subido el robot.
+- **Pendiente real, sin poder diagnosticar más desde esta sesión** (sin acceso al log del robot,
+  que corre en la máquina Windows del usuario): por qué `federal.js` no pudo descargar el PDF de
+  estos 2 acuerdos específicos -- si se repite, pedir el log completo de esa corrida (buscar
+  "no se pudo descargar el PDF"/"ERR_ABORTED") antes de tocar el robot a ciegas.
+  **Acción inmediata del usuario para este caso concreto**: conseguir a mano los PDF de Acuerdo
+  No. 7 y No. 8 del expediente 388/2026 en el Portal Federal y subirlos en "Documentos".
+- Sin cambios de base de datos, sin tocar `mergeTags()`/tags de demanda -- no aplica
+  `verificar_tags.js`/`pruebas_bot.php` (no es lógica del bot de WhatsApp). `node --check` limpio
+  en `assets/app.js`/`sw.js`. `app.js?v=163`, `sw.js v87`. **Sin probar en vivo todavía** -- falta
+  que el usuario suba `assets/app.js`, `index.html` y `sw.js`, y confirme que la advertencia
+  nueva aparece en los Acuerdos No. 7/8 de ese expediente.
+
 ## Prueba social real (25 años + reconocido en el ámbito) + plantilla de 3er seguimiento (24 nov 2026, conversación "Bot", migración 075)
 Respuesta del usuario a la auditoría de neuromarketing de arriba: "tengo 25 años litigando... además
 soy un abogado reconocido en el ámbito" + "vale la pena hacer una plantilla de seguimiento".
