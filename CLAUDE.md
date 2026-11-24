@@ -3282,7 +3282,9 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   recorte tratado como despido (posible conversación previa a la subida del 23-nov).
   Falsas alarmas: plazo "a mano" (sale de calcular_plazo_demanda), conversación sin respuesta del
   bot, PTU Art. 127-VII. Revisor calibrado en esos 2 primeros puntos (sin subir todavía).
-- **Pregunta abierta al Lic. Rubén (24-nov)**: la REGLA DURA del prompt dice dividir el salario
-  SEMANAL entre los días trabajados (NUNCA entre 7), pero el Art. 89 LFT vigente dice "Cuando el
-  salario se fije por semana o por mes, se dividirá entre siete o entre treinta". El 19-nov se le
-  mandaron a un cliente 2 PDF con ÷7 ($3,000/7 = $428.57). No se cambió nada sin su criterio.
+- **Decidido por el Lic. Rubén (24-nov)**: salario SEMANAL ÷ 7 SIEMPRE (Art. 89 LFT: "se dividirá
+  entre siete o entre treinta"), sin importar los días trabajados. Se reescribió la REGLA DURA que
+  decía lo contrario (÷ días trabajados), la descripción de `salario_diario` en las 2
+  herramientas y un "NO marques" del revisor. 103 casos en `scripts/pruebas_bot.php`.
+- Conciliación: el Lic. dijo "pausa el plazo y se reinicia con la constancia" -- se le preguntó
+  si "reinicia" = reanuda con los días que quedaban (como hoy) o empieza de nuevo completo.

@@ -277,5 +277,11 @@ caso('trabajo del hogar: capítulo especial Arts. 331 a 343', strpos($p, 'Arts. 
 $cron = file_get_contents($base . '/api/cron_seguimiento_cursos.php');
 caso('seguimiento de curso no le vende a quien ya dijo que pagó', strpos($cron, 'yaDijoQuePago') !== false && strpos($cron, 'p2.pausado_bot = 1') !== false);
 
+// ---------------------------------------------------------------------
+echo "18) Salario semanal entre 7 (criterio del Lic. Rubén, 24-nov, Art. 89)\n";
+$p = IA_SYSTEM_PROMPT;
+caso('regla del prompt: semanal entre 7 siempre', strpos($p, 'divide el salario semanal entre 7, SIEMPRE') !== false && strpos($p, 'NUNCA lo\n    dividas entre 7') === false);
+caso('herramienta: el parámetro salario_diario dice semanal entre 7', substr_count(json_encode(IA_TOOLS, JSON_UNESCAPED_UNICODE), 'divídelo entre 7 siempre (Art. 89 LFT)') === 2);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
