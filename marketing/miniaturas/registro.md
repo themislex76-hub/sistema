@@ -19,4 +19,4 @@ Cada combinación (color + frase + preguntas + foto) se usa una sola vez.
 | 13 | Rojo | DEFIENDE TU TRABAJO | Juego 1 | gris2 | 2026-11-16 | (pendiente) |
 | 14 | Azul | NO TE DEJES | Juego 2 | lila | 2026-11-16 | (pendiente) |
 | 15 | Morado | ¿CUÁNTO TE DEBEN? | Juego 3 | azul | 2026-11-23 | (pendiente) |
-| 16 | Azul marino | ABOGADO LABORAL | Juego 1 | roja | 2026-11-24 | (pendiente) |
+| 16 | Turquesa | ABOGADO LABORAL | Juego 1 | roja | 2026-11-24 | (pendiente) |
