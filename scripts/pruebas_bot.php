@@ -297,5 +297,16 @@ caso('calculadora: aviso_vacaciones_anteriores cuando el cliente dijo que nunca 
         return $dias <= 0 && ia_cliente_dijo_no_tomo_vacaciones($mensajesV);
     })());
 
+echo "17) Mejorar ventas (24-nov): objeciones de precio y monto real en el seguimiento\n";
+caso('prompt: objeción de precio -- reencuadra valor con el caso real, nunca baja el precio',
+    strpos($p, 'OBJECIONES de precio') !== false && strpos($p, 'nunca ofrezcas un') !== false);
+caso('prompt: "ya tengo abogado" -- segunda opinión, nunca desprestigiar al otro abogado',
+    strpos($p, 'ya tengo abogado') !== false && strpos($p, 'hables mal de otro abogado') !== false);
+caso('cron_seguimiento_calculadora.php vuelve a mencionar el monto real del cálculo (se había quitado por error el 12-13 nov al corregir un bug distinto)',
+    strpos(file_get_contents($base . '/api/cron_seguimiento_calculadora.php'), 'tu estimado es de aproximadamente') !== false);
+caso('cron_seguimiento_calculadora.php: los 2 mensajes con monto siguen con el prefijo exacto que ia_es_mensaje_automatico() necesita',
+    ia_es_mensaje_automatico('¡Hola! Sigo al pendiente de tu caso -- tu estimado es de aproximadamente $123,456. Si quieres...')
+    && ia_es_mensaje_automatico('¡Hola de nuevo! Sigo por aquí para cuando gustes -- tu estimado sigue siendo de aproximadamente $123,456. Si quieres...'));
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
