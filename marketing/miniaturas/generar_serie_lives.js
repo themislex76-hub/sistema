@@ -11,6 +11,7 @@ const FOTOS={
   gris:{src:'../fotos/ruben_selfie_traje_gris.jpg',w:744,l:-26,t:-264},
   gris2:{src:'../fotos/ruben_selfie_traje_gris2.jpg',w:744,l:10,t:-250},
   lila:{src:'../fotos/ruben_selfie_corbata_lila.jpg',w:744,l:-20,t:-250},
+  roja:{src:'../fotos/ruben_selfie_corbata_roja.jpg',w:744,l:20,t:-230},
   selfie:{src:'../fotos/ruben_selfie_cerca_derecha.jpg',w:832,l:-192,t:-264,tapaDerecha:true},
 };
 const COLORES=[['#1f4e6b','#143650','#0b2233'],['#7a1a22','#4a0d14','#24060a'],['#17704a','#0e4a31','#062417'],['#5b3391','#3a1f63','#1b0d31'],['#b85a12','#7a3a0a','#331804'],['#126b78','#0b4650','#042226']];
@@ -41,7 +42,7 @@ const PREGUNTAS=[
 const fs=require('fs'), path=require('path');
 const REG=path.join(__dirname,'registro.json');
 const reg=fs.existsSync(REG)?JSON.parse(fs.readFileSync(REG,'utf8')):{};
-const FOTO_KEYS=['selfie','negro','azul','gris','gris2','lila'];
+const FOTO_KEYS=['selfie','negro','azul','gris','gris2','lila','roja'];
 const DESDE=+(process.argv[3]||1), HASTA=+(process.argv[4]||DESDE);
 function usada(c){return Object.values(reg).some(r=>r.color===c.color&&r.frase===c.frase&&r.preg===c.preg&&r.foto===c.foto);}
 function siguienteCombo(n){
