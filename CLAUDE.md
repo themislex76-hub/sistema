@@ -1,5 +1,11 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Dominio del sistema en vivo
+`https://sistema.expertoslaborales.com/sistema/` -- confirmado por el usuario (24 nov 2026).
+Ninguna sesión de Claude tiene credenciales de Administrador para entrar ahí -- para cualquier
+dato en vivo (paneles, reportes), pedirle al usuario que entre él mismo y comparta lo que ve
+(captura o copiar/pegar), o darle SQL para correr en phpMyAdmin.
+
 ## Documentos/avisos de boletín nuevos no bumpeaban `actualizado_en` -- el Informe Ejecutivo nunca se enteraba (20 nov 2026, conversación "Bot")
 Reportado por el usuario viendo el expediente **Anel Yadira Hernández Zaragoza vs Banco Nacional
 de México, Exp. 463/2026**: sus 4 PDFs de acuerdo (subidos el 19-nov por el robot Federal,
