@@ -1,5 +1,46 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Auditoría de neuromarketing del bot + cierre reforzado con riesgo real (24 nov 2026, conversación "Bot")
+Pedido explícito del usuario tras el arreglo de la caída de ventas: "todo esto es para vender,
+revisa qué más podemos hacer y cómo andamos con el tema del neuromarketing".
+- **Ya estaba bien usado en el prompt** (confirmado revisando `api/ia_helpers.php` completo):
+  anclaje de precio (el cierre ya compara los $499 contra el monto real calculado), autoridad
+  (nombrar siempre "Lic. Rubén Buerhend" en vez de "un abogado", decisión ya tomada porque la
+  gente llega de su TikTok buscándolo a él), reciprocidad (el cálculo siempre es gratis, la
+  asesoría se ofrece DESPUÉS de dar valor real), urgencia genuina (plazos legales reales, nunca
+  inventados), y una REGLA DURA explícita que PROHÍBE escasez/urgencia falsa ("quedan pocos
+  lugares", "el precio sube pronto") -- el despacho ya tenía un criterio ético correcto de
+  fondo, no hacía falta corregir nada ahí.
+- **Hueco real encontrado**: el cierre de la asesoría nunca mencionaba ningún riesgo concreto de
+  NO tenerla -- solo "¿te interesa?" genérico. **Corregido**: nueva guía en el prompt -- al
+  cerrar, mencionar de pasada el riesgo REAL derivado de lo que la persona ya contó (plazo
+  corriendo, audiencia próxima sin preparación, cálculo con varias prestaciones donde un error
+  cuesta dinero real) -- nunca un riesgo inventado ni genérico, y si no hay ninguno real que
+  mencionar, no se fuerza nada.
+- **Cero prueba social en todo el prompt** -- ningún años de experiencia, número de casos
+  atendidos, etc. **No se agregó nada** porque no hay ninguna cifra real confirmada para usar
+  (inventar un número sería mentir, y ya existe la regla dura de nunca prometer con cifras
+  infladas). **Pendiente de decisión del usuario**: si quiere dar una cifra real (años
+  litigando, número aproximado de casos atendidos, o algo similar) para agregarla al cierre como
+  prueba social verificable.
+- **Hueco real sin resolver, más grande, pendiente de decisión**: el seguimiento automático de
+  ventas (`cron_seguimiento_calculadora.php`) solo manda 2 recordatorios dentro de las primeras
+  24h de silencio -- después de eso, la ventana de WhatsApp se cierra y NADIE vuelve a
+  contactar a quien no contestó, sin importar cuántos días pasen. Esto es una pérdida real de
+  ventas (alguien que calculó su liquidación y se quedó pensando varios días sin que nadie le
+  vuelva a escribir). Arreglarlo de fondo necesita una plantilla nueva aprobada por Meta (como
+  ya existe `recordatorio_1_hora`) para poder escribir fuera de la ventana de 24h -- días de
+  espera de aprobación, no es inmediato. **Sin construir todavía, pendiente de que el usuario
+  decida si quiere que se arme.**
+- **El contenido del propio live de TikTok** (guion, ganchos, cómo cerrar en vivo hacia el
+  WhatsApp) es territorio de la conversación "negocio" (miniaturas, métricas, embudo) -- no se
+  tocó nada de eso aquí, se le puede avisar a esa sesión si el usuario quiere una revisión de
+  neuromarketing del contenido del live en sí, aparte del bot de WhatsApp.
+- 115 casos en `scripts/pruebas_bot.php` siguen pasando. `php -l` limpio. Sin cambios de base de
+  datos, sin tocar `app.js`. **Sin probar en vivo todavía** -- falta que el usuario suba
+  `api/ia_helpers.php` y se confirme con casos reales si el cierre con riesgo concreto ayuda a
+  cerrar más.
+
 ## Investigación: caída real de ventas de asesoría desde el 13-nov (24 nov 2026, conversación "Bot")
 Pedido explícito del usuario: "revisa porfa si hay algún tema por el cual el bot esté vendiendo
 menos asesorías, llevamos días bajos". Sin acceso a la base en vivo desde esta sesión -- se le
