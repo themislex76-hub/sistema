@@ -96,6 +96,41 @@ function extraerPdfDeZip(buf) {
   }
 }
 
+// Intenta bajar y validar el documento de la liga del correo -- hasta 5
+// intentos completos (24 nov 2026, pedido explícito del usuario tras el
+// caso del robot Federal: "que el robot haga más intentos para descargar
+// los documentos y no trasladarle la responsabilidad al abogado"). La
+// liga puede regresar el PDF directo o un .zip con el PDF adentro
+// (confirmado real, ver zipEsValido()/extraerPdfDeZip()) -- un fallo
+// transitorio de red entre la liga y el servidor del PJ Edomex es el caso
+// más probable que esto resuelva solo; si el token del JWT ya expiró,
+// ningún reintento va a ayudar, pero tampoco cuesta nada intentarlo.
+async function obtenerPdfDeLigaConReintentos(context, page, ligaDocumento, etiquetaDebug, maxIntentos = 5) {
+  let ultimoDiagnostico = '(sin detalle)';
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    try {
+      const r = await context.request.get(ligaDocumento, { timeout: 15000 });
+      const buf = r.ok() ? await r.body() : null;
+      if (pdfEsValido(buf)) return { buf, nombre: null };
+      if (zipEsValido(buf)) {
+        const extraido = extraerPdfDeZip(buf);
+        if (extraido) return extraido;
+        ultimoDiagnostico = 'el zip no traía ningún PDF válido adentro';
+      } else {
+        ultimoDiagnostico = `status ${r.status()}, content-type "${r.headers()['content-type'] || '(sin dato)'}", ${buf ? buf.length : 0} bytes`;
+      }
+    } catch (e) {
+      ultimoDiagnostico = e.message;
+    }
+    if (intento < maxIntentos) {
+      console.log(`    (intento ${intento}/${maxIntentos} sin éxito para el documento de ${etiquetaDebug}: ${ultimoDiagnostico} -- reintentando...)`);
+      await page.waitForTimeout(2000 * intento);
+    }
+  }
+  console.log(`    AVISO: se agotaron los ${maxIntentos} intentos para el documento de ${etiquetaDebug} (${ultimoDiagnostico}) -- queda pendiente para reintentarse en una corrida futura.`);
+  return null;
+}
+
 async function obtenerExpedientesMonitoreados() {
   const res = await axios.get(`${config.sistema.apiBase}/expedientes_monitorear.php`, {
     headers: { 'X-Robot-Key': config.sistema.robotKey },
@@ -225,7 +260,28 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
   // la bandeja. Ahora se guarda el conjunto COMPLETO de ids ya procesados
   // por esta cuenta, para siempre, y se compara por pertenencia -- sin
   // asumir nada sobre el orden ni sobre qué id es más nuevo.
-  const yaProcesados = new Set(Array.isArray(estado[cuenta.edomex_correo_usuario]) ? estado[cuenta.edomex_correo_usuario] : []);
+  //
+  // (24 nov 2026) Se agrega `pendientesPdf` -- el conjunto de ids de
+  // correos ya vistos (reportados como aviso) pero cuyo PDF no se logró
+  // descargar esa vez. A diferencia de un correo sin documento que nunca
+  // se vuelve a tocar, uno en `pendientesPdf` SÍ se reabre en corridas
+  // futuras para reintentar (mismo criterio que ya se agregó en
+  // federal.js el mismo día) -- no hace falta guardar nada más que el id:
+  // como el correo sigue en la bandeja, re-abrirlo en una corrida futura
+  // vuelve a dar el mismo texto/liga de siempre, así que todo se puede
+  // volver a derivar fresco en el momento. `estado[cuenta...]` pasa de ser
+  // un arreglo plano de ids a `{vistos, pendientesPdf}` -- compatible con
+  // el formato viejo (un arreglo suelto se interpreta como `vistos`, con
+  // `pendientesPdf` vacío).
+  const estadoPrevio = estado[cuenta.edomex_correo_usuario];
+  const estadoCuenta = Array.isArray(estadoPrevio)
+    ? { vistos: estadoPrevio, pendientesPdf: [] }
+    : { vistos: [], pendientesPdf: [], ...(estadoPrevio || {}) };
+  const yaProcesados = new Set(estadoCuenta.vistos);
+  const pendientesPdf = new Set(estadoCuenta.pendientesPdf);
+  const persistirEstadoCuenta = () => {
+    estado[cuenta.edomex_correo_usuario] = { vistos: Array.from(yaProcesados), pendientesPdf: Array.from(pendientesPdf) };
+  };
   try {
     // El login exacto (nombres de los campos) no se pudo ver en vivo desde
     // aquí -- se intenta por el texto de la etiqueta ("Nombre de usuario"/
@@ -341,11 +397,13 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
         }
         continue;
       }
-      if (yaProcesados.has(idConversacion)) {
-        // Ya se vio este id antes -- en esta misma corrida (el locator
-        // `filas` confirmado real que hace match más de una vez por
-        // renglón, ver abajo) o en una corrida anterior. Se omite sin
-        // volver a subir el PDF ni reportar el aviso otra vez.
+      const esReintentoPendiente = pendientesPdf.has(idConversacion);
+      if (yaProcesados.has(idConversacion) && !esReintentoPendiente) {
+        // Ya se vio este id antes y ya quedó resuelto (con documento, o
+        // sin expediente monitoreado que coincida) -- en esta misma
+        // corrida (el locator `filas` confirmado real que hace match más
+        // de una vez por renglón, ver abajo) o en una corrida anterior. Se
+        // omite sin volver a subir el PDF ni reportar el aviso otra vez.
         continue;
       }
       // Se marca como visto y se guarda EN CUANTO se identifica el id (no
@@ -356,7 +414,7 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       // así que sin guardar aquí mismo los correos ya procesados en ese
       // lote se repetirían (duplicados) en la siguiente corrida.
       yaProcesados.add(idConversacion);
-      estado[cuenta.edomex_correo_usuario] = Array.from(yaProcesados);
+      persistirEstadoCuenta();
 
       const texto = await leerTextoCompleto(page, 'EXPEDIENTE');
       if (!texto) {
@@ -372,45 +430,45 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       const match = porNumero.get(normalizeExp(expedienteTexto));
       if (!match) {
         console.log(`    Correo ${idConversacion}: expediente "${expedienteTexto}" no está en los monitoreados -- se omite.`);
+        pendientesPdf.delete(idConversacion); // ya no aplica -- no tiene caso seguir reintentándolo
+        persistirEstadoCuenta();
       } else {
         const ligaDocumento = extraerLigaDocumento(texto);
         let documentoId = null;
         if (ligaDocumento) {
-          try {
-            const r = await context.request.get(ligaDocumento);
-            const buf = r.ok() ? await r.body() : null;
-            const nombreDestino = `Acuerdo_Exp_${sanitizarParaArchivo(expedienteTexto)}_${idConversacion}.pdf`;
-            if (pdfEsValido(buf)) {
-              documentoId = await subirPdfAlSistema(buf, match.id, nombreDestino);
-            } else if (zipEsValido(buf)) {
-              // Confirmado real: la liga entrega un .zip con el/los
-              // documento(s) del acuerdo adentro, no el PDF directo.
-              const extraido = extraerPdfDeZip(buf);
-              if (extraido) {
-                documentoId = await subirPdfAlSistema(extraido.buf, match.id, nombreDestino);
-                console.log(`    (PDF extraído del zip: ${extraido.nombre})`);
-              } else {
-                console.log(`    AVISO: el zip del documento no traía ningún PDF válido adentro (correo ${idConversacion}).`);
-              }
-            } else {
-              // Diagnóstico: sin esto no se puede saber si la liga vino
-              // incompleta (cortada por un salto de línea en el correo),
-              // si el servidor regresó una página de error/login, o si de
-              // plano el token ya expiró.
-              console.log(`    AVISO: la liga del documento no regresó un PDF ni un zip reconocible (correo ${idConversacion}).`);
-              console.log(`      Liga extraída (${ligaDocumento.length} caracteres): ${ligaDocumento.slice(0, 120)}...`);
-              console.log(`      Respuesta HTTP: status ${r.status()}, content-type "${r.headers()['content-type'] || '(sin dato)'}", ${buf ? buf.length : 0} bytes, primeros bytes: ${buf ? buf.slice(0, 40).toString('latin1').replace(/[^\x20-\x7e]/g, '.') : '(sin cuerpo)'}`);
-            }
-          } catch (e) {
-            console.log(`    (no se pudo bajar el PDF del correo ${idConversacion}: ${e.message})`);
+          const nombreDestino = `Acuerdo_Exp_${sanitizarParaArchivo(expedienteTexto)}_${idConversacion}.pdf`;
+          const obtenido = await obtenerPdfDeLigaConReintentos(context, page, ligaDocumento, `correo ${idConversacion}`);
+          if (obtenido) {
+            documentoId = await subirPdfAlSistema(obtenido.buf, match.id, nombreDestino);
+            if (obtenido.nombre) console.log(`    (PDF extraído del zip: ${obtenido.nombre})`);
           }
         } else {
           console.log(`    AVISO: no se encontró la liga de "frmGetDocument.php" en el correo ${idConversacion}.`);
         }
 
+        // (24 nov 2026) Si de verdad no se pudo conseguir el PDF ni con
+        // los 5 intentos, el correo queda en `pendientesPdf` -- se vuelve
+        // a reintentar solo, sin límite de tiempo, en cualquier corrida
+        // futura (el correo sigue en la bandeja, así que reabrirlo más
+        // adelante vuelve a dar el mismo texto/liga de siempre).
+        if (documentoId) {
+          pendientesPdf.delete(idConversacion);
+        } else {
+          pendientesPdf.add(idConversacion);
+        }
+        persistirEstadoCuenta();
+
         const resumen = `Notificación electrónica Edomex -- expediente ${expedienteTexto}`
           + (juzgado ? `, ${juzgado}` : '') + `. Actor: ${actor || '(sin dato)'}. Demandado: ${demandado || '(sin dato)'}.`;
+        // Mismo resumen cada vez (se deriva siempre del mismo texto del
+        // correo) -- en un reintento de una corrida futura, avisos_
+        // ingest.php reconoce este mismo aviso ya existente y le adjunta
+        // el documento en vez de tratarlo como duplicado (ver arreglo del
+        // 24 nov 2026 ahí mismo).
         await reportarAviso(match.id, resumen, new Date().toISOString().slice(0, 10), documentoId);
+        if (esReintentoPendiente && documentoId) {
+          console.log(`    PDF recuperado en esta corrida para el correo ${idConversacion} (ya se había reportado antes sin documento).`);
+        }
         reportados++;
         console.log(`    Aviso reportado: expediente ${expedienteTexto} (correo ${idConversacion}).`);
       }

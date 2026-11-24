@@ -198,6 +198,25 @@ async function descargarPdfDesdeLink(context, page, locatorLink) {
   return null;
 }
 
+// Envuelve descargarPdfDesdeLink() en varios intentos completos (24 nov
+// 2026, pedido explícito del usuario: "que el robot haga más intentos
+// para descargar los documentos y no trasladarle la responsabilidad al
+// abogado" -- mismo criterio ya aplicado en federal.js el mismo día).
+// Espera creciente entre cada intento, por si el portal necesita
+// "respirar".
+async function descargarPdfConReintentos(context, page, locatorLink, etiquetaDebug, maxIntentos = 5) {
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    const pdf = await descargarPdfDesdeLink(context, page, locatorLink);
+    if (pdfEsValido(pdf)) return pdf;
+    if (intento < maxIntentos) {
+      console.log(`      (intento ${intento}/${maxIntentos} sin éxito para el PDF de ${etiquetaDebug} -- reintentando...)`);
+      await page.waitForTimeout(2000 * intento);
+    }
+  }
+  console.log(`      AVISO: se agotaron los ${maxIntentos} intentos para el PDF de ${etiquetaDebug} -- queda pendiente para reintentarse en una corrida futura.`);
+  return null;
+}
+
 // "LISTA DE BUZONES": cada fila trae el expediente (tribunal + número),
 // las partes, y el link "Ver Acuerdos". Se ubica cada link "Ver Acuerdos"
 // y se sube por el DOM hasta la fila (<tr>) que lo contiene, para sacar el
@@ -342,7 +361,23 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     await dialog.accept().catch(() => {});
   });
   let reportados = 0;
-  const vistos = estado[cuenta.cdmx_buzon_usuario] || {};
+  // (24 nov 2026) `estado[cuenta...]` guardaba solo un objeto plano
+  // {acuerdoId: true} -- una vez reportado un acuerdo, nunca se volvía a
+  // mirar, aunque el PDF no se hubiera podido descargar. Ahora guarda
+  // {vistos, pendientesPdf} -- compatible con el formato viejo (un objeto
+  // plano sin la clave "vistos" se interpreta como el propio `vistos`,
+  // con `pendientesPdf` vacío). Un acuerdo en `pendientesPdf` se vuelve a
+  // reintentar en corridas futuras (el expediente se vuelve a abrir y su
+  // lista de acuerdos se vuelve a leer completa cada vez, así que no hace
+  // falta guardar nada más que el id).
+  const estadoPrevio = estado[cuenta.cdmx_buzon_usuario];
+  const tieneFormatoNuevo = estadoPrevio && typeof estadoPrevio === 'object'
+    && Object.prototype.hasOwnProperty.call(estadoPrevio, 'vistos');
+  const vistos = tieneFormatoNuevo ? (estadoPrevio.vistos || {}) : (estadoPrevio || {});
+  const pendientesPdf = new Set(tieneFormatoNuevo && Array.isArray(estadoPrevio.pendientesPdf) ? estadoPrevio.pendientesPdf : []);
+  const persistirEstadoCuenta = () => {
+    estado[cuenta.cdmx_buzon_usuario] = { vistos, pendientesPdf: Array.from(pendientesPdf) };
+  };
 
   try {
     const campoUsuario = page.locator('input[type="email"], input[type="text"]').first();
@@ -536,10 +571,13 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
             const acuerdoId = matchId[1];
             const fechaPublicacion = matchFecha ? matchFecha[1] : null;
 
-            if (vistos[acuerdoId]) continue; // ya reportado en una corrida anterior
+            const esReintentoPendiente = pendientesPdf.has(acuerdoId);
+            if (vistos[acuerdoId] && !esReintentoPendiente) continue; // ya resuelto del todo en una corrida anterior
 
-            console.log(`      Acuerdo nuevo: ${acuerdoId} (${fechaPublicacion || 'sin fecha'})`);
-            const pdfBuffer = await descargarPdfDesdeLink(context, page, linkVerAcuerdo);
+            console.log(esReintentoPendiente
+              ? `      Reintentando PDF pendiente: ${acuerdoId} (${fechaPublicacion || 'sin fecha'})`
+              : `      Acuerdo nuevo: ${acuerdoId} (${fechaPublicacion || 'sin fecha'})`);
+            const pdfBuffer = await descargarPdfConReintentos(context, page, linkVerAcuerdo, `acuerdo ${acuerdoId}`);
             let documentoId = null;
             if (pdfEsValido(pdfBuffer)) {
               documentoId = await subirPdfAlSistema(pdfBuffer, expedienteSistema.id, `Acuerdo_${sanitizarParaArchivo(acuerdoId)}.pdf`);
@@ -548,6 +586,11 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
             }
 
             try {
+              // Mismo resumen siempre (se deriva solo del acuerdoId/número
+              // de expediente) -- en un reintento de una corrida futura,
+              // avisos_ingest.php reconoce este mismo aviso ya existente y
+              // le adjunta el documento en vez de tratarlo como duplicado
+              // (ver arreglo del 24 nov 2026 ahí mismo).
               await reportarAviso(
                 expedienteSistema.id,
                 `Acuerdo ${acuerdoId} del expediente ${expedienteSistema.exp || fila.expTexto}.`,
@@ -555,12 +598,23 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
                 documentoId
               );
               reportados++;
+              if (esReintentoPendiente && documentoId) {
+                console.log(`      PDF recuperado en esta corrida para el acuerdo ${acuerdoId} (ya se había reportado antes sin documento).`);
+              }
             } catch (e) {
               console.log(`      (no se pudo reportar el aviso: ${e.message})`);
             }
 
             vistos[acuerdoId] = true;
-            estado[cuenta.cdmx_buzon_usuario] = vistos;
+            // (24 nov 2026) sin límite de tiempo para reintentar -- el
+            // costo de revisar un pendiente en cada corrida es bajo y
+            // nunca se cierra la puerta a que se recupere solo.
+            if (documentoId) {
+              pendientesPdf.delete(acuerdoId);
+            } else {
+              pendientesPdf.add(acuerdoId);
+            }
+            persistirEstadoCuenta();
             guardarProcesados(estado); // se guarda en cada acuerdo, no solo al final -- mismo criterio que edomex_correo.js
           }
 

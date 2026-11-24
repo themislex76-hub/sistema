@@ -1,5 +1,48 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Mismo arreglo de reintentos llevado a Buzón CDMX y Correo Edomex (24 nov 2026, conversación "Bot")
+Pedido explícito del usuario tras ver el arreglo de Federal: "¿crees que debamos hacer lo mismo
+con los otros robots?". Revisados los 4 restantes:
+- **CDMX (boletín)** y **Jurisprudencia**: ninguno descarga PDF (el primero sube el texto del
+  boletín tal cual, el segundo lee tesis como texto) -- no aplica, sin cambios.
+- **Buzón CDMX** (`robots/cdmx_buzon/cdmx_buzon.js`) y **Correo Edomex**
+  (`robots/edomex_correo/edomex_correo.js`): sí descargan PDF con un solo intento y sin ninguna
+  recuperación en corridas futuras si fallaba -- mismo hueco que tenía Federal. Mismas 2 piezas en
+  ambos (la 3ª, `avisos_ingest.php` adjuntando el documento si llega después, ya quedó lista para
+  los 3 robots a la vez desde el arreglo de Federal, porque no depende de cuál robot sea):
+  1. **5 intentos por PDF** -- `descargarPdfConReintentos()` en Buzón CDMX (envuelve
+     `descargarPdfDesdeLink()`), `obtenerPdfDeLigaConReintentos()` en Correo Edomex (envuelve el
+     `context.request.get()` de la liga del correo, incluyendo el caso de que venga en un `.zip`).
+  2. **Lista de "pendientes de PDF"** que se reintenta sola en corridas futuras, sin límite de
+     tiempo -- en ambos, `estado[cuenta]` pasó de un formato plano (`{acuerdoId: true}` en Buzón
+     CDMX, un arreglo de ids de correo en Edomex) a `{vistos, pendientesPdf}` (compatible con el
+     formato viejo). En Correo Edomex, como el correo sigue en la bandeja, no hace falta guardar
+     nada más que el id de la conversación -- reabrirla en una corrida futura vuelve a dar el
+     mismo texto/liga de siempre, así que todo se deriva fresco en el momento.
+- **A propósito NO se agregó un candado de "PDF idéntico entre 2 acuerdos"** -- se consideró
+  (por un caso real del Exp. 388/2026 donde 2 acuerdos distintos pesaban igual) pero el usuario
+  aclaró que el Tribunal sí puede publicar el mismo acuerdo dos veces de verdad (duplicado
+  administrativo del boletín) -- un candado así habría rechazado por error un caso legítimo, así
+  que se descartó antes de dejarlo puesto.
+- **2ª corrida diaria, SOLO en Correo Edomex** (pedido explícito del usuario, confirmado "sí, otra
+  hora del día"): el correo no tiene restricción de sesión única, a diferencia del Buzón CDMX
+  (que SÍ solo permite una sesión activa por cuenta -- agregar una 2ª corrida ahí podría chocar
+  con la abogada usando su cuenta en horario de oficina, por eso se dejó fuera a propósito, con
+  la lista de pendientes bastando para recuperarse sola al día siguiente). Pendiente del usuario,
+  mismo patrón que Federal (PowerShell como administrador, un comando a la vez):
+  ```
+  schtasks /create /tn "Robot Edomex Expertos Laborales 2" /tr "C:\Users\Ruben\Desktop\ROBOTS\edomex_correo\run_diario.bat" /sc daily /st 15:00
+  ```
+  (ajustar la ruta si la carpeta real es distinta -- esta tarea existente se llama "Edomex" a
+  secas por una confusión de nombre ya documentada abajo, pero corre `edomex_correo\run_diario.bat`
+  desde hace tiempo).
+- `node --check` limpio en los 2 archivos. Sin cambios de base de datos, sin tocar `assets/app.js`
+  -- no aplica cache-bust ni `verificar_tags.js`/`pruebas_bot.php` (son robots de Node, no el bot
+  de WhatsApp). **Sin probar en vivo todavía** -- falta que el usuario reemplace los 2 archivos
+  (en `.zip`, ver "Flujo de despliegue" más abajo) y confirme con una corrida real que, si algún
+  PDF falla, aparece "AVISO: se agotaron los 5 intentos..." y que una corrida posterior sí lo
+  recupera (buscar "PDF recuperado en esta corrida...").
+
 ## Robot Federal: 5 reintentos por PDF + recupera solo lo que falló antes, sin esperar a que el abogado lo suba a mano (24 nov 2026, conversación "Bot")
 Pedido explícito del usuario, mismo caso del Exp. 388/2026 de arriba: "sería bueno que el robot
 haga más intentos para descargar los documentos y no trasladarle la responsabilidad al abogado"
