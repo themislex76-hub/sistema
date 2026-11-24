@@ -301,12 +301,18 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   del Art. 76 en los años de servicio YA cumplidos (al menos el último
   año completo), menos los que sí tomó. La herramienta descarta sola los
   prescritos. Nunca calcules solo las vacaciones proporcionales del año
-  en curso cuando ya te dijo que no tomó las anteriores. Si lleva MENOS
-  de 1 año de antigüedad (sin ningún aniversario cumplido todavía), el
-  proporcional del periodo SÍ es lo correcto -- pero dilo explícitamente
-  ("como todavía no cumples tu primer año, lo que te corresponde es el
-  proporcional, que ya cubre todo lo que llevas sin tomar"), no solo des
-  la cifra sin aclarar ese punto.
+  en curso cuando ya te dijo que no tomó las anteriores.
+  Cómo preguntarlo (revisión del 19-nov-2026: muchos casos solo preguntaron
+  por el último aniversario): si ya cumplió 2 años o más, pregunta por
+  TODOS los años anteriores, no solo el último ("¿tomaste completas tus
+  vacaciones de cada año, o te quedaron días sin tomar? ¿cuántos en total
+  y de qué años?") y pasa la SUMA de lo no tomado de todos esos años; la
+  herramienta se queda solo con lo que todavía se puede reclamar. Si te
+  regresa días prescritos, explícale que las vacaciones de cada año se
+  reclaman hasta 18 meses después de cada aniversario (Arts. 81 y 516) y
+  por eso no se cuentan; no lo digas si la herramienta no los regresó.
+  Si aún NO cumple su primer año, díselo claro: lo que le toca es la parte
+  proporcional, y esa ya cubre todo lo trabajado sin vacaciones.
 · Cuando le pagan TERCEROS (clientes, socios, alumnos, pasajeros) y la
   persona misma cobra (caso real: coach de un club, pagado directo por
   los socios): NO afirmes que "sin duda eres trabajador" ni que lo que
@@ -443,6 +449,39 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
 · Cuando la calculadora ya te dio el desglose, dale al cliente TODOS los
   conceptos con su monto (aguinaldo, vacaciones, prima vacacional, etc.)
   y el total; nunca le menciones solo uno con cifra y los demás sin monto.
+  Copia las cifras EXACTAS de la herramienta (caso real: escribió
+  $11,273.60 cuando el total era $11,273.26). Si la persona sigue
+  trabajando y solo preguntó por su aguinaldo, contéstale el aguinaldo y
+  dile en una línea que también tiene derecho a vacaciones y prima
+  vacacional, con sus montos.
+· Accidente o enfermedad por el trabajo (caso real, 19-nov-2026: se cayó
+  en el trabajo y renunció por la lesión; el bot solo le ofreció
+  horarios): dale orientación mínima antes de vender. Puede ser un riesgo
+  de trabajo, con prestaciones del IMSS (si estaba asegurada) aparte de
+  su finiquito, y los conflictos de prestaciones de seguridad social por
+  riesgos o accidentes de trabajo no tienen que pasar primero por el
+  Centro de Conciliación (Art. 685 Ter fracc. III). Consulta el artículo
+  antes de citarlo y deja que el abogado defina el monto y la vía.
+· Reestructura, recorte de personal, "ya no podemos pagar tu sueldo",
+  "se descompuso el equipo" o "se acabó el proyecto" SIN cierre total
+  (revisión del 19-21 nov 2026): no lo des por hecho ni como despido
+  injustificado ni como terminación del Art. 434. Explica los dos
+  escenarios: si el patrón invoca una causa del Art. 434 (fuerza mayor,
+  incosteabilidad notoria y manifiesta, concurso o quiebra), necesita dar
+  aviso o pedir autorización previa al Tribunal (Art. 435) y paga 3 meses
+  más la prima de antigüedad (Art. 436), sin 20 días por año; si solo lo
+  separa a él sin ese procedimiento, se trataría como despido. En ambos
+  casos son 3 meses + prima de antigüedad + finiquito, así que el
+  estimado no cambia, pero NO prometas salarios caídos en este caso: eso
+  depende de la vía que valore el abogado. Si dice "se acabó el
+  proyecto", pregúntale si su contrato era por obra o tiempo
+  determinado (Arts. 35-37 y 53 fracc. III) antes de calcular.
+· Trabajadoras y trabajadores del hogar (limpieza, cocina o cuidados en
+  una casa, para una persona y no para una empresa): tienen un capítulo
+  especial de la LFT (Arts. 331 a 343). Díselo desde el principio y
+  aclara que la calculadora usa las reglas generales, así que el
+  abogado ajusta el cálculo a ese capítulo; consulta el artículo antes
+  de citar alguna regla específica.
 · Si el cliente tuvo su asesoría hoy (o la tiene agendada) y te escribe,
   primero pregúntale si ya habló con el Lic. Rubén y cómo le fue; no des
   por hecho que la llamada ya se hizo ni le ofrezcas pagar otra asesoría
@@ -2153,6 +2192,18 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     $usoCalculoPlazo = false;
     $usoBuscarJurisprudencia = false;
     $yaInsistioAnuncio = false;
+    $yaInsistioMontos = false;
+    // Cifras con centavos que el bot puede repetir sin haberlas calculado
+    // a mano: las que ya aparecen en la conversación, en los cálculos de la
+    // calculadora de los últimos 30 días y en los resultados de las
+    // herramientas de este turno (se van sumando abajo).
+    $respaldoMontos = json_encode($mensajes, JSON_UNESCAPED_UNICODE);
+    try {
+        $stCalc = $pdo->prepare("SELECT calculo_json FROM calculos_liquidacion WHERE telefono = :t AND creado_en >= NOW() - INTERVAL 30 DAY");
+        $stCalc->execute([':t' => $telefono]);
+        $respaldoMontos .= ' ' . implode(' ', $stCalc->fetchAll(PDO::FETCH_COLUMN));
+    } catch (Throwable $e) {
+    }
 
     for ($ronda = 0; $ronda < $maxRondas; $ronda++) {
         $data = ia_llamar_claude($mensajesActuales);
@@ -2185,6 +2236,22 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     . " | [anuncio_sin_hacer] tel=$telefono | texto=\"" . $textoRonda . "\"\n", FILE_APPEND);
                 $mensajesActuales[] = ['role' => 'assistant', 'content' => $bloques];
                 $mensajesActuales[] = ['role' => 'user', 'content' => '[Aviso interno del sistema, no es del cliente y no lo menciones] Tu mensaje anterior NO se envió: solo anunciaba que ibas a calcular/confirmar/revisar algo, sin hacerlo. Hazlo AHORA, en este mismo turno, con las herramientas que necesites (calcular_estimado_liquidacion, consultar_articulo_lft, etc.), y escribe directo la respuesta completa al cliente, sin decir "déjame" ni "voy a". Si te falta un dato, pregúntalo.'];
+                continue;
+            }
+            // Revisión del 19-22 nov 2026: el error más repetido era dar
+            // cifras con centavos hechas a mano (día festivo, horas extra,
+            // quincenas adeudadas, salarios caídos, aguinaldo "duplicado")
+            // como si fueran exactas. Si el texto trae montos con centavos
+            // que no salieron de ninguna herramienta ni están ya en la
+            // conversación, se le pide una vez que los calcule con la
+            // herramienta o los dé como aproximación sin centavos.
+            $montosSueltos = ia_montos_sin_respaldo($textoRonda, $respaldoMontos);
+            if (!$yaInsistioMontos && $ronda < $maxRondas - 1 && $montosSueltos) {
+                $yaInsistioMontos = true;
+                file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+                    . " | [montos_a_mano] tel=$telefono | " . implode(', ', $montosSueltos) . "\n", FILE_APPEND);
+                $mensajesActuales[] = ['role' => 'assistant', 'content' => $bloques];
+                $mensajesActuales[] = ['role' => 'user', 'content' => '[Aviso interno del sistema, no es del cliente y no lo menciones] Tu mensaje anterior NO se envió: trae cifras exactas en pesos (' . implode(', ', $montosSueltos) . ') que no salieron de ninguna herramienta. Si es finiquito, indemnización o salarios caídos, calcúlalo AHORA con calcular_estimado_liquidacion o calcular_salarios_caidos y usa sus cifras exactas. Si es algo que ninguna herramienta calcula (horas extra, día festivo, quincenas o días adeudados, sumas propias), dalo redondeado y sin centavos ("unos $6,000"), di que es una aproximación que confirma el abogado y nunca lo sumes a un total de la calculadora. Escribe directo la respuesta completa al cliente.'];
                 continue;
             }
             // No llamó ninguna herramienta — $textoRonda es la respuesta final.
@@ -2399,6 +2466,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ], JSON_UNESCAPED_UNICODE)
                     : json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
             }
+            $respaldoMontos .= ' ' . $contenido;
             $toolResults[] = [
                 'type' => 'tool_result',
                 'tool_use_id' => $bloque['id'],
@@ -2596,6 +2664,34 @@ function ia_texto_promete_abogado(string $texto): bool
 
 // true si el texto solo ANUNCIA algo que el bot iba a hacer ("déjame
 // calcularlo", "voy a confirmar el fundamento") en vez de hacerlo.
+/**
+ * Montos con centavos ("$1,070.01") del texto del bot que no aparecen en
+ * $respaldo (conversación previa, cálculos guardados y resultados de las
+ * herramientas). Solo se miran cifras con centavos: las redondeadas
+ * ("unos $6,000") son aproximaciones permitidas, y las que dice el cliente
+ * casi nunca traen centavos.
+ */
+function ia_montos_sin_respaldo(string $texto, string $respaldo): array
+{
+    if (!preg_match_all('/\$\s?(\d{1,3}(?:,\d{3})+|\d+)\.(\d{2})\b/u', $texto, $m, PREG_SET_ORDER)) {
+        return [];
+    }
+    $conocidos = [];
+    if (preg_match_all('/(?<![\d.])(\d{1,3}(?:,\d{3})+|\d+)\.(\d{1,2})(?!\d)/u', $respaldo, $r, PREG_SET_ORDER)) {
+        foreach ($r as $x) {
+            $conocidos[sprintf('%.2f', (float)(str_replace(',', '', $x[1]) . '.' . $x[2]))] = true;
+        }
+    }
+    $sueltos = [];
+    foreach ($m as $x) {
+        $k = sprintf('%.2f', (float)(str_replace(',', '', $x[1]) . '.' . $x[2]));
+        if ((float)$k >= 1 && !isset($conocidos[$k])) {
+            $sueltos[] = '$' . $x[1] . '.' . $x[2];
+        }
+    }
+    return array_values(array_unique($sueltos));
+}
+
 function ia_texto_anuncia_sin_hacer(string $texto): bool
 {
     return preg_match(
@@ -5350,7 +5446,7 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Trato inadecuado: repetir la misma pregunta de venta en cada mensaje, ignorar lo que el cliente pidió, no contestar su duda.\n"
         . "NO marques (son falsas alarmas ya vistas):\n"
         . "- Que el bot diga que el despacho NO lleva juicios en cierto lugar: el despacho solo litiga en CDMX y en municipios de las regiones Tlalnepantla y Ecatepec del Estado de México (por el centro de trabajo); fuera de ahí es correcto decirlo si la persona preguntó por representación.\n"
-        . "- Conversaciones donde el bot NO contestó nada ese día: no hay respuesta del bot que revisar.\n"
+        . "- Conversaciones donde el bot NO contestó nada ese día (aunque haya salido el mensaje automático de horario): no hay respuesta del bot que revisar; no sugieras lo que \"debería contestar\".\n"
         . "- Citar el Art. 133 fracc. XII para hostigamiento laboral: su texto dice \"actos de hostigamiento y/o acoso sexual\" y el Art. 3 Bis define el hostigamiento en general (sin ser sexual); es una cita defendible.\n"
         . "- Decir que vacaciones viejas \"pueden estar\" prescritas (en condicional); solo marca si lo afirma como hecho sin la calculadora.\n"
         . "- Montos dichos de forma CONDICIONAL (\"si el despido es injustificado, te corresponden 3 meses\", \"si llegaran a correrte...\"): eso es correcto, no es prometer el resultado.\n"
@@ -5367,11 +5463,19 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Los mensajes etiquetados SISTEMA (seguimientos, confirmaciones del pago, recordatorios): los manda el sistema solo, no el bot.\n"
         . "- Que el BOT diga que un pago quedó confirmado: el sistema bloquea automáticamente esa frase si no existe el pago real en la base de datos; si llegó al cliente, el pago sí existe.\n"
         . "- Vacaciones prescritas a los 18 meses de cada aniversario: es el criterio del sistema (6 meses para disfrutarlas, Art. 81, más 1 año de prescripción, Art. 516); no lo marques como regla inventada (sí marca que el bot cite una tesis o \"criterio de la SCJN\" de memoria).\n"
-        . "- Días de vacaciones según el Art. 76 vigente (días laborables): 1 año = 12, 2 = 14, 3 = 16, 4 = 18, 5 = 20, de 6 a 10 años = 22, de 11 a 15 = 24. Con 6 años SÍ son 22 días (\"a partir del sexto año\" aumenta 2); no lo marques como error.\n"
+        . "- Días de vacaciones según el Art. 76 vigente (días laborables): 1 año = 12, 2 = 14, 3 = 16, 4 = 18, 5 = 20, de 6 a 10 años = 22, de 11 a 15 = 24, de 16 a 20 = 26, de 21 a 25 = 28, de 26 a 30 = 30. Con 6 años SÍ son 22 días (\"a partir del sexto año\" aumenta 2); no lo marques como error.\n"
         . "- Pagar el triple por trabajar un día de descanso obligatorio: el Art. 75 dice \"independientemente del salario que les corresponda por el descanso obligatorio, un salario doble por el servicio prestado\" -- salario del día + doble = triple. Es correcto.\n"
         . "- Que el \"salario diario\" que dice el bot sea distinto del SDI de la calculadora: el SDI es el salario diario MÁS la parte proporcional de aguinaldo y prima vacacional, siempre es mayor. Solo marca si el TOTAL no coincide con la calculadora.\n"
         . "- No preguntar por conciliación cuando el despido fue ese mismo día o hace pocos días y la persona no mencionó ningún citatorio ni trámite en el Centro.\n"
         . "- Advertirle al cliente que un convenio ratificado ya no se puede reclamar después (Art. 684-E fracc. XIII, cosa juzgada) para que lo revise antes de firmar: es una advertencia correcta que lo protege.\n"
+        . "- \"Solo calculó las vacaciones del último año\" cuando la persona tiene muchos años: las de cada año solo se reclaman hasta 18 meses después del aniversario, así que normalmente solo cuentan el último año (o los 2 últimos) más el proporcional. Revisa en CÁLCULOS los días contados y si la calculadora descartó prescritos; marca SOLO si la persona dijo que no tomó vacaciones de años anteriores y el bot nunca preguntó por ellos ni los pasó a la calculadora.\n"
+        . "- Dar solo el proporcional de vacaciones a quien todavía NO cumple su primer año: es lo correcto.\n"
+        . "- Un plazo en días o una fecha límite para demandar (\"te quedarán 52 días cuando te den la Constancia\", \"hasta el 19 de enero\"): sale de la herramienta calcular_plazo_demanda (campos dias_restantes y dias_restantes_al_reanudar), que tú no ves; NUNCA lo marques como \"calculado a mano\". Márcalo solo si contradice un hecho de la conversación (p. ej. ya fue a conciliación y el bot no lo tomó en cuenta).\n"
+        . "- Que el bot trate como Apartado B a quien trabaja para un gobierno o una fiscalía y su juicio está en el Tribunal Federal de Conciliación y Arbitraje (TFCA): ese tribunal es justamente el del Apartado B.\n"
+        . "- Que el bot diga que una reestructura o un recorte no es causa del Art. 47: es correcto; solo marca si promete salarios caídos o lo afirma como despido injustificado sin mencionar la vía del Art. 434-435.\n"
+        . "- Dar solo el aguinaldo a quien sigue trabajando y solo preguntó por el aguinaldo.\n"
+        . "- Un estimado de \"si te despidieran\" a quien todavía trabaja, si se dice en condicional.\n"
+        . "- No mencionar si el despacho puede representarlo: el bot NO debe sacar el tema de la zona por su cuenta.\n"
         . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
         . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
         . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"

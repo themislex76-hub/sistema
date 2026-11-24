@@ -4095,3 +4095,54 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
   cron de verificación mande push si alguno se atrasa (forzar una prueba sería borrar o adelantar
   a mano la fecha de un heartbeat en la base y correr el cron, para ver la alerta sin esperar
   días).
+
+## Documento de $49: regla de 30 días gratis confirmada + revisiones del 19-23 nov (conversación "chats")
+- **Decisión del usuario (19 nov 2026)**: se queda la regla de 30 días -- quien pagó el documento
+  de $49 en los últimos 30 días recibe correcciones GRATIS, aunque sea él quien cambie sus datos
+  ("para que la gente no se enoje"). Hoy el bot no la manda solo: escala y el abogado la manda con
+  `debug_enviar_pdf_calculo.php` (un PDF por modo/tipo; despido justificado = `tipo=justificado`).
+
+## Revisión del 19-nov (120 conversaciones, 27 marcadas = 22.5%) (20 nov 2026, conversación "chats")
+- Subió de 12.5% porque 12 de las 27 eran de VACACIONES DE AÑOS ANTERIORES: el revisor aplicaba el
+  criterio del coach de tenis a ciegas (no veía qué días pasó el bot a la calculadora). Reales: el
+  bot solo preguntaba por el último aniversario. Arreglos: criterio del bot -- preguntar por TODOS
+  los años y pasar la SUMA (la calculadora descarta prescritos); antes del 1er año decir que el
+  proporcional cubre todo; cifras EXACTAS de la herramienta; si solo preguntó por aguinaldo y sigue
+  trabajando, dar aguinaldo + mencionar vacaciones/prima con monto; accidente de trabajo:
+  orientación mínima (riesgo de trabajo, Art. 685 Ter fracc. III, sin conciliación previa).
+  Revisor: el cron ahora le pasa antigüedad, días de vacaciones contados y prescritos/excedentes
+  de cada cálculo; 5 "NO marques" nuevos; tabla del Art. 76 hasta 30 años. 94 casos.
+- Otros reales sin regla nueva (ya cubiertos): SDI sustituido a mano por el salario mínimo
+  (5212741129456), horas extra a mano (5215527036503), comparación de aguinaldo a mano
+  (5217712452069), "no hay problema con tu plazo" con la conciliación en trámite (5219619968095).
+
+## Revisión del 19-22 nov (54 marcadas; 22-nov: 3 de 16) (23 nov 2026, conversación "chats")
+- Error más repetido: cifras con centavos hechas a mano (día festivo, horas extra, quincenas
+  adeudadas, salarios caídos, aguinaldo "duplicado"). Candado nuevo en código:
+  `ia_montos_sin_respaldo()` -- si el texto final trae montos con centavos que no están en la
+  conversación, en `calculos_liquidacion` (30 días) ni en los resultados de herramientas del
+  turno, se le pide UNA vez que los calcule con la herramienta o los dé redondeados como
+  aproximación (log `[montos_a_mano]`).
+- Criterios nuevos: reestructura/recorte/"se acabó el proyecto" sin cierre (dos escenarios,
+  Arts. 434-436 vs despido; no prometer salarios caídos; preguntar si era contrato por obra o
+  tiempo determinado); trabajo del hogar (Arts. 331-343, la calculadora usa reglas generales).
+- `cron_seguimiento_cursos.php`: ya no le vende el curso a quien dijo que pagó / mandó
+  comprobante ni a quien tiene otro prospecto pausado (caso real ChuyNg 21-nov).
+- Revisor: no marca plazos en días (salen de calcular_plazo_demanda), Apartado B en el TFCA,
+  ni "reestructura no es causa del Art. 47". 101 casos en `scripts/pruebas_bot.php`.
+- **Pregunta abierta al Lic. Rubén**: el Art. 521 fracc. III vigente dice que la solicitud de
+  conciliación INTERRUMPE la prescripción y que la interrupción cesa al día siguiente de la
+  constancia; `calcular_plazo_demanda()` y el prompt la tratan como SUSPENSIÓN (pausa con los
+  días que quedaban). No se cambió nada sin su criterio.
+
+## Revisión del 23-nov (111 conversaciones, 9 marcadas = 8.1%) (24 nov 2026, conversación "chats")
+- Primer día completo con el candado de montos. Reales: salario semanal $3,400 ÷ 5 = $680 (ver
+  pregunta abajo), vacaciones descontadas por paros técnicos sin preguntar años anteriores,
+  plazo dado sin preguntar la fecha de la solicitud de conciliación (tenía cita el 4-dic),
+  recorte tratado como despido (posible conversación previa a la subida del 23-nov).
+  Falsas alarmas: plazo "a mano" (sale de calcular_plazo_demanda), conversación sin respuesta del
+  bot, PTU Art. 127-VII. Revisor calibrado en esos 2 primeros puntos (sin subir todavía).
+- **Pregunta abierta al Lic. Rubén (24-nov)**: la REGLA DURA del prompt dice dividir el salario
+  SEMANAL entre los días trabajados (NUNCA entre 7), pero el Art. 89 LFT vigente dice "Cuando el
+  salario se fije por semana o por mes, se dividirá entre siete o entre treinta". El 19-nov se le
+  mandaron a un cliente 2 PDF con ÷7 ($3,000/7 = $428.57). No se cambió nada sin su criterio.

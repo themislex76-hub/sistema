@@ -281,7 +281,6 @@ caso('detecta cifras de exención de ISR inventadas',
     ia_texto_afirma_exencion_isr('el aguinaldo y la prima vacacional tienen exención hasta 30 y 15 veces la UMA respectivamente')
     && ia_texto_afirma_exencion_isr('es probable que buena parte quede exenta de ISR')
     && !ia_texto_afirma_exencion_isr('la Ley del ISR exenta una parte de la indemnización según los años de servicio'));
-caso('prompt: vacaciones <1 año -- aclarar explícitamente que el proporcional ya cubre todo', strpos($p, 'como todavía no cumples tu primer año') !== false);
 caso('prompt: no 2 totales distintos de horas extra con divisores distintos', strpos($p, '2 divisores distintos del salario diario') !== false);
 caso('prompt: no repetir el precio en mensajes seguidos', strpos($p, 'repetir el PRECIO de la asesoría') !== false);
 caso('calculadora: aviso_vacaciones_anteriores cuando el cliente dijo que nunca tomó y no se pasó el dato',
@@ -297,7 +296,34 @@ caso('calculadora: aviso_vacaciones_anteriores cuando el cliente dijo que nunca 
         return $dias <= 0 && ia_cliente_dijo_no_tomo_vacaciones($mensajesV);
     })());
 
-echo "17) Mejorar ventas (24-nov): objeciones de precio y monto real en el seguimiento\n";
+echo "17) Revisión del 19-nov: vacaciones de todos los años, accidente de trabajo, revisor calibrado\n";
+$p = IA_SYSTEM_PROMPT;
+caso('pregunta por TODOS los años anteriores y pasa la suma', strpos($p, 'TODOS los años anteriores') !== false && strpos($p, 'SUMA de lo no tomado') !== false);
+caso('antes del primer año: el proporcional cubre todo', strpos($p, 'Si aún NO cumple su primer año') !== false);
+caso('accidente de trabajo: orientación mínima y Art. 685 Ter fracc. III', strpos($p, 'Art. 685 Ter fracc. III') !== false);
+caso('cifras exactas de la herramienta', strpos($p, 'Copia las cifras EXACTAS') !== false);
+$src = file_get_contents($base . '/api/ia_helpers.php');
+caso('revisor: no marca "solo el último año" si no aplica', strpos($src, 'Solo calculó las vacaciones del último año') !== false);
+caso('revisor: tabla del Art. 76 hasta 30 años', strpos($src, 'de 16 a 20 = 26, de 21 a 25 = 28') !== false);
+$cron = file_get_contents($base . '/api/cron_revisar_conversaciones_bot.php');
+caso('revisor recibe días de vacaciones y prescritos de la calculadora', strpos($cron, 'vacaciones_anteriores_dias_prescritos') !== false);
+
+// ---------------------------------------------------------------------
+echo "18) Revisión del 19-22 nov: montos a mano, reestructura, trabajo del hogar, curso pagado\n";
+$resp = json_encode([['role' => 'assistant', 'content' => 'Total estimado: $67,166.59']]) . ' {"total_estimado":115672.98,"aguinaldo_monto":2187.74}';
+caso('cifra con centavos hecha a mano se detecta', ia_montos_sin_respaldo('serían hasta $1,070.01', $resp) === ['$1,070.01']);
+caso('cifra de la calculadora (JSON sin comas) no se marca', ia_montos_sin_respaldo('Total: $115,672.98 y aguinaldo $2,187.74', $resp) === []);
+caso('cifra ya dicha en la conversación no se marca', ia_montos_sin_respaldo('Como te dije, $67,166.59', $resp) === []);
+caso('aproximación sin centavos no se marca', ia_montos_sin_respaldo('serían unos $6,000 a la semana', $resp) === []);
+$p = IA_SYSTEM_PROMPT;
+caso('reestructura: dos escenarios y sin salarios caídos', strpos($p, 'Reestructura, recorte de personal') !== false && strpos($p, 'NO prometas salarios caídos en este caso') !== false);
+caso('trabajo del hogar: capítulo especial Arts. 331 a 343', strpos($p, 'Arts. 331 a 343') !== false);
+$cron = file_get_contents($base . '/api/cron_seguimiento_cursos.php');
+caso('seguimiento de curso no le vende a quien ya dijo que pagó', strpos($cron, 'yaDijoQuePago') !== false && strpos($cron, 'p2.pausado_bot = 1') !== false);
+
+// ---------------------------------------------------------------------
+echo "19) Mejorar ventas (24-nov): objeciones de precio y monto real en el seguimiento\n";
+$p = IA_SYSTEM_PROMPT;
 caso('prompt: objeción de precio -- reencuadra valor con el caso real, nunca baja el precio',
     strpos($p, 'OBJECIONES de precio') !== false && strpos($p, 'nunca ofrezcas un') !== false);
 caso('prompt: "ya tengo abogado" -- segunda opinión, nunca desprestigiar al otro abogado',
