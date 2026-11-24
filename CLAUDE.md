@@ -3274,3 +3274,15 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   conciliación INTERRUMPE la prescripción y que la interrupción cesa al día siguiente de la
   constancia; `calcular_plazo_demanda()` y el prompt la tratan como SUSPENSIÓN (pausa con los
   días que quedaban). No se cambió nada sin su criterio.
+
+## Revisión del 23-nov (111 conversaciones, 9 marcadas = 8.1%) (24 nov 2026, conversación "chats")
+- Primer día completo con el candado de montos. Reales: salario semanal $3,400 ÷ 5 = $680 (ver
+  pregunta abajo), vacaciones descontadas por paros técnicos sin preguntar años anteriores,
+  plazo dado sin preguntar la fecha de la solicitud de conciliación (tenía cita el 4-dic),
+  recorte tratado como despido (posible conversación previa a la subida del 23-nov).
+  Falsas alarmas: plazo "a mano" (sale de calcular_plazo_demanda), conversación sin respuesta del
+  bot, PTU Art. 127-VII. Revisor calibrado en esos 2 primeros puntos (sin subir todavía).
+- **Pregunta abierta al Lic. Rubén (24-nov)**: la REGLA DURA del prompt dice dividir el salario
+  SEMANAL entre los días trabajados (NUNCA entre 7), pero el Art. 89 LFT vigente dice "Cuando el
+  salario se fije por semana o por mes, se dividirá entre siete o entre treinta". El 19-nov se le
+  mandaron a un cliente 2 PDF con ÷7 ($3,000/7 = $428.57). No se cambió nada sin su criterio.
