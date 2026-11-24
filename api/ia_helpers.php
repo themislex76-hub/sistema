@@ -747,8 +747,9 @@ memoria — es la fuente más común de errores):
     TODOS estos datos (uno o varios mensajes, lo que haga falta): (1)
     fecha de ingreso, (2) fecha de baja (o si aún no ha pasado, la fecha
     de hoy), (3) salario diario, mensual, quincenal o semanal
-    (conviértelo tú a diario -- mensual/30, quincenal/15, semanal/7,
-    ver REGLA DURA correspondiente). REGLA DURA — salario
+    (conviértelo tú a diario -- mensual/30, quincenal/15, semanal/7;
+    si trabaja menos de 4 días a la semana, su salario por día
+    trabajado; ver REGLA DURA correspondiente). REGLA DURA — salario
     mínimo: si la persona dice que le pagaban/paga "el salario mínimo"
     SIN darte un monto propio fijo, llama SIEMPRE
     consultar_salario_minimo_vigente para obtener el dato real -- nunca
@@ -858,10 +859,15 @@ memoria — es la fuente más común de errores):
     REGLA DURA — salario diario a partir de un pago SEMANAL (criterio
     del Lic. Rubén Buerhend, 24-nov-2026, conforme al Art. 89 LFT: "Cuando
     el salario se fije por semana o por mes, se dividirá entre siete o
-    entre treinta"): divide el salario semanal entre 7, SIEMPRE, sin
-    importar cuántos días trabaje a la semana (el pago semanal ya incluye
-    el día de descanso). Ej.: $3,400 a la semana = $485.71 diarios, NO
-    $3,400 ÷ 5 = $680. Error real (23-nov-2026): dividió entre 5 los días
+    entre treinta"): si trabaja 4 días o más a la semana, divide el
+    salario semanal entre 7 (el pago semanal ya incluye el día de
+    descanso). Ej.: $3,400 a la semana, de lunes a viernes = $485.71
+    diarios, NO $3,400 ÷ 5 = $680. EXCEPCIÓN (criterio del Lic. Rubén,
+    24-nov-2026): si trabaja MENOS de 4 días a la semana (1, 2 o 3),
+    usa su salario diario real, es decir, lo que le pagan por cada día
+    trabajado (ej. $1,500 por 3 días = $500 diarios, no $1,500 ÷ 7). Si
+    no sabes cuántos días trabaja a la semana, pregúntaselo antes de
+    convertir. Error real (23-nov-2026): dividió entre 5 los días
     trabajados y le dio a la persona un estimado de $180,144.66, muy
     inflado. Si el patrón o la persona dicen otra cifra diaria, explícale
     que la ley divide el salario semanal entre 7. (Esto sustituye una
@@ -1824,7 +1830,7 @@ const IA_TOOLS = [
                 ],
                 'salario_diario' => [
                     'type' => 'number',
-                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15). Si te dio un salario SEMANAL, divídelo entre 7 siempre (Art. 89 LFT), sin importar cuántos días trabaje a la semana -- ver REGLA DURA correspondiente.',
+                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15). Si te dio un salario SEMANAL y trabaja 4 días o más a la semana, divídelo entre 7 (Art. 89 LFT); si trabaja menos de 4 días a la semana, usa lo que le pagan por día trabajado -- ver REGLA DURA correspondiente.',
                 ],
                 'tipo' => [
                     'type' => 'string',
@@ -1911,7 +1917,7 @@ const IA_TOOLS = [
                 ],
                 'salario_diario' => [
                     'type' => 'number',
-                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15). Si te dio un salario SEMANAL, divídelo entre 7 siempre (Art. 89 LFT), sin importar cuántos días trabaje a la semana -- ver REGLA DURA correspondiente.',
+                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15). Si te dio un salario SEMANAL y trabaja 4 días o más a la semana, divídelo entre 7 (Art. 89 LFT); si trabaja menos de 4 días a la semana, usa lo que le pagan por día trabajado -- ver REGLA DURA correspondiente.',
                 ],
             ],
             'required' => ['fecha_despido', 'salario_diario'],
@@ -5188,7 +5194,7 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Advertirle al cliente que un convenio ratificado ya no se puede reclamar después (Art. 684-E fracc. XIII, cosa juzgada) para que lo revise antes de firmar: es una advertencia correcta que lo protege.\n"
         . "- \"Solo calculó las vacaciones del último año\" cuando la persona tiene muchos años: las de cada año solo se reclaman hasta 18 meses después del aniversario, así que normalmente solo cuentan el último año (o los 2 últimos) más el proporcional. Revisa en CÁLCULOS los días contados y si la calculadora descartó prescritos; marca SOLO si la persona dijo que no tomó vacaciones de años anteriores y el bot nunca preguntó por ellos ni los pasó a la calculadora.\n"
         . "- Dar solo el proporcional de vacaciones a quien todavía NO cumple su primer año: es lo correcto.\n"
-        . "- Dividir un salario SEMANAL entre 7 para sacar el salario diario: es el criterio del despacho (Art. 89 LFT). Lo que SÍ es error es dividirlo entre los días trabajados (5 o 6).\n"
+        . "- Dividir un salario SEMANAL entre 7 para sacar el salario diario cuando trabaja 4 días o más, o usar el pago por día trabajado cuando trabaja menos de 4 días a la semana: es el criterio del despacho (Art. 89 LFT). Lo que SÍ es error es dividir entre 5 o 6 a quien trabaja 4 días o más.\n"
         . "- Un plazo en días o una fecha límite para demandar (\"te quedarán 52 días cuando te den la Constancia\", \"hasta el 19 de enero\"): sale de la herramienta calcular_plazo_demanda (campos dias_restantes y dias_restantes_al_reanudar), que tú no ves; NUNCA lo marques como \"calculado a mano\". Márcalo solo si contradice un hecho de la conversación (p. ej. ya fue a conciliación y el bot no lo tomó en cuenta).\n"
         . "- Que el bot trate como Apartado B a quien trabaja para un gobierno o una fiscalía y su juicio está en el Tribunal Federal de Conciliación y Arbitraje (TFCA): ese tribunal es justamente el del Apartado B.\n"
         . "- Que el bot diga que una reestructura o un recorte no es causa del Art. 47: es correcto; solo marca si promete salarios caídos o lo afirma como despido injustificado sin mencionar la vía del Art. 434-435.\n"

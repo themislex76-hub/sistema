@@ -280,8 +280,9 @@ caso('seguimiento de curso no le vende a quien ya dijo que pagó', strpos($cron,
 // ---------------------------------------------------------------------
 echo "18) Salario semanal entre 7 (criterio del Lic. Rubén, 24-nov, Art. 89)\n";
 $p = IA_SYSTEM_PROMPT;
-caso('regla del prompt: semanal entre 7 siempre', strpos($p, 'divide el salario semanal entre 7, SIEMPRE') !== false && strpos($p, 'NUNCA lo\n    dividas entre 7') === false);
-caso('herramienta: el parámetro salario_diario dice semanal entre 7', substr_count(json_encode(IA_TOOLS, JSON_UNESCAPED_UNICODE), 'divídelo entre 7 siempre (Art. 89 LFT)') === 2);
+caso('regla del prompt: semanal entre 7 con 4 días o más', strpos($p, 'si trabaja 4 días o más a la semana, divide el') !== false && strpos($p, 'NUNCA lo\n    dividas entre 7') === false);
+caso('herramienta: el parámetro salario_diario dice semanal entre 7', substr_count(json_encode(IA_TOOLS, JSON_UNESCAPED_UNICODE), 'divídelo entre 7 (Art. 89 LFT)') === 2);
+caso('menos de 4 días a la semana: salario por día trabajado', strpos($p, 'MENOS de 4 días a la semana') !== false && strpos($p, '$1,500 por 3 días = $500 diarios') !== false);
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

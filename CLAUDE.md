@@ -3283,7 +3283,8 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   Falsas alarmas: plazo "a mano" (sale de calcular_plazo_demanda), conversación sin respuesta del
   bot, PTU Art. 127-VII. Revisor calibrado en esos 2 primeros puntos (sin subir todavía).
 - **Decidido por el Lic. Rubén (24-nov)**: salario SEMANAL ÷ 7 SIEMPRE (Art. 89 LFT: "se dividirá
-  entre siete o entre treinta"), sin importar los días trabajados. Se reescribió la REGLA DURA que
+  entre siete o entre treinta") cuando trabaja 4 días o más a la semana; EXCEPCIÓN (mismo día):
+  si trabaja MENOS de 4 días a la semana, se usa su salario por día trabajado. Se reescribió la REGLA DURA que
   decía lo contrario (÷ días trabajados), la descripción de `salario_diario` en las 2
   herramientas y un "NO marques" del revisor. 103 casos en `scripts/pruebas_bot.php`.
 - Conciliación: el Lic. dijo "pausa el plazo y se reinicia con la constancia" -- se le preguntó
