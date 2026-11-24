@@ -333,6 +333,16 @@ caso('cron_seguimiento_calculadora.php vuelve a mencionar el monto real del cál
 caso('cron_seguimiento_calculadora.php: los 2 mensajes con monto siguen con el prefijo exacto que ia_es_mensaje_automatico() necesita',
     ia_es_mensaje_automatico('¡Hola! Sigo al pendiente de tu caso -- tu estimado es de aproximadamente $123,456. Si quieres...')
     && ia_es_mensaje_automatico('¡Hola de nuevo! Sigo por aquí para cuando gustes -- tu estimado sigue siendo de aproximadamente $123,456. Si quieres...'));
+caso('prompt: menciona los 25 años de experiencia y el reconocimiento del Lic. Rubén, solo en la primera oferta',
+    strpos($p, '25 años de experiencia') !== false && strpos($p, 'reconocido en el ámbito laboral') !== false && strpos($p, 'úsalos UNA sola vez') !== false);
+caso('cron_seguimiento_calculadora_plantilla.php: tercer recordatorio por plantilla, con los mismos candados que el seguimiento normal',
+    (function () use ($base) {
+        $src = file_get_contents($base . '/api/cron_seguimiento_calculadora_plantilla.php');
+        return strpos($src, 'whatsapp_enviar_plantilla') !== false
+            && strpos($src, 'tercer_seguimiento_en') !== false
+            && strpos($src, 'pausado_bot') !== false
+            && strpos($src, 'whatsapp_texto_parece_declinar') !== false;
+    })());
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

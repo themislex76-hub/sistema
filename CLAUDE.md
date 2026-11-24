@@ -1,5 +1,47 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Prueba social real (25 años + reconocido en el ámbito) + plantilla de 3er seguimiento (24 nov 2026, conversación "Bot", migración 075)
+Respuesta del usuario a la auditoría de neuromarketing de arriba: "tengo 25 años litigando... además
+soy un abogado reconocido en el ámbito" + "vale la pena hacer una plantilla de seguimiento".
+- **Prueba social agregada al prompt** (dato real, no inventado): al ofrecer la asesoría la
+  PRIMERA vez en una conversación, el bot ahora menciona "Lic. Rubén Buerhend, abogado con 25
+  años de experiencia en derecho laboral" y que es reconocido en el ámbito -- solo esa primera
+  vez, nunca se repite después aunque se vuelva a mencionar la asesoría (para no sonar a
+  discurso memorizado).
+- **Migración 075**: `calculos_liquidacion.tercer_seguimiento_en` -- nueva columna para el
+  tercer y último recordatorio.
+- **Nuevo `api/cron_seguimiento_calculadora_plantilla.php`** (correr 1 vez al día): a quien
+  calculó su liquidación hace 1-7 días y sigue sin agendar/declinar, le manda UN último
+  recordatorio por PLANTILLA aprobada de Meta (las plantillas sí llegan fuera de la ventana de
+  24h de WhatsApp, a diferencia de un mensaje normal) -- mismos candados de siempre (nunca si ya
+  lo tomó un humano, ya pagó/agendó, ya declinó, o el bot ya dijo que no se le puede atender).
+  Esto cierra el hueco real encontrado hoy: antes, pasadas las 24h, NADIE volvía a contactar a
+  esos leads nunca.
+- **Pendiente CRÍTICO antes de dar de alta el Cron Job**: el usuario tiene que crear y someter a
+  aprobación en Meta (Administrador de WhatsApp → Mensajería → Plantillas de mensajes) la
+  plantilla **`seguimiento_calculo_laboral`** con este texto (categoría probable: Marketing, no
+  Utilidad -- mismo costo más alto que `sin_respuesta_llamada`, ~$0.73 MXN/mensaje en vez de
+  ~$0.16):
+  > "Hola, sigo al pendiente de tu caso laboral — tu estimado es de aproximadamente ${{1}}. Si
+  > quieres que el Lic. Rubén Buerhend, con 25 años de experiencia en derecho laboral, lo revise
+  > a fondo por teléfono (asesoría de $499), contesta este mensaje y te paso los horarios
+  > disponibles."
+
+  Si Meta pide ajustes al texto o asigna un nombre técnico distinto, avisar para ajustar la
+  constante `PLANTILLA_SEGUIMIENTO_CALCULO` en el cron. Aprobación toma días -- **no dar de alta
+  el Cron Job hasta confirmar que la plantilla ya quedó aprobada**, o todas las corridas
+  marcarán `tercer_seguimiento_en` sin mandar nada de verdad (el script no reintenta solo si
+  Meta la rechaza).
+- **Expectativa honesta sobre si esto "cierra ventas"**: es una extensión razonable de un
+  mecanismo que YA funciona (los 2 recordatorios dentro de 24h ya convierten) hacia gente que
+  antes se perdía por completo -- debería ayudar, pero no hay forma de prometer cuánto sin
+  verlo funcionar con datos reales. Medir comparando asesorías pagadas de quienes SÍ recibieron
+  este 3er recordatorio contra quienes no, una vez que lleve 1-2 semanas corriendo.
+- 117 casos en `scripts/pruebas_bot.php`, `php -l` limpio en los 2 archivos. Sin tocar `app.js`.
+  **Sin probar en vivo todavía** -- falta: correr la migración 075, someter la plantilla a Meta,
+  subir `api/ia_helpers.php` y `api/cron_seguimiento_calculadora_plantilla.php`, y dar de alta
+  el Cron Job SOLO después de que la plantilla esté aprobada.
+
 ## Auditoría de neuromarketing del bot + cierre reforzado con riesgo real (24 nov 2026, conversación "Bot")
 Pedido explícito del usuario tras el arreglo de la caída de ventas: "todo esto es para vender,
 revisa qué más podemos hacer y cómo andamos con el tema del neuromarketing".
