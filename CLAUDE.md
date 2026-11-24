@@ -1,5 +1,62 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Robot Federal: 5 reintentos por PDF + recupera solo lo que falló antes, sin esperar a que el abogado lo suba a mano (24 nov 2026, conversación "Bot")
+Pedido explícito del usuario, mismo caso del Exp. 388/2026 de arriba: "sería bueno que el robot
+haga más intentos para descargar los documentos y no trasladarle la responsabilidad al abogado"
++ "sería bueno que los robots no corran solo una vez sino que corran dos veces al día y que si en
+la primera corrida identificaron acuerdos pero no pudieron bajar los pdf en la segunda corrida sí
+se pueda [reintentar]".
+- **Por qué correr 2 veces al día NO bastaba por sí solo**: `procesados_federal.json` guardaba
+  solo el número de acuerdo más alto ya "visto" por expediente (`estado[key] = maxNo`) -- ese
+  número avanzaba aunque el PDF fallara, así que en CUALQUIER corrida futura (esa misma tarde o
+  días después) el acuerdo ya quedaba "visto" y el robot nunca lo volvía a mirar. Y aunque lo
+  hubiera vuelto a intentar, `avisos_ingest.php` trataba cualquier aviso con el mismo resumen como
+  duplicado y no hacía nada -- ni adjuntaba el documento si llegaba después. 3 piezas, confirmadas
+  con el usuario antes de construirlas:
+  1. **5 intentos por PDF, no 1** (`robots/federal/federal.js`): nueva función
+     `descargarPdfAcuerdoConReintentos()` envuelve `descargarPdfAcuerdo()` en hasta 5 intentos
+     completos, cerrando cualquier modal atorado entre cada uno y con espera creciente (2s, 4s,
+     6s...) por si el portal necesita "respirar". A propósito NO recarga la página completa del
+     expediente entre intentos (eso obligaría a volver a localizar la fila/celda desde cero y
+     arriesgaría más de lo que resuelve) -- si el problema es de la página completa, el acuerdo
+     queda pendiente para la siguiente corrida (punto 2).
+  2. **Lista de "pendientes de PDF" que se reintenta en corridas futuras, SIN límite de tiempo**:
+     `estado[key]` en `procesados_federal.json` pasó de ser un número suelto a un objeto
+     `{maxNo, pendientesPdf}` (compatible con el formato viejo -- un número suelto se interpreta
+     como `maxNo` con `pendientesPdf` vacío). `procesarExpediente()` ahora, ANTES de procesar
+     acuerdos nuevos, reintenta cada pendiente contra la misma tabla ya leída en esa corrida; si
+     por fin consigue el PDF, llama `reportarAviso()` con el mismo resumen de siempre + el
+     documento nuevo. Costo de revisar un pendiente en cada corrida es bajo (segundos) -- nunca
+     se cierra la puerta a que se recupere solo, por más días que pase.
+  3. **`api/avisos_ingest.php` ya no descarta el documento si llega después**: si el aviso ya
+     existe (mismo expediente+fuente+resumen, candado de duplicados de siempre) y sigue sin
+     documento, y esta llamada sí trae uno, se le adjunta (`UPDATE avisos_boletin SET
+     documento_id`) y se bumpea `actualizado_en` -- antes esto se perdía igual, aunque el robot sí
+     hubiera logrado el PDF en una corrida posterior. Con esto adjuntado, `cron_analizar_acuerdos_
+     ia.php` ya lo toma normal en su siguiente corrida (lee `documento_id IS NOT NULL`).
+- **El aviso en rojo de la sección de arriba (`avisoIaHTML()`) se queda igual, a propósito** --
+  pedido explícito del usuario ("que al final ponga el aviso en rojo de que no se pudo
+  descargar"): es la red de seguridad para cuando el robot agote TODOS sus reintentos, en TODAS
+  las corridas, y de verdad no pueda (ej. el portal cayó por completo esa semana) -- sin eso,
+  volveríamos al problema original de algo perdido en silencio.
+- **Pendiente del usuario (acción manual, no de código)**: dar de alta una 2a corrida diaria del
+  robot Federal en el Programador de tareas de Windows (hoy solo corre a las 6:40am) -- mismo
+  `run_diario.bat` de siempre, otra hora del día (ej. 1:00pm), como PowerShell administrador:
+  ```
+  schtasks /create /tn "Robot Federal Expertos Laborales 2" /tr "C:\Users\Ruben\Desktop\ROBOTS\FEDERAL\run_diario.bat" /sc daily /st 13:00
+  ```
+  Ajustar la ruta si la carpeta real es distinta, y la hora si se prefiere otra. Con las 3 piezas
+  de arriba, esta 2a corrida (o cualquier corrida de cualquier día futuro) sí recupera lo que la
+  primera no pudo, en vez de ser una repetición sin efecto.
+- `node --check` limpio en `federal.js`, `php -l` limpio en `avisos_ingest.php`. Sin cambios de
+  base de datos (ni de `assets/app.js` -- no aplica cache-bust ni `verificar_tags.js`/
+  `pruebas_bot.php`, es un robot de Node + un endpoint PHP que no toca el bot de WhatsApp).
+  **Sin probar en vivo todavía** -- falta que el usuario suba `api/avisos_ingest.php`, reemplace
+  `federal.js`, dé de alta la 2a corrida diaria, y confirme con el Exp. 388/2026 (Acuerdo No. 7 y
+  8, siguen sin documento) que una corrida futura del robot los recupera solo -- si para entonces
+  ya los subió a mano, forzar la prueba con otro expediente real que falle, o pedir el log
+  completo de la siguiente corrida real buscando "PDF recuperado en esta corrida...".
+
 ## Avisos sin documento adjunto quedaban invisibles -- "REVISADO" no significaba "resuelto" (24 nov 2026, conversación "Bot", `app.js?v=163`)
 Reportado por el usuario viendo el expediente **Escalona Jimenez Yuliana Yadira vs New Dynacast
 de México, S.A. de C.V. y Automotive Quality Shield, S.A. de C.V., Exp. 388/2026**: "el bot

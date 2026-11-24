@@ -398,6 +398,34 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   return pdf;
 }
 
+// Envuelve descargarPdfAcuerdo() en varios intentos completos (24 nov
+// 2026, pedido explícito del usuario: "sería bueno que los robots hagan
+// más intentos para descargar los documentos y no trasladarle la
+// responsabilidad al abogado"). Cada intento vuelve a abrir el modal
+// desde cero (cerrando cualquier modal/backdrop que haya quedado a medio
+// camino del intento anterior) y espera un poco más cada vez, por si el
+// portal necesita "respirar" entre intentos -- mismo criterio que ya usa
+// el resto de este robot para los tropiezos conocidos del portal
+// (timeouts, overlays atorados). No reintenta recargando la página
+// completa del expediente a propósito -- eso obligaría a volver a
+// localizar la fila/celda desde cero y arriesgaría más que lo que
+// resuelve; si el problema es de la página completa (no solo del modal),
+// el acuerdo queda pendiente y se reintenta solo en la siguiente corrida
+// (ver pendientesPdf en procesarExpediente()).
+async function descargarPdfAcuerdoConReintentos(context, page, celda, etiquetaDebug, maxIntentos = 5) {
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    const pdf = await descargarPdfAcuerdo(context, page, celda, `${etiquetaDebug}_intento${intento}`);
+    if (pdf) return pdf;
+    if (intento < maxIntentos) {
+      console.log(`    (intento ${intento}/${maxIntentos} sin éxito para el PDF de ${etiquetaDebug} -- reintentando...)`);
+      await cerrarCualquierModalAbierto(page);
+      await page.waitForTimeout(2000 * intento);
+    }
+  }
+  console.log(`    AVISO: se agotaron los ${maxIntentos} intentos para el PDF de ${etiquetaDebug} -- queda pendiente para reintentarse en una corrida futura.`);
+  return null;
+}
+
 // Login confirmado que SÍ funciona (corrida real: "Login PJF OK") -- se
 // mantiene igual, vía API directa, en vez de llenar el formulario visible
 // (del que no conocemos los selectores exactos). Regresa el CookieJar ya
@@ -841,10 +869,67 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
   // el máximo disponible en el selector -- se pasa de página también aquí.
   const filas = await leerTodasLasFilasDataTable(page, tabla);
 
+  // (24 nov 2026) estado[key] guardaba solo un número (el "No." de acuerdo
+  // más alto ya visto) -- una vez que un acuerdo se reportaba, el robot
+  // NUNCA volvía a mirarlo, aunque el PDF no se hubiera podido descargar
+  // (caso real: Exp. 388/2026, Acuerdo No. 7 y 8, el PDF nunca se adjuntó
+  // y nadie lo iba a reintentar jamás). Ahora estado[key] guarda un objeto
+  // {maxNo, pendientesPdf} -- compatible con el formato viejo (un número
+  // suelto se interpreta como maxNo con pendientesPdf vacío).
   const key = normalizeExp(numeroExpediente);
-  const ultimoVisto = estado[key] || 0;
+  let entry = estado[key];
+  if (typeof entry !== 'object' || entry === null) entry = { maxNo: entry || 0, pendientesPdf: [] };
+  if (!Array.isArray(entry.pendientesPdf)) entry.pendientesPdf = [];
+  const ultimoVisto = entry.maxNo || 0;
   let maxNo = ultimoVisto;
   let reportados = 0;
+
+  // Paso 1: reintentar los PDF que quedaron pendientes de corridas
+  // anteriores (acuerdos ya reportados, sin documento todavía) -- antes de
+  // procesar acuerdos nuevos, usando la misma tabla que ya se acaba de leer
+  // completa para este expediente. Si el acuerdo ya no aparece en la tabla
+  // (caso raro, ej. se reorganizó la paginación), se deja pendiente para
+  // la siguiente corrida -- sin límite de tiempo, el costo de reintentar es
+  // bajo y nunca se cierra la puerta a que se recupere solo.
+  if (entry.pendientesPdf.length) {
+    const siguenPendientes = [];
+    for (const pend of entry.pendientesPdf) {
+      const filaPend = filas.find((f) => parseInt((f['No.'] || {}).texto || '', 10) === pend.no);
+      if (!filaPend) { siguenPendientes.push(pend); continue; }
+      let pdfRecuperado = null;
+      try {
+        const celdaPend = celdaBotonDocumento(filaPend);
+        pdfRecuperado = celdaPend
+          ? await descargarPdfAcuerdoConReintentos(context, page, celdaPend, `${sanitizarParaArchivo(key)}_${pend.no}_retry`)
+          : null;
+      } catch (e) {
+        console.log(`    (reintento del PDF pendiente No. ${pend.no} del expediente ${numeroExpediente} falló: ${e.message})`);
+      }
+      await cerrarCualquierModalAbierto(page);
+      if (pdfRecuperado) {
+        const documentoId = await subirPdfAlSistema(
+          pdfRecuperado, match.id, `Acuerdo_No_${pend.no}_Exp_${numeroExpediente.replace(/\//g, '-')}.pdf`,
+          esAmparo ? 'acuerdo_amparo' : 'acuerdo'
+        );
+        if (documentoId) {
+          // Mismo resumen con el que se reportó la primera vez -- avisos_
+          // ingest.php lo reconoce como el mismo aviso ya existente y le
+          // adjunta este documento en vez de tratarlo como duplicado (ver
+          // arreglo del 24 nov 2026 ahí mismo).
+          await reportarAviso(match.id, pend.resumen, pend.fechaIso, documentoId);
+          console.log(`    PDF recuperado en esta corrida para el acuerdo No. ${pend.no} del expediente ${numeroExpediente} (ya se había reportado antes sin documento).`);
+          reportados++;
+          continue;
+        }
+      }
+      siguenPendientes.push(pend);
+    }
+    entry.pendientesPdf = siguenPendientes;
+  }
+
+  // Paso 2: acuerdos nuevos (mismo flujo de siempre, con 5 intentos por
+  // PDF en vez de 1, y guardando en pendientesPdf lo que de verdad no se
+  // pudo bajar esta vez).
   for (const fila of filas) {
     const no = parseInt((fila['No.'] || {}).texto || '', 10);
     if (!no || no <= ultimoVisto) continue;
@@ -852,11 +937,13 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
     const fechaPublicacion = (fila['Fecha de Publicación'] || {}).texto || '';
     const resumen = `Acuerdo${esAmparo ? ' de amparo' : ''} No. ${no} del expediente ${numeroExpediente}, de fecha ${fechaAcuerdo || '(sin fecha)'}`
       + (fechaPublicacion ? `, publicado el ${fechaPublicacion}.` : '.');
+    const fechaIso = parseFechaMX(fechaPublicacion || fechaAcuerdo);
 
     let documentoId = null;
+    let pdf = null;
     try {
       const celda = celdaBotonDocumento(fila);
-      const pdf = celda ? await descargarPdfAcuerdo(context, page, celda, `${sanitizarParaArchivo(key)}_${no}`) : null;
+      pdf = celda ? await descargarPdfAcuerdoConReintentos(context, page, celda, `${sanitizarParaArchivo(key)}_${no}`) : null;
       if (pdf) {
         documentoId = await subirPdfAlSistema(
           pdf, match.id, `Acuerdo_No_${no}_Exp_${numeroExpediente.replace(/\//g, '-')}.pdf`,
@@ -881,12 +968,19 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
         .waitFor({ timeout: 10000 }).catch(() => {});
     }
 
-    await reportarAviso(match.id, resumen, parseFechaMX(fechaPublicacion || fechaAcuerdo), documentoId);
+    await reportarAviso(match.id, resumen, fechaIso, documentoId);
     reportados++;
     console.log(`    Aviso reportado: expediente ${numeroExpediente}, acuerdo No. ${no}.`);
     if (no > maxNo) maxNo = no;
+    if (!pdf) {
+      // No se logró el PDF ni con los 5 intentos de esta corrida -- queda
+      // pendiente para reintentarse solo, sin límite de tiempo, en
+      // cualquier corrida futura (ver Paso 1).
+      entry.pendientesPdf.push({ no, resumen, fechaIso });
+    }
   }
-  estado[key] = maxNo;
+  entry.maxNo = maxNo;
+  estado[key] = entry;
   return reportados;
 }
 
