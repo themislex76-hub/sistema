@@ -14,7 +14,7 @@ const FOTOS={
   roja:{src:'../fotos/ruben_selfie_corbata_roja.jpg',w:744,l:20,t:-230},
   selfie:{src:'../fotos/ruben_selfie_cerca_derecha.jpg',w:832,l:-192,t:-264,tapaDerecha:true},
 };
-const COLORES=[['#1f4e6b','#143650','#0b2233'],['#7a1a22','#4a0d14','#24060a'],['#17704a','#0e4a31','#062417'],['#5b3391','#3a1f63','#1b0d31'],['#b85a12','#7a3a0a','#331804'],['#126b78','#0b4650','#042226']];
+const COLORES=[['#1f4e6b','#143650','#0b2233'],['#7a1a22','#4a0d14','#24060a'],['#17704a','#0e4a31','#062417'],['#5b3391','#3a1f63','#1b0d31'],['#b85a12','#7a3a0a','#331804'],['#126b78','#0b4650','#042226'],['#3a3a3a','#1f1f1f','#0a0a0a'],['#6b1838','#450f24','#1f0610'],['#1e2f6b','#121d47','#070c22']];
 const FRASES=[
  {l1:'¿PROBLEMAS EN TU TRABAJO?',l2:'RESPONDO TUS PREGUNTAS',pill:'EN VIVO Y GRATIS'},
  {l1:'TUS DUDAS LABORALES',l2:'RESUELTAS EN VIVO',pill:'ASESORÍA GRATIS'},
@@ -73,7 +73,7 @@ for(let n=DESDE;n<=HASTA;n++){
 }
 fs.writeFileSync(REG,JSON.stringify(reg,null,1));
 // Versión legible del registro
-const NOMBRES_COLOR=['Azul','Rojo','Verde','Morado','Naranja','Turquesa'];
+const NOMBRES_COLOR=['Azul','Rojo','Verde','Morado','Naranja','Turquesa','Negro','Vino','Azul marino'];
 let md='# Registro de miniaturas "LIVE #N" (YouTube)\n\nCada combinación (color + frase + preguntas + foto) se usa una sola vez.\n\n| # | Color | Frase | Preguntas | Foto | Generada | Video de YouTube |\n|---|---|---|---|---|---|---|\n';
 for(const k of Object.keys(reg).map(Number).sort((a,b)=>a-b)){const r=reg[k];
   md+=`| ${k} | ${NOMBRES_COLOR[r.color]} | ${FRASES[r.frase].l1} | Juego ${r.preg+1} | ${r.foto} | ${r.generada||''} | ${r.video||'(pendiente)'} |\n`;}
