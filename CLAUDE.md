@@ -3287,5 +3287,7 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   si trabaja MENOS de 4 días a la semana, se usa su salario por día trabajado. Se reescribió la REGLA DURA que
   decía lo contrario (÷ días trabajados), la descripción de `salario_diario` en las 2
   herramientas y un "NO marques" del revisor. 103 casos en `scripts/pruebas_bot.php`.
-- Conciliación: el Lic. dijo "pausa el plazo y se reinicia con la constancia" -- se le preguntó
-  si "reinicia" = reanuda con los días que quedaban (como hoy) o empieza de nuevo completo.
+- **Decidido por el Lic. Rubén (24-nov)**: la solicitud de conciliación PAUSA el plazo y, con la
+  constancia, sigue corriendo con los días que quedaban (no empieza de nuevo completo). Es lo que
+  ya hacen `calcular_plazo_demanda()` y el prompt -- no se cambió nada. Cierra la pregunta del
+  Art. 521 fracc. III de la sección anterior.
