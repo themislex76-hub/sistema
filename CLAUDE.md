@@ -1832,10 +1832,11 @@ etapa.
   `SendUserFile` solo de los archivos modificados → el usuario los sube por
   cPanel → Administrador de archivos.
 - Cambios de base de datos: dar el SQL, el usuario lo corre por phpMyAdmin.
-- **Archivos `.js` (`assets/app.js`, `sw.js`) siempre en un `.zip`** (pedido
-  explícito del usuario, 15 nov 2026) -- no los puede descargar si se
-  mandan sueltos con `SendUserFile`. Empaquetar conservando la ruta
-  relativa (`assets/app.js`, no solo `app.js`) antes de mandarlos.
+- **Cualquier archivo `.js` (`assets/app.js`, `sw.js`, y también los robots --
+  confirmado real el 24 nov 2026 con `robots/federal/federal.js`) siempre
+  en un `.zip`** -- no los puede descargar si se mandan sueltos con
+  `SendUserFile`. Empaquetar conservando la ruta relativa (`assets/app.js`,
+  no solo `app.js`) antes de mandarlos.
 - Si tocaste `mergeTags()`, `calcularJornada()`, las prestaciones opcionales
   de Rescisión Art. 51, o cualquier cosa relacionada con las {{tags}} de
   los formatos de demanda: corre `node scripts/verificar_tags.js` antes de
