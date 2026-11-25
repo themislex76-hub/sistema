@@ -3291,3 +3291,19 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   constancia, sigue corriendo con los días que quedaban (no empieza de nuevo completo). Es lo que
   ya hacen `calcular_plazo_demanda()` y el prompt -- no se cambió nada. Cierra la pregunta del
   Art. 521 fracc. III de la sección anterior.
+
+## Revisión del 24-nov (120 conversaciones, 8 marcadas = 6.7%, bajó de 8.1%) (25 nov 2026, conversación "chats")
+- Reales, ya arreglados en CRITERIOS DEL DESPACHO:
+  - Art. 110 fracc. I: el bot omitió el límite del 30% del excedente del salario mínimo por cada descuento. Verificado en el texto oficial; ya está en la guía de artículos.
+  - Vacaciones y aguinaldo pagados INCOMPLETOS: pasar a la calculadora la diferencia de días de vacaciones. La diferencia de aguinaldo se da aparte, redondeada, porque la calculadora no calcula aguinaldos de años anteriores.
+  - Prescripción del aguinaldo (Art. 516): el del año pasado se puede reclamar hasta el 20-dic de este año; los anteriores ya prescribieron.
+  - No decir que un finiquito "cuadra" sin la respuesta de todos los años.
+  - Antigüedad discutible (trabajo por temporadas): presentarla como escenario junto a las cifras.
+  - Rescisión hipotética: contestar en condicional.
+- Falsas alarmas calibradas en el revisor:
+  - Plazo 9-ene para un despido del 10-nov: `calcular_plazo_demanda` usa la fecha que vence primero entre 60 días y 2 meses.
+  - Salarios devengados: la calculadora sí los incluye; el revisor ahora recibe `salarios_devengados_monto`.
+  - Decir que el aguinaldo de 2024 ya prescribió es correcto.
+  - Horas extra mencionadas sin monto.
+  - Advertir sobre el Art. 185 (trabajador de confianza).
+- 111 casos en `scripts/pruebas_bot.php`.

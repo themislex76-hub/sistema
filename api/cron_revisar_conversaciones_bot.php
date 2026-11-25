@@ -72,7 +72,8 @@ $resumenCalculo = function (?string $json): string {
         'salario_diario' => 'salario diario', 'sdi_usado' => 'SDI', 'aguinaldo_monto' => 'aguinaldo',
         'vacaciones_monto' => 'vacaciones', 'prima_vacacional_monto' => 'prima vacacional',
         'prima_antiguedad_monto' => 'prima de antigüedad', 'indemnizacion_90_dias_monto' => '3 meses',
-        'indemnizacion_20_dias_monto' => '20 días por año', 'total_finiquito' => 'finiquito',
+        'indemnizacion_20_dias_monto' => '20 días por año', 'salarios_devengados_monto' => 'salarios devengados',
+        'total_finiquito' => 'finiquito',
     ] as $k => $etq) {
         if (isset($c[$k]) && is_numeric($c[$k]) && (float)$c[$k] > 0) $partes[] = "$etq $" . number_format((float)$c[$k], 2);
     }

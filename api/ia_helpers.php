@@ -312,6 +312,32 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   por eso no se cuentan; no lo digas si la herramienta no los regresó.
   Si aún NO cumple su primer año, díselo claro: lo que le toca es la parte
   proporcional, y esa ya cubre todo lo trabajado sin vacaciones.
+  Si dice que SÍ le dieron vacaciones o aguinaldo pero INCOMPLETOS (caso
+  real 24-nov-2026: "nunca han sido los días correspondientes", aguinaldo
+  de "una o dos semanas"): pregunta cuántos días le dieron cada año y pasa
+  a la herramienta la DIFERENCIA de vacaciones (los días que le faltaron)
+  en dias_vacaciones_anteriores. La herramienta NO calcula aguinaldos de
+  años anteriores: la diferencia de aguinaldo dala aparte, redondeada y
+  como aproximación. Prescripción del aguinaldo (Art. 516, un año desde
+  que fue exigible, el 20 de diciembre de cada año): el del año pasado
+  todavía se reclama hasta el 20 de diciembre de este año; los de años
+  anteriores ya prescribieron. No digas en genérico "lo de hace más de un
+  año ya prescribió": las vacaciones se cuentan a 18 meses de cada
+  aniversario. Y no digas que un finiquito o documento "sí cuadra" hasta
+  tener la respuesta de TODOS los años: mientras falte, di que es
+  preliminar.
+· Antigüedad discutible (contratos o "activaciones" por temporadas con
+  cortes entre ellas, recontrataciones, cambio de razón social): si
+  calculas con la antigüedad completa, preséntalo JUNTO a las cifras como
+  el escenario más favorable, sujeto a que se pruebe la continuidad, y di
+  que si no se prueba el monto sería menor. No lo dejes solo como nota al
+  final.
+· Preguntas HIPOTÉTICAS sobre rescindir ("¿qué hago si me retrasan el
+  pago?"): contesta en condicional ("si te llegan a pagar tarde, eso
+  podría encuadrar en el Art. 51 fracc. V") y pregunta si ya pasó y
+  cuándo. No digas "te correspondería indemnización" sin un hecho
+  concreto y reciente, y advierte que rescindir significa dejar el
+  trabajo: que lo valore con un abogado antes de hacerlo.
 · Cuando le pagan TERCEROS (clientes, socios, alumnos, pasajeros) y la
   persona misma cobra (caso real: coach de un club, pagado directo por
   los socios): NO afirmes que "sin duda eres trabajador" ni que lo que
@@ -359,7 +385,11 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
     el 20). Las comisiones, gratificaciones y primas integran el salario:
     Art. 84 (no el 289). Hostigamiento laboral: Art. 3 Bis lo define.
   - Sustitución patronal: Art. 41. Descuentos al salario: Art. 110 (deudas
-    y daños: fracc. I). Carga de la prueba del patrón: Art. 784; documentos
+    y daños: fracc. I). La fracc. I tiene DOS límites, dilos los dos: la
+    deuda exigible no puede pasar de un mes de salario, y cada descuento
+    no puede ser mayor del 30% del excedente del salario mínimo (caso real
+    24-nov-2026: se omitió el 30% y le habían descontado $1,600 de $2,400
+    de una vez). Carga de la prueba del patrón: Art. 784; documentos
     que debe conservar: Art. 804.
   - Vacaciones: Art. 76, en días LABORABLES (no naturales): 1 año = 12,
     2 = 14, 3 = 16, 4 = 18, 5 = 20, de 6 a 10 años = 22, de 11 a 15 = 24,
@@ -5177,6 +5207,11 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- La prima de antigüedad en un despido o separación por el patrón: procede sin importar los años de servicio y sea justificado o no (Art. 162 fracc. III); los 15 años solo se exigen en renuncia voluntaria.\n"
         . "- Que no conste que el bot usó una herramienta: no puedes ver sus herramientas; juzga solo si lo que dijo es correcto.\n"
         . "- El mensaje automático de fuera de horario (\"Te recordamos que nuestro horario de atención es...\"), los recordatorios de pago y las decisiones del ABOGADO humano: no son respuestas del bot.\n"
+        . "- Fechas de plazo de demanda que difieran 1 o 2 días de \"2 meses exactos\": calcular_plazo_demanda usa a propósito la fecha que venza PRIMERO entre 60 días naturales y 2 meses de fecha a fecha (criterio conservador). Ej.: despido 10-nov -> 9-ene es correcto.\n"
+        . "- Salarios devengados (días trabajados y no pagados) dentro del finiquito: la calculadora SÍ los incluye (dias_salarios_devengados); si en CÁLCULOS aparece \"salarios devengados\", el total no está hecho a mano.\n"
+        . "- Decir que el aguinaldo de hace 2 años ya prescribió y el del año pasado todavía se reclama hasta el 20 de diciembre: es correcto (Art. 516, un año desde que fue exigible, el 20 de diciembre).\n"
+        . "- Mencionar que podría haber horas extra (con el límite semanal vigente) y decir que se calculan aparte, sin dar monto: no hace falta desglosar doble/triple si no dio cifra.\n"
+        . "- Decir que un trabajador de confianza puede ser despedido por pérdida de la confianza (Art. 185): es criterio del despacho advertirlo; no exijas matices de tono.\n"
         . "- Aguinaldo PROPORCIONAL con menos de 15 días: los 15 días del Art. 87 son por año completo; si trabajó parte del año, le toca la parte proporcional (ej. 13 días), eso es correcto.\n"
         . "- El aviso automático \"Por hoy ya platicamos bastante...\" (límite de mensajes del sistema) y los mensajes de seguimiento/recordatorio automáticos: no son respuestas del bot.\n"
         . "- Que el bot atienda o cobre la asesoría a una EMPRESA o patrón: el despacho sí asesora empresas.\n"
