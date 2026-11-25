@@ -1,5 +1,44 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Argumento de venta: la "propuesta de 45 días" del Centro de Conciliación + se quita "25 años de experiencia" del bot (25 nov 2026, conversación "Bot")
+Pedido explícito del usuario, experiencia profesional directa (25 años litigando, lo dice en sus
+lives): "en el centro de conciliación normalmente no se apoya a los trabajadores... te bajan de
+90 a 45 días tu indemnización constitucional, te dicen que la prima de antigüedad no te toca
+porque no tienes 15 años de servicios, el conciliador no te va a defender". Se investigó primero
+(ver fuentes en el historial de esta conversación): la "propuesta de 45 días" SÍ es un mecanismo
+real y documentado -- el propio portal del Centro de Conciliación de la CDMX confirma que esa
+propuesta es la MITAD de la indemnización constitucional + mitad (o 100% con 15+ años) de la
+prima de antigüedad + 100% de prestaciones devengadas, nunca el monto completo. El dato del
+requisito de 15 años también es correcto como corrección legal: la prima de antigüedad SIEMPRE
+se paga desde el primer año en un DESPIDO (Art. 162 LFT) -- el requisito de 15 años del Art. 162
+solo aplica a la RENUNCIA voluntaria, nunca al despido, así que decirle a alguien despedido que
+"no le toca por los años" es un error real, no una opinión.
+- **Nueva REGLA DURA en el prompt** (reemplaza la que ya existía sobre "no ir solo a
+  conciliación", que decía "el conciliador es neutral" -- corregido con el criterio directo del
+  usuario: "no es neutral de verdad, parecería que ayuda más al patrón"): se dispara SIEMPRE que
+  se calcule un estimado de DESPIDO (no en renuncia/Rescisión Art. 51/Prima de Antigüedad por
+  jubilación), justo después de dar el número, en lenguaje muy sencillo (le habla a un
+  trabajador, no a un abogado). Reglas de diseño explícitas del usuario: nunca mencionar
+  salarios caídos ahí (no inflar expectativas); el cierre recomienda ir acompañado de un
+  abogado particular, o al menos ir asesorado si se hace solo; se menciona UNA sola vez por
+  conversación, no en cada recálculo.
+- **Varias rondas de pulido del texto con el usuario** (tono coloquial, "para que lo entienda
+  un trabajador", oraciones cortas) antes de llegar a la versión final -- ver el prompt mismo
+  para el texto exacto.
+- **Se quitó "25 años de experiencia"/"reconocido en el ámbito laboral" del bot PARA SIEMPRE**
+  (decisión explícita del usuario, revirtiendo lo agregado el 24-nov-2026 el mismo día): "a la
+  gente no le gusta que le vendan" -- sonaba a que se estaba vendiendo justo después de un
+  párrafo serio de advertencia. La REGLA DURA de "a quién nombrar" se queda igual en todo lo
+  demás (siempre nombrar "el Lic. Rubén Buerhend", nunca "un abogado" genérico) -- solo se quitó
+  la mención de años/reconocimiento. La plantilla de WhatsApp del 3er seguimiento
+  (`cron_seguimiento_calculadora_plantilla.php`) ya no la mencionaba desde el ajuste de "hazlo
+  más natural" del 24-nov, así que no necesitó cambio.
+- 122 casos en `scripts/pruebas_bot.php` (5 nuevos), `php -l` limpio. Sin cambios de base de
+  datos, sin tocar `assets/app.js` -- no aplica cache-bust (no es lógica de interfaz, solo el
+  prompt del bot de WhatsApp). **Sin probar en vivo todavía** -- falta que el usuario suba
+  `api/ia_helpers.php` y se confirme con un caso real (alguien que pida un cálculo por despido)
+  que el párrafo nuevo aparece bien y que ya no se menciona "25 años" en ningún lado.
+
 ## Mismo arreglo de reintentos llevado a Buzón CDMX y Correo Edomex (24 nov 2026, conversación "Bot")
 Pedido explícito del usuario tras ver el arreglo de Federal: "¿crees que debamos hacer lo mismo
 con los otros robots?". Revisados los 4 restantes:

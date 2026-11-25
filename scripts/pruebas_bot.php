@@ -333,8 +333,8 @@ caso('cron_seguimiento_calculadora.php vuelve a mencionar el monto real del cál
 caso('cron_seguimiento_calculadora.php: los 2 mensajes con monto siguen con el prefijo exacto que ia_es_mensaje_automatico() necesita',
     ia_es_mensaje_automatico('¡Hola! Sigo al pendiente de tu caso -- tu estimado es de aproximadamente $123,456. Si quieres...')
     && ia_es_mensaje_automatico('¡Hola de nuevo! Sigo por aquí para cuando gustes -- tu estimado sigue siendo de aproximadamente $123,456. Si quieres...'));
-caso('prompt: menciona los 25 años de experiencia y el reconocimiento del Lic. Rubén, solo en la primera oferta',
-    strpos($p, '25 años de experiencia') !== false && strpos($p, 'reconocido en el ámbito laboral') !== false && strpos($p, 'úsalos UNA sola vez') !== false);
+caso('prompt: NUNCA menciona años de experiencia ni "reconocido" al ofrecer la asesoría (decisión del usuario, 25-nov-2026 -- suena a venta)',
+    strpos($p, '25 años de experiencia') === false && strpos($p, 'reconocido en el ámbito laboral') === false && strpos($p, 'NUNCA menciones años de experiencia') !== false);
 caso('cron_seguimiento_calculadora_plantilla.php: tercer recordatorio por plantilla, con los mismos candados que el seguimiento normal',
     (function () use ($base) {
         $src = file_get_contents($base . '/api/cron_seguimiento_calculadora_plantilla.php');
@@ -343,6 +343,22 @@ caso('cron_seguimiento_calculadora_plantilla.php: tercer recordatorio por planti
             && strpos($src, 'pausado_bot') !== false
             && strpos($src, 'whatsapp_texto_parece_declinar') !== false;
     })());
+
+// ---------------------------------------------------------------------
+echo "20) Centro de Conciliación: argumento de venta con la 'propuesta de 45 días' (25-nov)\n";
+$p = IA_SYSTEM_PROMPT;
+caso('prompt: menciona que la indemnización baja de 90 a 45 días en conciliación',
+    strpos($p, '45 días') !== false && strpos($p, '90') !== false && strpos($p, 'MITAD de lo que le toca') !== false);
+caso('prompt: la prima de antigüedad SÍ se paga desde el primer año en un despido -- el requisito de 15 años es solo para renuncia',
+    strpos($p, 'prima de antigüedad se paga desde el primer año en un despido') !== false
+    && strpos($p, 'SOLO aplica si la propia persona renuncia') !== false);
+caso('prompt: el conciliador no es neutral de verdad -- parecería que ayuda más al patrón (ya NO dice "tercero neutral" sin matizar)',
+    strpos($p, 'parecería que ayudan más al') !== false);
+caso('prompt: nunca menciona salarios caídos en este argumento (no inflar expectativas)',
+    strpos($p, 'NUNCA menciones salarios caídos en este punto') !== false);
+caso('prompt: se dispara siempre que se calcule un DESPIDO, no en renuncia/Rescisión/Prima de Antigüedad',
+    strpos($p, 'se dispara') !== false && strpos($p, 'SIEMPRE que calcules un estimado de DESPIDO') !== false
+    && strpos($p, 'no aplica a renuncia, Rescisión Art. 51 ni') !== false);
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
