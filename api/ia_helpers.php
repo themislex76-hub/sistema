@@ -3051,8 +3051,9 @@ function ia_resultado_confirmar_compra_curso(PDO $pdo, string $telefono, string 
         $pdo->prepare("UPDATE compras_curso SET estado = 'cancelada' WHERE id = :id")->execute([':id' => $compraId]);
         return json_encode([
             'ok' => false,
-            'motivo' => 'Hubo un problema técnico generando el link de pago. Como respaldo, manda el link directo de la página del curso para que pueda pagar ahí mientras se resuelve.',
-            'link_alternativo' => $info['sitio'],
+            // 25-nov-2026: ya no se manda la página del curso como respaldo:
+            // un pago ahí no queda ligado a su WhatsApp y el acceso no llega solo.
+            'motivo' => 'Hubo un problema técnico generando el link de pago. Dile que en un momento se lo mandas y vuelve a intentar confirmar_compra_curso en tu siguiente respuesta. NO le mandes la página del curso para pagar: un pago ahí no queda ligado a su WhatsApp y el acceso no le llega solo.',
         ], JSON_UNESCAPED_UNICODE);
     }
 

@@ -3316,3 +3316,13 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   - Contratos seguidos y sin cortes: la antigüedad no se presenta como dudosa.
 - Para la conversación "Bot": el argumento de que el conciliador "suele ayudar más a la empresa" es arriesgado; no se tocó.
 - 116 casos en `scripts/pruebas_bot.php`.
+
+## Curso pagado en la página de Netlify no entregaba el acceso (25 nov 2026, conversación "chats")
+- Caso real, clienta 5215619392363. El bot le generó su link de Mercado Pago del curso (compras_curso id 80, quedó en `pendiente_pago`). Al día siguiente, `cron_seguimiento_cursos.php` le mandó la página de Netlify. Pagó ahí; el pago no quedó ligado a su WhatsApp y el acceso no le llegó solo. Se le mandó la llave a mano.
+- Arreglo:
+  - Nueva función `curso_link_pago_ligado()` en `api/mercadopago_helpers.php`: reusa el link pendiente o crea una compra nueva.
+  - El recordatorio de cursos ya no manda la página de Netlify. Si Mercado Pago falla, le pide que conteste para mandarle el link.
+  - `confirmar_compra_curso` ya no manda la página como respaldo si falla Mercado Pago.
+- **Pendiente, decisión del usuario**: la página de Netlify sigue cobrando por su cuenta. Opciones: (a) revisar por qué no redirige al acceso después de pagar (el código de la página no está en este repo); (b) quitar el botón de pago y dejar "Comprar por WhatsApp".
+- Además, el cálculo de esa clienta del 24-nov usó salario ÷ 6 (antes de que se subiera la regla de ÷ 7). Le dio $137,826.10; lo correcto es $118,136.66.
+- 119 casos en `scripts/pruebas_bot.php`.
