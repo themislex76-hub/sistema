@@ -5415,6 +5415,7 @@ function ia_es_mensaje_automatico(string $texto): bool
     return preg_match(
         '/^\s*¡Hola!? (No quiero que se te vaya a pasar|Sigo al pendiente de tu caso)'
         . '|^\s*¡Hola de nuevo! Sigo por aquí'
+        . '|^\s*Hola, ¿cómo estás\? Quería darte seguimiento a tu caso laboral'
         . '|^\s*(¡Hola[^!]{0,60}!\s*)?¡?Tu pago (del curso .{0,120}?)?quedó confirmado'
         . '|Tu asesoría con el abogado es en 1 hora'
         . '|Te recordamos que nuestro horario de atención'

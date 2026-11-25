@@ -382,5 +382,17 @@ caso('prompt: se dispara siempre que se calcule un DESPIDO, no en renuncia/Resci
     strpos($p, 'se dispara') !== false && strpos($p, 'SIEMPRE que calcules un estimado de DESPIDO') !== false
     && strpos($p, 'no aplica a renuncia, Rescisión Art. 51 ni') !== false);
 
+// ---------------------------------------------------------------------
+echo "22) 3er recordatorio por plantilla: texto real guardado en el historial se reconoce como automático (25-nov)\n";
+caso('ia_es_mensaje_automatico() reconoce el texto EXACTO que guarda cron_seguimiento_calculadora_plantilla.php (sin esto, el revisor diario lo evaluaría como respuesta nueva de la IA)',
+    ia_es_mensaje_automatico('Hola, ¿cómo estás? Quería darte seguimiento a tu caso laboral -- según lo que platicamos, tu estimado ronda los $45,230. Si en algún momento quieres que el Lic. Rubén Buerhend lo revise contigo a fondo por teléfono, nada más escríbeme y con gusto te paso los horarios que tiene disponibles.'));
+caso('el archivo ya no guarda la versión vieja ("Sigo al pendiente de tu caso... contéstame este mensaje") en el historial, solo la plantilla aprobada por Meta',
+    (function () use ($base) {
+        $src = file_get_contents($base . '/api/cron_seguimiento_calculadora_plantilla.php');
+        return strpos($src, 'Sigo al pendiente de tu caso -- ¿cómo estás') === false
+            && strpos($src, 'nada más escríbeme') !== false
+            && strpos($src, "PLANTILLA_SEGUIMIENTO_CALCULO = 'despues_de_24_h'") !== false;
+    })());
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

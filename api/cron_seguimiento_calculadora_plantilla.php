@@ -119,7 +119,7 @@ foreach ($calculos as $c) {
     if ($enviado) {
         $enviados++;
         $ins = $pdo->prepare("INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')");
-        $ins->execute([':t' => $c['telefono'], ':texto' => "¡Hola! Sigo al pendiente de tu caso -- ¿cómo estás? Quería darte seguimiento a tu caso laboral -- según lo que platicamos, tu estimado ronda los \$$montoFmt. Si en algún momento quieres que el Lic. Rubén Buerhend lo revise contigo a fondo por teléfono, contéstame este mensaje y con gusto te paso los horarios que tiene disponibles."]);
+        $ins->execute([':t' => $c['telefono'], ':texto' => "Hola, ¿cómo estás? Quería darte seguimiento a tu caso laboral -- según lo que platicamos, tu estimado ronda los \$$montoFmt. Si en algún momento quieres que el Lic. Rubén Buerhend lo revise contigo a fondo por teléfono, nada más escríbeme y con gusto te paso los horarios que tiene disponibles."]);
     } else {
         $omitidos++;
     }
