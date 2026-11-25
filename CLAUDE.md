@@ -248,9 +248,10 @@ soy un abogado reconocido en el ámbito" + "vale la pena hacer una plantilla de 
   constante `PLANTILLA_SEGUIMIENTO_CALCULO` en el cron. Aprobación toma días -- **no dar de alta
   el Cron Job hasta confirmar que la plantilla ya quedó aprobada**, o todas las corridas
   marcarán `tercer_seguimiento_en` sin mandar nada de verdad (el script no reintenta solo si
-  Meta la rechaza). **Pendiente también correr la migración 075** (`tercer_seguimiento_en`) --
-  confirmado el 25-nov que todavía NO está en la base viva (`c1361311_exp`), el error
-  `#1054 - La columna 'tercer_seguimiento_en' en where clause es desconocida` lo confirmó en vivo.
+  Meta la rechaza). **Migración 075 (`tercer_seguimiento_en`) confirmada corrida en
+  `c1361311_exp` el 25 nov 2026** -- faltaba (el error `#1054` del mismo día lo confirmó en
+  vivo antes de correrla). **Pendiente real único que queda para activar esto**: la respuesta
+  de Meta sobre la plantilla, que ya está en revisión.
   **Estimado de costo mensual (25 nov 2026, con datos reales)**: 947 números únicos calcularon su
   liquidación en los últimos 30 días, 35 ya pagaron asesoría -- techo de 912 números/mes
   candidatos al 3er recordatorio, ~$666 MXN/mes (probablemente algo menos, $500-650, una vez
@@ -2004,7 +2005,7 @@ sepa desde dónde continuar sin repetir ni pisar nada). Esto solo
 funciona si de verdad se fusiona periódicamente; si una rama se queda
 semanas sin fusionarse, vuelve a haber riesgo de perder trabajo.
 
-**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026. Ese mismo día el usuario confirmó subidos TODOS los archivos de la sesión "chats" hasta el commit `0482e7e` (`app.js?v=152`, ia_helpers, liquidacion_calculadora, configuracion_set, whatsapp_procesar, lft_helpers, revisión diaria del bot con su Cron Job). Siguiente migración libre: 074 (la 073 la tomó "negocio", 16 nov 2026).** **Última migración aplicada por el usuario: `067_google_calendario_lectura.sql`, confirmada corrida en la base correcta (`c1361311_exp`) el 11 nov 2026** (064, 065, 066 también están corridas -- confirmado por el usuario el 10-11 nov 2026).
+**070/070b (LFT), 071 (bot_revisiones) y 072 (transitorios de jornada) ya corridas por el usuario el 14 nov 2026. Ese mismo día el usuario confirmó subidos TODOS los archivos de la sesión "chats" hasta el commit `0482e7e` (`app.js?v=152`, ia_helpers, liquidacion_calculadora, configuracion_set, whatsapp_procesar, lft_helpers, revisión diaria del bot con su Cron Job). 073 (negocio, 16 nov), 074 (robot_heartbeats, 20 nov) y 075 (calculos_liquidacion.tercer_seguimiento_en, 25 nov 2026) también ya corridas en `c1361311_exp` -- confirmadas por el usuario. Siguiente migración libre: 076.** **Última migración aplicada por el usuario: `075_calculos_liquidacion_tercer_seguimiento.sql`, confirmada corrida el 25 nov 2026.**
 
 ## Supervisor: "Preguntas al abogado" ampliado (9 nov 2026, `app.js?v=122`, sin migración nueva)
 Confirmado en vivo el mismo día que se corrió la migración 061: el cron
