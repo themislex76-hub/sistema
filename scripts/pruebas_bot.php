@@ -250,6 +250,9 @@ $n = (int)$pdo->query("SELECT COUNT(*) FROM compras_documento_calculo")->fetchCo
 caso('confirmar: ya pagado en 30 días -> no genera otro cobro', empty($r['ok']) && !empty($r['ya_pagado']) && $n === 2, json_encode($r, JSON_UNESCAPED_UNICODE));
 $pdo->exec("UPDATE compras_documento_calculo SET pagado_en = '" . date('Y-m-d H:i:s', strtotime('-40 days')) . "' WHERE estado = 'confirmada'");
 caso('compra pagada hace 40 días ya no bloquea una nueva', ia_compra_documento_confirmada_reciente($pdo, 'M', 30) === null);
+$pdo->exec("UPDATE compras_documento_calculo SET pagado_en = '" . date('Y-m-d H:i:s') . "' WHERE estado = 'confirmada'");
+$r = json_decode(ia_resultado_confirmar_compra_documento_calculo($pdo, 'M', true), true);
+caso('documento para OTRA persona (25-nov, compañera): no lo bloquea el pago propio', empty($r['ya_pagado']), json_encode($r, JSON_UNESCAPED_UNICODE));
 
 // ---------------------------------------------------------------------
 echo "16) Revisión del 19-nov: vacaciones de todos los años, accidente de trabajo, revisor calibrado\n";
@@ -298,6 +301,14 @@ $rev = file_get_contents($base . '/api/ia_helpers.php');
 caso('revisor: plazo conservador y salarios devengados no son falsas alarmas', strpos($rev, 'usa a propósito la fecha que venza PRIMERO') !== false && strpos($rev, 'dias_salarios_devengados); si en') !== false);
 $cron = file_get_contents($base . '/api/cron_revisar_conversaciones_bot.php');
 caso('revisor recibe salarios devengados de la calculadora', strpos($cron, "'salarios_devengados_monto' => 'salarios devengados'") !== false);
+
+// ---------------------------------------------------------------------
+echo "20) Conversación del 25-nov (Querétaro): zona, pagaré en blanco, antigüedad sin cortes\n";
+$p = IA_SYSTEM_PROMPT;
+caso('no comentar que allá no se llevan juicios aunque diga otro estado', strpos($p, 'caso real 25-nov-2026: "En Querétaro"') !== false);
+caso('papeles en blanco: Art. 48 Bis fracc. I inciso c', strpos($p, 'Art. 48 Bis fracc. I inciso c') !== false);
+caso('contratos seguidos sin cortes: antigüedad no dudosa', strpos($p, 'Si los contratos fueron seguidos, sin cortes') !== false);
+caso('herramienta: parámetro para_otra_persona', strpos(json_encode(IA_TOOLS, JSON_UNESCAPED_UNICODE), 'para_otra_persona') !== false);
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

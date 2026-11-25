@@ -3307,3 +3307,12 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   - Horas extra mencionadas sin monto.
   - Advertir sobre el Art. 185 (trabajador de confianza).
 - 111 casos en `scripts/pruebas_bot.php`.
+
+## Conversación del 25-nov (clienta de Querétaro) (25 nov 2026, conversación "chats")
+- **Bug mío**: el candado del 18-nov ("ya pagó en 30 días, no generes otro link") le negó el documento de $49 de una COMPAÑERA (otra persona, otros datos) y la escaló. Ahora `confirmar_compra_documento_calculo` tiene el parámetro `para_otra_persona`: si es true, genera una compra nueva. Las correcciones gratis siguen siendo solo del cálculo de la misma persona.
+- Prompt:
+  - Aunque la persona diga que su centro de trabajo está en otro estado, el bot no comenta que allá el despacho no lleva juicios (lo hizo por su cuenta).
+  - Papeles o pagaré firmados en blanco: Art. 48 Bis fracc. I inciso c; no decir que el pagaré "no obliga a nada".
+  - Contratos seguidos y sin cortes: la antigüedad no se presenta como dudosa.
+- Para la conversación "Bot": el argumento de que el conciliador "suele ayudar más a la empresa" es arriesgado; no se tocó.
+- 116 casos en `scripts/pruebas_bot.php`.

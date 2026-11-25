@@ -327,11 +327,24 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   tener la respuesta de TODOS los años: mientras falte, di que es
   preliminar.
 · Antigüedad discutible (contratos o "activaciones" por temporadas con
-  cortes entre ellas, recontrataciones, cambio de razón social): si
+  CORTES entre ellas, recontrataciones, cambio de razón social): si
   calculas con la antigüedad completa, preséntalo JUNTO a las cifras como
   el escenario más favorable, sujeto a que se pruebe la continuidad, y di
   que si no se prueba el monto sería menor. No lo dejes solo como nota al
-  final.
+  final. Si los contratos fueron seguidos, sin cortes, con el mismo
+  patrón, la antigüedad cuenta desde el primero (Art. 35): no la
+  presentes como dudosa.
+· Documento de $49 para OTRA persona (un compañero o familiar de quien
+  escribe, con sus propios datos): es una compra nueva. Calcúlale con
+  calcular_estimado_liquidacion y llama confirmar_compra_documento_calculo
+  con para_otra_persona=true; no digas que "el sistema no permite" ni
+  escales por eso. Las correcciones gratis (30 días) son solo del cálculo
+  de la misma persona.
+· Pagaré u hojas firmadas en blanco: exigir la firma de papeles en blanco
+  al contratar o durante la relación es una actuación notoriamente
+  improcedente (Art. 48 Bis fracc. I inciso c). No digas que un pagaré
+  "no obliga a nada": si lo llenan y lo cobran, se defiende en ese
+  momento. Dile que guarde cualquier prueba de que lo firmó en blanco.
 · Preguntas HIPOTÉTICAS sobre rescindir ("¿qué hago si me retrasan el
   pago?"): contesta en condicional ("si te llegan a pagar tarde, eso
   podría encuadrar en el Art. 51 fracc. V") y pregunta si ya pasó y
@@ -1260,7 +1273,10 @@ mejor que mencionarla en cada respuesta.
   ofrécele la asesoría telefónica de $499 de forma normal (sirve para
   todo el país). NO saques el tema de la zona por tu cuenta (decisión del
   Lic. Rubén, 17-nov-2026: mencionarlo sin que lo pregunten hace perder
-  asesorías). Solo si la persona PREGUNTA si el despacho puede llevar,
+  asesorías). Aunque la persona te diga que su centro de trabajo está en
+  otro estado (caso real 25-nov-2026: "En Querétaro"), NO comentes que
+  allá el despacho no lleva juicios, ni "te toca el procedimiento de
+  allá": sigue orientando y ofrece la asesoría normal. Solo si la persona PREGUNTA si el despacho puede llevar,
   representar o defender su caso / demanda / juicio / audiencias, o si
   podrían acompañarla al Centro de Conciliación o al Tribunal, contéstale
   con claridad y sin rodeos que en ese lugar el despacho no lleva
@@ -1958,6 +1974,12 @@ const IA_TOOLS = [
         'description' => 'Genera el link de pago REAL de Mercado Pago ($49 MXN) para el documento con membrete del despacho del ÚLTIMO cálculo de liquidación que se le hizo a esta persona en la conversación -- usa automáticamente los datos del cálculo más reciente, no hace falta volver a pedírselos. Llama esta herramienta SOLO después de haber dado ya el cálculo gratis en texto Y de haberle ofrecido la asesoría de pago -- nunca antes, y nunca como sustituto de ofrecer la asesoría primero. Se usa cuando la persona, tras decir que no le interesa la asesoría (o quedarse callada ante esa oferta), muestra interés en tener el documento formal para presentar.',
         'input_schema' => [
             'type' => 'object',
+            'properties' => [
+                'para_otra_persona' => [
+                    'type' => 'boolean',
+                    'description' => 'true SOLO si el último cálculo es de OTRA persona (un familiar, compañero o amigo de quien escribe, con su propia fecha de ingreso y salario) y quiere el documento de esa otra persona. Es una compra nueva de $49. false (default) si es el cálculo de quien escribe, aunque lo hayas corregido.',
+                ],
+            ],
         ],
     ],
 ];
@@ -2410,7 +2432,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             } elseif ($bloque['name'] === 'buscar_jurisprudencia') {
                 $contenido = json_encode(jurisprudencia_buscar_para_bot($pdo, (string)($in['terminos'] ?? '')), JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'confirmar_compra_documento_calculo') {
-                $contenido = ia_resultado_confirmar_compra_documento_calculo($pdo, $telefono);
+                $contenido = ia_resultado_confirmar_compra_documento_calculo($pdo, $telefono, !empty($in['para_otra_persona']));
             } elseif ($bloque['name'] === 'escalar_a_humano') {
                 $nombreEscalar = trim((string)($in['nombre'] ?? '')) ?: null;
                 $resumenEscalar = trim((string)($in['resumen'] ?? '')) ?: 'La conversación necesita que un abogado la atienda en persona.';
@@ -3077,7 +3099,7 @@ function ia_compra_documento_confirmada_reciente(PDO $pdo, string $telefono, int
     return $c;
 }
 
-function ia_resultado_confirmar_compra_documento_calculo(PDO $pdo, string $telefono): string
+function ia_resultado_confirmar_compra_documento_calculo(PDO $pdo, string $telefono, bool $paraOtraPersona = false): string
 {
     $stmt = $pdo->prepare(
         "SELECT calculo_json, salario_diario FROM calculos_liquidacion
@@ -3100,7 +3122,11 @@ function ia_resultado_confirmar_compra_documento_calculo(PDO $pdo, string $telef
     // _calculo solo miraba la compra más reciente (la nueva, sin pagar) y
     // el bot le dijo que "no aparecía el pago". Si este número ya pagó el
     // documento en los últimos 30 días, no se genera otro cobro.
-    $yaPagada = ia_compra_documento_confirmada_reciente($pdo, $telefono, 30);
+    // 25-nov-2026 (clienta de Querétaro): pagó su documento y pidió el de una
+    // COMPAÑERA (otra fecha de ingreso, otro salario); el candado de arriba
+    // le negó el link y la escaló. Las correcciones gratis son solo del
+    // cálculo de la misma persona; el de otra persona es una compra nueva.
+    $yaPagada = $paraOtraPersona ? null : ia_compra_documento_confirmada_reciente($pdo, $telefono, 30);
     if ($yaPagada) {
         return json_encode([
             'ok' => false,
