@@ -322,7 +322,29 @@ $cron = file_get_contents($base . '/api/cron_seguimiento_cursos.php');
 caso('seguimiento de curso no le vende a quien ya dijo que pagó', strpos($cron, 'yaDijoQuePago') !== false && strpos($cron, 'p2.pausado_bot = 1') !== false);
 
 // ---------------------------------------------------------------------
-echo "19) Mejorar ventas (24-nov): objeciones de precio y monto real en el seguimiento\n";
+echo "18) Salario semanal entre 7 (criterio del Lic. Rubén, 24-nov, Art. 89)\n";
+$p = IA_SYSTEM_PROMPT;
+caso('regla del prompt: semanal entre 7 con 4 días o más', strpos($p, 'si trabaja 4 días o más a la semana, divide el') !== false && strpos($p, 'NUNCA lo\n    dividas entre 7') === false);
+caso('herramienta: el parámetro salario_diario dice semanal entre 7', substr_count(json_encode(IA_TOOLS, JSON_UNESCAPED_UNICODE), 'divídelo entre 7 (Art. 89 LFT)') === 2);
+caso('menos de 4 días a la semana: salario por día trabajado', strpos($p, 'MENOS de 4 días a la semana') !== false && strpos($p, '$1,500 por 3 días = $500 diarios') !== false);
+
+// ---------------------------------------------------------------------
+echo "19) Revisión del 24-nov: Art. 110-I, pagos incompletos, plazo conservador\n";
+$p = IA_SYSTEM_PROMPT;
+caso('Art. 110 fracc. I con sus dos límites (un mes y 30% del excedente)', strpos($p, 'no puede ser mayor del 30% del excedente del salario mínimo') !== false);
+caso('vacaciones/aguinaldo incompletos: pasar la diferencia y aguinaldo aparte', strpos($p, 'pero INCOMPLETOS') !== false && strpos($p, 'NO calcula aguinaldos de') !== false);
+caso('no decir que el finiquito cuadra hasta tener todos los años', strpos($p, 'no digas que un finiquito o documento "sí cuadra"') !== false);
+caso('rescisión hipotética: en condicional', strpos($p, 'Preguntas HIPOTÉTICAS sobre rescindir') !== false);
+require_once $base . '/api/prescripcion_calculadora.php';
+$plazo = calcular_plazo_demanda('2026-11-10', null, null, '2026-11-24');
+caso('plazo despido 10-nov vence 9-ene (el que venza primero)', $plazo['fecha_limite'] === '2027-01-09' && $plazo['dias_restantes'] === 46);
+$rev = file_get_contents($base . '/api/ia_helpers.php');
+caso('revisor: plazo conservador y salarios devengados no son falsas alarmas', strpos($rev, 'usa a propósito la fecha que venza PRIMERO') !== false && strpos($rev, 'dias_salarios_devengados); si en') !== false);
+$cron = file_get_contents($base . '/api/cron_revisar_conversaciones_bot.php');
+caso('revisor recibe salarios devengados de la calculadora', strpos($cron, "'salarios_devengados_monto' => 'salarios devengados'") !== false);
+
+// ---------------------------------------------------------------------
+echo "20) Mejorar ventas (24-nov): objeciones de precio y monto real en el seguimiento\n";
 $p = IA_SYSTEM_PROMPT;
 caso('prompt: objeción de precio -- reencuadra valor con el caso real, nunca baja el precio',
     strpos($p, 'OBJECIONES de precio') !== false && strpos($p, 'nunca ofrezcas un') !== false);
@@ -345,7 +367,7 @@ caso('cron_seguimiento_calculadora_plantilla.php: tercer recordatorio por planti
     })());
 
 // ---------------------------------------------------------------------
-echo "20) Centro de Conciliación: argumento de venta con la 'propuesta de 45 días' (25-nov)\n";
+echo "21) Centro de Conciliación: argumento de venta con la 'propuesta de 45 días' (25-nov)\n";
 $p = IA_SYSTEM_PROMPT;
 caso('prompt: menciona que la indemnización baja de 90 a 45 días en conciliación',
     strpos($p, '45 días') !== false && strpos($p, '90') !== false && strpos($p, 'MITAD de lo que le toca') !== false);

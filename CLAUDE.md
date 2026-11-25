@@ -4445,7 +4445,28 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
   recorte tratado como despido (posible conversación previa a la subida del 23-nov).
   Falsas alarmas: plazo "a mano" (sale de calcular_plazo_demanda), conversación sin respuesta del
   bot, PTU Art. 127-VII. Revisor calibrado en esos 2 primeros puntos (sin subir todavía).
-- **Pregunta abierta al Lic. Rubén (24-nov)**: la REGLA DURA del prompt dice dividir el salario
-  SEMANAL entre los días trabajados (NUNCA entre 7), pero el Art. 89 LFT vigente dice "Cuando el
-  salario se fije por semana o por mes, se dividirá entre siete o entre treinta". El 19-nov se le
-  mandaron a un cliente 2 PDF con ÷7 ($3,000/7 = $428.57). No se cambió nada sin su criterio.
+- **Decidido por el Lic. Rubén (24-nov)**: salario SEMANAL ÷ 7 SIEMPRE (Art. 89 LFT: "se dividirá
+  entre siete o entre treinta") cuando trabaja 4 días o más a la semana; EXCEPCIÓN (mismo día):
+  si trabaja MENOS de 4 días a la semana, se usa su salario por día trabajado. Se reescribió la REGLA DURA que
+  decía lo contrario (÷ días trabajados), la descripción de `salario_diario` en las 2
+  herramientas y un "NO marques" del revisor. 103 casos en `scripts/pruebas_bot.php`.
+- **Decidido por el Lic. Rubén (24-nov)**: la solicitud de conciliación PAUSA el plazo y, con la
+  constancia, sigue corriendo con los días que quedaban (no empieza de nuevo completo). Es lo que
+  ya hacen `calcular_plazo_demanda()` y el prompt -- no se cambió nada. Cierra la pregunta del
+  Art. 521 fracc. III de la sección anterior.
+
+## Revisión del 24-nov (120 conversaciones, 8 marcadas = 6.7%, bajó de 8.1%) (25 nov 2026, conversación "chats")
+- Reales, ya arreglados en CRITERIOS DEL DESPACHO:
+  - Art. 110 fracc. I: el bot omitió el límite del 30% del excedente del salario mínimo por cada descuento. Verificado en el texto oficial; ya está en la guía de artículos.
+  - Vacaciones y aguinaldo pagados INCOMPLETOS: pasar a la calculadora la diferencia de días de vacaciones. La diferencia de aguinaldo se da aparte, redondeada, porque la calculadora no calcula aguinaldos de años anteriores.
+  - Prescripción del aguinaldo (Art. 516): el del año pasado se puede reclamar hasta el 20-dic de este año; los anteriores ya prescribieron.
+  - No decir que un finiquito "cuadra" sin la respuesta de todos los años.
+  - Antigüedad discutible (trabajo por temporadas): presentarla como escenario junto a las cifras.
+  - Rescisión hipotética: contestar en condicional.
+- Falsas alarmas calibradas en el revisor:
+  - Plazo 9-ene para un despido del 10-nov: `calcular_plazo_demanda` usa la fecha que vence primero entre 60 días y 2 meses.
+  - Salarios devengados: la calculadora sí los incluye; el revisor ahora recibe `salarios_devengados_monto`.
+  - Decir que el aguinaldo de 2024 ya prescribió es correcto.
+  - Horas extra mencionadas sin monto.
+  - Advertir sobre el Art. 185 (trabajador de confianza).
+- 111 casos en `scripts/pruebas_bot.php`.

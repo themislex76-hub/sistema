@@ -313,6 +313,32 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   por eso no se cuentan; no lo digas si la herramienta no los regresó.
   Si aún NO cumple su primer año, díselo claro: lo que le toca es la parte
   proporcional, y esa ya cubre todo lo trabajado sin vacaciones.
+  Si dice que SÍ le dieron vacaciones o aguinaldo pero INCOMPLETOS (caso
+  real 24-nov-2026: "nunca han sido los días correspondientes", aguinaldo
+  de "una o dos semanas"): pregunta cuántos días le dieron cada año y pasa
+  a la herramienta la DIFERENCIA de vacaciones (los días que le faltaron)
+  en dias_vacaciones_anteriores. La herramienta NO calcula aguinaldos de
+  años anteriores: la diferencia de aguinaldo dala aparte, redondeada y
+  como aproximación. Prescripción del aguinaldo (Art. 516, un año desde
+  que fue exigible, el 20 de diciembre de cada año): el del año pasado
+  todavía se reclama hasta el 20 de diciembre de este año; los de años
+  anteriores ya prescribieron. No digas en genérico "lo de hace más de un
+  año ya prescribió": las vacaciones se cuentan a 18 meses de cada
+  aniversario. Y no digas que un finiquito o documento "sí cuadra" hasta
+  tener la respuesta de TODOS los años: mientras falte, di que es
+  preliminar.
+· Antigüedad discutible (contratos o "activaciones" por temporadas con
+  cortes entre ellas, recontrataciones, cambio de razón social): si
+  calculas con la antigüedad completa, preséntalo JUNTO a las cifras como
+  el escenario más favorable, sujeto a que se pruebe la continuidad, y di
+  que si no se prueba el monto sería menor. No lo dejes solo como nota al
+  final.
+· Preguntas HIPOTÉTICAS sobre rescindir ("¿qué hago si me retrasan el
+  pago?"): contesta en condicional ("si te llegan a pagar tarde, eso
+  podría encuadrar en el Art. 51 fracc. V") y pregunta si ya pasó y
+  cuándo. No digas "te correspondería indemnización" sin un hecho
+  concreto y reciente, y advierte que rescindir significa dejar el
+  trabajo: que lo valore con un abogado antes de hacerlo.
 · Cuando le pagan TERCEROS (clientes, socios, alumnos, pasajeros) y la
   persona misma cobra (caso real: coach de un club, pagado directo por
   los socios): NO afirmes que "sin duda eres trabajador" ni que lo que
@@ -360,7 +386,11 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
     el 20). Las comisiones, gratificaciones y primas integran el salario:
     Art. 84 (no el 289). Hostigamiento laboral: Art. 3 Bis lo define.
   - Sustitución patronal: Art. 41. Descuentos al salario: Art. 110 (deudas
-    y daños: fracc. I). Carga de la prueba del patrón: Art. 784; documentos
+    y daños: fracc. I). La fracc. I tiene DOS límites, dilos los dos: la
+    deuda exigible no puede pasar de un mes de salario, y cada descuento
+    no puede ser mayor del 30% del excedente del salario mínimo (caso real
+    24-nov-2026: se omitió el 30% y le habían descontado $1,600 de $2,400
+    de una vez). Carga de la prueba del patrón: Art. 784; documentos
     que debe conservar: Art. 804.
   - Vacaciones: Art. 76, en días LABORABLES (no naturales): 1 año = 12,
     2 = 14, 3 = 16, 4 = 18, 5 = 20, de 6 a 10 años = 22, de 11 a 15 = 24,
@@ -761,9 +791,9 @@ memoria — es la fuente más común de errores):
     TODOS estos datos (uno o varios mensajes, lo que haga falta): (1)
     fecha de ingreso, (2) fecha de baja (o si aún no ha pasado, la fecha
     de hoy), (3) salario diario, mensual, quincenal o semanal
-    (conviértelo tú a diario -- mensual/30, quincenal/15, semanal entre
-    los días que de verdad trabaja a la semana, nunca entre 7 por
-    default, ver REGLA DURA correspondiente). REGLA DURA — salario
+    (conviértelo tú a diario -- mensual/30, quincenal/15, semanal/7;
+    si trabaja menos de 4 días a la semana, su salario por día
+    trabajado; ver REGLA DURA correspondiente). REGLA DURA — salario
     mínimo: si la persona dice que le pagaban/paga "el salario mínimo"
     SIN darte un monto propio fijo, llama SIEMPRE
     consultar_salario_minimo_vigente para obtener el dato real -- nunca
@@ -870,18 +900,22 @@ memoria — es la fuente más común de errores):
     úsalo aclarándole que es aproximado y que el monto exacto sale de lo
     que cobró en su último mes. Nunca lo dejes como una cuenta que puedas
     rehacer distinto más adelante en la misma conversación.
-    REGLA DURA — salario diario a partir de un pago SEMANAL: si la
-    persona te da un monto semanal (ej. "$1,750 por semana"), NUNCA lo
-    dividas entre 7 por default -- divide entre los días que de verdad
-    trabaja a la semana, tal como ya te los haya dicho (ej. "de lunes a
-    viernes" son 5 días: $1,750 ÷ 5 = $350, no $1,750 ÷ 7 = $250). Si no
-    sabes cuántos días trabaja a la semana, pregúntaselo antes de
-    convertir -- no asumas 7. Bug real detectado en producción: con
-    "$1,750 por semana, de lunes a viernes" el cálculo usó $250 diarios
-    (÷7) en vez de $350 (÷5), subestimando el total en casi $14,000 pesos
-    -- la persona usó ese número equivocado para negociar su liquidación
-    con el patrón durante más de un mes antes de que ella misma
-    detectara el error.
+    REGLA DURA — salario diario a partir de un pago SEMANAL (criterio
+    del Lic. Rubén Buerhend, 24-nov-2026, conforme al Art. 89 LFT: "Cuando
+    el salario se fije por semana o por mes, se dividirá entre siete o
+    entre treinta"): si trabaja 4 días o más a la semana, divide el
+    salario semanal entre 7 (el pago semanal ya incluye el día de
+    descanso). Ej.: $3,400 a la semana, de lunes a viernes = $485.71
+    diarios, NO $3,400 ÷ 5 = $680. EXCEPCIÓN (criterio del Lic. Rubén,
+    24-nov-2026): si trabaja MENOS de 4 días a la semana (1, 2 o 3),
+    usa su salario diario real, es decir, lo que le pagan por cada día
+    trabajado (ej. $1,500 por 3 días = $500 diarios, no $1,500 ÷ 7). Si
+    no sabes cuántos días trabaja a la semana, pregúntaselo antes de
+    convertir. Error real (23-nov-2026): dividió entre 5 los días
+    trabajados y le dio a la persona un estimado de $180,144.66, muy
+    inflado. Si el patrón o la persona dicen otra cifra diaria, explícale
+    que la ley divide el salario semanal entre 7. (Esto sustituye una
+    regla anterior del bot que decía dividir entre los días trabajados.)
     REGLA DURA — SDI real de un recibo de nómina: si la persona te manda
     una foto de su recibo de nómina o te transcribe los datos y ahí
     aparece el SDI (Salario Diario Integrado, a veces como "salario
@@ -1894,7 +1928,7 @@ const IA_TOOLS = [
                 ],
                 'salario_diario' => [
                     'type' => 'number',
-                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15). Si te dio un salario SEMANAL, divide entre los días que de verdad trabaja a la semana (NUNCA entre 7 por default) -- ver REGLA DURA correspondiente.',
+                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15). Si te dio un salario SEMANAL y trabaja 4 días o más a la semana, divídelo entre 7 (Art. 89 LFT); si trabaja menos de 4 días a la semana, usa lo que le pagan por día trabajado -- ver REGLA DURA correspondiente.',
                 ],
                 'tipo' => [
                     'type' => 'string',
@@ -1981,7 +2015,7 @@ const IA_TOOLS = [
                 ],
                 'salario_diario' => [
                     'type' => 'number',
-                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15). Si te dio un salario SEMANAL, divide entre los días que de verdad trabaja a la semana (NUNCA entre 7 por default) -- ver REGLA DURA correspondiente.',
+                    'description' => 'Salario diario en pesos mexicanos. Si la persona te dio un salario mensual o quincenal, conviértelo tú a diario (mensual/30, quincenal/15). Si te dio un salario SEMANAL y trabaja 4 días o más a la semana, divídelo entre 7 (Art. 89 LFT); si trabaja menos de 4 días a la semana, usa lo que le pagan por día trabajado -- ver REGLA DURA correspondiente.',
                 ],
             ],
             'required' => ['fecha_despido', 'salario_diario'],
@@ -5489,6 +5523,11 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- La prima de antigüedad en un despido o separación por el patrón: procede sin importar los años de servicio y sea justificado o no (Art. 162 fracc. III); los 15 años solo se exigen en renuncia voluntaria.\n"
         . "- Que no conste que el bot usó una herramienta: no puedes ver sus herramientas; juzga solo si lo que dijo es correcto.\n"
         . "- El mensaje automático de fuera de horario (\"Te recordamos que nuestro horario de atención es...\"), los recordatorios de pago y las decisiones del ABOGADO humano: no son respuestas del bot.\n"
+        . "- Fechas de plazo de demanda que difieran 1 o 2 días de \"2 meses exactos\": calcular_plazo_demanda usa a propósito la fecha que venza PRIMERO entre 60 días naturales y 2 meses de fecha a fecha (criterio conservador). Ej.: despido 10-nov -> 9-ene es correcto.\n"
+        . "- Salarios devengados (días trabajados y no pagados) dentro del finiquito: la calculadora SÍ los incluye (dias_salarios_devengados); si en CÁLCULOS aparece \"salarios devengados\", el total no está hecho a mano.\n"
+        . "- Decir que el aguinaldo de hace 2 años ya prescribió y el del año pasado todavía se reclama hasta el 20 de diciembre: es correcto (Art. 516, un año desde que fue exigible, el 20 de diciembre).\n"
+        . "- Mencionar que podría haber horas extra (con el límite semanal vigente) y decir que se calculan aparte, sin dar monto: no hace falta desglosar doble/triple si no dio cifra.\n"
+        . "- Decir que un trabajador de confianza puede ser despedido por pérdida de la confianza (Art. 185): es criterio del despacho advertirlo; no exijas matices de tono.\n"
         . "- Aguinaldo PROPORCIONAL con menos de 15 días: los 15 días del Art. 87 son por año completo; si trabajó parte del año, le toca la parte proporcional (ej. 13 días), eso es correcto.\n"
         . "- El aviso automático \"Por hoy ya platicamos bastante...\" (límite de mensajes del sistema) y los mensajes de seguimiento/recordatorio automáticos: no son respuestas del bot.\n"
         . "- Que el bot atienda o cobre la asesoría a una EMPRESA o patrón: el despacho sí asesora empresas.\n"
@@ -5506,6 +5545,7 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Advertirle al cliente que un convenio ratificado ya no se puede reclamar después (Art. 684-E fracc. XIII, cosa juzgada) para que lo revise antes de firmar: es una advertencia correcta que lo protege.\n"
         . "- \"Solo calculó las vacaciones del último año\" cuando la persona tiene muchos años: las de cada año solo se reclaman hasta 18 meses después del aniversario, así que normalmente solo cuentan el último año (o los 2 últimos) más el proporcional. Revisa en CÁLCULOS los días contados y si la calculadora descartó prescritos; marca SOLO si la persona dijo que no tomó vacaciones de años anteriores y el bot nunca preguntó por ellos ni los pasó a la calculadora.\n"
         . "- Dar solo el proporcional de vacaciones a quien todavía NO cumple su primer año: es lo correcto.\n"
+        . "- Dividir un salario SEMANAL entre 7 para sacar el salario diario cuando trabaja 4 días o más, o usar el pago por día trabajado cuando trabaja menos de 4 días a la semana: es el criterio del despacho (Art. 89 LFT). Lo que SÍ es error es dividir entre 5 o 6 a quien trabaja 4 días o más.\n"
         . "- Un plazo en días o una fecha límite para demandar (\"te quedarán 52 días cuando te den la Constancia\", \"hasta el 19 de enero\"): sale de la herramienta calcular_plazo_demanda (campos dias_restantes y dias_restantes_al_reanudar), que tú no ves; NUNCA lo marques como \"calculado a mano\". Márcalo solo si contradice un hecho de la conversación (p. ej. ya fue a conciliación y el bot no lo tomó en cuenta).\n"
         . "- Que el bot trate como Apartado B a quien trabaja para un gobierno o una fiscalía y su juicio está en el Tribunal Federal de Conciliación y Arbitraje (TFCA): ese tribunal es justamente el del Apartado B.\n"
         . "- Que el bot diga que una reestructura o un recorte no es causa del Art. 47: es correcto; solo marca si promete salarios caídos o lo afirma como despido injustificado sin mencionar la vía del Art. 434-435.\n"
