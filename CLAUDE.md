@@ -1,5 +1,36 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## 2 crons construidos hace semanas nunca se dieron de alta en Ferozo -- por eso "Actividad de la IA" se veía muerta (25 nov 2026, conversación "Bot")
+Pregunta real del usuario viendo el panel "Actividad de la IA" sin nada reciente y el caso de
+Yuliana (Exp. 388/2026, con actividad real del robot ese mismo día) sin reflejarse ahí: "porque no
+hay actividad registrada de la ia". Se revisó en vivo con el usuario, viendo juntos el panel de
+Ferozo (`ferozo.host/#/tools/scheduledtasks`) -- el usuario pegó la lista COMPLETA de las 13 tareas
+programadas que de verdad existían en el servidor en vivo.
+- **Causa real confirmada, no un bug de código**: `cron_leer_google_calendar.php` (construido y
+  probado el 11-nov-2026) y `cron_qa_irregularidades.php` (construido y probado el 12-nov-2026) --
+  ambos documentados en este mismo archivo como "ya corridos/dados de alta" -- en realidad **nunca
+  se habían agregado de verdad** al Cron Jobs de Ferozo. Quedaron solo como pruebas manuales
+  (abrir la URL directo) el día que se construyeron, y nadie volvió a programarlos después.
+  Explica tanto la falta de actividad reciente de Google Calendar como por qué nunca se vio una
+  irregularidad nueva detectada por la QA semanal.
+- **Corregido en vivo, uno por uno en la UI de Ferozo (25 nov 2026)**: se agregaron las 3 tareas
+  que faltaban:
+  - `cron_leer_google_calendar.php` -- 2 corridas diarias, 7:00am y 3:00pm (`0 7 * * *` y
+    `0 15 * * *`).
+  - `cron_qa_irregularidades.php` -- semanal, lunes 9:00am (`0 9 * * 1`).
+- **Lección para la próxima vez que un cron "parezca no hacer nada"**: antes de sospechar un bug
+  de código, confirmar con el usuario que la tarea de verdad está en la lista viva de Ferozo
+  (pedirle que pegue la lista completa, como se hizo aquí) -- "lo construí y lo probé a mano" no
+  es lo mismo que "está dado de alta para correr solo".
+- **Pendiente**: confirmar en unos días que el panel "Actividad de la IA" vuelva a mostrar
+  entradas nuevas de Google Calendar, y que el panel de "Posibles irregularidades" (dentro de
+  "Preguntas al abogado") muestre algo tras la primera corrida real del lunes. También queda
+  pendiente que el usuario confirme si `cron_analizar_acuerdos_ia.php`,
+  `cron_analizar_documentos_ia.php` y `cron_auditoria_expediente_ia.php` (los 3 que SÍ estaban en
+  la lista desde antes) corren sin error silencioso -- se le pidió abrir
+  `api/cron_analizar_acuerdos_ia.php` directo en el navegador para revisar, sin confirmación
+  todavía.
+
 ## Argumento de venta: la "propuesta de 45 días" del Centro de Conciliación + se quita "25 años de experiencia" del bot (25 nov 2026, conversación "Bot")
 Pedido explícito del usuario, experiencia profesional directa (25 años litigando, lo dice en sus
 lives): "en el centro de conciliación normalmente no se apoya a los trabajadores... te bajan de
