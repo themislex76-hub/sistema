@@ -234,24 +234,28 @@ soy un abogado reconocido en el ámbito" + "vale la pena hacer una plantilla de 
   lo tomó un humano, ya pagó/agendó, ya declinó, o el bot ya dijo que no se le puede atender).
   Esto cierra el hueco real encontrado hoy: antes, pasadas las 24h, NADIE volvía a contactar a
   esos leads nunca.
-- **Plantilla `seguimiento_calculo_laboral` YA ENVIADA A REVISIÓN DE META (25 nov 2026)**:
-  categoría Marketing (no Utilidad -- mismo costo más alto que `sin_respuesta_llamada`, ~$0.73
-  MXN/mensaje en vez de ~$0.16). Texto final, tras una segunda ronda de ajuste de tono el 25-nov
-  (el usuario no quiso "contéstame este mensaje" -- "no lo siento amable" -- se cambió por algo
-  más cálido, sin sonar a instrucción):
+- **✅ Plantilla APROBADA por Meta con el nombre técnico `despues_de_24_h` (confirmado 25 nov
+  2026, captura real: "Activa: calidad pendiente", Marketing, Spanish (MEX), identificador
+  4913108052309567)** -- "calidad pendiente" solo significa que Meta aún no acumula suficientes
+  envíos para calificarla, no bloquea el uso. **OJO: el nombre NO quedó como se había propuesto
+  originalmente** (`seguimiento_calculo_laboral`) -- quedó como `despues_de_24_h`, probablemente
+  por cómo Meta/el usuario lo capturó al crear la plantilla en su panel. `api/cron_seguimiento_
+  calculadora_plantilla.php` ya se actualizó con el nombre correcto en la constante
+  `PLANTILLA_SEGUIMIENTO_CALCULO`. Costo: categoría Marketing (no Utilidad -- mismo costo más
+  alto que `sin_respuesta_llamada`, ~$0.73 MXN/mensaje en vez de ~$0.16). Texto final, tras una
+  segunda ronda de ajuste de tono el 25-nov (el usuario no quiso "contéstame este mensaje" --
+  "no lo siento amable" -- se cambió por algo más cálido, sin sonar a instrucción):
   > "Hola, ¿cómo estás? Quería darte seguimiento a tu caso laboral — según lo que platicamos,
   > tu estimado ronda los ${{1}}. Si en algún momento quieres que el Lic. Rubén Buerhend lo
   > revise contigo a fondo por teléfono, nada más escríbeme y con gusto te paso los horarios
   > que tiene disponibles."
 
-  Si Meta pide ajustes al texto o asigna un nombre técnico distinto, avisar para ajustar la
-  constante `PLANTILLA_SEGUIMIENTO_CALCULO` en el cron. Aprobación toma días -- **no dar de alta
-  el Cron Job hasta confirmar que la plantilla ya quedó aprobada**, o todas las corridas
-  marcarán `tercer_seguimiento_en` sin mandar nada de verdad (el script no reintenta solo si
-  Meta la rechaza). **Migración 075 (`tercer_seguimiento_en`) confirmada corrida en
-  `c1361311_exp` el 25 nov 2026** -- faltaba (el error `#1054` del mismo día lo confirmó en
-  vivo antes de correrla). **Pendiente real único que queda para activar esto**: la respuesta
-  de Meta sobre la plantilla, que ya está en revisión.
+  **Migración 075 (`tercer_seguimiento_en`) confirmada corrida en `c1361311_exp` el 25 nov
+  2026** -- faltaba (el error `#1054` del mismo día lo confirmó en vivo antes de correrla).
+  132 casos en `scripts/pruebas_bot.php`, `php -l` limpio. **Pendiente real único que queda**:
+  que el usuario suba `api/cron_seguimiento_calculadora_plantilla.php` (nombre de plantilla
+  corregido) y dé de alta el Cron Job en Ferozo (1 vez al día, en horario de atención) -- ya
+  se puede activar, la plantilla está aprobada y la migración corrida.
   **Estimado de costo mensual (25 nov 2026, con datos reales)**: 947 números únicos calcularon su
   liquidación en los últimos 30 días, 35 ya pagaron asesoría -- techo de 912 números/mes
   candidatos al 3er recordatorio, ~$666 MXN/mes (probablemente algo menos, $500-650, una vez

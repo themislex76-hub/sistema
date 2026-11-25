@@ -20,18 +20,18 @@ declare(strict_types=1);
 // normal) -- mismos candados de siempre: nunca si ya lo tomó un humano,
 // ya pagó/agendó, o ya declinó.
 //
-// *** REQUIERE que la plantilla de abajo (PLANTILLA_SEGUIMIENTO_CALCULO)
-// ya esté APROBADA en Meta (Administrador de WhatsApp -> Mensajería ->
-// Plantillas de mensajes) ANTES de dar de alta este Cron Job -- si Meta
-// exige un nombre técnico distinto al propuesto, ajustar la constante. ***
-// Texto propuesto para someter a aprobación (24-nov-2026, tono más
-// natural/humano pedido explícito por el usuario -- categoría probable:
-// Marketing, no Utilidad -- es un reenganche de venta, no una
-// confirmación de algo ya agendado; ver nota de costo en CLAUDE.md):
+// *** Plantilla ya APROBADA en Meta el 25-nov-2026 con el nombre técnico
+// "despues_de_24_h" (Marketing, Spanish (MEX), "Activa: calidad
+// pendiente" -- ya se puede usar, "calidad pendiente" solo significa que
+// Meta aún no acumula suficientes envíos para calificarla). ***
+// Texto aprobado (24/25-nov-2026, tono natural/humano pedido explícito
+// por el usuario -- categoría Marketing, no Utilidad -- es un
+// reenganche de venta, no una confirmación de algo ya agendado; ver
+// nota de costo en CLAUDE.md):
 //   "Hola, ¿cómo estás? Quería darte seguimiento a tu caso laboral --
 //   según lo que platicamos, tu estimado ronda los ${{1}}. Si en algún
 //   momento quieres que el Lic. Rubén Buerhend lo revise contigo a
-//   fondo por teléfono, contéstame este mensaje y con gusto te paso los
+//   fondo por teléfono, nada más escríbeme y con gusto te paso los
 //   horarios que tiene disponibles."
 //
 // Config del Cron Job: comando "php /ruta/completa/a/este/archivo.php",
@@ -40,7 +40,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
 
-const PLANTILLA_SEGUIMIENTO_CALCULO = 'seguimiento_calculo_laboral';
+const PLANTILLA_SEGUIMIENTO_CALCULO = 'despues_de_24_h';
 
 $pdo = db();
 
