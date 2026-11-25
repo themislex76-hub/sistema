@@ -252,10 +252,19 @@ soy un abogado reconocido en el ámbito" + "vale la pena hacer una plantilla de 
 
   **Migración 075 (`tercer_seguimiento_en`) confirmada corrida en `c1361311_exp` el 25 nov
   2026** -- faltaba (el error `#1054` del mismo día lo confirmó en vivo antes de correrla).
-  132 casos en `scripts/pruebas_bot.php`, `php -l` limpio. **Pendiente real único que queda**:
-  que el usuario suba `api/cron_seguimiento_calculadora_plantilla.php` (nombre de plantilla
-  corregido) y dé de alta el Cron Job en Ferozo (1 vez al día, en horario de atención) -- ya
-  se puede activar, la plantilla está aprobada y la migración corrida.
+  134 casos en `scripts/pruebas_bot.php`, `php -l` limpio. **Bug real encontrado y corregido de
+  paso (25 nov 2026)**: el historial de conversación (`whatsapp_conversaciones`) seguía
+  guardando el texto VIEJO ("Sigo al pendiente de tu caso... contéstame este mensaje") en vez
+  del texto real que Meta manda con la plantilla aprobada -- corregido para que coincida exacto,
+  y se agregó un prefijo nuevo a `ia_es_mensaje_automatico()` para que el revisor diario del bot
+  lo siga tratando como mensaje de sistema (mismo patrón que los 2 recordatorios normales de
+  `cron_seguimiento_calculadora.php`).
+  **✅ Cron Job dado de alta en Ferozo (25 nov 2026)** -- 1 vez al día, 11:00am, comando
+  `php /home/c1361311/public_html/sistema/api/cron_seguimiento_calculadora_plantilla.php`.
+  Los 2 archivos (`api/ia_helpers.php`, `api/cron_seguimiento_calculadora_plantilla.php`) ya
+  subidos. **Sin confirmar en vivo todavía** -- falta ver la primera corrida real (forzable
+  abriendo la URL directo en el navegador logueado, sin esperar a las 11am) y confirmar que
+  encuentra candidatos y manda al menos un mensaje sin error.
   **Estimado de costo mensual (25 nov 2026, con datos reales)**: 947 números únicos calcularon su
   liquidación en los últimos 30 días, 35 ya pagaron asesoría -- techo de 912 números/mes
   candidatos al 3er recordatorio, ~$666 MXN/mes (probablemente algo menos, $500-650, una vez
