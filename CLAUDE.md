@@ -234,23 +234,28 @@ soy un abogado reconocido en el ámbito" + "vale la pena hacer una plantilla de 
   lo tomó un humano, ya pagó/agendó, ya declinó, o el bot ya dijo que no se le puede atender).
   Esto cierra el hueco real encontrado hoy: antes, pasadas las 24h, NADIE volvía a contactar a
   esos leads nunca.
-- **Pendiente CRÍTICO antes de dar de alta el Cron Job**: el usuario tiene que crear y someter a
-  aprobación en Meta (Administrador de WhatsApp → Mensajería → Plantillas de mensajes) la
-  plantilla **`seguimiento_calculo_laboral`** con este texto (categoría probable: Marketing, no
-  Utilidad -- mismo costo más alto que `sin_respuesta_llamada`, ~$0.73 MXN/mensaje en vez de
-  ~$0.16). **Ajustado el mismo día, pedido explícito del usuario: "no me gustó este texto,
-  hazlo más natural que no parezca un robot"** -- versión más cálida/conversacional, sin el
-  "sigo al pendiente de tu caso" que sonaba a plantilla automática:
+- **Plantilla `seguimiento_calculo_laboral` YA ENVIADA A REVISIÓN DE META (25 nov 2026)**:
+  categoría Marketing (no Utilidad -- mismo costo más alto que `sin_respuesta_llamada`, ~$0.73
+  MXN/mensaje en vez de ~$0.16). Texto final, tras una segunda ronda de ajuste de tono el 25-nov
+  (el usuario no quiso "contéstame este mensaje" -- "no lo siento amable" -- se cambió por algo
+  más cálido, sin sonar a instrucción):
   > "Hola, ¿cómo estás? Quería darte seguimiento a tu caso laboral — según lo que platicamos,
   > tu estimado ronda los ${{1}}. Si en algún momento quieres que el Lic. Rubén Buerhend lo
-  > revise contigo a fondo por teléfono, contéstame este mensaje y con gusto te paso los
-  > horarios que tiene disponibles."
+  > revise contigo a fondo por teléfono, nada más escríbeme y con gusto te paso los horarios
+  > que tiene disponibles."
 
   Si Meta pide ajustes al texto o asigna un nombre técnico distinto, avisar para ajustar la
   constante `PLANTILLA_SEGUIMIENTO_CALCULO` en el cron. Aprobación toma días -- **no dar de alta
   el Cron Job hasta confirmar que la plantilla ya quedó aprobada**, o todas las corridas
   marcarán `tercer_seguimiento_en` sin mandar nada de verdad (el script no reintenta solo si
-  Meta la rechaza).
+  Meta la rechaza). **Pendiente también correr la migración 075** (`tercer_seguimiento_en`) --
+  confirmado el 25-nov que todavía NO está en la base viva (`c1361311_exp`), el error
+  `#1054 - La columna 'tercer_seguimiento_en' en where clause es desconocida` lo confirmó en vivo.
+  **Estimado de costo mensual (25 nov 2026, con datos reales)**: 947 números únicos calcularon su
+  liquidación en los últimos 30 días, 35 ya pagaron asesoría -- techo de 912 números/mes
+  candidatos al 3er recordatorio, ~$666 MXN/mes (probablemente algo menos, $500-650, una vez
+  descontados declinados/pausados) -- bajo comparado con el gasto total de IA del despacho
+  (~$7,000-8,000 MXN/mes).
 - **Expectativa honesta sobre si esto "cierra ventas"**: es una extensión razonable de un
   mecanismo que YA funciona (los 2 recordatorios dentro de 24h ya convierten) hacia gente que
   antes se perdía por completo -- debería ayudar, pero no hay forma de prometer cuánto sin
