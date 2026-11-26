@@ -474,5 +474,11 @@ caso('prompt: el documento ya no dice "le ofrezcan una cantidad mayor"',
     && strpos(IA_SYSTEM_PROMPT, 'más difícil que le ofrezcan') !== false
     && strpos(IA_SYSTEM_PROMPT, 'NUNCA le prometas que con el documento le van a') !== false);
 
+// ---------------------------------------------------------------------
+echo "27) Curso de Procedimiento Laboral: no promete formatos (26-nov, caso Rogelio)\n";
+caso('prompt: el curso procesal ya no dice que trae formatos reales',
+    strpos(IA_SYSTEM_PROMPT, 'documentos y\n    formatos reales') === false
+    && strpos(IA_SYSTEM_PROMPT, 'NO incluye formatos ni escritos descargables') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

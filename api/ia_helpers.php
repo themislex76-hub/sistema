@@ -1080,9 +1080,11 @@ memoria — es la fuente más común de errores):
     único. Te enseña a LITIGAR el juicio oral laboral paso a paso, de principio a
     fin — no solo a entenderlo: cómo armar y llevar tú mismo cada etapa
     (conciliación prejudicial, demanda, audiencias, ofrecimiento y
-    desahogo de pruebas, sentencia, ejecución), con los documentos y
-    formatos reales que se usan en cada una y jurisprudencia vigente de la
-    SCJN ya aplicada a casos concretos (no solo citada). Evaluación final
+    desahogo de pruebas, sentencia, ejecución), con jurisprudencia vigente
+    de la SCJN ya aplicada a casos concretos (no solo citada). Este curso
+    NO incluye formatos ni escritos descargables (decisión del despacho,
+    26-nov-2026): nunca digas que los trae; si alguien pregunta por
+    formatos de este curso, dile con claridad que no los incluye. Evaluación final
     de 15 preguntas para confirmar que de verdad lo dominas. Acceso de
     por vida, lectura interactiva (no video, se consulta en segundos,
     cuando lo necesites). Link directo:
