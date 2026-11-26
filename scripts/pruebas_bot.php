@@ -452,6 +452,7 @@ caso('salario menor al mínimo: se calcula con el mínimo', strpos($p, 'Salario 
 caso('vacaciones anteriores con el salario actual', strpos($p, 'se pagan con el salario ACTUAL') !== false);
 $src = file_get_contents($base . '/api/ia_helpers.php');
 caso('la herramienta sube el salario al mínimo de la zona', strpos($src, "aviso_salario_minimo") !== false && strpos($src, '$salarioUsar,') !== false);
+caso('argumento de conciliación suavizado (sin "casi siempre la mitad" ni "ayudan al patrón")', strpos(IA_SYSTEM_PROMPT, 'Casi siempre le van a ofrecer la MITAD') === false && strpos(IA_SYSTEM_PROMPT, 'parecería que ayudan más') === false && strpos(IA_SYSTEM_PROMPT, 'es común que le ofrezcan menos') !== false);
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
