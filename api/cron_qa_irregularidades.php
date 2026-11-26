@@ -99,7 +99,11 @@ $upsertIrregularidad = function (int $expedienteId, ?string $etapaKey, string $t
 // --- 1. Orden cronológico (gratis, sin IA) ------------------------------
 $revisados = 0;
 foreach ($candidatos as $c) {
-    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha FROM expediente_etapas WHERE expediente_id = :id');
+    // fecha_programada también se selecciona desde el 26 nov 2026 -- ver
+    // detectar_irregularidades_orden_cronologico(), ahora también detecta
+    // citatorios/audiencias agendados fuera de orden (sin celebrada
+    // todavía).
+    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha, fecha_programada FROM expediente_etapas WHERE expediente_id = :id');
     $etapasStmt->execute([':id' => $c['id']]);
     $etapas = $etapasStmt->fetchAll();
     $revisados++;
@@ -108,7 +112,10 @@ foreach ($candidatos as $c) {
     foreach ($violaciones as $etapaKey => $motivo) {
         $fechaDetectada = null;
         foreach ($etapas as $e) {
-            if ($e['etapa_key'] === $etapaKey) { $fechaDetectada = $e['fecha']; break; }
+            if ($e['etapa_key'] === $etapaKey) {
+                $fechaDetectada = (!empty($e['fecha']) && $e['fecha'] !== '0000-00-00') ? $e['fecha'] : $e['fecha_programada'];
+                break;
+            }
         }
         $upsertIrregularidad((int)$c['id'], $etapaKey, 'orden_cronologico', $motivo, $fechaDetectada);
     }

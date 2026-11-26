@@ -9926,7 +9926,19 @@ function bindModalTabEvents(){
         const resultado = resInput ? resInput.value : '';
         const horaInput = row.querySelector('.etapa-hora');
         const hora = horaInput ? horaInput.value : '';
-        if(checked || fecha || fecha_programada || resultado || hora) etapas[key] = {fecha: (checked||fecha) ? (fecha || dateToISO(new Date())) : '', fecha_programada, resultado, hora};
+        // Bug real (26 nov 2026, varios expedientes con citatorios/audiencias
+        // "celebrados" justo el día de hoy sin que nadie lo haya confirmado
+        // así): el atajo "checkbox marcado + fecha vacía = hecho HOY sin
+        // fecha exacta" tiene sentido para etapas sin concepto de "Fecha
+        // agendada" propia -- pero para audiencias/citatorios de conciliación
+        // (que SÍ tienen su propio campo de fecha agendada) inventar "hoy"
+        // cuando el checkbox quedó marcado sin fecha escrita fabrica una
+        // fecha de celebración falsa. Para estas, la fecha celebrada solo se
+        // guarda si de verdad se escribió.
+        const esAudienciaRow = key==='audiencia_preliminar' || key==='audiencia_juicio'
+          || key==='conciliacion_primer_citatorio' || key==='conciliacion_segundo_citatorio';
+        const fechaFinal = esAudienciaRow ? fecha : ((checked||fecha) ? (fecha || dateToISO(new Date())) : '');
+        if(checked || fecha || fecha_programada || resultado || hora) etapas[key] = {fecha: fechaFinal, fecha_programada, resultado, hora};
       });
       try{
         // El servidor activa amparo_activo/amparo_presentado automáticamente

@@ -1,5 +1,62 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## 2 bugs reales: citatorios agendados fuera de orden + "Fecha en que se celebró" inventada con la fecha de hoy (26 nov 2026, `app.js?v=162`)
+Reportado por el usuario con capturas reales de 2 expedientes: **Jose Martin
+Saucedo Bautista vs Inmobiliaria Pabruem/Grupo Gabssa** (Conciliación
+prejudicial Primer citatorio con "Fecha agendada" = 04/12/2026, pero el
+Segundo citatorio ya estaba agendado para el 02/12/2026 -- ANTES que el
+primero, imposible) y **Orlando Herrera Cruz vs Trabal** (Primer citatorio
+con "Fecha en que se celebró" = 26/11/2026, exactamente HOY). "La ia agendo
+fechas inexistentes... revisa porque hay varios expedientes asi".
+- **Bug 1 (el de Jose Martin)**: `etapa_fecha_es_consistente()`
+  (`api/expediente_helpers.php`), el candado que debe impedir que un
+  mecanismo automático meta una fecha fuera de orden, solo comparaba
+  contra el campo `fecha` (celebrada) de las demás etapas -- nunca contra
+  `fecha_programada` (agendada). `cron_leer_google_calendar.php` es el
+  ÚNICO de los 5 mecanismos que llena `fecha_programada` (nunca `fecha`),
+  así que podía agendar un citatorio DESPUÉS del que por ley debe
+  seguirlo sin que nada lo atrapara. **Corregido**: si una etapa no tiene
+  celebrada, su agendada sirve como su mejor fecha conocida para esta
+  comparación de orden (la celebrada, hecho confirmado, sigue ganando si
+  hay ambas).
+- **Detector retroactivo del panel "Posibles irregularidades" ampliado
+  igual** (`detectar_irregularidades_orden_cronologico()`, usado por
+  `api/cron_qa_irregularidades.php`, corre 1 vez por semana) -- para
+  encontrar casos YA guardados como el de Jose Martin se necesitaron 3
+  comparaciones por separado (probado con casos reales antes de subir):
+  celebradas entre sí (la de siempre), agendadas entre sí (la que
+  faltaba -- si "primer citatorio" ya tiene celebrada, una agendada
+  vieja/huérfana que le quedó se esconde si solo se compara "la mejor
+  fecha conocida" de cada etapa), y combinada (celebrada si existe, si no
+  agendada, para el caso cruzado: una etapa con SOLO agendada contra otra
+  con SOLO celebrada). Sin duplicar texto cuando las 3 coinciden.
+  `api/cron_qa_irregularidades.php` ahora también selecciona
+  `fecha_programada` de `expediente_etapas`.
+- **Bug 2 (el de Orlando Herrera), el más probable para "varios
+  expedientes" con fecha de HOY**: el atajo ya documentado el 12 nov 2026
+  ("checkbox marcado + fecha vacía = márcala hecha HOY sin fecha exacta",
+  pensado para etapas SIN concepto de "Fecha agendada" propia, como
+  `emplazamiento`) se aplicaba también a audiencias/citatorios de
+  conciliación -- que SÍ tienen su propio campo de fecha agendada y donde
+  la fecha exacta sí importa. Si el checkbox de una de estas filas
+  quedaba marcado (por ejemplo al revisar el expediente) sin que nadie
+  escribiera la fecha exacta de celebración, el botón "Guardar etapas"
+  (que guarda TODAS las filas del formulario, no solo la que se estaba
+  editando) inventaba "hoy" como si el citatorio se hubiera celebrado ese
+  día -- coincide exacto con el caso de Orlando Herrera Cruz. **Corregido**
+  en `assets/app.js`: para `audiencia_preliminar`, `audiencia_juicio`,
+  `conciliacion_primer_citatorio` y `conciliacion_segundo_citatorio`, la
+  fecha celebrada solo se guarda si de verdad se escribió -- marcar el
+  checkbox sin fecha ya no fabrica ninguna.
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
+  -- no aplica `verificar_tags.js`. **Pendiente del usuario**: revisar a
+  mano "Etapas del juicio" de los 2 expedientes reportados (decidir qué
+  fecha es real en cada citatorio) y, una vez subidos los archivos,
+  correr `api/cron_qa_irregularidades.php` una vez (abrir la URL directo,
+  mismo patrón que los demás crons) para que el panel "Posibles
+  irregularidades" liste cualquier OTRO expediente con el mismo problema
+  de citatorios fuera de orden.
+
 ## Conversación nueva "negocio" (16 nov 2026)
 El usuario abrió una 4ª conversación, **"negocio"**, para hacer crecer el
 negocio (lives de TikTok → bot de WhatsApp → asesoría pagada → juicio). Su

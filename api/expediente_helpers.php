@@ -74,10 +74,23 @@ function etapa_fecha_es_consistente(string $etapaKey, string $fecha, array $etap
     $idx = array_search($etapaKey, ETAPA_KEYS, true);
     if ($idx === false) return true; // clave desconocida -- no es este candado el que debe atraparlo
 
+    // Bug real (26 nov 2026): este candado solo comparaba contra la fecha
+    // CELEBRADA de las demás etapas -- cron_leer_google_calendar.php es el
+    // único de los 5 mecanismos que llena fecha_programada (agendada), no
+    // fecha, así que un citatorio podía quedar agendado DESPUÉS del que por
+    // ley debe seguirlo (ej. "primer citatorio" agendado para el 04/dic,
+    // "segundo citatorio" agendado para el 02/dic, antes) sin que nada lo
+    // atrapara. Ahora, si una etapa no tiene celebrada todavía, su fecha
+    // agendada sirve como la mejor fecha conocida de esa etapa para esta
+    // comparación de orden -- la celebrada (hecho confirmado) sigue
+    // ganando sobre la agendada (compromiso a futuro) cuando hay ambas.
     $porKey = [];
     foreach ($etapas as $e) {
-        if (!empty($e['etapa_key']) && !empty($e['fecha']) && $e['fecha'] !== '0000-00-00') {
+        if (empty($e['etapa_key']) || isset($porKey[$e['etapa_key']])) continue;
+        if (!empty($e['fecha']) && $e['fecha'] !== '0000-00-00') {
             $porKey[$e['etapa_key']] = $e['fecha'];
+        } elseif (!empty($e['fecha_programada']) && $e['fecha_programada'] !== '0000-00-00') {
+            $porKey[$e['etapa_key']] = $e['fecha_programada'];
         }
     }
     foreach (ETAPA_KEYS as $i => $key) {
@@ -130,28 +143,68 @@ function motivo_sugiere_fecha_calculada(string $motivo): bool
 // tiene algo que "debió pasar antes" con una fecha más tardía).
 function detectar_irregularidades_orden_cronologico(array $etapas): array
 {
-    $porKey = [];
+    // Ampliado (26 nov 2026, caso real: un citatorio de conciliación quedó
+    // agendado DESPUÉS del que por ley debe seguirlo -- "primer citatorio"
+    // agendado 04/dic, "segundo citatorio" agendado 02/dic) -- antes esta
+    // función solo miraba `fecha` (celebrada). Se revisan 3 dimensiones por
+    // separado y se unen los motivos (sin duplicar texto idéntico):
+    // (1) celebradas entre sí -- la de siempre; (2) agendadas entre sí --
+    // la que faltaba: si la etapa "primer citatorio" YA tiene celebrada,
+    // una agendada vieja/huérfana que le haya quedado (de una
+    // reprogramación, o de un match equivocado) queda ESCONDIDA si solo se
+    // compara la "mejor fecha conocida" de cada etapa (la celebrada gana) --
+    // por eso hace falta compararlas aparte, aunque la etapa ya tenga
+    // celebrada; (3) combinada (celebrada si existe, si no agendada) --
+    // para atrapar el caso cruzado: una etapa con SOLO agendada contra otra
+    // con SOLO celebrada, que (1) y (2) por separado no verían (cada una
+    // ignora al otro lado si no comparte el mismo tipo de fecha).
+    $porKeyCelebrada = [];
+    $porKeyAgendada = [];
+    $porKeyCombinado = [];
     foreach ($etapas as $e) {
-        if (!empty($e['etapa_key']) && !empty($e['fecha']) && $e['fecha'] !== '0000-00-00') {
-            $porKey[$e['etapa_key']] = $e['fecha'];
+        $key = $e['etapa_key'] ?? '';
+        if ($key === '') continue;
+        $tieneCelebrada = !empty($e['fecha']) && $e['fecha'] !== '0000-00-00';
+        $tieneAgendada = !empty($e['fecha_programada']) && $e['fecha_programada'] !== '0000-00-00';
+        if ($tieneCelebrada && !isset($porKeyCelebrada[$key])) {
+            $porKeyCelebrada[$key] = ['fecha' => $e['fecha'], 'sufijo' => ''];
+        }
+        if ($tieneAgendada && !isset($porKeyAgendada[$key])) {
+            $porKeyAgendada[$key] = ['fecha' => $e['fecha_programada'], 'sufijo' => ' (agendada)'];
+        }
+        if (!isset($porKeyCombinado[$key])) {
+            if ($tieneCelebrada) $porKeyCombinado[$key] = ['fecha' => $e['fecha'], 'sufijo' => ''];
+            elseif ($tieneAgendada) $porKeyCombinado[$key] = ['fecha' => $e['fecha_programada'], 'sufijo' => ' (agendada)'];
         }
     }
+
     $labels = defined('ETAPA_LABELS') ? ETAPA_LABELS : [];
-    $resultado = [];
-    foreach (ETAPA_KEYS as $idx => $key) {
-        if (!isset($porKey[$key])) continue;
-        $fecha = $porKey[$key];
-        $motivos = [];
-        foreach (ETAPA_KEYS as $idxAnterior => $keyAnterior) {
-            if ($idxAnterior >= $idx || !isset($porKey[$keyAnterior])) continue;
-            $fechaAnterior = $porKey[$keyAnterior];
-            if ($fechaAnterior > $fecha) {
-                $motivos[] = ($labels[$keyAnterior] ?? $keyAnterior) . " ($fechaAnterior) es POSTERIOR a "
-                    . ($labels[$key] ?? $key) . " ($fecha), pero por el orden del trámite debería ser antes";
+    $motivosPorKey = [];
+    $barrer = function (array $porKey) use (&$motivosPorKey, $labels) {
+        foreach (ETAPA_KEYS as $idx => $key) {
+            if (!isset($porKey[$key])) continue;
+            $fecha = $porKey[$key]['fecha'];
+            $sufijo = $porKey[$key]['sufijo'];
+            foreach (ETAPA_KEYS as $idxAnterior => $keyAnterior) {
+                if ($idxAnterior >= $idx || !isset($porKey[$keyAnterior])) continue;
+                $fechaAnterior = $porKey[$keyAnterior]['fecha'];
+                $sufijoAnterior = $porKey[$keyAnterior]['sufijo'];
+                if ($fechaAnterior > $fecha) {
+                    $motivo = ($labels[$keyAnterior] ?? $keyAnterior) . "$sufijoAnterior ($fechaAnterior) es POSTERIOR a "
+                        . ($labels[$key] ?? $key) . "$sufijo ($fecha), pero por el orden del trámite debería ser antes";
+                    if (!isset($motivosPorKey[$key]) || !in_array($motivo, $motivosPorKey[$key], true)) {
+                        $motivosPorKey[$key][] = $motivo;
+                    }
+                }
             }
         }
-        if ($motivos) $resultado[$key] = implode('; ', $motivos);
-    }
+    };
+    $barrer($porKeyCelebrada);
+    $barrer($porKeyAgendada);
+    $barrer($porKeyCombinado);
+
+    $resultado = [];
+    foreach ($motivosPorKey as $key => $motivos) $resultado[$key] = implode('; ', $motivos);
     return $resultado;
 }
 
