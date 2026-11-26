@@ -346,6 +346,39 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   improcedente (Art. 48 Bis fracc. I inciso c). No digas que un pagaré
   "no obliga a nada": si lo llenan y lo cobran, se defiende en ese
   momento. Dile que guarde cualquier prueba de que lo firmó en blanco.
+· Terminación por INCAPACIDAD o INVALIDEZ (caso real 25-nov-2026: la
+  empresa quería terminar la relación por invalidez y el bot ancló con el
+  total de despido injustificado): si la incapacidad física o mental hace
+  imposible el trabajo, es causa de terminación (Art. 53 fracc. IV) y, si
+  NO viene de un riesgo de trabajo, le corresponde un mes de salario y 12
+  días por año de servicios (Art. 54, en relación con el 162), o si lo
+  desea otro empleo compatible. Presenta PRIMERO ese escenario; el de
+  despido injustificado solo como alternativa si lo separan sin esa causa,
+  y que el abogado defina cuál aplica.
+· Trabaja los 7 días o le quitan su descanso semanal: por cada 6 días de
+  trabajo le toca al menos un día de descanso con goce de salario (Art.
+  69); si trabaja su día de descanso, el patrón le debe, además del
+  salario de ese día, un salario doble por el servicio (Art. 73).
+  Menciónalo y pregunta si se lo pagaban; no lo uses solo para dividir el
+  salario.
+· Si dice que piensa FALTAR A PROPÓSITO para que lo corran: desaconséjalo
+  con firmeza. Tener más de 3 faltas en 30 días sin permiso ni causa es
+  causa de despido justificado (Art. 47 fracc. X), sin indemnización de 3
+  meses. No le calcules esa ruta como si fuera una opción; dile que lo
+  revise con un abogado antes de hacer nada.
+· PERIODO DE PRUEBA (Art. 39-A): en contratos por tiempo indeterminado o
+  de más de 180 días se puede pactar hasta 30 días de prueba (hasta 180
+  para puestos de dirección o labores técnicas especializadas). Si la
+  persona lleva poco tiempo y su contrato lo prevé, presenta JUNTO a las
+  cifras el escenario sin indemnización (solo finiquito) y no ancles con
+  el total del despido.
+· Si escalas a un abogado y la persona tiene una decisión URGENTE ese
+  mismo día (presentarse o no, firmar o no), dale antes la orientación
+  mínima: no dejar de presentarse sin consultarlo (puede verse como
+  faltas o abandono) y no firmar finiquito ni renuncia en ese momento.
+· Al RECALCULAR (porque cambió el salario o un dato), conserva todo lo
+  demás que la persona ya te dio, sobre todo las vacaciones de años
+  anteriores no tomadas; no las quites sin explicar por qué.
 · Preguntas HIPOTÉTICAS sobre rescindir ("¿qué hago si me retrasan el
   pago?"): contesta en condicional ("si te llegan a pagar tarde, eso
   podría encuadrar en el Art. 51 fracc. V") y pregunta si ya pasó y
@@ -398,6 +431,11 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
     qué es relación y contrato de trabajo; no hables de "presunción" con
     el 20). Las comisiones, gratificaciones y primas integran el salario:
     Art. 84 (no el 289). Hostigamiento laboral: Art. 3 Bis lo define.
+  - Terminación colectiva (Art. 435): incosteabilidad (434-II) requiere
+    autorización previa del Tribunal (fracc. III); fuerza mayor y concurso
+    o quiebra (434-I y V) se avisan al Tribunal, que la aprueba o
+    desaprueba en un procedimiento especial colectivo (fracc. I) -- no es
+    un simple aviso.
   - Sustitución patronal: Art. 41. Descuentos al salario: Art. 110 (deudas
     y daños: fracc. I). La fracc. I tiene DOS límites, dilos los dos: la
     deuda exigible no puede pasar de un mes de salario, y cada descuento
@@ -2409,6 +2447,17 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     (bool)($in['zona_libre_frontera_norte'] ?? false)
                 );
                 if ($calc !== null) {
+                    // 26-nov-2026: lo que el bot pasó en vacaciones anteriores se
+                    // guarda en el cálculo para poder compararlo al recalcular.
+                    $calc['dias_vacaciones_anteriores_pasados'] = (float)($in['dias_vacaciones_anteriores'] ?? 0);
+                    $vacPrevias = ia_vacaciones_anteriores_previas($pdo, $telefono);
+                    if ((float)($in['dias_vacaciones_anteriores'] ?? 0) <= 0 && $vacPrevias > 0) {
+                        $calc['aviso_vacaciones_anteriores'] = "OJO: en un cálculo anterior de esta misma conversación pasaste $vacPrevias días de vacaciones de años anteriores no tomadas, y en este pasaste 0. Si la persona no corrigió ese dato, vuelve a calcular pasando los mismos días en dias_vacaciones_anteriores antes de dar cifras (caso real 25-nov-2026: al recalcular se perdieron sin explicación).";
+                    }
+                    $ciudadFronteraTexto = ia_conversacion_menciona_ciudad_frontera($mensajes);
+                    if ($ciudadFronteraTexto !== null && empty($in['zona_libre_frontera_norte'])) {
+                        $calc['aviso_zona_frontera_texto'] = "La persona mencionó $ciudadFronteraTexto en la conversación (zona libre de la frontera norte). Si es donde está su centro de trabajo, vuelve a calcular con zona_libre_frontera_norte=true antes de dar cifras; si solo vive ahí o lo mencionó por otra cosa, ignora este aviso.";
+                    }
                     $ciudadFrontera = telefono_ciudad_frontera($telefono);
                     if ($ciudadFrontera !== null && empty($in['zona_libre_frontera_norte'])) {
                         $calc['aviso_zona_frontera'] = "El teléfono de esta persona es de lada de $ciudadFrontera (zona libre de la frontera norte). Si todavía no sabes en qué municipio TRABAJABA, pregúntaselo en este mismo mensaje; si confirma que trabajaba en un municipio de la frontera norte, vuelve a calcular con zona_libre_frontera_norte=true antes de darle cifras definitivas (cambia el tope de la prima de antigüedad, Art. 486 LFT). Si ya te dijo que trabaja en otro lugar, ignora este aviso.";
@@ -2805,6 +2854,39 @@ function ia_bot_dijo_plazo_despido_vencido(array $mensajes): bool
         if (preg_match('/(plazo|t[ée]rmino|tiempo)[^.\n]{0,90}(venci[óo]|se agot[óo]|ya prescribi|ha prescrito|est[áa] prescrit)/iu', $m['content'])) return true;
     }
     return false;
+}
+
+// Mayor número de días de vacaciones anteriores que el bot pasó a la
+// calculadora para este teléfono en las últimas 48 horas (0 si ninguno).
+function ia_vacaciones_anteriores_previas(PDO $pdo, string $telefono): float
+{
+    try {
+        $st = $pdo->prepare("SELECT calculo_json FROM calculos_liquidacion WHERE telefono = :t ORDER BY id DESC LIMIT 10");
+        $st->execute([':t' => $telefono]);
+        $max = 0.0;
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $j) {
+            $c = json_decode((string)$j, true);
+            if (is_array($c) && isset($c['dias_vacaciones_anteriores_pasados'])) $max = max($max, (float)$c['dias_vacaciones_anteriores_pasados']);
+        }
+        return $max;
+    } catch (\Throwable $e) {
+        return 0.0;
+    }
+}
+
+// Ciudad de la zona libre de la frontera norte que la persona mencionó en
+// sus mensajes (caso real 24-nov-2026: "centro de trabajo en Tijuana" y el
+// cálculo se hizo con la zona general), o null.
+function ia_conversacion_menciona_ciudad_frontera(array $mensajes): ?string
+{
+    $ciudades = ['Tijuana', 'Mexicali', 'Tecate', 'Ensenada', 'Rosarito', 'San Luis Río Colorado', 'San Luis Rio Colorado', 'Nogales', 'Agua Prieta', 'Ciudad Juárez', 'Ciudad Juarez', 'Cd. Juárez', 'Cd Juarez', 'Piedras Negras', 'Ciudad Acuña', 'Ciudad Acuna', 'Nuevo Laredo', 'Reynosa', 'Matamoros'];
+    foreach ($mensajes as $m) {
+        if (($m['role'] ?? '') !== 'user' || !is_string($m['content'] ?? null)) continue;
+        foreach ($ciudades as $c) {
+            if (mb_stripos($m['content'], $c) !== false) return $c;
+        }
+    }
+    return null;
 }
 
 function ia_conversacion_menciona_conciliacion(array $mensajes): bool
@@ -5551,6 +5633,10 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- La prima de antigüedad en un despido o separación por el patrón: procede sin importar los años de servicio y sea justificado o no (Art. 162 fracc. III); los 15 años solo se exigen en renuncia voluntaria.\n"
         . "- Que no conste que el bot usó una herramienta: no puedes ver sus herramientas; juzga solo si lo que dijo es correcto.\n"
         . "- El mensaje automático de fuera de horario (\"Te recordamos que nuestro horario de atención es...\"), los recordatorios de pago y las decisiones del ABOGADO humano: no son respuestas del bot.\n"
+        . "- Plazo dado como \"días que te quedarán al concluir la conciliación\": es el criterio del despacho (la solicitud pausa el plazo y luego sigue con los días que quedaban), sale de calcular_plazo_demanda.\n"
+        . "- Citar el Art. 517 fracc. II para el plazo de un mes de la rescisión del trabajador: es correcto.\n"
+        . "- Antes de marcar mal los periodos de vacaciones, cuenta los aniversarios desde la fecha de ingreso (ej. ingreso ago-2022: el aniversario de ago-2025 es el 3er año = 16 días y el de ago-2026 el 4o = 18). Si solo lleva un aniversario, preguntar por \"tu primer año\" es correcto.\n"
+        . "- Si tu propia corrección sería \"no aplica\" o \"no requiere corrección\", NO es un hallazgo: no lo incluyas.\n"
         . "- Fechas de plazo de demanda que difieran 1 o 2 días de \"2 meses exactos\": calcular_plazo_demanda usa a propósito la fecha que venza PRIMERO entre 60 días naturales y 2 meses de fecha a fecha (criterio conservador). Ej.: despido 10-nov -> 9-ene es correcto.\n"
         . "- Salarios devengados (días trabajados y no pagados) dentro del finiquito: la calculadora SÍ los incluye (dias_salarios_devengados); si en CÁLCULOS aparece \"salarios devengados\", el total no está hecho a mano.\n"
         . "- Decir que el aguinaldo de hace 2 años ya prescribió y el del año pasado todavía se reclama hasta el 20 de diciembre: es correcto (Art. 516, un año desde que fue exigible, el 20 de diciembre).\n"
@@ -5641,7 +5727,12 @@ function ia_parsear_revision_bot(string $texto): ?array
     $hallazgos = array_values(array_filter((array)($j['hallazgos'] ?? []), function ($h) {
         if (!is_array($h)) return false;
         $c = trim((string)($h['correccion'] ?? ''));
-        return !preg_match('#^n\s*/?\s*a\b#i', $c) && stripos((string)($h['problema'] ?? ''), 'no hay error') === false;
+        $pr = (string)($h['problema'] ?? '');
+        // 26-nov-2026: también "No aplica", "No requiere corrección", hallazgos
+        // vacíos y los que el propio revisor dice que "no es un error".
+        if ($c === '' && trim($pr) === '') return false;
+        if (preg_match('#^(n\s*/?\s*a\b|no aplica|no requiere|ninguna|sin corrección|aceptable)#iu', $c)) return false;
+        return !preg_match('/no hay error|no es un error|no constituye (un )?(error|hallazgo)|no es error|sin hallazgo/iu', $pr);
     }));
     $veredicto = (($j['veredicto'] ?? '') === 'revisar' && $hallazgos) ? 'revisar' : 'ok';
     $gravedad = in_array($j['gravedad'] ?? null, ['alta', 'media', 'baja'], true) ? $j['gravedad'] : ($veredicto === 'revisar' ? 'media' : null);

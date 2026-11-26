@@ -428,5 +428,22 @@ caso('cliente con curso comprado nunca va a soporte aunque diga "control de expe
 caso('número desconocido que pregunta por control de expedientes sí va a soporte', soporte_debe_atender($pdo, 'X', 'tengo una duda de control de expedientes'));
 caso('el soporte nunca dice "escribió a otro número"', strpos(SOPORTE_SYSTEM_PROMPT, 'NUNCA le digas a nadie que "escribió') !== false);
 
+// ---------------------------------------------------------------------
+echo "23) Revisión del 25-nov: recálculo sin vacaciones, frontera, incapacidad, faltas, revisor\n";
+$pdo = pdo_nuevo();
+$pdo->exec("CREATE TABLE calculos_liquidacion (id INTEGER PRIMARY KEY, telefono TEXT, calculo_json TEXT)");
+$pdo->exec("INSERT INTO calculos_liquidacion (telefono, calculo_json) VALUES ('V', '{\"dias_vacaciones_anteriores_pasados\":31.3}')");
+caso('recálculo: detecta las vacaciones anteriores que ya se habían pasado', ia_vacaciones_anteriores_previas($pdo, 'V') == 31.3 && ia_vacaciones_anteriores_previas($pdo, 'Z') == 0);
+caso('detecta Tijuana mencionada por el cliente', ia_conversacion_menciona_ciudad_frontera([['role' => 'user', 'content' => 'mi centro de trabajo está en tijuana']]) === 'Tijuana');
+caso('no confunde una ciudad del bot con la del cliente', ia_conversacion_menciona_ciudad_frontera([['role' => 'assistant', 'content' => 'Tijuana']]) === null);
+$p = IA_SYSTEM_PROMPT;
+caso('incapacidad: Art. 53 fracc. IV y 54', strpos($p, 'Terminación por INCAPACIDAD o INVALIDEZ') !== false && strpos($p, '(Art. 54, en relación con el 162)') !== false);
+caso('descanso semanal: Arts. 69 y 73', strpos($p, 'salario doble por el servicio (Art. 73)') !== false);
+caso('faltar a propósito: Art. 47 fracc. X', strpos($p, 'FALTAR A PROPÓSITO') !== false);
+caso('periodo de prueba Art. 39-A', strpos($p, 'PERIODO DE PRUEBA (Art. 39-A)') !== false);
+caso('Art. 435: fuerza mayor y quiebra se aprueban o desaprueban', strpos($p, 'desaprueba en un procedimiento especial colectivo') !== false);
+$r = ia_parsear_revision_bot('{"veredicto":"revisar","gravedad":"media","resumen":"x","hallazgos":[{"cita":"a","problema":"Esto es correcto, no es un error","correccion":"No aplica corrección"},{"cita":"b","problema":"x","correccion":"No requiere corrección; está bien."}]}');
+caso('revisor: descarta hallazgos con "no aplica"/"no requiere"', $r['veredicto'] === 'ok' && $r['hallazgos'] === []);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
