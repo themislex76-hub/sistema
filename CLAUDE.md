@@ -4771,4 +4771,4 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
 
 ## Reenvío de PDF con aguinaldo pactado (26 nov 2026, conversación "chats")
 - `calcular_estimado_liquidacion()` acepta un último parámetro opcional `$aguinaldoDiasAnuales` (default 15, nunca menos). Solo lo usa `debug_enviar_pdf_calculo.php` con `&aguinaldo_dias=30`; el bot y la pestaña de expedientes siguen con 15. Archivos subidos y PDF mandado a Francisca Marina Vazquez Zazueta (5216691255455, $80,827.64).
-- **Bug pendiente de aprobación del usuario**: `cron_seguimiento_calculadora_plantilla.php` manda la plantilla una vez POR CÁLCULO, no por persona (a ella le llegó 4 veces el 26-nov a las 8:03). Arreglo propuesto: solo el último cálculo por teléfono, saltar si ese teléfono ya lo recibió, y marcar todos sus cálculos.
+- **Corregido (26-nov, aprobado por el usuario)**: `cron_seguimiento_calculadora_plantilla.php` mandaba la plantilla una vez POR CÁLCULO, no por persona (a ella le llegó 4 veces el 26-nov a las 8:03). Ahora toma solo el último cálculo por teléfono, salta el teléfono si ya lo recibió y marca todos sus cálculos. Probado con SQLite.
