@@ -416,5 +416,17 @@ caso('el recordatorio ya no manda la página del curso', strpos($cron, "{\$info[
 $src = file_get_contents($base . '/api/ia_helpers.php');
 caso('si falla Mercado Pago, el bot no manda la página para pagar', strpos($src, "'link_alternativo' => \$info['sitio']") === false);
 
+// ---------------------------------------------------------------------
+echo "22) Soporte de Control de Expedientes contestó a un cliente del curso (26-nov)\n";
+require_once $base . '/api/soporte_tecnico_helpers.php';
+caso('"el link no me deja entrar a los formatos" ya no es soporte técnico', !soporte_parece_pregunta_tecnica('Lic buenos días, creo que el ling no me deja entrar a los formatos'));
+caso('"no me deja entrar al sistema" sí es soporte técnico', soporte_parece_pregunta_tecnica('no me deja entrar al sistema'));
+$pdo = pdo_nuevo();
+$pdo->exec("CREATE TABLE compras_curso (telefono TEXT, estado TEXT)");
+$pdo->exec("INSERT INTO compras_curso VALUES ('R', 'confirmada')");
+caso('cliente con curso comprado nunca va a soporte aunque diga "control de expedientes"', !soporte_debe_atender($pdo, 'R', 'Control de expedientes ! Cuál es la temática'));
+caso('número desconocido que pregunta por control de expedientes sí va a soporte', soporte_debe_atender($pdo, 'X', 'tengo una duda de control de expedientes'));
+caso('el soporte nunca dice "escribió a otro número"', strpos(SOPORTE_SYSTEM_PROMPT, 'NUNCA le digas a nadie que "escribió') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

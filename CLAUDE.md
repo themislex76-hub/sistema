@@ -4505,6 +4505,15 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
   - Nueva función `curso_link_pago_ligado()` en `api/mercadopago_helpers.php`: reusa el link pendiente o crea una compra nueva.
   - El recordatorio de cursos ya no manda la página de Netlify. Si Mercado Pago falla, le pide que conteste para mandarle el link.
   - `confirmar_compra_curso` ya no manda la página como respaldo si falla Mercado Pago.
-- **Pendiente, decisión del usuario**: la página de Netlify sigue cobrando por su cuenta. Opciones: (a) revisar por qué no redirige al acceso después de pagar (el código de la página no está en este repo); (b) quitar el botón de pago y dejar "Comprar por WhatsApp".
+- Archivos subidos por el usuario (25-nov). **Decisión del usuario (25-nov): la página de Netlify se queda como está**, cobrando por su cuenta. Un pago hecho ahí no entrega el acceso solo por WhatsApp; si alguien manda su comprobante, el bot escala y el acceso se manda a mano.
 - Además, el cálculo de esa clienta del 24-nov usó salario ÷ 6 (antes de que se subiera la regla de ÷ 7). Le dio $137,826.10; lo correcto es $118,136.66.
 - 119 casos en `scripts/pruebas_bot.php`.
+
+## El soporte de Control de Expedientes le contestó a un cliente del curso (26 nov 2026, conversación "chats")
+- Caso real, Rogelio. Ya había pagado el curso procesal el 20-nov. Escribió "creo que el link no me deja entrar a los formatos" y la regex de `soporte_parece_pregunta_tecnica()` ("no me deja entrar") lo mandó al bot de soporte de Control de Expedientes. Ese bot le dijo que había escrito a otro número y le explicó el sistema para despachos.
+- Arreglo:
+  - Nueva `soporte_debe_atender()`: un número que ya es cliente o prospecto laboral (compras_curso, citas_asesoria, compras_documento_calculo, calculos_liquidacion, prospectos que no sean control_expedientes) nunca va al soporte.
+  - La regex de "no me deja entrar" ahora exige "al sistema" o "a control de expedientes".
+  - Regla nueva en `SOPORTE_SYSTEM_PROMPT`: nunca decir "escribió a otro número"; si habla de un curso, un pago o un caso, escalar.
+- Archivos: `api/soporte_tecnico_helpers.php`, `api/whatsapp_procesar.php`. 124 casos en `scripts/pruebas_bot.php`.
+- Pendiente del usuario: su problema real (no le abren los formatos del curso en la página de Netlify) sigue sin resolver.

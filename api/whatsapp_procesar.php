@@ -572,7 +572,7 @@ function procesar_mensaje_entrante(PDO $pdo, array $msg, ?string $nombrePerfil):
     // (ver soporte_tecnico_helpers.php) para no mezclar los dos dominios.
     // Detección determinística por el mismo motivo que el reclamo de
     // arriba: nunca se le pregunta a la IA si esto es soporte técnico.
-    if (soporte_parece_pregunta_tecnica($texto)) {
+    if (soporte_debe_atender($pdo, $telefono, $texto)) {
         $stmt = $pdo->prepare('SELECT direccion, texto FROM whatsapp_conversaciones WHERE telefono = :t ORDER BY id DESC LIMIT 20');
         $stmt->execute([':t' => $telefono]);
         $historialSoporte = array_reverse($stmt->fetchAll());

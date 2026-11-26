@@ -24,7 +24,10 @@ function soporte_parece_pregunta_tecnica(string $texto): bool
 {
     return preg_match('/control de expedientes|controldeexpedientes/iu', $texto) === 1
         || preg_match('/(restablecer|recuperar|olvid[eé]|reset).{0,20}contrase[ñn]a/iu', $texto) === 1
-        || preg_match('/no (me deja |puedo )?entrar al sistema|no (puedo|me deja) (iniciar sesi[oó]n|entrar)/iu', $texto) === 1
+        // 26-nov-2026: "no me deja entrar" a secas mandó aquí a un cliente
+        // que hablaba de los formatos de su CURSO. Ahora tiene que decir
+        // "al sistema" o "a control de expedientes".
+        || preg_match('/no (me deja |puedo )?(entrar|iniciar sesi[oó]n) (al sistema|a control de expedientes)/iu', $texto) === 1
         || preg_match('/(agregar|dar de alta|subir) (un |el )?(expediente|socio|abogado|usuario)/iu', $texto) === 1
         || preg_match('/generar (el )?escrito|generar la demanda en word|plantilla de demanda|formato de demanda/iu', $texto) === 1
         || preg_match('/descargar (el )?respaldo|respaldo\.json|hacer (un )?backup/iu', $texto) === 1
@@ -33,6 +36,38 @@ function soporte_parece_pregunta_tecnica(string $texto): bool
         || preg_match('/google calendar/iu', $texto) === 1
         || preg_match('/(agregar|configurar|d[oó]nde pongo|c[oó]mo (pongo|agrego)).{0,20}d[ií]as inh[aá]biles/iu', $texto) === 1
         || preg_match('/(marcar|guardar|checklist de) etapas del juicio|c[aá]lculo de liquidaci[oó]n del sistema|tasa de [eé]xito del despacho/iu', $texto) === 1;
+}
+
+// 26-nov-2026 (caso real, cliente que compró el curso "Nuevo Procedimiento
+// Laboral Mexicano"): si el número ya es cliente o prospecto del despacho
+// (curso, asesoría, documento de $49, cálculo de liquidación, prospecto
+// laboral), NUNCA se manda al soporte de Control de Expedientes, aunque el
+// texto coincida con el detector -- ese bot le dijo que "había escrito a
+// otro número". Cada tabla va en su propio try por si alguna no existe.
+function soporte_telefono_es_cliente_laboral(PDO $pdo, string $telefono): bool
+{
+    $consultas = [
+        "SELECT 1 FROM compras_curso WHERE telefono = :t LIMIT 1",
+        "SELECT 1 FROM citas_asesoria WHERE telefono = :t LIMIT 1",
+        "SELECT 1 FROM compras_documento_calculo WHERE telefono = :t LIMIT 1",
+        "SELECT 1 FROM calculos_liquidacion WHERE telefono = :t LIMIT 1",
+        "SELECT 1 FROM prospectos WHERE telefono = :t AND tipo <> 'control_expedientes' LIMIT 1",
+    ];
+    foreach ($consultas as $sql) {
+        try {
+            $st = $pdo->prepare($sql);
+            $st->execute([':t' => $telefono]);
+            if ($st->fetchColumn()) return true;
+        } catch (\Throwable $e) {
+            // tabla inexistente: se ignora
+        }
+    }
+    return false;
+}
+
+function soporte_debe_atender(PDO $pdo, string $telefono, string $texto): bool
+{
+    return soporte_parece_pregunta_tecnica($texto) && !soporte_telefono_es_cliente_laboral($pdo, $telefono);
 }
 
 // Base de conocimiento: versión condensada del Manual de uso real de
@@ -47,6 +82,13 @@ despachos YA DADOS DE ALTA que tienen dudas de CÓMO USAR el sistema --
 nunca son clientes finales con un caso laboral, así que nunca des
 asesoría legal aquí ni hables de despidos, liquidaciones de un trabajador,
 etc. -- eso es un bot completamente distinto.
+
+REGLA DURA (caso real 26-nov-2026): NUNCA le digas a nadie que "escribió
+a otro número", que "hay una confusión" ni que su tema "es de otro
+servicio". Este mismo WhatsApp también atiende asesoría laboral, cursos y
+pagos del despacho. Si el mensaje habla de un curso, un pago, un acceso a
+formatos, una asesoría o un caso laboral, contesta corto que con gusto lo
+atendemos y usa escalar_soporte_a_humano para que un abogado lo contacte.
 
 REGLA DURA: contesta SOLO con lo que dice esta guía. Nunca inventes un
 botón, una pantalla o un paso que no esté aquí -- si la duda no está
