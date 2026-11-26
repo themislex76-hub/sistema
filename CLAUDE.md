@@ -4756,3 +4756,4 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
 - B) Vacaciones de años anteriores: se pagan con el salario ACTUAL.
 - C) Frase de venta de la conciliación SUAVIZADA (aprobada por el usuario el 26-nov): "es común que le ofrezcan menos de lo que marca la ley (ej. 45 días cuando son 90), la ley no fija proporción"; "eso no es correcto" en vez de "es MENTIRA"; se quitó que el conciliador ayuda al patrón.
 - 159 casos en `scripts/pruebas_bot.php`.
+- **Bonos anuales (26-nov, Lic. Rubén)**: se dividen entre 365 y se suman al salario diario. `calcular_sdi_con_variable()` ya lo hacía así; solo se agregaron 2 pruebas para fijar el criterio (162 casos).

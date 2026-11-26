@@ -454,5 +454,18 @@ $src = file_get_contents($base . '/api/ia_helpers.php');
 caso('la herramienta sube el salario al mínimo de la zona', strpos($src, "aviso_salario_minimo") !== false && strpos($src, '$salarioUsar,') !== false);
 caso('argumento de conciliación suavizado (sin "casi siempre la mitad" ni "ayudan al patrón")', strpos(IA_SYSTEM_PROMPT, 'Casi siempre le van a ofrecer la MITAD') === false && strpos(IA_SYSTEM_PROMPT, 'parecería que ayudan más') === false && strpos(IA_SYSTEM_PROMPT, 'es común que le ofrezcan menos') !== false);
 
+// ---------------------------------------------------------------------
+echo "25) Bonos anuales: se dividen entre 365 y se suman al salario diario (criterio del Lic. Rubén, 26-nov)\n";
+caso('bono anual de $36,500 + fijo de $500 = $600 diarios',
+    (function () {
+        $r = calcular_sdi_con_variable(500.0, [['monto' => 36500, 'fecha' => '2026-09-15']], '2026-11-20');
+        return $r && abs($r['promedio_diario_variable'] - 100.0) < 0.01 && abs($r['salario_diario_a_usar'] - 600.0) < 0.01;
+    })());
+caso('bono de hace más de 365 días no se cuenta',
+    (function () {
+        $r = calcular_sdi_con_variable(500.0, [['monto' => 36500, 'fecha' => '2025-09-15']], '2026-11-20');
+        return $r && abs($r['salario_diario_a_usar'] - 500.0) < 0.01 && $r['pagos_fuera_de_rango_365_dias'] === 1;
+    })());
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
