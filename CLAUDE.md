@@ -4749,3 +4749,10 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
   - B) Vacaciones de años anteriores: ¿se pagan con el salario de cada año o con el actual?
   - C) La frase de venta "en el Centro casi siempre ofrecen la mitad, 45 días cuando son 90" (conversación "Bot").
 - 133 casos en `scripts/pruebas_bot.php`.
+
+## Criterios del Lic. Rubén (26 nov 2026) + rama "Bot" fusionada (conversación "chats")
+- **Error de coordinación encontrado y corregido**: la rama de "Bot" (`claude/labor-advisory-bot-tiktok-wqsmim`) ya traía mis cambios, pero mi rama no traía los suyos en `api/ia_helpers.php` (el argumento de venta de la "propuesta de 45 días", entre otros). Los zips de "chats" del 25 y 26-nov pudieron dejar el servidor sin esos cambios. Se fusionó la rama "Bot" (fast-forward, sin conflictos) y se volvió a mandar `ia_helpers.php` completo. **Antes de mandar `ia_helpers.php`, fusionar siempre la rama "Bot".**
+- A) Salario reportado menor al mínimo: el cálculo se hace con el mínimo de la zona. La herramienta lo ajusta sola y trae `aviso_salario_minimo`; la diferencia que le pagaron de menos se reclama aparte.
+- B) Vacaciones de años anteriores: se pagan con el salario ACTUAL.
+- C) Frase de venta "casi siempre ofrecen la mitad, 45 días cuando son 90" y "el conciliador parecería ayudar más al patrón": el usuario pidió suavizarla. Se le propuso una redacción; pendiente de que la apruebe.
+- 159 casos en `scripts/pruebas_bot.php`.

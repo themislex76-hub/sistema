@@ -445,5 +445,13 @@ caso('Art. 435: fuerza mayor y quiebra se aprueban o desaprueban', strpos($p, 'd
 $r = ia_parsear_revision_bot('{"veredicto":"revisar","gravedad":"media","resumen":"x","hallazgos":[{"cita":"a","problema":"Esto es correcto, no es un error","correccion":"No aplica corrección"},{"cita":"b","problema":"x","correccion":"No requiere corrección; está bien."}]}');
 caso('revisor: descarta hallazgos con "no aplica"/"no requiere"', $r['veredicto'] === 'ok' && $r['hallazgos'] === []);
 
+// ---------------------------------------------------------------------
+echo "24) Criterios del Lic. Rubén (26-nov): salario menor al mínimo y vacaciones con salario actual\n";
+$p = IA_SYSTEM_PROMPT;
+caso('salario menor al mínimo: se calcula con el mínimo', strpos($p, 'Salario MENOR al mínimo (criterio del Lic. Rubén') !== false);
+caso('vacaciones anteriores con el salario actual', strpos($p, 'se pagan con el salario ACTUAL') !== false);
+$src = file_get_contents($base . '/api/ia_helpers.php');
+caso('la herramienta sube el salario al mínimo de la zona', strpos($src, "aviso_salario_minimo") !== false && strpos($src, '$salarioUsar,') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
