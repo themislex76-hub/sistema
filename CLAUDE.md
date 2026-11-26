@@ -110,14 +110,35 @@ fechas inexistentes... revisa porque hay varios expedientes asi".
   expediente) -- ahora se abre cada expediente una sola vez y se revisan
   ahí mismo todas sus filas sospechosas juntas; los expedientes con al
   menos 1 fila ALTA salen primero.
-  - **Pendiente de confirmar**: la corrida de `cron_qa_irregularidades.php`
-    el mismo día dio "0 expediente(s) con novedades nuevas" para el
-    chequeo de orden cronológico -- no se pudo confirmar todavía si es
-    porque de verdad no hay más casos de citatorios fuera de orden, o
-    porque faltó subir `api/expediente_helpers.php` (el archivo con la
-    lógica nueva) al servidor. Verificar que SÍ esté subido y revisar si
-    el expediente de Jose Martin Saucedo Bautista (el caso original) ya
-    quedó corregido a mano o si el candado sigue sin detectarlo.
+  - **Resuelto**: confirmado subido `api/expediente_helpers.php` y
+    corrida de nuevo -- siguió en "0 novedades nuevas". Conclusión: el
+    usuario ya había corregido a mano la fecha del caso original (Jose
+    Martin Saucedo Bautista) mientras lo revisaba, y no hay NINGÚN otro
+    expediente activo con citatorios/audiencias agendados fuera de orden
+    ahora mismo -- el candado funciona, simplemente no había más casos de
+    ESE tipo específico que limpiar.
+  - **Limpieza de las 12 de sospecha ALTA, pedida explícita del usuario
+    ("si")**: script de un solo uso
+    `api/_una_vez_limpiar_fechas_inventadas_26nov.php` (mismo patrón que
+    `_una_vez_reprocesar_calendario_legacy.php` del 11 nov -- se corre una
+    vez abriendo la URL, se puede borrar después). Repite la MISMA
+    detección del reporte pero solo para `tamano_lote >= 2`, y en vez de
+    solo mostrarlas, **borra la fecha celebrada** de esas etapas (deja la
+    etapa en blanco -- nunca pone una fecha nueva, nadie sabe cuál es la
+    real) -- si la fila queda completamente vacía se borra entera, igual
+    que hace `expedientes_update_etapas.php`. Vuelve a comparar contra el
+    valor actual antes de tocar nada (si ya cambió desde que se generó el
+    reporte, no lo toca). Queda registrado en Historial de cambios de
+    cada expediente como "Corrección automática (fecha probablemente
+    inventada, revisión 26 nov 2026)" -- auditable, y si alguien sabe la
+    fecha real después, se recaptura desde "Etapas del juicio" sin
+    problema. **Riesgo residual explicado al usuario antes de correrlo**:
+    en teoría podría borrar una fecha que sí era real si por coincidencia
+    el abogado de verdad confirmó 2+ trámites genuinos el mismo día real
+    -- posible pero más raro que el patrón del bug. Las 33 de sospecha
+    media NO se tocan aquí, quedan para revisión manual del usuario.
+    **Pendiente**: que el usuario suba y corra este script, y confirme
+    cuántas se limpiaron de verdad.
 - Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
   -- no aplica `verificar_tags.js`. **Pendiente del usuario**: subir
   `api/reporte_fechas_celebradas_sospechosas.php` y abrirlo en el
