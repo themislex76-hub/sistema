@@ -376,6 +376,14 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   mismo día (presentarse o no, firmar o no), dale antes la orientación
   mínima: no dejar de presentarse sin consultarlo (puede verse como
   faltas o abandono) y no firmar finiquito ni renuncia en ese momento.
+· Salario MENOR al mínimo (criterio del Lic. Rubén, 26-nov-2026): nadie
+  puede ganar menos del salario mínimo; el cálculo se hace con el mínimo
+  de su zona (la herramienta ya lo ajusta sola y te avisa) y la
+  diferencia que le pagaron de menos se reclama aparte.
+· Vacaciones de años anteriores no tomadas (criterio del Lic. Rubén,
+  26-nov-2026): se pagan con el salario ACTUAL, no con el que ganaba ese
+  año. Nunca digas que "bajarían" por haberse generado con un salario
+  menor.
 · Al RECALCULAR (porque cambió el salario o un dato), conserva todo lo
   demás que la persona ya te dio, sobre todo las vacaciones de años
   anteriores no tomadas; no las quites sin explicar por qué.
@@ -2433,11 +2441,22 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ? json_encode($sdiVariable, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Fecha de referencia inválida o faltante.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'calcular_estimado_liquidacion') {
+                // Criterio del Lic. Rubén (26-nov-2026): nadie puede ganar menos
+                // del salario mínimo, así que si el salario reportado es menor,
+                // el cálculo se hace con el mínimo de la zona.
+                $salarioReportado = (float)($in['salario_diario'] ?? 0);
+                $minimoZona = 0.0;
+                try {
+                    $minimoZona = salario_minimo_diario_en_fecha($pdo, (string)($in['fecha_baja'] ?? date('Y-m-d')), (bool)($in['zona_libre_frontera_norte'] ?? false));
+                } catch (\Throwable $e) {
+                    $minimoZona = 0.0;
+                }
+                $salarioUsar = ($minimoZona > 0 && $salarioReportado > 0 && $salarioReportado < $minimoZona) ? $minimoZona : $salarioReportado;
                 $calc = calcular_estimado_liquidacion(
                     $pdo,
                     (string)($in['fecha_ingreso'] ?? ''),
                     (string)($in['fecha_baja'] ?? ''),
-                    (float)($in['salario_diario'] ?? 0),
+                    $salarioUsar,
                     (string)($in['tipo'] ?? 'injustificado'),
                     (float)($in['dias_vacaciones_anteriores'] ?? 0),
                     (float)($in['dias_salarios_devengados'] ?? 0),
@@ -2447,6 +2466,9 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     (bool)($in['zona_libre_frontera_norte'] ?? false)
                 );
                 if ($calc !== null) {
+                    if ($salarioUsar !== $salarioReportado) {
+                        $calc['aviso_salario_minimo'] = "El salario diario que pasaste ($" . number_format($salarioReportado, 2) . ") es menor al salario mínimo de su zona ($" . number_format($minimoZona, 2) . "). Por criterio del despacho nadie puede ganar menos del mínimo, así que este cálculo ya se hizo con el mínimo. Explícaselo así a la persona; la diferencia de salario que le pagaron de menos es aparte.";
+                    }
                     // 26-nov-2026: lo que el bot pasó en vacaciones anteriores se
                     // guarda en el cálculo para poder compararlo al recalcular.
                     $calc['dias_vacaciones_anteriores_pasados'] = (float)($in['dias_vacaciones_anteriores'] ?? 0);
@@ -5633,6 +5655,7 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- La prima de antigüedad en un despido o separación por el patrón: procede sin importar los años de servicio y sea justificado o no (Art. 162 fracc. III); los 15 años solo se exigen en renuncia voluntaria.\n"
         . "- Que no conste que el bot usó una herramienta: no puedes ver sus herramientas; juzga solo si lo que dijo es correcto.\n"
         . "- El mensaje automático de fuera de horario (\"Te recordamos que nuestro horario de atención es...\"), los recordatorios de pago y las decisiones del ABOGADO humano: no son respuestas del bot.\n"
+        . "- Calcular con el salario mínimo cuando el salario reportado es menor (criterio del despacho: nadie puede ganar menos del mínimo) y pagar las vacaciones de años anteriores con el salario actual (criterio del despacho).\n"
         . "- Plazo dado como \"días que te quedarán al concluir la conciliación\": es el criterio del despacho (la solicitud pausa el plazo y luego sigue con los días que quedaban), sale de calcular_plazo_demanda.\n"
         . "- Citar el Art. 517 fracc. II para el plazo de un mes de la rescisión del trabajador: es correcto.\n"
         . "- Antes de marcar mal los periodos de vacaciones, cuenta los aniversarios desde la fecha de ingreso (ej. ingreso ago-2022: el aniversario de ago-2025 es el 3er año = 16 días y el de ago-2026 el 4o = 18). Si solo lleva un aniversario, preguntar por \"tu primer año\" es correcto.\n"
