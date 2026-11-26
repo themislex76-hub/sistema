@@ -484,5 +484,12 @@ caso('prompt: el curso de amparo ya no promete 5 escritos modelo; solo Actas tra
     && strpos(IA_SYSTEM_PROMPT, 'el ÚNICO que trae formatos es el de Actas Administrativas') !== false
     && strpos(IA_SYSTEM_PROMPT, '6 formatos listos') !== false);
 
+// ---------------------------------------------------------------------
+echo "28) Cursos: el bot ya no manda la página de Netlify (26-nov, accesos que no llegaban)\n";
+caso('prompt: no trae ningún link de netlify ni de la página de cursos',
+    strpos(IA_SYSTEM_PROMPT, 'netlify.app/') === false
+    && strpos(IA_SYSTEM_PROMPT, 'www.expertoslaborales.com/cursos') === false
+    && strpos(IA_SYSTEM_PROMPT, 'NUNCA mandes la página') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
