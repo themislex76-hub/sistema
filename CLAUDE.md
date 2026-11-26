@@ -3335,3 +3335,25 @@ de conversaciones, 6 casos de prueba de regresión). Hecho en esta parte:
   - Regla nueva en `SOPORTE_SYSTEM_PROMPT`: nunca decir "escribió a otro número"; si habla de un curso, un pago o un caso, escalar.
 - Archivos: `api/soporte_tecnico_helpers.php`, `api/whatsapp_procesar.php`. 124 casos en `scripts/pruebas_bot.php`.
 - Pendiente del usuario: su problema real (no le abren los formatos del curso en la página de Netlify) sigue sin resolver.
+
+## Revisión del 25-nov (120 conversaciones, 16 marcadas = 13%) + 2a pasada del 24-nov (17 más) (26 nov 2026, conversación "chats")
+- Los 17 del 24-nov son anteriores a los arreglos que se subieron el 25-nov (÷7, vacaciones de todos los años, aguinaldo incompleto, antigüedad discutible, rescisión hipotética).
+- Candados nuevos en código (`api/ia_helpers.php`):
+  - `ia_vacaciones_anteriores_previas()`: al recalcular con 0 días de vacaciones anteriores cuando antes sí se pasaron, la herramienta trae `aviso_vacaciones_anteriores`. El cálculo ahora guarda `dias_vacaciones_anteriores_pasados`.
+  - `ia_conversacion_menciona_ciudad_frontera()`: si el cliente menciona una ciudad de la zona libre de la frontera norte, la herramienta trae `aviso_zona_frontera_texto` (caso Tijuana).
+- Criterios nuevos en el prompt, verificados en el texto oficial:
+  - Incapacidad o invalidez: Art. 53 fracc. IV y Art. 54 (1 mes + 12 días por año), presentado primero.
+  - Descanso semanal: Arts. 69 y 73 (salario doble).
+  - Faltar a propósito para que lo corran: Art. 47 fracc. X, desaconsejarlo.
+  - Periodo de prueba: Art. 39-A.
+  - Orientación mínima antes de escalar algo urgente.
+  - Al recalcular, conservar los datos.
+  - Guía de artículos: Art. 435.
+- Revisor:
+  - `ia_parsear_revision_bot()` descarta hallazgos con "no aplica", "no requiere corrección" o "no es un error".
+  - "NO marques" nuevos: plazo pausado por conciliación, Art. 517-II, conteo de aniversarios de vacaciones.
+- **Preguntas abiertas al Lic. Rubén (no se tocó nada)**:
+  - A) Salario reportado menor al mínimo: ¿se calcula con el mínimo (el Art. 485 está en riesgos de trabajo) o con el real, y la diferencia aparte?
+  - B) Vacaciones de años anteriores: ¿se pagan con el salario de cada año o con el actual?
+  - C) La frase de venta "en el Centro casi siempre ofrecen la mitad, 45 días cuando son 90" (conversación "Bot").
+- 133 casos en `scripts/pruebas_bot.php`.
