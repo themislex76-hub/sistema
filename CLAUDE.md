@@ -67,14 +67,46 @@ fechas inexistentes... revisa porque hay varios expedientes asi".
   valor por defecto (forzando escribir la fecha exacta siempre), avisar
   para quitarlos también.
   `app.js?v=163`.
+- **Limpieza retroactiva sin revisar expediente por expediente, pedida
+  explícita del usuario ("como corregimos lo que metio mal... eso me
+  llevaria mucho tiempo")**: nuevo reporte de diagnóstico
+  `api/reporte_fechas_celebradas_sospechosas.php` (abrir directo en el
+  navegador, logueado como Administrador, mismo patrón que
+  `reporte_monitoreo_faltante.php`) -- busca la FIRMA exacta del bug 2 en
+  `expediente_historial`: una fecha celebrada guardada por un humano (no
+  por un mecanismo de IA, esos dejan `usuario_id NULL` y siempre citan
+  evidencia literal) que coincide EXACTO con el día en que se guardó, y
+  que SIGUE teniendo esa misma fecha ahora mismo (si ya se corrigió, no
+  sale). Marca "sospecha ALTA" cuando en ese mismo guardado se tocaron 2+
+  etapas a la vez (la firma de "Guardar etapas" guardando el formulario
+  completo por otra razón) -- "sospecha media" cuando fue solo esa etapa
+  (puede ser legítima, el abogado confirmándola el mismo día que pasó de
+  verdad). Nunca corrige nada solo.
+  - **El bug 1 (citatorios fuera de orden) ya tiene su propia limpieza
+    masiva lista**: correr `api/cron_qa_irregularidades.php` una vez
+    (mismo patrón, abrir la URL) -- con el candado ya ampliado, va a
+    listar TODOS los expedientes con este problema en el panel "Posibles
+    irregularidades" (Preguntas al abogado), cada uno con un tap
+    "Corregir"/"Está bien no es error", sin tener que revisar los demás
+    uno por uno.
+  - **El bug de Cobros (fecha_cobro = hoy) NO tiene limpieza retroactiva
+    posible** -- `expediente_pagos` se borra y reinserta completo en cada
+    guardado (sin fecha de creación por fila) y su historial solo guarda
+    un resumen ("N pagos, M cobrados, total $X"), sin el detalle de qué
+    pago ni qué fecha -- no hay con qué reconstruir cuáles se vieron
+    afectados. De aquí en adelante ya no puede volver a pasar (ver
+    arriba), pero lo ya guardado con fecha de cobro = hoy sin que el
+    usuario recuerde haberlo confirmado ese día hay que revisarlo a mano,
+    si le preocupa, en la pestaña "Cobros" de cada expediente.
+  Archivo nuevo a subir: `api/reporte_fechas_celebradas_sospechosas.php`.
 - Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
-  -- no aplica `verificar_tags.js`. **Pendiente del usuario**: revisar a
-  mano "Etapas del juicio" de los 2 expedientes reportados (decidir qué
-  fecha es real en cada citatorio) y, una vez subidos los archivos,
-  correr `api/cron_qa_irregularidades.php` una vez (abrir la URL directo,
-  mismo patrón que los demás crons) para que el panel "Posibles
-  irregularidades" liste cualquier OTRO expediente con el mismo problema
-  de citatorios fuera de orden.
+  -- no aplica `verificar_tags.js`. **Pendiente del usuario**: subir
+  `api/reporte_fechas_celebradas_sospechosas.php` y abrirlo en el
+  navegador para la lista de fechas celebradas sospechosas; correr
+  `api/cron_qa_irregularidades.php` una vez para la lista de citatorios
+  fuera de orden; y revisar a mano "Etapas del juicio" de los 2
+  expedientes reportados originalmente (decidir qué fecha es real en
+  cada citatorio).
 
 ## Conversación nueva "negocio" (16 nov 2026)
 El usuario abrió una 4ª conversación, **"negocio"**, para hacer crecer el
