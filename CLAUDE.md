@@ -896,6 +896,216 @@ libres para que queden como pendientes".
   `api/supervisor_pregunta_responder.php`, y se vea un caso real (ej. un acuerdo nuevo con una
   fecha futura) donde quede como "Fecha agendada" en vez de "Fecha en que se celebró".
 
+## ⚠️ Aviso cruzado para "chats"/"Bot"/"negocio" (26 nov 2026)
+Hoy se tocaron 3 archivos que varias sesiones comparten:
+**`assets/app.js`** (todas las sesiones lo editan tarde o temprano),
+**`api/expediente_helpers.php`** y **`api/google_calendar_helpers.php`**.
+Antes de seguir editando cualquiera de los 3, haz `git fetch origin
+claude/hola-i5mb6q` y fusiónalo -- si no, corres el riesgo de pisar sin
+querer: (1) el candado nuevo de `etapa_fecha_es_consistente()`/
+`detectar_irregularidades_orden_cronologico()` (ahora también revisa
+`fecha_programada`, no solo `fecha`), (2) que "Guardar etapas"/Cobros ya
+no inventan la fecha de hoy con un checkbox vacío, y (3) la marca
+invisible `extendedProperties.private.generado_por_sistema` en los
+eventos de Google Calendar (para que `google_listar_eventos()` nunca
+vuelva a leerse a sí mismo). Ver los 2 resúmenes completos justo abajo.
+Intentado avisar en vivo por `SendMessage`/`ListAgents` -- ninguna otra
+sesión está corriendo ahora mismo, así que este archivo es el único
+canal; la próxima sesión que abra cualquiera de los 3 archivos debería
+ver esto primero (queda al principio del archivo a propósito).
+
+## Google Calendar: cerrado el riesgo de que el sistema lea sus propias sugerencias (26 nov 2026, `app.js?v=164`)
+Pedido explícito del usuario, mismo día de los 2 bugs de fechas de abajo:
+"que no mande a google calendar las sugerencias porque ese puede ser un
+generador de problemas" -- al investigar, se confirmó que su instinto
+tenía una base real más seria de lo que parecía a primera vista.
+- **Lo pedido**: `accion_ia` ("Sugerido por IA" -- una sugerencia de
+  urgencia CALCULADA, no un compromiso real) se quitó de
+  `GOOGLE_TIPOS_SINCRONIZABLES` -- ya no se manda al Google Calendar del
+  abogado. La próxima vez que alguien sincronice (botón "Sincronizar
+  ahora" o automático al guardar algo), el mecanismo de limpieza que YA
+  existía (compara contra lo sincronizado la vez anterior,
+  `google_sync_state.php`) va a BORRAR solo los "[Sugerido por IA]" que
+  ya estuvieran puestos -- no hizo falta ningún script aparte.
+- **Riesgo real de fondo encontrado al investigar (más grave que solo
+  "se ve raro en el calendario")**: `cron_leer_google_calendar.php` lee
+  TODOS los eventos de los calendarios "vigilados" sin ninguna forma de
+  distinguir un evento real del abogado de uno que el PROPIO sistema
+  acababa de poner ahí (`sincronizarGoogleCalendar()` en app.js,
+  `google_sincronizar_cita_pagada()` en el backend) -- si un calendario
+  vigilado también recibía eventos de salida (ej. del mismo sub-calendario
+  de audiencias), el sistema podía leer su propia sugerencia/cálculo de
+  vuelta y la IA de emparejamiento podía "confirmarla" como si fuera una
+  fecha agendada real, fabricando un dato de la nada -- el mismo patrón de
+  fondo de los 2 bugs de abajo, pero por un canal distinto.
+- **Corregido de raíz, no solo para `accion_ia`**: cada evento que el
+  sistema manda a Google Calendar (cualquier tipo, más las citas de
+  asesoría pagada) ahora lleva una marca invisible
+  (`extendedProperties.private.generado_por_sistema`, nunca visible para
+  el abogado) y `google_listar_eventos()` descarta cualquier evento que
+  la traiga ANTES de pasárselo a la IA que empareja eventos -- así que
+  aunque se vuelva a sincronizar algo hacia el mismo calendario que se
+  vigila, nunca puede releerse a sí mismo, sea cual sea el tipo.
+  `api/google_calendar_helpers.php`.
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
+  -- no aplica `verificar_tags.js`. **Pendiente del usuario**: subir
+  `assets/app.js`, `sw.js`, `index.html` y `api/google_calendar_helpers.php`,
+  y confirmar que tras la siguiente sincronización los "[Sugerido por
+  IA]" ya desaparecieron de los calendarios de Google de los abogados.
+
+## 2 bugs reales: citatorios agendados fuera de orden + "Fecha en que se celebró" inventada con la fecha de hoy (26 nov 2026, `app.js?v=162`)
+Reportado por el usuario con capturas reales de 2 expedientes: **Jose Martin
+Saucedo Bautista vs Inmobiliaria Pabruem/Grupo Gabssa** (Conciliación
+prejudicial Primer citatorio con "Fecha agendada" = 04/12/2026, pero el
+Segundo citatorio ya estaba agendado para el 02/12/2026 -- ANTES que el
+primero, imposible) y **Orlando Herrera Cruz vs Trabal** (Primer citatorio
+con "Fecha en que se celebró" = 26/11/2026, exactamente HOY). "La ia agendo
+fechas inexistentes... revisa porque hay varios expedientes asi".
+- **Bug 1 (el de Jose Martin)**: `etapa_fecha_es_consistente()`
+  (`api/expediente_helpers.php`), el candado que debe impedir que un
+  mecanismo automático meta una fecha fuera de orden, solo comparaba
+  contra el campo `fecha` (celebrada) de las demás etapas -- nunca contra
+  `fecha_programada` (agendada). `cron_leer_google_calendar.php` es el
+  ÚNICO de los 5 mecanismos que llena `fecha_programada` (nunca `fecha`),
+  así que podía agendar un citatorio DESPUÉS del que por ley debe
+  seguirlo sin que nada lo atrapara. **Corregido**: si una etapa no tiene
+  celebrada, su agendada sirve como su mejor fecha conocida para esta
+  comparación de orden (la celebrada, hecho confirmado, sigue ganando si
+  hay ambas).
+- **Detector retroactivo del panel "Posibles irregularidades" ampliado
+  igual** (`detectar_irregularidades_orden_cronologico()`, usado por
+  `api/cron_qa_irregularidades.php`, corre 1 vez por semana) -- para
+  encontrar casos YA guardados como el de Jose Martin se necesitaron 3
+  comparaciones por separado (probado con casos reales antes de subir):
+  celebradas entre sí (la de siempre), agendadas entre sí (la que
+  faltaba -- si "primer citatorio" ya tiene celebrada, una agendada
+  vieja/huérfana que le quedó se esconde si solo se compara "la mejor
+  fecha conocida" de cada etapa), y combinada (celebrada si existe, si no
+  agendada, para el caso cruzado: una etapa con SOLO agendada contra otra
+  con SOLO celebrada). Sin duplicar texto cuando las 3 coinciden.
+  `api/cron_qa_irregularidades.php` ahora también selecciona
+  `fecha_programada` de `expediente_etapas`.
+- **Bug 2 (el de Orlando Herrera), el más probable para "varios
+  expedientes" con fecha de HOY**: el atajo ya documentado el 12 nov 2026
+  ("checkbox marcado + fecha vacía = márcala hecha HOY sin fecha exacta",
+  pensado para etapas SIN concepto de "Fecha agendada" propia, como
+  `emplazamiento`) se aplicaba también a audiencias/citatorios de
+  conciliación -- que SÍ tienen su propio campo de fecha agendada y donde
+  la fecha exacta sí importa. Si el checkbox de una de estas filas
+  quedaba marcado (por ejemplo al revisar el expediente) sin que nadie
+  escribiera la fecha exacta de celebración, el botón "Guardar etapas"
+  (que guarda TODAS las filas del formulario, no solo la que se estaba
+  editando) inventaba "hoy" como si el citatorio se hubiera celebrado ese
+  día -- coincide exacto con el caso de Orlando Herrera Cruz. **Corregido**
+  en `assets/app.js`: para `audiencia_preliminar`, `audiencia_juicio`,
+  `conciliacion_primer_citatorio` y `conciliacion_segundo_citatorio`, la
+  fecha celebrada solo se guarda si de verdad se escribió -- marcar el
+  checkbox sin fecha ya no fabrica ninguna.
+- **Principio reafirmado por el usuario el mismo día, tras ver la causa**:
+  "ninguna fecha debe marcarse sola o la mete el abogado o la mete la
+  ia" -- se generalizó el arreglo del bug 2 a TODAS las etapas (no solo
+  audiencias/citatorios) y se corrigió el MISMO patrón en "Cobros"
+  (`readPagosFromDOM()`): marcar el checkbox "Cobrado" sin escribir la
+  fecha de cobro real también rellenaba la fecha de hoy sola -- ya no.
+  Consecuencia esperada: un pago ya marcado "Cobrado" sin fecha de cobro
+  escrita deja de contarse en "Ingresos por periodo" (que agrupa por
+  fecha de cobro) hasta que alguien escriba la fecha real -- correcto,
+  mejor que seguir contando una fecha inventada.
+  **Revisados y dejados igual a propósito** (son una acción explícita de
+  un tap, no un efecto colateral de guardar otra cosa -- el abogado SÍ la
+  está metiendo, en el momento en que da clic): los botones "✓" de
+  Agenda general (`action==='pago'`/`'demanda'`, en `assets/app.js`)
+  siguen poniendo la fecha de hoy al marcar un pago cobrado o una demanda
+  presentada desde ahí -- si el usuario también los quiere sin ningún
+  valor por defecto (forzando escribir la fecha exacta siempre), avisar
+  para quitarlos también.
+  `app.js?v=163`.
+- **Limpieza retroactiva sin revisar expediente por expediente, pedida
+  explícita del usuario ("como corregimos lo que metio mal... eso me
+  llevaria mucho tiempo")**: nuevo reporte de diagnóstico
+  `api/reporte_fechas_celebradas_sospechosas.php` (abrir directo en el
+  navegador, logueado como Administrador, mismo patrón que
+  `reporte_monitoreo_faltante.php`) -- busca la FIRMA exacta del bug 2 en
+  `expediente_historial`: una fecha celebrada guardada por un humano (no
+  por un mecanismo de IA, esos dejan `usuario_id NULL` y siempre citan
+  evidencia literal) que coincide EXACTO con el día en que se guardó, y
+  que SIGUE teniendo esa misma fecha ahora mismo (si ya se corrigió, no
+  sale). Marca "sospecha ALTA" cuando en ese mismo guardado se tocaron 2+
+  etapas a la vez (la firma de "Guardar etapas" guardando el formulario
+  completo por otra razón) -- "sospecha media" cuando fue solo esa etapa
+  (puede ser legítima, el abogado confirmándola el mismo día que pasó de
+  verdad). Nunca corrige nada solo.
+  - **El bug 1 (citatorios fuera de orden) ya tiene su propia limpieza
+    masiva lista**: correr `api/cron_qa_irregularidades.php` una vez
+    (mismo patrón, abrir la URL) -- con el candado ya ampliado, va a
+    listar TODOS los expedientes con este problema en el panel "Posibles
+    irregularidades" (Preguntas al abogado), cada uno con un tap
+    "Corregir"/"Está bien no es error", sin tener que revisar los demás
+    uno por uno.
+  - **El bug de Cobros (fecha_cobro = hoy) NO tiene limpieza retroactiva
+    posible** -- `expediente_pagos` se borra y reinserta completo en cada
+    guardado (sin fecha de creación por fila) y su historial solo guarda
+    un resumen ("N pagos, M cobrados, total $X"), sin el detalle de qué
+    pago ni qué fecha -- no hay con qué reconstruir cuáles se vieron
+    afectados. De aquí en adelante ya no puede volver a pasar (ver
+    arriba), pero lo ya guardado con fecha de cobro = hoy sin que el
+    usuario recuerde haberlo confirmado ese día hay que revisarlo a mano,
+    si le preocupa, en la pestaña "Cobros" de cada expediente.
+  Archivo nuevo a subir: `api/reporte_fechas_celebradas_sospechosas.php`.
+  **Primera corrida real (26 nov 2026)**: encontró **45 etapas
+  sospechosas (12 de sospecha ALTA)**, casi todas de la Lic. Lindsay Luna
+  Maldonado -- confirma que el bug 2 era un hábito de trabajo real (marcar
+  el check de una etapa que sí pasó pero sin escribir su fecha exacta, y
+  guardar el formulario completo) repetido en MUCHOS expedientes durante
+  semanas, no solo los 2 casos que el usuario reportó primero. Reporte
+  mejorado el mismo día para agrupar por expediente (antes salía
+  ordenado por nivel de sospecha nada más, saltando de expediente en
+  expediente) -- ahora se abre cada expediente una sola vez y se revisan
+  ahí mismo todas sus filas sospechosas juntas; los expedientes con al
+  menos 1 fila ALTA salen primero.
+  - **Resuelto**: confirmado subido `api/expediente_helpers.php` y
+    corrida de nuevo -- siguió en "0 novedades nuevas". Conclusión: el
+    usuario ya había corregido a mano la fecha del caso original (Jose
+    Martin Saucedo Bautista) mientras lo revisaba, y no hay NINGÚN otro
+    expediente activo con citatorios/audiencias agendados fuera de orden
+    ahora mismo -- el candado funciona, simplemente no había más casos de
+    ESE tipo específico que limpiar.
+  - **Limpieza de las 12 de sospecha ALTA, pedida explícita del usuario
+    ("si")**: script de un solo uso
+    `api/_una_vez_limpiar_fechas_inventadas_26nov.php` (mismo patrón que
+    `_una_vez_reprocesar_calendario_legacy.php` del 11 nov -- se corre una
+    vez abriendo la URL, se puede borrar después). Repite la MISMA
+    detección del reporte pero solo para `tamano_lote >= 2`, y en vez de
+    solo mostrarlas, **borra la fecha celebrada** de esas etapas (deja la
+    etapa en blanco -- nunca pone una fecha nueva, nadie sabe cuál es la
+    real) -- si la fila queda completamente vacía se borra entera, igual
+    que hace `expedientes_update_etapas.php`. Vuelve a comparar contra el
+    valor actual antes de tocar nada (si ya cambió desde que se generó el
+    reporte, no lo toca). Queda registrado en Historial de cambios de
+    cada expediente como "Corrección automática (fecha probablemente
+    inventada, revisión 26 nov 2026)" -- auditable, y si alguien sabe la
+    fecha real después, se recaptura desde "Etapas del juicio" sin
+    problema. **Riesgo residual explicado al usuario antes de correrlo**:
+    en teoría podría borrar una fecha que sí era real si por coincidencia
+    el abogado de verdad confirmó 2+ trámites genuinos el mismo día real
+    -- posible pero más raro que el patrón del bug. Las 33 de sospecha
+    media NO se tocan aquí, quedan para revisión manual del usuario.
+    **Confirmado corrido por el usuario (26 nov 2026)**: "12 etapa(s) de
+    sospecha ALTA encontrada(s), 12 limpiada(s) de verdad" -- coincide
+    exacto con las 12 del reporte, las 12 quedaron en blanco en sus
+    expedientes. El script ya cumplió su función, el usuario lo puede
+    borrar del servidor. **Pendiente**: las 33 de sospecha media del
+    reporte siguen sin revisar -- quedan para que el usuario las repase
+    con calma (o para una sesión futura si pide ayuda con eso).
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
+  -- no aplica `verificar_tags.js`. **Pendiente del usuario**: subir
+  `api/reporte_fechas_celebradas_sospechosas.php` y abrirlo en el
+  navegador para la lista de fechas celebradas sospechosas; correr
+  `api/cron_qa_irregularidades.php` una vez para la lista de citatorios
+  fuera de orden; y revisar a mano "Etapas del juicio" de los 2
+  expedientes reportados originalmente (decidir qué fecha es real en
+  cada citatorio).
+
 ## Conversación nueva "negocio" (16 nov 2026)
 El usuario abrió una 4ª conversación, **"negocio"**, para hacer crecer el
 negocio (lives de TikTok → bot de WhatsApp → asesoría pagada → juicio). Su

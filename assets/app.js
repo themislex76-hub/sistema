@@ -2604,7 +2604,17 @@ async function loadPlantillasLib(){
 // no se refleja aquí. Ver api/google_*.php.
 // ---------------------------------------------------------------
 let GOOGLE_STATUS = {conectado:false, email:null};
-const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','vencida','accion_ia'];
+// 'accion_ia' ("Sugerido por IA") se quitó de aquí el 26 nov 2026, pedido
+// explícito del usuario ("que no mande a google calendar las sugerencias
+// porque ese puede ser un generador de problemas"): es una sugerencia de
+// urgencia calculada por la IA, no un compromiso real del abogado -- verla
+// mezclada con audiencias/pagos de verdad en su calendario podía
+// confundirse con algo agendado. El candado nuevo en
+// google_listar_eventos() (marca `generado_por_sistema`) ya evita que
+// cualquier tipo sincronizado se vuelva a leer como si fuera un evento
+// real del abogado, pero igual se quita esta del envío -- no hace falta
+// mandarla si de por sí nunca debía tratarse como una cita.
+const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','vencida'];
 
 async function loadGoogleStatus(){
   try{ GOOGLE_STATUS = await api('GET', 'google_status.php'); }
@@ -2694,6 +2704,16 @@ async function sincronizarGoogleCalendar(onProgress){
       description: e.label + '\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.',
       start: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
       end: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
+      // Marca invisible (26 nov 2026, riesgo encontrado mientras se
+      // investigaba por qué había fechas inventadas): sin esto,
+      // cron_leer_google_calendar.php (que lee TODOS los eventos de los
+      // mismos calendarios "vigilados") no tenía forma de distinguir un
+      // evento que puso la propia IA aquí de uno real que agendó el
+      // abogado -- podía releer su propia sugerencia y "confirmarla" como
+      // si viniera de Google Calendar, fabricando una fecha agendada de la
+      // nada. google_listar_eventos() ahora descarta cualquier evento que
+      // traiga esta marca antes de dárselo a la IA que empareja eventos.
+      extendedProperties: {private: {generado_por_sistema: '1'}},
     };
     try{ if(!(await googlePushEvent(eventosUrl(calendarId), headers, id, body))) fallos++; }catch(err){ fallos++; }
     hechos++;
@@ -9610,8 +9630,10 @@ function readPagosFromDOM(){
     const monto = r.querySelector('.pago-monto').value;
     const cobrado = r.querySelector('.pago-cobrado').checked;
     const fcInput = r.querySelector('.pago-fecha-cobro');
-    let fecha_cobro = fcInput ? fcInput.value : '';
-    if(cobrado && !fecha_cobro) fecha_cobro = dateToISO(new Date());
+    // Mismo principio del 26 nov 2026 que en Etapas: ninguna fecha se
+    // marca sola -- antes, el checkbox "Cobrado" marcado sin fecha de
+    // cobro escrita rellenaba la fecha de hoy sola.
+    const fecha_cobro = fcInput ? fcInput.value : '';
     pagos.push({fecha, monto, cobrado, fecha_cobro});
   });
   return pagos;
@@ -9978,7 +10000,17 @@ function bindModalTabEvents(){
         const resultado = resInput ? resInput.value : '';
         const horaInput = row.querySelector('.etapa-hora');
         const hora = horaInput ? horaInput.value : '';
-        if(checked || fecha || fecha_programada || resultado || hora) etapas[key] = {fecha: (checked||fecha) ? (fecha || dateToISO(new Date())) : '', fecha_programada, resultado, hora};
+        // Bug real (26 nov 2026, varios expedientes con etapas "celebradas"
+        // justo el día de hoy sin que nadie lo haya confirmado así) +
+        // decisión explícita del usuario el mismo día: "ninguna fecha debe
+        // marcarse sola o la mete el abogado o la mete la IA". Antes, el
+        // checkbox marcado sin fecha escrita se interpretaba como "márcala
+        // hecha HOY sin fecha exacta" y rellenaba la fecha de hoy solo --
+        // se quita del todo, para CUALQUIER etapa: la fecha celebrada solo
+        // se guarda si de verdad se escribió a mano (o la llenó alguno de
+        // los mecanismos de IA con evidencia literal, que no pasan por
+        // este formulario).
+        if(checked || fecha || fecha_programada || resultado || hora) etapas[key] = {fecha, fecha_programada, resultado, hora};
       });
       try{
         // El servidor activa amparo_activo/amparo_presentado automáticamente
