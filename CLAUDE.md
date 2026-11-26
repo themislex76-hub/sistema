@@ -137,8 +137,13 @@ fechas inexistentes... revisa porque hay varios expedientes asi".
     el abogado de verdad confirmó 2+ trámites genuinos el mismo día real
     -- posible pero más raro que el patrón del bug. Las 33 de sospecha
     media NO se tocan aquí, quedan para revisión manual del usuario.
-    **Pendiente**: que el usuario suba y corra este script, y confirme
-    cuántas se limpiaron de verdad.
+    **Confirmado corrido por el usuario (26 nov 2026)**: "12 etapa(s) de
+    sospecha ALTA encontrada(s), 12 limpiada(s) de verdad" -- coincide
+    exacto con las 12 del reporte, las 12 quedaron en blanco en sus
+    expedientes. El script ya cumplió su función, el usuario lo puede
+    borrar del servidor. **Pendiente**: las 33 de sospecha media del
+    reporte siguen sin revisar -- quedan para que el usuario las repase
+    con calma (o para una sesión futura si pide ayuda con eso).
 - Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
   -- no aplica `verificar_tags.js`. **Pendiente del usuario**: subir
   `api/reporte_fechas_celebradas_sospechosas.php` y abrirlo en el
