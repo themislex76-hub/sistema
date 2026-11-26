@@ -48,6 +48,25 @@ fechas inexistentes... revisa porque hay varios expedientes asi".
   `conciliacion_primer_citatorio` y `conciliacion_segundo_citatorio`, la
   fecha celebrada solo se guarda si de verdad se escribió -- marcar el
   checkbox sin fecha ya no fabrica ninguna.
+- **Principio reafirmado por el usuario el mismo día, tras ver la causa**:
+  "ninguna fecha debe marcarse sola o la mete el abogado o la mete la
+  ia" -- se generalizó el arreglo del bug 2 a TODAS las etapas (no solo
+  audiencias/citatorios) y se corrigió el MISMO patrón en "Cobros"
+  (`readPagosFromDOM()`): marcar el checkbox "Cobrado" sin escribir la
+  fecha de cobro real también rellenaba la fecha de hoy sola -- ya no.
+  Consecuencia esperada: un pago ya marcado "Cobrado" sin fecha de cobro
+  escrita deja de contarse en "Ingresos por periodo" (que agrupa por
+  fecha de cobro) hasta que alguien escriba la fecha real -- correcto,
+  mejor que seguir contando una fecha inventada.
+  **Revisados y dejados igual a propósito** (son una acción explícita de
+  un tap, no un efecto colateral de guardar otra cosa -- el abogado SÍ la
+  está metiendo, en el momento en que da clic): los botones "✓" de
+  Agenda general (`action==='pago'`/`'demanda'`, en `assets/app.js`)
+  siguen poniendo la fecha de hoy al marcar un pago cobrado o una demanda
+  presentada desde ahí -- si el usuario también los quiere sin ningún
+  valor por defecto (forzando escribir la fecha exacta siempre), avisar
+  para quitarlos también.
+  `app.js?v=163`.
 - Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
   -- no aplica `verificar_tags.js`. **Pendiente del usuario**: revisar a
   mano "Etapas del juicio" de los 2 expedientes reportados (decidir qué

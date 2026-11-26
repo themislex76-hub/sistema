@@ -9558,8 +9558,10 @@ function readPagosFromDOM(){
     const monto = r.querySelector('.pago-monto').value;
     const cobrado = r.querySelector('.pago-cobrado').checked;
     const fcInput = r.querySelector('.pago-fecha-cobro');
-    let fecha_cobro = fcInput ? fcInput.value : '';
-    if(cobrado && !fecha_cobro) fecha_cobro = dateToISO(new Date());
+    // Mismo principio del 26 nov 2026 que en Etapas: ninguna fecha se
+    // marca sola -- antes, el checkbox "Cobrado" marcado sin fecha de
+    // cobro escrita rellenaba la fecha de hoy sola.
+    const fecha_cobro = fcInput ? fcInput.value : '';
     pagos.push({fecha, monto, cobrado, fecha_cobro});
   });
   return pagos;
@@ -9926,19 +9928,17 @@ function bindModalTabEvents(){
         const resultado = resInput ? resInput.value : '';
         const horaInput = row.querySelector('.etapa-hora');
         const hora = horaInput ? horaInput.value : '';
-        // Bug real (26 nov 2026, varios expedientes con citatorios/audiencias
-        // "celebrados" justo el día de hoy sin que nadie lo haya confirmado
-        // así): el atajo "checkbox marcado + fecha vacía = hecho HOY sin
-        // fecha exacta" tiene sentido para etapas sin concepto de "Fecha
-        // agendada" propia -- pero para audiencias/citatorios de conciliación
-        // (que SÍ tienen su propio campo de fecha agendada) inventar "hoy"
-        // cuando el checkbox quedó marcado sin fecha escrita fabrica una
-        // fecha de celebración falsa. Para estas, la fecha celebrada solo se
-        // guarda si de verdad se escribió.
-        const esAudienciaRow = key==='audiencia_preliminar' || key==='audiencia_juicio'
-          || key==='conciliacion_primer_citatorio' || key==='conciliacion_segundo_citatorio';
-        const fechaFinal = esAudienciaRow ? fecha : ((checked||fecha) ? (fecha || dateToISO(new Date())) : '');
-        if(checked || fecha || fecha_programada || resultado || hora) etapas[key] = {fecha: fechaFinal, fecha_programada, resultado, hora};
+        // Bug real (26 nov 2026, varios expedientes con etapas "celebradas"
+        // justo el día de hoy sin que nadie lo haya confirmado así) +
+        // decisión explícita del usuario el mismo día: "ninguna fecha debe
+        // marcarse sola o la mete el abogado o la mete la IA". Antes, el
+        // checkbox marcado sin fecha escrita se interpretaba como "márcala
+        // hecha HOY sin fecha exacta" y rellenaba la fecha de hoy solo --
+        // se quita del todo, para CUALQUIER etapa: la fecha celebrada solo
+        // se guarda si de verdad se escribió a mano (o la llenó alguno de
+        // los mecanismos de IA con evidencia literal, que no pasan por
+        // este formulario).
+        if(checked || fecha || fecha_programada || resultado || hora) etapas[key] = {fecha, fecha_programada, resultado, hora};
       });
       try{
         // El servidor activa amparo_activo/amparo_presentado automáticamente
