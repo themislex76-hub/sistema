@@ -372,13 +372,13 @@ caso('cron_seguimiento_calculadora_plantilla.php: tercer recordatorio por planti
 // ---------------------------------------------------------------------
 echo "21) Centro de Conciliación: argumento de venta con la 'propuesta de 45 días' (25-nov)\n";
 $p = IA_SYSTEM_PROMPT;
-caso('prompt: menciona que la indemnización baja de 90 a 45 días en conciliación',
-    strpos($p, '45 días') !== false && strpos($p, '90') !== false && strpos($p, 'MITAD de lo que le toca') !== false);
-caso('prompt: la prima de antigüedad SÍ se paga desde el primer año en un despido -- el requisito de 15 años es solo para renuncia',
-    strpos($p, 'prima de antigüedad se paga desde el primer año en un despido') !== false
-    && strpos($p, 'SOLO aplica si la propia persona renuncia') !== false);
-caso('prompt: el conciliador no es neutral de verdad -- parecería que ayuda más al patrón (ya NO dice "tercero neutral" sin matizar)',
-    strpos($p, 'parecería que ayudan más al') !== false);
+caso('prompt: menciona que en conciliación es común ofrecer menos (ej. 45 días cuando son 90)',
+    strpos($p, 'es común que le ofrezcan menos') !== false && strpos($p, '45 días cuando la indemnización es de 90') !== false);
+caso('prompt: la prima de antigüedad SÍ se paga desde el primer año en un despido -- los 15 años solo en renuncia',
+    strpos($p, 'en un despido se paga') !== false
+    && strpos($p, 'Los 15 años solo se exigen cuando la persona') !== false);
+caso('prompt: el conciliador no es su abogado (ya NO dice que ayuda al patrón)',
+    strpos($p, 'El conciliador no es su abogado') !== false && strpos($p, 'parecería que ayudan más') === false);
 caso('prompt: nunca menciona salarios caídos en este argumento (no inflar expectativas)',
     strpos($p, 'NUNCA menciones salarios caídos en este punto') !== false);
 caso('prompt: se dispara siempre que se calcule un DESPIDO, no en renuncia/Rescisión/Prima de Antigüedad',
