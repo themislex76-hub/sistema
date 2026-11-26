@@ -248,12 +248,8 @@ function calcular_estimado_liquidacion(
     string $modo = 'despido',
     bool $trabajadorConfianza = false,
     ?float $sdiReportado = null,
-    bool $zonaFronteraNorte = false,
-    float $aguinaldoDiasAnuales = 15
+    bool $zonaFronteraNorte = false
 ): ?array {
-    // Aguinaldo pactado mayor al mínimo (ej. 30 días, un mes): nunca menos
-    // de 15 (Art. 87 LFT). Por ahora solo lo usa debug_enviar_pdf_calculo.php.
-    $aguinaldoDiasAnuales = max(15, $aguinaldoDiasAnuales);
     if (!in_array($modo, ['despido', 'renuncia', 'rescision'], true)) {
         $modo = 'despido';
     }
@@ -273,7 +269,7 @@ function calcular_estimado_liquidacion(
     $yearStart = $baj->setDate((int)$baj->format('Y'), 1, 1);
     $aguStart = $ing > $yearStart ? $ing : $yearStart;
     $aguDias = (int)$aguStart->diff($baj)->days + 1;
-    $aguinaldoDias = $aguinaldoDiasAnuales * ($aguDias / 365);
+    $aguinaldoDias = 15 * ($aguDias / 365);
     $aguinaldoMonto = $aguinaldoDias * $salarioDiario;
 
     // Vacaciones proporcionales del periodo en curso (Art. 76 y 79 LFT),
@@ -325,7 +321,7 @@ function calcular_estimado_liquidacion(
     // recalcSdiSuggested() en la calculadora del sitio. La indemnización
     // constitucional de 90 días (Art. 48 LFT) se paga con salario
     // integrado, no con el salario diario simple.
-    $factorIntegracion = (365 + $aguinaldoDiasAnuales + $vacEnt * 0.25) / 365;
+    $factorIntegracion = (365 + 15 + $vacEnt * 0.25) / 365;
     $sdi = $salarioDiario * $factorIntegracion;
 
     // Si la persona mandó su recibo de nómina y ahí viene el SDI real
@@ -403,6 +399,6 @@ function calcular_estimado_liquidacion(
         'indemnizacion_90_dias_monto' => round($indemnizacion90, 2),
         'total_estimado' => round($total, 2),
         'tipo_despido' => $tipo,
-        'nota' => 'Estimado con ' . ($aguinaldoDiasAnuales > 15 ? 'aguinaldo pactado de ' . round($aguinaldoDiasAnuales) . ' días al año' : 'mínimos de ley (aguinaldo 15 días') . ', prima vacacional 25%' . ($aguinaldoDiasAnuales > 15 ? '' : ')') . ' y con los días de vacaciones anteriores/salarios devengados que la persona reportó — sin contar posibles pactos contractuales mayores. De las vacaciones anteriores reportadas solo se contaron las que todavía se pueden reclamar: vacaciones_anteriores_dias_prescritos son días que sí le tocaban pero ya prescribieron (6 meses para disfrutarlas, Art. 81, más 1 año de prescripción, Art. 516: 18 meses desde cada aniversario); vacaciones_anteriores_dias_excedentes son días que reportó por encima de lo que la ley le da en sus años completos (tabla del Art. 76) -- eso NO es prescripción. El monto real solo se confirma revisando el caso a detalle.',
+        'nota' => 'Estimado con mínimos de ley (aguinaldo 15 días, prima vacacional 25%) y con los días de vacaciones anteriores/salarios devengados que la persona reportó — sin contar posibles pactos contractuales mayores. De las vacaciones anteriores reportadas solo se contaron las que todavía se pueden reclamar: vacaciones_anteriores_dias_prescritos son días que sí le tocaban pero ya prescribieron (6 meses para disfrutarlas, Art. 81, más 1 año de prescripción, Art. 516: 18 meses desde cada aniversario); vacaciones_anteriores_dias_excedentes son días que reportó por encima de lo que la ley le da en sus años completos (tabla del Art. 76) -- eso NO es prescripción. El monto real solo se confirma revisando el caso a detalle.',
     ];
 }
