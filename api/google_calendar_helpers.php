@@ -80,6 +80,11 @@ function google_sincronizar_cita_pagada(PDO $pdo, array $cita, string $horarioTe
             'description' => "Llamada telefónica de la asesoría pagada (\${$cita['monto']} MXN). Teléfono: {$cita['telefono']}.\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.",
             'start' => ['dateTime' => $cita['fecha'] . 'T' . substr($cita['hora_inicio'], 0, 8), 'timeZone' => 'America/Mexico_City'],
             'end' => ['dateTime' => $cita['fecha'] . 'T' . substr($cita['hora_fin'], 0, 8), 'timeZone' => 'America/Mexico_City'],
+            // Misma marca invisible que sincronizarGoogleCalendar() en
+            // app.js (26 nov 2026) -- para que google_listar_eventos() la
+            // descarte igual si este calendario alguna vez también queda
+            // "vigilado".
+            'extendedProperties' => ['private' => ['generado_por_sistema' => '1']],
         ], JSON_UNESCAPED_UNICODE);
 
         $headers = ['Authorization: Bearer ' . $accessToken, 'Content-Type: application/json'];
@@ -173,6 +178,15 @@ function google_listar_eventos(string $accessToken, string $calendarId, int $dia
     $eventos = [];
     foreach ($items as $it) {
         if (($it['status'] ?? '') === 'cancelled') continue; // evento borrado en Google -- no procesar
+        // Candado contra el ciclo que mandó y volvió a leer sus propias
+        // sugerencias (26 nov 2026, encontrado mientras se investigaba por
+        // qué había fechas inventadas): un evento que el sistema mismo
+        // puso en este calendario (sincronizarGoogleCalendar() en app.js,
+        // o google_sincronizar_cita_pagada()) nunca debe volver a leerse
+        // aquí como si fuera un compromiso real del abogado -- si se
+        // procesara, la IA podría "confirmar" como agendada una fecha que
+        // en realidad es solo una sugerencia/cálculo del propio sistema.
+        if (!empty($it['extendedProperties']['private']['generado_por_sistema'])) continue;
         $start = $it['start']['dateTime'] ?? $it['start']['date'] ?? null;
         if (!$start) continue;
         $fecha = substr($start, 0, 10);

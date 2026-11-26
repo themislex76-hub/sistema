@@ -1,5 +1,44 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## Google Calendar: cerrado el riesgo de que el sistema lea sus propias sugerencias (26 nov 2026, `app.js?v=164`)
+Pedido explícito del usuario, mismo día de los 2 bugs de fechas de abajo:
+"que no mande a google calendar las sugerencias porque ese puede ser un
+generador de problemas" -- al investigar, se confirmó que su instinto
+tenía una base real más seria de lo que parecía a primera vista.
+- **Lo pedido**: `accion_ia` ("Sugerido por IA" -- una sugerencia de
+  urgencia CALCULADA, no un compromiso real) se quitó de
+  `GOOGLE_TIPOS_SINCRONIZABLES` -- ya no se manda al Google Calendar del
+  abogado. La próxima vez que alguien sincronice (botón "Sincronizar
+  ahora" o automático al guardar algo), el mecanismo de limpieza que YA
+  existía (compara contra lo sincronizado la vez anterior,
+  `google_sync_state.php`) va a BORRAR solo los "[Sugerido por IA]" que
+  ya estuvieran puestos -- no hizo falta ningún script aparte.
+- **Riesgo real de fondo encontrado al investigar (más grave que solo
+  "se ve raro en el calendario")**: `cron_leer_google_calendar.php` lee
+  TODOS los eventos de los calendarios "vigilados" sin ninguna forma de
+  distinguir un evento real del abogado de uno que el PROPIO sistema
+  acababa de poner ahí (`sincronizarGoogleCalendar()` en app.js,
+  `google_sincronizar_cita_pagada()` en el backend) -- si un calendario
+  vigilado también recibía eventos de salida (ej. del mismo sub-calendario
+  de audiencias), el sistema podía leer su propia sugerencia/cálculo de
+  vuelta y la IA de emparejamiento podía "confirmarla" como si fuera una
+  fecha agendada real, fabricando un dato de la nada -- el mismo patrón de
+  fondo de los 2 bugs de abajo, pero por un canal distinto.
+- **Corregido de raíz, no solo para `accion_ia`**: cada evento que el
+  sistema manda a Google Calendar (cualquier tipo, más las citas de
+  asesoría pagada) ahora lleva una marca invisible
+  (`extendedProperties.private.generado_por_sistema`, nunca visible para
+  el abogado) y `google_listar_eventos()` descarta cualquier evento que
+  la traiga ANTES de pasárselo a la IA que empareja eventos -- así que
+  aunque se vuelva a sincronizar algo hacia el mismo calendario que se
+  vigila, nunca puede releerse a sí mismo, sea cual sea el tipo.
+  `api/google_calendar_helpers.php`.
+- Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
+  -- no aplica `verificar_tags.js`. **Pendiente del usuario**: subir
+  `assets/app.js`, `sw.js`, `index.html` y `api/google_calendar_helpers.php`,
+  y confirmar que tras la siguiente sincronización los "[Sugerido por
+  IA]" ya desaparecieron de los calendarios de Google de los abogados.
+
 ## 2 bugs reales: citatorios agendados fuera de orden + "Fecha en que se celebró" inventada con la fecha de hoy (26 nov 2026, `app.js?v=162`)
 Reportado por el usuario con capturas reales de 2 expedientes: **Jose Martin
 Saucedo Bautista vs Inmobiliaria Pabruem/Grupo Gabssa** (Conciliación

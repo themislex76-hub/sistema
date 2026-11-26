@@ -2571,7 +2571,17 @@ async function loadPlantillasLib(){
 // no se refleja aquí. Ver api/google_*.php.
 // ---------------------------------------------------------------
 let GOOGLE_STATUS = {conectado:false, email:null};
-const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','vencida','accion_ia'];
+// 'accion_ia' ("Sugerido por IA") se quitó de aquí el 26 nov 2026, pedido
+// explícito del usuario ("que no mande a google calendar las sugerencias
+// porque ese puede ser un generador de problemas"): es una sugerencia de
+// urgencia calculada por la IA, no un compromiso real del abogado -- verla
+// mezclada con audiencias/pagos de verdad en su calendario podía
+// confundirse con algo agendado. El candado nuevo en
+// google_listar_eventos() (marca `generado_por_sistema`) ya evita que
+// cualquier tipo sincronizado se vuelva a leer como si fuera un evento
+// real del abogado, pero igual se quita esta del envío -- no hace falta
+// mandarla si de por sí nunca debía tratarse como una cita.
+const GOOGLE_TIPOS_SINCRONIZABLES = ['audiencia','pago','prescripcion','amparo','pendiente','atraso','vencida'];
 
 async function loadGoogleStatus(){
   try{ GOOGLE_STATUS = await api('GET', 'google_status.php'); }
@@ -2661,6 +2671,16 @@ async function sincronizarGoogleCalendar(onProgress){
       description: e.label + '\n\nGenerado automáticamente por el sistema de Expertos Laborales — no lo edites aquí, los cambios no se reflejan de vuelta al sistema.',
       start: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
       end: conHora ? {dateTime: `${e.fecha}T${e.hora}:00`, timeZone: 'America/Mexico_City'} : {date: e.fecha},
+      // Marca invisible (26 nov 2026, riesgo encontrado mientras se
+      // investigaba por qué había fechas inventadas): sin esto,
+      // cron_leer_google_calendar.php (que lee TODOS los eventos de los
+      // mismos calendarios "vigilados") no tenía forma de distinguir un
+      // evento que puso la propia IA aquí de uno real que agendó el
+      // abogado -- podía releer su propia sugerencia y "confirmarla" como
+      // si viniera de Google Calendar, fabricando una fecha agendada de la
+      // nada. google_listar_eventos() ahora descarta cualquier evento que
+      // traiga esta marca antes de dárselo a la IA que empareja eventos.
+      extendedProperties: {private: {generado_por_sistema: '1'}},
     };
     try{ if(!(await googlePushEvent(eventosUrl(calendarId), headers, id, body))) fallos++; }catch(err){ fallos++; }
     hechos++;
