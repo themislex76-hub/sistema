@@ -25,8 +25,15 @@ const IA_MODEL = 'claude-sonnet-5';
 // cuesta la mitad -- ese ahorro paga el razonamiento. El resto del sistema
 // (resúmenes, etc.) sigue con IA_MODEL. Para regresar: cambiar estas 2
 // constantes a 'claude-sonnet-5' / null (null = razonamiento apagado).
-const IA_MODELO_BOT = 'claude-sonnet-5-5';
-const IA_MODELO_BOT_ESFUERZO = 'low';
+//
+// REVERTIDO (26 nov 2026, decisión del usuario: "la prioridad es vender"):
+// desde el 17-nov, de cada 100 personas que veían los $499 solo apartaban
+// 2-5 (antes 8-18). El corte fue exacto el día del cambio de modelo, así
+// que se regresa a Sonnet 5 sin razonamiento como prueba. Si en 2-3 días
+// la conversión no se recupera, la causa es otra y se puede volver a
+// 'claude-sonnet-5-5' / 'low'.
+const IA_MODELO_BOT = 'claude-sonnet-5';
+const IA_MODELO_BOT_ESFUERZO = null;
 // Si Sonnet 5.5 declina contestar (stop_reason=refusal, sus filtros de
 // seguridad), se reintenta una vez con el modelo anterior sin razonamiento.
 const IA_MODELO_BOT_RESPALDO = 'claude-sonnet-5';
