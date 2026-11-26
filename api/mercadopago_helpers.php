@@ -318,6 +318,41 @@ function mercadopago_crear_preferencia_curso(int $compraId, string $cursoSlug, s
     return ['id' => (string)$data['id'], 'init_point' => (string)$data['init_point']];
 }
 
+/**
+ * Link de pago de Mercado Pago de un curso LIGADO a este teléfono, para los
+ * recordatorios automáticos. Caso real 25-nov-2026: el recordatorio mandaba
+ * la página del curso (Netlify) en vez del link que el bot ya le había
+ * generado; la clienta pagó en esa página, el pago no quedó ligado a su
+ * WhatsApp y nunca le llegó el acceso solo. Reusa el link pendiente más
+ * reciente de ese curso; si no hay, crea una compra nueva. Regresa null si
+ * Mercado Pago falla -- en ese caso NO se manda la página del curso.
+ */
+function curso_link_pago_ligado(PDO $pdo, string $telefono, string $cursoSlug, ?string $nombre, string $notificationUrl): ?string
+{
+    $stmt = $pdo->prepare(
+        "SELECT link_pago FROM compras_curso
+         WHERE telefono = :t AND curso_slug = :s AND estado = 'pendiente_pago' AND link_pago IS NOT NULL AND link_pago <> ''
+         ORDER BY id DESC LIMIT 1"
+    );
+    $stmt->execute([':t' => $telefono, ':s' => $cursoSlug]);
+    $link = $stmt->fetchColumn();
+    if ($link) return (string)$link;
+
+    $info = CURSOS_CATALOGO[$cursoSlug] ?? null;
+    if ($info === null) return null;
+    $pdo->prepare("INSERT INTO compras_curso (telefono, curso_slug, nombre_cliente, monto) VALUES (:t, :c, :n, :m)")
+        ->execute([':t' => $telefono, ':c' => $cursoSlug, ':n' => $nombre, ':m' => $info['precio']]);
+    $compraId = (int)$pdo->lastInsertId();
+    $pref = mercadopago_crear_preferencia_curso($compraId, $cursoSlug, $notificationUrl, $telefono);
+    if ($pref === null) {
+        $pdo->prepare("UPDATE compras_curso SET estado = 'cancelada' WHERE id = :id")->execute([':id' => $compraId]);
+        return null;
+    }
+    $pdo->prepare("UPDATE compras_curso SET mp_preference_id = :pref, link_pago = :link WHERE id = :id")
+        ->execute([':pref' => $pref['id'], ':link' => $pref['init_point'], ':id' => $compraId]);
+    return $pref['init_point'];
+}
+
 const DOCUMENTO_CALCULO_PRECIO = 49.00;
 
 /**

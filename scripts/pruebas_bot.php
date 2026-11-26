@@ -250,6 +250,9 @@ $n = (int)$pdo->query("SELECT COUNT(*) FROM compras_documento_calculo")->fetchCo
 caso('confirmar: ya pagado en 30 días -> no genera otro cobro', empty($r['ok']) && !empty($r['ya_pagado']) && $n === 2, json_encode($r, JSON_UNESCAPED_UNICODE));
 $pdo->exec("UPDATE compras_documento_calculo SET pagado_en = '" . date('Y-m-d H:i:s', strtotime('-40 days')) . "' WHERE estado = 'confirmada'");
 caso('compra pagada hace 40 días ya no bloquea una nueva', ia_compra_documento_confirmada_reciente($pdo, 'M', 30) === null);
+$pdo->exec("UPDATE compras_documento_calculo SET pagado_en = '" . date('Y-m-d H:i:s') . "' WHERE estado = 'confirmada'");
+$r = json_decode(ia_resultado_confirmar_compra_documento_calculo($pdo, 'M', true), true);
+caso('documento para OTRA persona (25-nov, compañera): no lo bloquea el pago propio', empty($r['ya_pagado']), json_encode($r, JSON_UNESCAPED_UNICODE));
 
 // ---------------------------------------------------------------------
 echo "16) Revisión del 18-nov (35 de 146 marcadas): candados nuevos\n";
@@ -393,6 +396,25 @@ caso('el archivo ya no guarda la versión vieja ("Sigo al pendiente de tu caso..
             && strpos($src, 'nada más escríbeme') !== false
             && strpos($src, "PLANTILLA_SEGUIMIENTO_CALCULO = 'despues_de_24_h'") !== false;
     })());
+
+// ---------------------------------------------------------------------
+echo "23) Conversación del 25-nov (Querétaro): zona, pagaré en blanco, antigüedad sin cortes\n";
+$p = IA_SYSTEM_PROMPT;
+caso('no comentar que allá no se llevan juicios aunque diga otro estado', strpos($p, 'caso real 25-nov-2026: "En Querétaro"') !== false);
+caso('papeles en blanco: Art. 48 Bis fracc. I inciso c', strpos($p, 'Art. 48 Bis fracc. I inciso c') !== false);
+caso('contratos seguidos sin cortes: antigüedad no dudosa', strpos($p, 'Si los contratos fueron seguidos, sin cortes') !== false);
+caso('herramienta: parámetro para_otra_persona', strpos(json_encode(IA_TOOLS, JSON_UNESCAPED_UNICODE), 'para_otra_persona') !== false);
+
+// ---------------------------------------------------------------------
+echo "24) Curso pagado en la página de Netlify (25-nov): el recordatorio manda su link ligado\n";
+$pdo = pdo_nuevo();
+$pdo->exec("CREATE TABLE compras_curso (id INTEGER PRIMARY KEY, telefono TEXT, curso_slug TEXT, nombre_cliente TEXT, monto REAL, estado TEXT DEFAULT 'pendiente_pago', link_pago TEXT, mp_preference_id TEXT)");
+$pdo->exec("INSERT INTO compras_curso (telefono, curso_slug, monto, link_pago) VALUES ('C', 'procesal', 299, 'https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=X')");
+caso('reusa el link de Mercado Pago pendiente', curso_link_pago_ligado($pdo, 'C', 'procesal', null, 'http://w') === 'https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=X');
+$cron = file_get_contents($base . '/api/cron_seguimiento_cursos.php');
+caso('el recordatorio ya no manda la página del curso', strpos($cron, "{\$info['link']}") === false && strpos($cron, 'curso_link_pago_ligado') !== false);
+$src = file_get_contents($base . '/api/ia_helpers.php');
+caso('si falla Mercado Pago, el bot no manda la página para pagar', strpos($src, "'link_alternativo' => \$info['sitio']") === false);
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

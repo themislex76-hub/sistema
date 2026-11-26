@@ -31,6 +31,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/whatsapp_helpers.php';
 require_once __DIR__ . '/push_helpers.php';
+require_once __DIR__ . '/mercadopago_helpers.php';
 
 if (!dentro_de_horario_atencion()) {
     echo "Fuera del horario de atención (" . date('G') . "h) — no se manda nada en esta corrida, para no escribirle a un cliente fuera del horario que el bot mismo respeta.\n";
@@ -117,8 +118,18 @@ foreach ($prospectos as $p) {
     }
     $saludo = $p['nombre'] ? "Hola {$p['nombre']}" : 'Hola';
 
+    // 25-nov-2026: ya no se manda la página del curso (Netlify). Un pago
+    // ahí no queda ligado a su WhatsApp y el acceso no le llega solo; se
+    // manda su link de Mercado Pago (el que ya tenía o uno nuevo).
+    $linkPago = null;
     if ($info) {
-        $texto = "{$saludo}, vi que te interesó el curso *{$p['curso_interes']}* (\${$info['precio']} MXN, acceso de por vida). Sigue disponible -- aquí tienes el link directo para inscribirte: {$info['link']}\n\nCualquier duda antes de inscribirte, aquí ando. 🙂";
+        $webhook = defined('MERCADOPAGO_WEBHOOK_URL') ? MERCADOPAGO_WEBHOOK_URL : 'https://sistema.expertoslaborales.com/sistema/api/mercadopago_webhook.php';
+        $linkPago = curso_link_pago_ligado($pdo, $p['telefono'], $info['slug'], $p['nombre'] ?: null, $webhook);
+    }
+    if ($info && $linkPago) {
+        $texto = "{$saludo}, vi que te interesó el curso *{$p['curso_interes']}* (\${$info['precio']} MXN, acceso de por vida). Sigue disponible -- aquí tienes tu link de pago: {$linkPago}\n\nEn cuanto se confirme el pago, el acceso te llega automáticamente por este mismo chat. Cualquier duda, aquí ando. 🙂";
+    } elseif ($info) {
+        $texto = "{$saludo}, vi que te interesó el curso *{$p['curso_interes']}* (\${$info['precio']} MXN, acceso de por vida). Sigue disponible -- si quieres tu link de pago, contéstame aquí y te lo mando. 🙂";
     } else {
         // No debería pasar (curso_interes viene de un enum cerrado), pero
         // por si acaso el dato quedó vacío, se manda un mensaje genérico
