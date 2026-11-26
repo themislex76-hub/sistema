@@ -1,5 +1,23 @@
 # Notas operativas — sistema (Expertos Laborales)
 
+## ⚠️ Aviso cruzado para "chats"/"Bot"/"negocio" (26 nov 2026)
+Hoy se tocaron 3 archivos que varias sesiones comparten:
+**`assets/app.js`** (todas las sesiones lo editan tarde o temprano),
+**`api/expediente_helpers.php`** y **`api/google_calendar_helpers.php`**.
+Antes de seguir editando cualquiera de los 3, haz `git fetch origin
+claude/hola-i5mb6q` y fusiónalo -- si no, corres el riesgo de pisar sin
+querer: (1) el candado nuevo de `etapa_fecha_es_consistente()`/
+`detectar_irregularidades_orden_cronologico()` (ahora también revisa
+`fecha_programada`, no solo `fecha`), (2) que "Guardar etapas"/Cobros ya
+no inventan la fecha de hoy con un checkbox vacío, y (3) la marca
+invisible `extendedProperties.private.generado_por_sistema` en los
+eventos de Google Calendar (para que `google_listar_eventos()` nunca
+vuelva a leerse a sí mismo). Ver los 2 resúmenes completos justo abajo.
+Intentado avisar en vivo por `SendMessage`/`ListAgents` -- ninguna otra
+sesión está corriendo ahora mismo, así que este archivo es el único
+canal; la próxima sesión que abra cualquiera de los 3 archivos debería
+ver esto primero (queda al principio del archivo a propósito).
+
 ## Google Calendar: cerrado el riesgo de que el sistema lea sus propias sugerencias (26 nov 2026, `app.js?v=164`)
 Pedido explícito del usuario, mismo día de los 2 bugs de fechas de abajo:
 "que no mande a google calendar las sugerencias porque ese puede ser un
