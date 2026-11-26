@@ -99,6 +99,25 @@ fechas inexistentes... revisa porque hay varios expedientes asi".
     usuario recuerde haberlo confirmado ese día hay que revisarlo a mano,
     si le preocupa, en la pestaña "Cobros" de cada expediente.
   Archivo nuevo a subir: `api/reporte_fechas_celebradas_sospechosas.php`.
+  **Primera corrida real (26 nov 2026)**: encontró **45 etapas
+  sospechosas (12 de sospecha ALTA)**, casi todas de la Lic. Lindsay Luna
+  Maldonado -- confirma que el bug 2 era un hábito de trabajo real (marcar
+  el check de una etapa que sí pasó pero sin escribir su fecha exacta, y
+  guardar el formulario completo) repetido en MUCHOS expedientes durante
+  semanas, no solo los 2 casos que el usuario reportó primero. Reporte
+  mejorado el mismo día para agrupar por expediente (antes salía
+  ordenado por nivel de sospecha nada más, saltando de expediente en
+  expediente) -- ahora se abre cada expediente una sola vez y se revisan
+  ahí mismo todas sus filas sospechosas juntas; los expedientes con al
+  menos 1 fila ALTA salen primero.
+  - **Pendiente de confirmar**: la corrida de `cron_qa_irregularidades.php`
+    el mismo día dio "0 expediente(s) con novedades nuevas" para el
+    chequeo de orden cronológico -- no se pudo confirmar todavía si es
+    porque de verdad no hay más casos de citatorios fuera de orden, o
+    porque faltó subir `api/expediente_helpers.php` (el archivo con la
+    lógica nueva) al servidor. Verificar que SÍ esté subido y revisar si
+    el expediente de Jose Martin Saucedo Bautista (el caso original) ya
+    quedó corregido a mano o si el candado sigue sin detectarlo.
 - Sin cambios de base de datos. No se tocó `mergeTags()`/tags de demanda
   -- no aplica `verificar_tags.js`. **Pendiente del usuario**: subir
   `api/reporte_fechas_celebradas_sospechosas.php` y abrirlo en el

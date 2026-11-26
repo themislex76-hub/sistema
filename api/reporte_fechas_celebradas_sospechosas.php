@@ -115,14 +115,40 @@ foreach ($candidatas as $c) {
     if ($actual === $c['fecha']) $confirmadas[] = $c;
 }
 
-usort($confirmadas, fn($a, $b) => $b['tamano_lote'] <=> $a['tamano_lote']);
+// Agrupado por expediente (pedido del usuario, 26 nov 2026: "como
+// corregimos lo que metio mal sin revisar asunto por asunto") -- así se
+// abre cada expediente UNA vez y se revisan ahí mismo todas sus etapas
+// sospechosas juntas, en vez de saltar de expediente en expediente según
+// el orden en que se guardaron. Primero los expedientes que tienen
+// AL MENOS una fila de sospecha ALTA; dentro de cada expediente, en el
+// orden real del trámite (ETAPA_KEYS).
+$tieneAlta = [];
+foreach ($confirmadas as $c) {
+    $eid = (int)$c['expediente']['id'];
+    if ($c['tamano_lote'] >= 2) $tieneAlta[$eid] = true;
+}
+$etapaIdx = array_flip(ETAPA_KEYS);
+usort($confirmadas, function ($a, $b) use ($tieneAlta, $etapaIdx) {
+    $eidA = (int)$a['expediente']['id'];
+    $eidB = (int)$b['expediente']['id'];
+    $altaA = !empty($tieneAlta[$eidA]);
+    $altaB = !empty($tieneAlta[$eidB]);
+    if ($altaA !== $altaB) return $altaA ? -1 : 1;
+    if ($eidA !== $eidB) return strcmp((string)$a['expediente']['actor'], (string)$b['expediente']['actor']);
+    return ($etapaIdx[$a['etapa_key']] ?? 0) <=> ($etapaIdx[$b['etapa_key']] ?? 0);
+});
 
 header('Content-Type: text/html; charset=utf-8');
 $labels = defined('ETAPA_LABELS') ? ETAPA_LABELS : [];
-$fila = function (array $c) use ($abogadoNombre, $labels) {
+$prevEid = null;
+$fila = function (array $c) use ($abogadoNombre, $labels, &$prevEid) {
     $r = $c['expediente'];
+    $eid = (int)$r['id'];
+    $nuevoGrupo = $eid !== $prevEid;
+    $prevEid = $eid;
     $sospecha = $c['tamano_lote'] >= 2 ? '<strong style="color:#b00;">ALTA</strong> (se tocaron ' . $c['tamano_lote'] . ' etapas en el mismo guardado)' : 'media (solo esta etapa en ese guardado)';
-    return '<tr>'
+    $borde = $nuevoGrupo ? ' style="border-top:3px solid #888;"' : '';
+    return '<tr' . $borde . '>'
         . '<td>' . htmlspecialchars($r['exp'] ?? '—', ENT_QUOTES, 'UTF-8') . '</td>'
         . '<td>' . htmlspecialchars($r['actor'] ?? '', ENT_QUOTES, 'UTF-8') . ' vs ' . htmlspecialchars($r['demandado'] ?? '', ENT_QUOTES, 'UTF-8') . '</td>'
         . '<td>' . htmlspecialchars($labels[$c['etapa_key']] ?? $c['etapa_key'], ENT_QUOTES, 'UTF-8') . '</td>'
