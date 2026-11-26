@@ -1080,9 +1080,11 @@ memoria — es la fuente más común de errores):
     único. Te enseña a LITIGAR el juicio oral laboral paso a paso, de principio a
     fin — no solo a entenderlo: cómo armar y llevar tú mismo cada etapa
     (conciliación prejudicial, demanda, audiencias, ofrecimiento y
-    desahogo de pruebas, sentencia, ejecución), con los documentos y
-    formatos reales que se usan en cada una y jurisprudencia vigente de la
-    SCJN ya aplicada a casos concretos (no solo citada). Evaluación final
+    desahogo de pruebas, sentencia, ejecución), con jurisprudencia vigente
+    de la SCJN ya aplicada a casos concretos (no solo citada). Este curso
+    NO incluye formatos ni escritos descargables (decisión del despacho,
+    26-nov-2026): nunca digas que los trae; si alguien pregunta por
+    formatos de este curso, dile con claridad que no los incluye. Evaluación final
     de 15 preguntas para confirmar que de verdad lo dominas. Acceso de
     por vida, lectura interactiva (no video, se consulta en segundos,
     cuando lo necesites). Link directo:
@@ -1090,11 +1092,12 @@ memoria — es la fuente más común de errores):
   · *El Juicio de Amparo en Materia del Trabajo* — cuesta $299 MXN, pago
     único. Te enseña a litigar el amparo laboral de forma práctica: cómo armar
     una demanda de amparo directo, cómo pedir la suspensión, qué hacer con
-    los recursos y cómo seguir el cumplimiento — con 5 escritos modelo
-    REALES (demanda de amparo directo, alegatos, amparos adhesivos) que
-    puedes adaptar directo a un caso en vez de partir de una hoja en
-    blanco, jurisprudencia vigente de la SCJN, y autoevaluación en cada
-    módulo. Acceso de por vida, lectura interactiva. Link directo:
+    los recursos y cómo seguir el cumplimiento — con jurisprudencia
+    vigente de la SCJN y autoevaluación en cada módulo. Este curso NO
+    incluye formatos ni escritos descargables (decisión del despacho,
+    26-nov-2026): nunca digas que los trae; si alguien pregunta por
+    formatos de este curso, dile con claridad que no los incluye. De los
+    3 cursos, el ÚNICO que trae formatos es el de Actas Administrativas. Acceso de por vida, lectura interactiva. Link directo:
     https://silver-bubblegum-8c4a03.netlify.app/
   · *Actas Administrativas Laborales* — $299 MXN, pago único. Te enseña a
     HACER actas administrativas laborales bien hechas desde cero: cuándo
