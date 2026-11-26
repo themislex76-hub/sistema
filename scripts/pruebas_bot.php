@@ -467,5 +467,12 @@ caso('bono de hace más de 365 días no se cuenta',
         return $r && abs($r['salario_diario_a_usar'] - 500.0) < 0.01 && $r['pagos_fuera_de_rango_365_dias'] === 1;
     })());
 
+// ---------------------------------------------------------------------
+echo "26) Documento de $49: ya no promete que le ofrecerán más dinero (26-nov)\n";
+caso('prompt: el documento ya no dice "le ofrezcan una cantidad mayor"',
+    strpos(IA_SYSTEM_PROMPT, 'ofrezcan una cantidad mayor') === false
+    && strpos(IA_SYSTEM_PROMPT, 'más difícil que le ofrezcan') !== false
+    && strpos(IA_SYSTEM_PROMPT, 'NUNCA le prometas que con el documento le van a') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
