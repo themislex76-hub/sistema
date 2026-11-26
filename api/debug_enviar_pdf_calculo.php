@@ -15,7 +15,7 @@ require_once __DIR__ . '/whatsapp_helpers.php';
 //        &fecha_ingreso=2025-08-25&fecha_baja=2026-10-01
 //        &salario_diario=682.11&tipo=injustificado
 //        &dias_vacaciones_anteriores=6&dias_salarios_devengados=0
-//        &modo=despido&nombre=Fulano&sdi=456.17
+//        &modo=despido&nombre=Fulano&sdi=456.17&aguinaldo_dias=30
 // Primero muestra solo la vista previa; para mandarlo de verdad agrega &enviar=1.
 require_admin();
 header('Content-Type: text/plain; charset=utf-8');
@@ -32,6 +32,8 @@ $nombre = trim((string)($_GET['nombre'] ?? ''));
 // SDI real del recibo de nómina, si lo hay -- ver REGLA DURA
 // correspondiente en ia_helpers.php. Solo se usa si es mayor al mínimo
 // que calcularía la herramienta sola.
+// Aguinaldo pactado (días al año, ej. 30 = un mes). Sin esto, 15 (mínimo de ley).
+$aguinaldoDiasAnuales = isset($_GET['aguinaldo_dias']) && (float)$_GET['aguinaldo_dias'] > 0 ? (float)$_GET['aguinaldo_dias'] : 15;
 $sdiReportado = isset($_GET['sdi']) && (float)$_GET['sdi'] > 0 ? (float)$_GET['sdi'] : null;
 
 if ($telefono === '' || $fechaIngreso === '' || $fechaBaja === '' || $salarioDiario <= 0) {
@@ -53,7 +55,9 @@ $calc = calcular_estimado_liquidacion(
     $diasSalDev,
     $modo,
     false,
-    $sdiReportado
+    $sdiReportado,
+    false,
+    $aguinaldoDiasAnuales
 );
 
 if ($calc === null) {
