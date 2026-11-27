@@ -14,8 +14,10 @@ Cada combinación (color + frase + preguntas + foto) se usa una sola vez.
 | 8 | Rojo | TUS DUDAS LABORALES | Juego 2 | negro | 2026-11-16 | (pendiente) |
 | 9 | Verde | PREGÚNTAME LO QUE QUIERAS | Juego 3 | azul | 2026-11-16 | (pendiente) |
 | 10 | Morado | ¿PROBLEMAS EN TU TRABAJO? | Juego 1 | selfie | 2026-11-16 | (pendiente) |
-| 11 | Turquesa | TUS DUDAS LABORALES | Juego 2 | negro | 2026-11-16 | (pendiente) |
-| 12 | Naranja | PREGÚNTAME LO QUE QUIERAS | Juego 3 | azul | 2026-11-16 | (pendiente) |
-| 13 | Rojo | ¿PROBLEMAS EN TU TRABAJO? | Juego 1 | selfie | 2026-11-16 | (pendiente) |
-| 14 | Azul | TUS DUDAS LABORALES | Juego 2 | negro | 2026-11-16 | (pendiente) |
-| 15 | Morado | PREGÚNTAME LO QUE QUIERAS | Juego 3 | azul | 2026-11-16 | (pendiente) |
+| 11 | Turquesa | TUS DUDAS LABORALES | Juego 2 | gris | 2026-11-16 | (pendiente) |
+| 12 | Naranja | CONOCE TUS DERECHOS | Juego 3 | gris | 2026-11-16 | (pendiente) |
+| 13 | Rojo | DEFIENDE TU TRABAJO | Juego 1 | gris2 | 2026-11-16 | (pendiente) |
+| 14 | Azul | NO TE DEJES | Juego 2 | lila | 2026-11-16 | (pendiente) |
+| 15 | Morado | ¿CUÁNTO TE DEBEN? | Juego 3 | azul | 2026-11-23 | (pendiente) |
+| 16 | Turquesa | ABOGADO LABORAL | Juego 1 | roja | 2026-11-24 | (pendiente) |
+| 17 | (especial) | COLABORACIÓN: Rescisión de la relación laboral, con Juan Carlos García Campos (Vidajurisdiccional) -- colab_17.json | - | colaboraciones/rescision_retratos.jpg | 2026-11-27 | (pendiente) |

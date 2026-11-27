@@ -8,13 +8,29 @@ const S=process.argv[2]||__dirname;
 const FOTOS={
   negro:{src:'../fotos/ruben_traje_negro.jpg',w:671,l:-60,t:-215},
   azul:{src:'../fotos/ruben_traje_azul.jpg',w:628,l:-12,t:-199},
+  gris:{src:'../fotos/ruben_selfie_traje_gris.jpg',w:744,l:-26,t:-264},
+  gris2:{src:'../fotos/ruben_selfie_traje_gris2.jpg',w:744,l:10,t:-250},
+  lila:{src:'../fotos/ruben_selfie_corbata_lila.jpg',w:744,l:-20,t:-250},
+  roja:{src:'../fotos/ruben_selfie_corbata_roja.jpg',w:744,l:20,t:-175},
   selfie:{src:'../fotos/ruben_selfie_cerca_derecha.jpg',w:832,l:-192,t:-264,tapaDerecha:true},
 };
-const COLORES=[['#1f4e6b','#143650','#0b2233'],['#7a1a22','#4a0d14','#24060a'],['#17704a','#0e4a31','#062417'],['#5b3391','#3a1f63','#1b0d31'],['#b85a12','#7a3a0a','#331804'],['#126b78','#0b4650','#042226']];
+const COLORES=[['#1f4e6b','#143650','#0b2233'],['#7a1a22','#4a0d14','#24060a'],['#17704a','#0e4a31','#062417'],['#5b3391','#3a1f63','#1b0d31'],['#b85a12','#7a3a0a','#331804'],['#126b78','#0b4650','#042226'],['#3a3a3a','#1f1f1f','#0a0a0a'],['#6b1838','#450f24','#1f0610'],['#1e2f6b','#121d47','#070c22']];
 const FRASES=[
  {l1:'¿PROBLEMAS EN TU TRABAJO?',l2:'RESPONDO TUS PREGUNTAS',pill:'EN VIVO Y GRATIS'},
  {l1:'TUS DUDAS LABORALES',l2:'RESUELTAS EN VIVO',pill:'ASESORÍA GRATIS'},
  {l1:'PREGÚNTAME LO QUE QUIERAS',l2:'SOBRE TU TRABAJO',pill:'ASESORÍA GRATIS'},
+ {l1:'¿TE CORRIERON?',l2:'TE DIGO QUÉ HACER',pill:'ASESORÍA GRATIS'},
+ {l1:'CONOCE TUS DERECHOS',l2:'COMO TRABAJADOR',pill:'EN VIVO Y GRATIS'},
+ {l1:'¿TU PATRÓN NO TE PAGA?',l2:'AQUÍ TE ORIENTO',pill:'ASESORÍA GRATIS'},
+ {l1:'ABOGADO LABORAL',l2:'RESPONDE EN VIVO',pill:'ORIENTACIÓN GRATIS'},
+ {l1:'DEFIENDE TU TRABAJO',l2:'RESOLVEMOS TUS DUDAS',pill:'EN VIVO Y GRATIS'},
+ {l1:'TRABAJADOR, NO ESTÁS SOLO',l2:'TE ORIENTO EN VIVO',pill:'ASESORÍA GRATIS'},
+ {l1:'PREGUNTA SIN PENA',l2:'TE RESPONDO EN VIVO',pill:'ORIENTACIÓN GRATIS'},
+ {l1:'ANTES DE FIRMAR',l2:'ESCUCHA ESTO',pill:'ASESORÍA GRATIS'},
+ {l1:'NO TE DEJES',l2:'CONOCE LO QUE TE TOCA',pill:'ASESORÍA GRATIS'},
+ {l1:'¿DUDAS CON TU TRABAJO?',l2:'RESUÉLVELAS AQUÍ',pill:'ORIENTACIÓN GRATIS'},
+ {l1:'¿CUÁNTO TE DEBEN?',l2:'TE LO EXPLICO EN VIVO',pill:'ASESORÍA GRATIS'},
+ {l1:'TUS DERECHOS NO SE NEGOCIAN',l2:'TE ORIENTO EN VIVO',pill:'ASESORÍA GRATIS'},
 ];
 const PREGUNTAS=[
  ['¿Me pueden correr sin aviso?','¿Cuánto me toca?','¿Y mi aguinaldo?','¿Firmo mi renuncia?'],
@@ -26,7 +42,7 @@ const PREGUNTAS=[
 const fs=require('fs'), path=require('path');
 const REG=path.join(__dirname,'registro.json');
 const reg=fs.existsSync(REG)?JSON.parse(fs.readFileSync(REG,'utf8')):{};
-const FOTO_KEYS=['selfie','negro','azul'];
+const FOTO_KEYS=['selfie','negro','azul','gris','gris2','lila','roja'];
 const DESDE=+(process.argv[3]||1), HASTA=+(process.argv[4]||DESDE);
 function usada(c){return Object.values(reg).some(r=>r.color===c.color&&r.frase===c.frase&&r.preg===c.preg&&r.foto===c.foto);}
 function siguienteCombo(n){
@@ -51,15 +67,17 @@ const V=[];
 for(let n=DESDE;n<=HASTA;n++){
   if(!reg[n]){const c=siguienteCombo(n);reg[n]={...c,generada:hoy,video:''};}
   const r=reg[n];
+  if(r.especial){console.log(`#${n} es especial (${r.especial}): usa generar_colaboracion.js`);continue;}
   V.push({id:'live_'+n,num:n,foto:r.foto,bg:COLORES[r.color],...FRASES[r.frase],
     pillBg:r.color===2?'#ffd21f':'#25b04f',pillC:r.color===2?'#3a2a00':'#fff',
     preg:PREGUNTAS[r.preg],sub:'',sub2:''});
 }
 fs.writeFileSync(REG,JSON.stringify(reg,null,1));
 // Versión legible del registro
-const NOMBRES_COLOR=['Azul','Rojo','Verde','Morado','Naranja','Turquesa'];
+const NOMBRES_COLOR=['Azul','Rojo','Verde','Morado','Naranja','Turquesa','Negro','Vino','Azul marino'];
 let md='# Registro de miniaturas "LIVE #N" (YouTube)\n\nCada combinación (color + frase + preguntas + foto) se usa una sola vez.\n\n| # | Color | Frase | Preguntas | Foto | Generada | Video de YouTube |\n|---|---|---|---|---|---|---|\n';
 for(const k of Object.keys(reg).map(Number).sort((a,b)=>a-b)){const r=reg[k];
+  if(r.especial){md+=`| ${k} | (especial) | ${r.especial} | - | ${r.foto||''} | ${r.generada||''} | ${r.video||'(pendiente)'} |\n`;continue;}
   md+=`| ${k} | ${NOMBRES_COLOR[r.color]} | ${FRASES[r.frase].l1} | Juego ${r.preg+1} | ${r.foto} | ${r.generada||''} | ${r.video||'(pendiente)'} |\n`;}
 fs.writeFileSync(path.join(__dirname,'registro.md'),md);
 const html=v=>{const f=FOTOS[v.foto];return `<!doctype html><html><head><meta charset="utf-8"><style>

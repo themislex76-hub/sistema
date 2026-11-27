@@ -83,40 +83,54 @@
   "color": 5,
   "frase": 1,
   "preg": 1,
-  "foto": "negro",
+  "foto": "gris",
   "generada": "2026-11-16",
   "video": ""
  },
  "12": {
   "color": 4,
-  "frase": 2,
+  "frase": 4,
   "preg": 2,
-  "foto": "azul",
+  "foto": "gris",
   "generada": "2026-11-16",
   "video": ""
  },
  "13": {
   "color": 1,
-  "frase": 0,
+  "frase": 7,
   "preg": 0,
-  "foto": "selfie",
+  "foto": "gris2",
   "generada": "2026-11-16",
   "video": ""
  },
  "14": {
   "color": 0,
-  "frase": 1,
+  "frase": 11,
   "preg": 1,
-  "foto": "negro",
+  "foto": "lila",
   "generada": "2026-11-16",
   "video": ""
  },
  "15": {
   "color": 3,
-  "frase": 2,
+  "frase": 13,
   "preg": 2,
   "foto": "azul",
-  "generada": "2026-11-16",
+  "generada": "2026-11-23",
+  "video": ""
+ },
+ "16": {
+  "color": 5,
+  "frase": 6,
+  "preg": 0,
+  "foto": "roja",
+  "generada": "2026-11-24",
+  "video": ""
+ },
+ "17": {
+  "especial": "COLABORACIÓN: Rescisión de la relación laboral, con Juan Carlos García Campos (Vidajurisdiccional) -- colab_17.json",
+  "foto": "colaboraciones/rescision_retratos.jpg",
+  "generada": "2026-11-27",
   "video": ""
  }
 }
