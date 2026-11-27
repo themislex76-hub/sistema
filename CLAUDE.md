@@ -189,6 +189,8 @@ Google Calendar: una cuenta compartida (themislex76) con un sub-calendario por a
 - Miniaturas de YouTube: `cd marketing/miniaturas && node generar_serie_lives.js "$(pwd)" N`, anotar el
   video en `registro.json`. Mostrarle hojas de opciones (frases/colores) en vez de adivinar.
   Colaboraciones: `generar_colaboracion.js`. Fotos en `marketing/fotos/`.
+  Nombre: "Mtro. Rubén Buerhend" (sin t final; desde el LIVE #18, confirmado 27-nov). Las #1-#16 ya
+  subidas dicen "Lic.": redibujar una de esas ya no sale idéntica.
 - Bitácora de gasto de IA: https://claude.ai/code/artifact/fdbe25d4-5fba-41f8-a0d3-f389dfb8cb61
 
 ## 9. Pendientes abiertos
