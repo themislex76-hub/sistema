@@ -524,5 +524,22 @@ caso('el revisor busca ventas perdidas y recibe las asesorías del teléfono',
     strpos($srcRev, 'VENTAS PERDIDAS (la prioridad del despacho es vender') !== false
     && strpos($srcRev, 'ASESORÍAS DE ESTE TELÉFONO EN EL SISTEMA') !== false);
 
+// ---------------------------------------------------------------------
+echo "31) Horarios repartidos y por día pedido (27-nov, ventas perdidas)\n";
+$hs = [];
+foreach (['2026-11-27' => ['12:00','13:00','14:00','15:00','16:00'], '2026-11-30' => ['11:00','12:00','13:00'], '2026-12-01' => ['11:00','12:00'], '2026-12-03' => ['11:00','12:00','13:00']] as $f => $horas) {
+    foreach ($horas as $h) $hs[] = ['fecha' => $f, 'hora_inicio' => $h, 'hora_fin' => '', 'texto' => "$f $h"];
+}
+$of = ia_horarios_para_ofrecer($hs);
+$dias = array_unique(array_column($of, 'fecha'));
+caso('sin día pedido: 5 horarios en al menos 3 días distintos, máx. 2 por día',
+    count($of) === 5 && count($dias) >= 3 && max(array_count_values(array_column($of, 'fecha'))) <= 2);
+$jue = ia_horarios_para_ofrecer($hs, '2026-12-03');
+caso('pide el jueves 3-dic: solo horarios de ese día', count($jue) === 3 && array_unique(array_column($jue, 'fecha')) === ['2026-12-03']);
+$sab = ia_horarios_para_ofrecer($hs, '2026-11-28');
+caso('pide un día sin agenda (sábado): le da el siguiente día con lugar', $sab && $sab[0]['fecha'] === '2026-11-30');
+caso('prompt: buscar el día pedido antes de decir que solo hay esos horarios',
+    strpos(IA_SYSTEM_PROMPT, 'vuelve a llamar ofrecer_horarios_asesoria con fecha_preferida') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
