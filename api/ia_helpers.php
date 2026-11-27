@@ -1459,7 +1459,12 @@ mejor que mencionarla en cada respuesta.
   dio ofrecer_horarios_asesoria (no da asesorías de noche ni fuera de
   esa agenda), así que esa promesa genera una expectativa falsa y deja
   al cliente esperando un contacto que nunca va a llegar como lo
-  prometiste. En vez de eso, dile con calidez que esos son los horarios
+  prometiste. PRIMERO pregúntale qué día le acomoda (o usa el que ya te
+  dijo) y vuelve a llamar ofrecer_horarios_asesoria con fecha_preferida
+  para ofrecerle los horarios de ESE día -- caso real 27-nov-2026: un
+  cliente dijo "estoy en mi oficina el jueves" y el bot le repitió los
+  mismos horarios; se perdió la venta. Solo si ya buscaste y de verdad no
+  hay nada que le acomode, dile con calidez que esos son los horarios
   reales disponibles en la agenda por ahora, y ofrécele avisarle en
   cuanto se abra un horario nuevo que le acomode mejor (o invítala a
   volver a preguntar en unos días por si hay algo nuevo) — sin prometer
@@ -1873,9 +1878,15 @@ const IA_TOOLS = [
     ],
     [
         'name' => 'ofrecer_horarios_asesoria',
-        'description' => 'Consulta horarios reales y disponibles ahora mismo para agendar la asesoría telefónica de pago, cruzando la agenda real de los abogados del despacho. Llama esta herramienta cuando la persona confirme que quiere agendar la asesoría (normalmente junto con registrar_interes_asesoria_paga, en el mismo mensaje), o si pregunta directamente qué días/horas hay disponibles. Te regresa una lista de horarios concretos y reales para que se los ofrezcas — nunca inventes ni prometas un horario sin usar esta herramienta primero.',
+        'description' => 'Consulta horarios reales y disponibles para agendar la asesoría telefónica de pago, cruzando la agenda real de los abogados del despacho (hasta 12 días adelante). Llama esta herramienta cuando la persona confirme que quiere agendar la asesoría (normalmente junto con registrar_interes_asesoria_paga, en el mismo mensaje), o si pregunta directamente qué días/horas hay disponibles. Sin fecha_preferida te regresa horarios repartidos en varios días distintos. Si la persona pide un día concreto ("el jueves", "el lunes", "la próxima semana", "mañana") o dice que los horarios que le diste no le acomodan, vuelve a llamarla CON fecha_preferida para darle los de ese día -- nunca le digas que solo hay los que ya le diste sin buscar primero. Nunca inventes ni prometas un horario sin usar esta herramienta.',
         'input_schema' => [
             'type' => 'object',
+            'properties' => [
+                'fecha_preferida' => [
+                    'type' => 'string',
+                    'description' => 'Opcional. Fecha YYYY-MM-DD del día que pidió la persona (calcúlala con la fecha de hoy: "el jueves" = el próximo jueves; "la próxima semana" = el lunes siguiente). Si ese día no hay horarios, la herramienta te da los del siguiente día con lugar.',
+                ],
+            ],
         ],
     ],
     [
@@ -2645,7 +2656,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ? json_encode($salariosCaidos, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Fecha de despido o salario diario inválidos/faltantes.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'ofrecer_horarios_asesoria') {
-                $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead);
+                $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead, (string)($in['fecha_preferida'] ?? ''));
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
                 $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in, $lead);
             } elseif ($bloque['name'] === 'confirmar_compra_curso') {
@@ -3255,7 +3266,7 @@ const MERCADOPAGO_WEBHOOK_URL = 'https://sistema.expertoslaborales.com/sistema/a
  * AHÍ se registra el prospecto (no antes, con solo el interés) y se pausa
  * el bot — a partir de ahí un humano tiene que coordinar directo.
  */
-function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead): string
+function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead, string $fechaPreferida = ''): string
 {
     // Bug real detectado en producción: un cliente pagó y agendó su
     // asesoría, no se pudo completar la llamada (iba manejando, no podía
@@ -3292,7 +3303,10 @@ function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead)
         ], JSON_UNESCAPED_UNICODE);
     }
 
-    $horarios = citas_calcular_horarios_disponibles($pdo);
+    // 27-nov-2026 (ventas): antes se ofrecían los 5 PRIMEROS horarios libres,
+    // casi siempre todos del mismo día -- quien no podía ese día ("el jueves
+    // estoy en mi oficina", "no tengo ninguna de las 3") se iba sin apartar.
+    $horarios = ia_horarios_para_ofrecer(citas_calcular_horarios_disponibles($pdo, 12, 999999), $fechaPreferida);
     if (!$horarios) {
         ia_registrar_prospecto_atorado($pdo, $telefono, $lead, 'Mostró interés en la asesoría de pago pero no hay horarios disponibles en este momento.');
         return json_encode([
@@ -3300,7 +3314,49 @@ function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead)
             'nota' => 'No hay horarios disponibles en este momento. Dile a la persona que el Lic. Rubén Buerhend la va a contactar directo para coordinar un horario -- aclara que la asesoría sigue teniendo el costo normal (se paga al agendar, esto NO es una llamada gratis), no le des ningún link de pago todavía ni le prometas un horario exacto.',
         ], JSON_UNESCAPED_UNICODE);
     }
-    return json_encode(['horarios' => $horarios], JSON_UNESCAPED_UNICODE);
+    $resp = ['horarios' => $horarios];
+    if ($fechaPreferida !== '' && ($horarios[0]['fecha'] ?? '') !== $fechaPreferida) {
+        $resp['nota'] = 'Ese día no hay horarios libres; estos son los del siguiente día con lugar. Díselo así y ofrécelos.';
+    }
+    return json_encode($resp, JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Elige qué horarios ofrecer (máx. 5). Sin fecha preferida: repartidos,
+ * máximo 2 por día, para cubrir al menos 3 días distintos. Con fecha
+ * preferida: los de ese día (o del siguiente día con lugar).
+ */
+function ia_horarios_para_ofrecer(array $todos, string $fechaPreferida = ''): array
+{
+    if (!$todos) return [];
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaPreferida)) {
+        $desde = array_values(array_filter($todos, fn($h) => $h['fecha'] >= $fechaPreferida));
+        if ($desde) {
+            $dia = $desde[0]['fecha'];
+            return array_slice(array_values(array_filter($desde, fn($h) => $h['fecha'] === $dia)), 0, 5);
+        }
+        // Pidió un día fuera de la agenda (más de 12 días): se le dan los últimos disponibles.
+        $ultimo = end($todos)['fecha'];
+        return array_slice(array_values(array_filter($todos, fn($h) => $h['fecha'] === $ultimo)), 0, 5);
+    }
+    $porDia = [];
+    $elegidos = [];
+    foreach ($todos as $h) {
+        if (($porDia[$h['fecha']] ?? 0) >= 2) continue;
+        $porDia[$h['fecha']] = ($porDia[$h['fecha']] ?? 0) + 1;
+        $elegidos[] = $h;
+        if (count($elegidos) >= 5) break;
+    }
+    // Si hay pocos días con agenda, completa con los que sigan.
+    if (count($elegidos) < 5) {
+        foreach ($todos as $h) {
+            if (in_array($h, $elegidos, true)) continue;
+            $elegidos[] = $h;
+            if (count($elegidos) >= 5) break;
+        }
+        usort($elegidos, fn($a, $b) => strcmp($a['fecha'] . $a['hora_inicio'], $b['fecha'] . $b['hora_inicio']));
+    }
+    return $elegidos;
 }
 
 /**
@@ -3387,7 +3443,7 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         return json_encode([
             'ok' => false,
             'motivo' => 'Ese horario ya no está disponible.',
-            'horarios_alternativos' => array_slice($horariosVigentes, 0, 5),
+            'horarios_alternativos' => ia_horarios_para_ofrecer($horariosVigentes),
         ], JSON_UNESCAPED_UNICODE);
     }
 
@@ -3396,7 +3452,7 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         return json_encode([
             'ok' => false,
             'motivo' => 'Ese horario ya no está disponible.',
-            'horarios_alternativos' => array_slice(citas_calcular_horarios_disponibles($pdo, 12, 999999), 0, 5),
+            'horarios_alternativos' => ia_horarios_para_ofrecer(citas_calcular_horarios_disponibles($pdo, 12, 999999)),
         ], JSON_UNESCAPED_UNICODE);
     }
 

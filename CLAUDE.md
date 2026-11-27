@@ -4787,3 +4787,9 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
 - Cada hallazgo trae `tipo` (`legal` | `venta`); `ia_parsear_revision_bot()` lo normaliza (por defecto `legal`). El panel de Equipo muestra la insignia "💰 Venta perdida". `max_tokens` del revisor 1500 → 2500.
 - OJO al leer el % de marcadas de `bot_revisiones`: desde el 28-nov incluye ventas perdidas, no solo errores legales (no se puede comparar directo con días anteriores).
 - 174 casos en `scripts/pruebas_bot.php`. `app.js?v=165`, `sw.js v89`.
+
+## Ventas: el bot ya ofrece horarios repartidos y busca el día que pide la persona (27 nov 2026, conversación "chats")
+- Diagnóstico con SQL real (26-27 nov): de ~60 personas que vieron los $499 y no apartaron, 11 habían dicho "sí". Caso confirmado 5212228665837: pidió "el jueves" y el bot le repitió los mismos horarios (solo tenía los 5 primeros libres, casi siempre del mismo día) -- se perdió la venta. Mismo patrón con Francisca ("no tengo ninguna de las 3").
+- `ofrecer_horarios_asesoria` ahora tiene el parámetro opcional `fecha_preferida`. Nueva `ia_horarios_para_ofrecer()`: sin fecha, máx. 2 horarios por día en 3+ días distintos; con fecha, los de ese día o del siguiente con lugar (hasta 12 días). También se usa en `horarios_alternativos` de `confirmar_horario_asesoria`. Prompt: antes de decir "esos son los horarios disponibles", buscar el día que pidió la persona.
+- Ventas de referencia (apartaron / vieron $499): 10-14 nov ~10%; 17-26 nov ~3-5%. Pagan ~50% de los que apartan. 13-14 nov hubo una caída aparte del pago (2 de 18), ya normal.
+- 178 casos en `scripts/pruebas_bot.php`. Solo `api/ia_helpers.php`.
