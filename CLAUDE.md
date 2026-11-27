@@ -4793,3 +4793,7 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
 - `ofrecer_horarios_asesoria` ahora tiene el parámetro opcional `fecha_preferida`. Nueva `ia_horarios_para_ofrecer()`: sin fecha, máx. 2 horarios por día en 3+ días distintos; con fecha, los de ese día o del siguiente con lugar (hasta 12 días). También se usa en `horarios_alternativos` de `confirmar_horario_asesoria`. Prompt: antes de decir "esos son los horarios disponibles", buscar el día que pidió la persona.
 - Ventas de referencia (apartaron / vieron $499): 10-14 nov ~10%; 17-26 nov ~3-5%. Pagan ~50% de los que apartan. 13-14 nov hubo una caída aparte del pago (2 de 18), ya normal.
 - 178 casos en `scripts/pruebas_bot.php`. Solo `api/ia_helpers.php`.
+
+## El bot apartó el horario y no mandó el link de pago (27 nov 2026, conversación "chats")
+- Caso real 26-nov (Alma, Industrias Automotrices RC): `confirmar_horario_asesoria` apartó el viernes 3 pm y regresó el link, pero el bot escribió "Aquí está tu link de pago: $499 MXN" sin la dirección. Ella esperó hora y media y tuvo que reclamar; sí pagó.
+- Candado nuevo `ia_texto_asegurar_links_pago()`: si una herramienta regresó `link_pago` en ese turno y el texto no lo trae, se pone justo después de "link de pago:" o al final (log `[link_pago_agregado]` en `ia_debug.log`). Aplica también a cursos y documento de $49. 181 casos en `scripts/pruebas_bot.php`.

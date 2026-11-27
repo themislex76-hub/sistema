@@ -541,5 +541,15 @@ caso('pide un día sin agenda (sábado): le da el siguiente día con lugar', $sa
 caso('prompt: buscar el día pedido antes de decir que solo hay esos horarios',
     strpos(IA_SYSTEM_PROMPT, 'vuelve a llamar ofrecer_horarios_asesoria con fecha_preferida') !== false);
 
+echo "32) Link de pago que el bot no escribió (26-nov, caso Alma)\n";
+$url = 'https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=147297175-cf8cb91b';
+$sinLink = 'Tu horario quedó apartado: viernes 27 de noviembre, 3:00 pm. Aquí está tu link de pago: $499 MXN — tienes 30 minutos.';
+$con = ia_texto_asegurar_links_pago($sinLink, [$url]);
+caso('texto sin la dirección: se pone justo después de "link de pago:"', strpos($con, 'link de pago: ' . $url . "\n\n" . '$499 MXN') !== false);
+$conLink = "Aquí está tu link de pago: $url\nTienes 30 minutos.";
+caso('texto que ya trae el link: no se toca', ia_texto_asegurar_links_pago($conLink, [$url]) === $conLink);
+$otro = ia_texto_asegurar_links_pago('Listo, ya quedó apartado tu horario.', [$url]);
+caso('texto sin "link de pago:": el link se agrega al final', substr($otro, -strlen($url)) === $url && strpos($otro, 'Tu link de pago: ') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
