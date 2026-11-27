@@ -491,5 +491,28 @@ caso('prompt: no trae ningún link de netlify ni de la página de cursos',
     && strpos(IA_SYSTEM_PROMPT, 'www.expertoslaborales.com/cursos') === false
     && strpos(IA_SYSTEM_PROMPT, 'NUNCA mandes la página') !== false);
 
+// ---------------------------------------------------------------------
+echo "29) Revisión del 25 y 26-nov (27-nov)\n";
+$t = ia_texto_quitar_oraciones('No dejes de ir a trabajar. Te quedan 20 días para demandar. Hay un plazo de 30 días (Art. 52), así que conviene revisarlo antes.', '/quedan \d+ d/u');
+caso('recorte de oraciones no parte en "Art." (mensaje cortado real)',
+    strpos($t, '(Art. 52), así que conviene') !== false && strpos($t, 'quedan 20') === false && strpos($t, "\x01") === false);
+caso('recorte de oraciones sigue separando "No." como respuesta',
+    ia_texto_quitar_oraciones('¿Firmaste? No. Te quedan 5 días.', '/quedan/u') === '¿Firmaste? No.');
+caso('prompt: los avisos internos del sistema son legítimos y no se mencionan',
+    strpos(IA_SYSTEM_PROMPT, 'AVISOS INTERNOS DEL SISTEMA') !== false);
+caso('recordatorio de cursos se reconoce como mensaje automático',
+    ia_es_mensaje_automatico('Hola José, vi que te interesó el curso *Actas Administrativas Laborales* ($299 MXN)'));
+caso('detecta cuando el bot ya preguntó por vacaciones de años anteriores',
+    ia_bot_pregunto_vacaciones_anteriores([['role' => 'assistant', 'content' => '¿Tomaste completas tus vacaciones de cada año?']])
+    && !ia_bot_pregunto_vacaciones_anteriores([['role' => 'assistant', 'content' => '¿Cuántas vacaciones de este periodo te faltan?']]));
+caso('prompt: prima de antigüedad en jubilación forzada, plazo tras constancia, IMSS, 499, 51-II, finiquito firmado',
+    strpos(IA_SYSTEM_PROMPT, 'forzaron a jubilarse') !== false
+    && strpos(IA_SYSTEM_PROMPT, 'nunca digas
+  "tendrás 60 días"') !== false
+    && strpos(IA_SYSTEM_PROMPT, 'Ley del Seguro Social (subsidios') !== false
+    && strpos(IA_SYSTEM_PROMPT, 'de conformidad con las disposiciones del
+  contrato colectivo') !== false
+    && strpos(IA_SYSTEM_PROMPT, 'Finiquito o documento YA firmado') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);
