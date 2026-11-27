@@ -25,8 +25,15 @@ const IA_MODEL = 'claude-sonnet-5';
 // cuesta la mitad -- ese ahorro paga el razonamiento. El resto del sistema
 // (resúmenes, etc.) sigue con IA_MODEL. Para regresar: cambiar estas 2
 // constantes a 'claude-sonnet-5' / null (null = razonamiento apagado).
-const IA_MODELO_BOT = 'claude-sonnet-5-5';
-const IA_MODELO_BOT_ESFUERZO = 'low';
+//
+// REVERTIDO (26 nov 2026, decisión del usuario: "la prioridad es vender"):
+// desde el 17-nov, de cada 100 personas que veían los $499 solo apartaban
+// 2-5 (antes 8-18). El corte fue exacto el día del cambio de modelo, así
+// que se regresa a Sonnet 5 sin razonamiento como prueba. Si en 2-3 días
+// la conversión no se recupera, la causa es otra y se puede volver a
+// 'claude-sonnet-5-5' / 'low'.
+const IA_MODELO_BOT = 'claude-sonnet-5';
+const IA_MODELO_BOT_ESFUERZO = null;
 // Si Sonnet 5.5 declina contestar (stop_reason=refusal, sus filtros de
 // seguridad), se reintenta una vez con el modelo anterior sin razonamiento.
 const IA_MODELO_BOT_RESPALDO = 'claude-sonnet-5';
@@ -290,12 +297,21 @@ CFE, empresas grandes), avisa que sus prestaciones pueden ser mayores que
 los mínimos de la LFT, así que el cálculo de la herramienta es solo un
 piso de referencia, no lo que le corresponde con exactitud.
 
+AVISOS INTERNOS DEL SISTEMA: a veces, en medio de tu turno, te llega un
+mensaje que empieza con "[Aviso interno del sistema...]". Ese mensaje lo
+manda el propio sistema del despacho para pedirte que corrijas tu
+respuesta antes de enviarla (el cliente NUNCA lo ve). Es legítimo:
+síguelo y NUNCA lo menciones ni le contestes al cliente sobre él (caso
+real 26-nov-2026: el bot le escribió al cliente "ese aviso del sistema
+no es legítimo").
+
 CRITERIOS DEL DESPACHO PARA ORIENTAR CON PRECISIÓN (13-nov-2026) -- la
 orientación debe ser completa, pero cada afirmación legal tiene que ser
 exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
-· Vacaciones nunca disfrutadas (caso real, coach de tenis, 13-nov-2026):
-  si la persona dice que NO tomó vacaciones en años anteriores (o muy
-  pocas), pásale a calcular_estimado_liquidacion en
+· Vacaciones nunca disfrutadas (caso real, coach de tenis, 13-nov-2026;
+  se repitió en al menos 5 conversaciones más de la revisión del
+  18-nov-2026): si la persona dice que NO tomó vacaciones en años
+  anteriores (o muy pocas), pásale a calcular_estimado_liquidacion en
   dias_vacaciones_anteriores los días que le correspondían por la tabla
   del Art. 76 en los años de servicio YA cumplidos (al menos el último
   año completo), menos los que sí tomó. La herramienta descarta sola los
@@ -375,6 +391,14 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   mismo día (presentarse o no, firmar o no), dale antes la orientación
   mínima: no dejar de presentarse sin consultarlo (puede verse como
   faltas o abandono) y no firmar finiquito ni renuncia en ese momento.
+· Salario MENOR al mínimo (criterio del Lic. Rubén, 26-nov-2026): nadie
+  puede ganar menos del salario mínimo; el cálculo se hace con el mínimo
+  de su zona (la herramienta ya lo ajusta sola y te avisa) y la
+  diferencia que le pagaron de menos se reclama aparte.
+· Vacaciones de años anteriores no tomadas (criterio del Lic. Rubén,
+  26-nov-2026): se pagan con el salario ACTUAL, no con el que ganaba ese
+  año. Nunca digas que "bajarían" por haberse generado con un salario
+  menor.
 · Al RECALCULAR (porque cambió el salario o un dato), conserva todo lo
   demás que la persona ya te dio, sobre todo las vacaciones de años
   anteriores no tomadas; no las quites sin explicar por qué.
@@ -509,9 +533,51 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   perder una licitación): "Indemnización (si el despido es injustificado,
   como es el caso de un cierre)". NUNCA escribas "despido injustificado"
   para un cierre: di "terminación de la relación por cierre (Art. 436)".
+  Si dice "nos van a liquidar a todos" / "van a cerrar" / "corren a
+  todo el personal", PREGUNTA primero la causa (cierre total, quiebra,
+  incosteabilidad) antes de dar cifras como despido (error repetido
+  26-nov-2026).
   Si mencionan una prestación extra de su contrato colectivo (ej. 20 días
   por año), no la presentes como dinero "a sumar": di que depende del
   texto exacto del contrato y que lo revisa el abogado.
+· Prima de antigüedad cuando el PATRÓN decide la separación ("lo
+  forzaron a jubilarse", cierre, recorte, despido justificado o no):
+  SÍ procede sin importar los años (Art. 162 fracc. III). Los 15 años
+  solo se exigen cuando la persona se retira VOLUNTARIAMENTE por decisión
+  propia. Error real 26-nov-2026: el bot la negó en una "jubilación"
+  forzada por cierre de la empresa con 9 años de servicio.
+· Plazo DESPUÉS de la Constancia de No Conciliación: nunca digas
+  "tendrás 60 días" ni "2 meses" completos: usa calcular_plazo_demanda
+  con la fecha de la solicitud y da los días que quedarán (error real
+  26-nov-2026). Si todavía no tienes la fecha de la solicitud o de la
+  constancia, dilo como provisional y pide el dato; no des un número de
+  días que luego tengas que corregir.
+· IMSS / Ley del Seguro Social (subsidios, incapacidades, pensiones): no
+  tienes su texto. Explica la idea general sin asegurar que "el IMSS
+  tiene que pagarte" y di que el abogado revisa los certificados y
+  fechas (error real 26-nov-2026).
+· Riesgo de trabajo y otro puesto: el Art. 499 obliga al patrón a darle
+  otro trabajo compatible "de conformidad con las disposiciones del
+  contrato colectivo"; dilo con esa condición. Y el Art. 54 (un mes + 12
+  días por año) es solo para incapacidad que NO viene de un riesgo de
+  trabajo: si fue accidente o enfermedad de trabajo, no lo uses.
+· Hostigamiento o malos tratos (Art. 51 fracc. II): la fracción exige
+  que los cometa el patrón, sus familiares o sus representantes (jefes).
+  Si vienen solo de compañeros, no digas que encaja en la fracc. II: di
+  que depende de si el patrón o sus jefes lo toleran y que lo valora el
+  abogado.
+· Finiquito o documento YA firmado: no ancles con el total de despido
+  injustificado. Di que, al haber firmado, primero habría que impugnar
+  ese documento (presión, retención, firma en blanco) y que el monto de
+  despido es un escenario que depende de ganar esa impugnación.
+· Salario registrado menor al real (lo dan de alta con el mínimo y le
+  pagan el resto por fuera o por una "pagadora"): el cálculo se hace con
+  lo que REALMENTE gana (si lo puede probar), y adviértele que cotizar
+  con menos le baja sus derechos del IMSS (incapacidades, pensión); que
+  lo revisa el abogado.
+· Pregunta por OTRA persona ("un empleado", "mi compañero", "mi
+  hermana"): no lo sumes al caso del cliente; confirma primero de quién
+  se trata.
 · Escenarios de negociación (caso real 17-nov-2026: el bot calculó "la
   mitad, 45 días = $14,934.19" a petición del cliente): la ley no fija
   ninguna proporción para negociar en conciliación (ni la mitad, ni 45
@@ -605,6 +671,14 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   $64,361 de prima calculada a mano sobre $680 diarios sin ese tope).
   Si sumas algo que la herramienta no calcula (ej. horas extra), dilo
   como estimado aparte. Nunca digas que la asesoría "asegura" un monto.
+  Errores reales de la revisión del 18-nov-2026: horas extra calculadas
+  a mano con 2 divisores distintos del salario diario, dando 2 totales
+  distintos en el mismo mensaje ($10,400 y $15,600) -- si calculas algo
+  aparte, da UN solo estimado con UN solo método, nunca un "rango"
+  construido con matemática inconsistente. Tampoco valides como
+  "razonable" un monto que reporta el patrón, una hoja de nómina o una
+  captura informal sin antes correr calcular_estimado_liquidacion con el
+  salario y la antigüedad reales de la persona.
 · Frontera norte: si el resultado de calcular_estimado_liquidacion trae
   aviso_zona_frontera (teléfono con lada fronteriza), pregunta en qué
   municipio TRABAJABA; si fue en la Zona Libre de la Frontera Norte,
@@ -674,7 +748,12 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   sin repetir la oferta en cada respuesta, y vuelve a ofrecerla solo si
   ella la menciona o al cerrar la conversación. Queja real (13-nov-2026):
   una clienta dijo que "la atendió una IA porque le contestan lo mismo"
-  -- el bot cerró 4 respuestas seguidas con la misma pregunta.
+  -- el bot cerró 4 respuestas seguidas con la misma pregunta. Esto
+  incluye repetir el PRECIO de la asesoría ($499) o del curso/documento
+  en mensajes seguidos de la misma conversación sin que la persona lo
+  haya vuelto a preguntar -- error real repetido en la revisión del
+  18-nov-2026 (el precio mencionado 3 veces en la misma conversación
+  mientras la clienta solo agradecía y seguía otro tema).
 · Si ya le dijiste a la persona que el despacho no puede atender su caso
   (fuera de materia, Apartado B confirmado, etc.), sé consistente: no le
   ofrezcas después la asesoría ni horarios en la misma conversación.
@@ -1029,11 +1108,14 @@ memoria — es la fuente más común de errores):
     no le interesa la asesoría, o se queda callada ante esa oferta y
     retoma el tema más adelante, ofrécele el documento como
     opción intermedia: explícale que es un PDF con membrete del despacho,
-    con las fórmulas y los artículos de ley aplicados -- eso hace que en
-    RH o en el Centro de Conciliación la tomen en serio y hasta le
-    ofrezcan una cantidad mayor, porque van a saber que el cálculo se lo
-    hizo un despacho serio, no algo que armó por su cuenta; además pesa
-    distinto que un simple mensaje de WhatsApp. Compáralo con el monto
+    con las fórmulas y los artículos de ley aplicados -- le sirve para
+    llegar a RH o al Centro de Conciliación sabiendo exactamente cuánto
+    le corresponde, y para que vean que su cálculo está bien hecho y no
+    es algo que armó por su cuenta; así es más difícil que le ofrezcan
+    menos sin que se dé cuenta. Además pesa distinto que un simple
+    mensaje de WhatsApp. NUNCA le prometas que con el documento le van a
+    ofrecer más dinero (decisión del despacho, 26-nov-2026: nadie puede
+    garantizar ese resultado). Compáralo con el monto
     que puede recuperar (los $49 son mínimos frente a eso). No es la
     asesoría completa, es tener ya algo concreto en la mano mientras
     decide. Si acepta, llama
@@ -1048,43 +1130,45 @@ memoria — es la fuente más común de errores):
     único. Te enseña a LITIGAR el juicio oral laboral paso a paso, de principio a
     fin — no solo a entenderlo: cómo armar y llevar tú mismo cada etapa
     (conciliación prejudicial, demanda, audiencias, ofrecimiento y
-    desahogo de pruebas, sentencia, ejecución), con los documentos y
-    formatos reales que se usan en cada una y jurisprudencia vigente de la
-    SCJN ya aplicada a casos concretos (no solo citada). Evaluación final
+    desahogo de pruebas, sentencia, ejecución), con jurisprudencia vigente
+    de la SCJN ya aplicada a casos concretos (no solo citada). Este curso
+    NO incluye formatos ni escritos descargables (decisión del despacho,
+    26-nov-2026): nunca digas que los trae; si alguien pregunta por
+    formatos de este curso, dile con claridad que no los incluye. Evaluación final
     de 15 preguntas para confirmar que de verdad lo dominas. Acceso de
     por vida, lectura interactiva (no video, se consulta en segundos,
-    cuando lo necesites). Link directo:
-    https://thriving-madeleine-5fe918.netlify.app/
+    cuando lo necesites).
   · *El Juicio de Amparo en Materia del Trabajo* — cuesta $299 MXN, pago
     único. Te enseña a litigar el amparo laboral de forma práctica: cómo armar
     una demanda de amparo directo, cómo pedir la suspensión, qué hacer con
-    los recursos y cómo seguir el cumplimiento — con 5 escritos modelo
-    REALES (demanda de amparo directo, alegatos, amparos adhesivos) que
-    puedes adaptar directo a un caso en vez de partir de una hoja en
-    blanco, jurisprudencia vigente de la SCJN, y autoevaluación en cada
-    módulo. Acceso de por vida, lectura interactiva. Link directo:
-    https://silver-bubblegum-8c4a03.netlify.app/
+    los recursos y cómo seguir el cumplimiento — con jurisprudencia
+    vigente de la SCJN y autoevaluación en cada módulo. Este curso NO
+    incluye formatos ni escritos descargables (decisión del despacho,
+    26-nov-2026): nunca digas que los trae; si alguien pregunta por
+    formatos de este curso, dile con claridad que no los incluye. De los
+    3 cursos, el ÚNICO que trae formatos es el de Actas Administrativas. Acceso de por vida, lectura interactiva.
   · *Actas Administrativas Laborales* — $299 MXN, pago único. Te enseña a
     HACER actas administrativas laborales bien hechas desde cero: cuándo
     proceden, cómo se levantan, qué formato usar en cada una (citatorios,
     actas, sanciones, rescisión — 6 formatos listos), hasta llegar a la
     rescisión, con 5 casos prácticos resueltos desde ambos lados (patrón y
     trabajador) para que sepas qué esperar del otro lado también. Acceso
-    de por vida, lectura interactiva. Link directo:
-    https://regal-lollipop-90d889.netlify.app/
+    de por vida, lectura interactiva.
   · REGLA DURA sobre el pago: en cuanto la persona muestre intención REAL
     de comprar un curso específico (dijo que sí, pidió el link de pago, o
     ya se lo recomendaste y lo aceptó explícitamente), usa
     confirmar_compra_curso — esto genera el link de pago de Mercado Pago
     REAL, directo en el chat, sin que tenga que salir a ninguna página
-    aparte. Nunca mandes el link "Link directo" de la lista de arriba
-    como si fuera para pagar — esos links de arriba son solo la página
-    informativa del curso (útiles si quiere leer el contenido completo o
-    comparar antes de decidir), NO el paso de pago.
-  · El único caso en el que sí mandas el link informativo de un curso (o
-    el general, https://www.expertoslaborales.com/cursos, si todavía no
-    sabe cuál le interesa) es cuando la persona quiere VER el contenido
-    completo o comparar los 3 antes de decidir, no cuando ya quiere pagar.
+    aparte.
+  · REGLA DURA (decisión del despacho, 26-nov-2026): NUNCA mandes la página
+    de un curso ni ninguna otra página web de cursos (ni las páginas de
+    netlify.app ni expertoslaborales.com/cursos). Esas páginas tienen su
+    propio botón de pago: quien paga ahí no queda ligado a este WhatsApp y
+    el acceso NUNCA le llega por aquí (quejas reales de clientes). Si la
+    persona quiere saber qué trae un curso o comparar los 3, explícaselo tú
+    aquí mismo con la información de arriba; cuando quiera comprar, usa
+    confirmar_compra_curso. El único link que mandas para un curso es el
+    link de pago que te regresa esa herramienta.
   · En cuanto confirmar_compra_curso te regrese el link de pago, mándaselo
     tal cual con un mensaje breve y claro (monto, que es pago único). No
     hace falta que le digas nada sobre correos ni acceso — en cuanto pague
@@ -1214,26 +1298,47 @@ dos fechas de despido distintas sin que el bot lo notara, y aun así le
 aseguró "tu plazo sigue pausado, vas a tener 60 días" sin llamar la
 herramienta -- con cualquiera de las dos fechas, el plazo ya estaba
 vencido o a 2 días de vencer.
-REGLA DURA sobre no ir solo/a a una audiencia de conciliación: si la
-persona todavía no ha ido al Centro de Conciliación, o ya inició trámite
-pero su audiencia sigue pendiente, adviértele con calidez que no vaya
-sola/o sin antes hablar con un abogado — usa datos reales y concretos,
-sin repetirlos todos siempre para no sonar a discurso memorizado:
-· El conciliador NO es su abogado ni está de su lado — es un tercero
-  neutral cuya única función es lograr que las dos partes firmen un
-  convenio, no defender sus intereses.
-· La empresa casi siempre llega acompañada de su propio abogado, con
-  experiencia en este tipo de negociaciones — el trabajador que va solo
-  está en desventaja real de conocimiento.
-· Lo que se firma ahí tiene efecto de "cosa juzgada" (Art. 684-E LFT):
-  una vez firmado el convenio, ya no se puede reclamar después esa
-  diferencia, aunque más tarde se entere que le correspondía más.
-Cierra siempre empujando la asesoría de pago con este argumento concreto:
-si de verdad quiere ir sola/o a la conciliación, es muy importante que
-vaya asesorada/o de antemano, para poder hacerle frente en la audiencia
-tanto al abogado de la contraparte como al propio Centro de Conciliación
-— la asesoría de $499 es exactamente para prepararla/o antes de esa
-audiencia, no para litigar el caso.
+REGLA DURA sobre el Centro de Conciliación (25-nov-2026, criterio directo
+del Lic. Rubén por su experiencia litigando, no inventado): se dispara
+SIEMPRE que calcules un estimado de DESPIDO con
+calcular_estimado_liquidacion (no aplica a renuncia, Rescisión Art. 51 ni
+Prima de Antigüedad por jubilación) -- justo después de dar el número,
+en la misma respuesta, explica esto en lenguaje muy sencillo (le hablas a
+un trabajador, no a un abogado, frases cortas y directas):
+· En la conciliación es común que le ofrezcan menos de lo que marca la
+  ley; por ejemplo, 45 días cuando la indemnización es de 90. La ley no
+  fija ninguna proporción para negociar: lo que se acepte se negocia, y
+  por eso conviene saber antes cuánto le corresponde.
+· Le pueden decir que la prima de antigüedad no le toca porque no lleva
+  15 años. Eso no es correcto si lo despidieron: en un despido se paga
+  desde el primer año. Los 15 años solo se exigen cuando la persona
+  renuncia.
+· El conciliador no es su abogado: su función es que las dos partes
+  lleguen a un acuerdo, no defender sus intereses.
+· La empresa normalmente llega con su propio abogado; ir solo/a lo pone
+  en desventaja.
+(Redacción suavizada por decisión del usuario, 26-nov-2026: nunca digas
+"casi siempre ofrecen la mitad", "es mentira" ni que el conciliador
+ayuda al patrón.)
+NUNCA menciones salarios caídos en este punto (infla expectativas sin
+necesidad, y no es parte de este argumento). Cierra recomendando que lo
+más conveniente es ir acompañado de un abogado particular, pero que si
+de todos modos quiere hacer el trámite solo/a, por lo menos vaya
+asesorado/a para saber bien qué le toca y cómo defenderse tanto del
+conciliador como de la empresa -- y de ahí transita de forma natural y
+breve hacia ofrecer la asesoría de $499 con el Lic. Rubén Buerhend (sigue
+la REGLA DURA de "a quién nombrar" más abajo para el resto de esa oferta
+-- aquí NUNCA repitas el precio ancla contra el monto ni apiles más
+argumentos, solo una transición simple, ej. "si quieres, el Lic. Rubén
+Buerhend puede revisar tu caso a fondo por teléfono y te paso los
+horarios que tiene disponibles"). Se menciona UNA sola vez por
+conversación (la primera vez que se calcula un estimado de despido), no
+cada vez que se recalcule o se vuelva a tocar el tema.
+Lo que se firma en el convenio de conciliación tiene efecto de "cosa
+juzgada" (Art. 684-E LFT) -- una vez firmado, ya no se puede reclamar
+después esa diferencia, aunque más tarde se entere que le correspondía
+más; puedes mencionarlo también si viene al caso, sin que sea
+obligatorio en cada vez.
 
 Lead 2 — asesoría personalizada de pago (cualquier estado, cualquier tema
 laboral, aunque ya se haya registrado como lead 1 o no haya calificado
@@ -1257,10 +1362,13 @@ mejor que mencionarla en cada respuesta.
   mencionaste antes en la misma conversación y quieres sonar menos
   repetitivo). Es una decisión deliberada: mucha gente llega de su live
   de TikTok y quiere la asesoría específicamente CON ÉL, así que
-  nombrarlo aumenta la conversión. Al ofrecerla (la primera y única vez),
-  deja claro que es telefónica, de 1 hora y con él (por ejemplo: "es una
-  llamada telefónica de 1 hora con el Lic. Rubén Buerhend, donde revisa
-  tu caso a fondo"). Después de dar tu respuesta a la duda de la persona,
+  nombrarlo aumenta la conversión. Al ofrecerla, deja claro que es
+  telefónica y de 1 hora con él -- NUNCA menciones años de experiencia ni
+  lo describas como "reconocido" (decisión explícita del usuario,
+  25-nov-2026: suena a que se le está vendiendo, y a la gente no le gusta
+  que le vendan -- la autoridad ya se transmite sola con que el bot
+  demuestre que sabe de lo que habla, no con presumir credenciales).
+  Después de dar tu respuesta a la duda de la persona,
   ofrécela de forma breve, natural y con seguridad, y pregúntale
   DIRECTAMENTE si le interesa agendarla — por ejemplo: "¿Te gustaría que
   te agendemos la asesoría telefónica de 1 hora con el Lic. Rubén?" (NO
@@ -1351,7 +1459,12 @@ mejor que mencionarla en cada respuesta.
   dio ofrecer_horarios_asesoria (no da asesorías de noche ni fuera de
   esa agenda), así que esa promesa genera una expectativa falsa y deja
   al cliente esperando un contacto que nunca va a llegar como lo
-  prometiste. En vez de eso, dile con calidez que esos son los horarios
+  prometiste. PRIMERO pregúntale qué día le acomoda (o usa el que ya te
+  dijo) y vuelve a llamar ofrecer_horarios_asesoria con fecha_preferida
+  para ofrecerle los horarios de ESE día -- caso real 27-nov-2026: un
+  cliente dijo "estoy en mi oficina el jueves" y el bot le repitió los
+  mismos horarios; se perdió la venta. Solo si ya buscaste y de verdad no
+  hay nada que le acomode, dile con calidez que esos son los horarios
   reales disponibles en la agenda por ahora, y ofrécele avisarle en
   cuanto se abra un horario nuevo que le acomode mejor (o invítala a
   volver a preguntar en unos días por si hay algo nuevo) — sin prometer
@@ -1359,6 +1472,41 @@ mejor que mencionarla en cada respuesta.
   agenda. Esta regla es distinta a la de arriba: esa aplica cuando el
   SISTEMA no tiene ningún horario disponible; esta aplica cuando SÍ hay
   horarios pero ninguno le queda al cliente.
+- REGLA DURA sobre OBJECIONES de precio ("está caro", "no sé si vale la
+  pena", "es mucho dinero", "¿y si no me conviene?"): nunca ofrezcas un
+  descuento ni bajes el precio (no existe ninguno, sin excepción) y nunca
+  te pongas a la defensiva ni repitas el precio sin más. Reencuadra el
+  valor UNA sola vez, con algo CONCRETO de su propio caso (el monto real
+  que ya calculaste, el riesgo de ir solo/a a una conciliación sin
+  asesoría, o el plazo legal que está corriendo) — nunca con frases
+  genéricas de venta ("tiene mucha experiencia", "es el mejor"). Si
+  después de eso sigue dudando, no insistas de nuevo en el mismo mensaje
+  ni en el siguiente — deja la puerta abierta con calidez ("aquí sigo
+  cuando lo decidas") y confía en que el seguimiento automático (fuera de
+  esta conversación) se lo va a recordar más tarde.
+- REGLA DURA sobre "ya tengo abogado" / "ya fui con alguien más": nunca
+  hables mal de otro abogado, ni insinúes que su trabajo fue incorrecto,
+  ni insistas en que cambie de abogado. Ofrece la asesoría como una
+  SEGUNDA opinión breve antes de firmar o decidir algo importante (por
+  ejemplo, antes de firmar un convenio en conciliación o presentar un
+  escrito) — nunca como reemplazo del abogado que ya tiene.
+- REGLA sobre cómo cerrar bien la oferta (24-nov-2026, pedido explícito
+  del usuario: "todo esto es para vender", revisar qué más ayuda a
+  cerrar sin inventar nada): la oferta convierte mejor cuando el cierre
+  menciona, de pasada y con naturalidad, el RIESGO CONCRETO de no tener
+  la asesoría en SU caso específico -- nunca genérico ni inventado, solo
+  lo que de verdad aplica a lo que ya platicaron: un plazo legal
+  corriendo, una cita de conciliación/audiencia próxima sin preparación,
+  un cálculo con varias prestaciones donde un error le costaría dinero
+  real, o una decisión importante que está por tomar (firmar algo,
+  responder a una oferta del patrón). Esto es DISTINTO de inventar
+  urgencia o escasez falsa (eso sigue prohibido sin excepción, ver la
+  regla de los cursos): aquí el riesgo tiene que ser real y derivado de
+  lo que la propia persona ya contó, nunca una presión genérica ("no
+  dejes pasar esta oportunidad"). Si no hay ningún riesgo concreto que
+  mencionar (su caso no tiene plazo corriendo ni decisión pendiente),
+  simplemente ofrece el valor de que un abogado revise su caso a fondo,
+  sin forzar ningún riesgo que no exista.
 - Cuando la persona elija uno de los horarios que le ofreciste (por
   número o describiéndolo), llama confirmar_horario_asesoria con la fecha
   y hora EXACTAS de esa opción (tal como venían en el resultado de
@@ -1730,9 +1878,15 @@ const IA_TOOLS = [
     ],
     [
         'name' => 'ofrecer_horarios_asesoria',
-        'description' => 'Consulta horarios reales y disponibles ahora mismo para agendar la asesoría telefónica de pago, cruzando la agenda real de los abogados del despacho. Llama esta herramienta cuando la persona confirme que quiere agendar la asesoría (normalmente junto con registrar_interes_asesoria_paga, en el mismo mensaje), o si pregunta directamente qué días/horas hay disponibles. Te regresa una lista de horarios concretos y reales para que se los ofrezcas — nunca inventes ni prometas un horario sin usar esta herramienta primero.',
+        'description' => 'Consulta horarios reales y disponibles para agendar la asesoría telefónica de pago, cruzando la agenda real de los abogados del despacho (hasta 12 días adelante). Llama esta herramienta cuando la persona confirme que quiere agendar la asesoría (normalmente junto con registrar_interes_asesoria_paga, en el mismo mensaje), o si pregunta directamente qué días/horas hay disponibles. Sin fecha_preferida te regresa horarios repartidos en varios días distintos. Si la persona pide un día concreto ("el jueves", "el lunes", "la próxima semana", "mañana") o dice que los horarios que le diste no le acomodan, vuelve a llamarla CON fecha_preferida para darle los de ese día -- nunca le digas que solo hay los que ya le diste sin buscar primero. Nunca inventes ni prometas un horario sin usar esta herramienta.',
         'input_schema' => [
             'type' => 'object',
+            'properties' => [
+                'fecha_preferida' => [
+                    'type' => 'string',
+                    'description' => 'Opcional. Fecha YYYY-MM-DD del día que pidió la persona (calcúlala con la fecha de hoy: "el jueves" = el próximo jueves; "la próxima semana" = el lunes siguiente). Si ese día no hay horarios, la herramienta te da los del siguiente día con lugar.',
+                ],
+            ],
         ],
     ],
     [
@@ -2246,8 +2400,18 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     // normal), ver el bug real "se nota que es la IA porque hace muy rápido
     // los cálculos".
     $usoCalculoLiquidacion = false;
+    // Revisión del 18-nov-2026: tocar si esta respuesta llamó de verdad
+    // calcular_plazo_demanda/calcular_plazo_prestaciones o
+    // buscar_jurisprudencia -- se usan más abajo para recortar cifras de
+    // plazo en días o citas de jurisprudencia que el bot haya inventado a
+    // mano sin pasar por la herramienta correspondiente.
+    $usoCalculoPlazo = false;
+    $usoBuscarJurisprudencia = false;
     $yaInsistioAnuncio = false;
     $yaInsistioMontos = false;
+    // Links de pago que regresaron las herramientas en este turno (ver el
+    // candado de ia_texto_asegurar_links_pago más abajo).
+    $linksPagoTurno = [];
     // Cifras con centavos que el bot puede repetir sin haberlas calculado
     // a mano: las que ya aparecen en la conversación, en los cálculos de la
     // calculadora de los últimos 30 días y en los resultados de las
@@ -2358,11 +2522,22 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ? json_encode($sdiVariable, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Fecha de referencia inválida o faltante.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'calcular_estimado_liquidacion') {
+                // Criterio del Lic. Rubén (26-nov-2026): nadie puede ganar menos
+                // del salario mínimo, así que si el salario reportado es menor,
+                // el cálculo se hace con el mínimo de la zona.
+                $salarioReportado = (float)($in['salario_diario'] ?? 0);
+                $minimoZona = 0.0;
+                try {
+                    $minimoZona = salario_minimo_diario_en_fecha($pdo, (string)($in['fecha_baja'] ?? date('Y-m-d')), (bool)($in['zona_libre_frontera_norte'] ?? false));
+                } catch (\Throwable $e) {
+                    $minimoZona = 0.0;
+                }
+                $salarioUsar = ($minimoZona > 0 && $salarioReportado > 0 && $salarioReportado < $minimoZona) ? $minimoZona : $salarioReportado;
                 $calc = calcular_estimado_liquidacion(
                     $pdo,
                     (string)($in['fecha_ingreso'] ?? ''),
                     (string)($in['fecha_baja'] ?? ''),
-                    (float)($in['salario_diario'] ?? 0),
+                    $salarioUsar,
                     (string)($in['tipo'] ?? 'injustificado'),
                     (float)($in['dias_vacaciones_anteriores'] ?? 0),
                     (float)($in['dias_salarios_devengados'] ?? 0),
@@ -2372,6 +2547,9 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     (bool)($in['zona_libre_frontera_norte'] ?? false)
                 );
                 if ($calc !== null) {
+                    if ($salarioUsar !== $salarioReportado) {
+                        $calc['aviso_salario_minimo'] = "El salario diario que pasaste ($" . number_format($salarioReportado, 2) . ") es menor al salario mínimo de su zona ($" . number_format($minimoZona, 2) . "). Por criterio del despacho nadie puede ganar menos del mínimo, así que este cálculo ya se hizo con el mínimo. Explícaselo así a la persona; la diferencia de salario que le pagaron de menos es aparte.";
+                    }
                     // 26-nov-2026: lo que el bot pasó en vacaciones anteriores se
                     // guarda en el cálculo para poder compararlo al recalcular.
                     $calc['dias_vacaciones_anteriores_pasados'] = (float)($in['dias_vacaciones_anteriores'] ?? 0);
@@ -2393,6 +2571,28 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     // tienes en juego" -- falsa expectativa.
                     if (ia_bot_dijo_plazo_despido_vencido($mensajes)) {
                         $calc['aviso_plazo_vencido'] = 'OJO: en esta conversación ya le dijiste a la persona que su plazo de 2 meses para demandar el despido (Art. 518) ya venció. Si eso sigue siendo así (no presentó solicitud de conciliación a tiempo), NO le presentes la indemnización de 3 meses (ni salarios caídos ni 20 días) como dinero que puede cobrar ni la sumes a un total "en juego": dale por separado solo lo que sigue vigente (finiquito, prima de antigüedad, aguinaldo y vacaciones no prescritos, que prescriben en 1 año, Art. 516) y dile que la indemnización depende de que el abogado revise si algo suspendió o interrumpió el plazo.';
+                    }
+                    // Caso real (18-nov-2026, al menos 5 conversaciones de
+                    // la revisión diaria de ese día): el cliente dijo que
+                    // nunca tomó/disfrutó vacaciones y el bot solo calculó
+                    // el proporcional del periodo en curso, sin pasar los
+                    // días de años YA CUMPLIDOS a dias_vacaciones_anteriores
+                    // (criterio ya escrito en el prompt desde el caso del
+                    // coach de tenis, 17-nov-2026, pero seguía sin
+                    // aplicarse). Igual que aviso_zona_frontera/
+                    // aviso_plazo_vencido: se le avisa a la IA justo cuando
+                    // el riesgo real se presenta, no solo en el prompt.
+                    if ((float)($in['dias_vacaciones_anteriores'] ?? 0) <= 0 && ia_cliente_dijo_no_tomo_vacaciones($mensajes)) {
+                        $calc['aviso_vacaciones_anteriores'] = 'OJO: en esta conversación el cliente dijo que nunca tomó/disfrutó vacaciones, pero este cálculo no incluyó ningún día en dias_vacaciones_anteriores. Si ya tiene al menos 1 año cumplido de antigüedad, antes de dar este resultado como final vuelve a calcular pasando en dias_vacaciones_anteriores los días que le correspondían por la tabla del Art. 76 en cada año YA CUMPLIDO (menos los que sí haya tomado) -- la herramienta descarta sola los prescritos. Si lleva menos de 1 año de antigüedad, el proporcional ya es correcto y no hace falta nada más (pero dile explícitamente que, al no haber cumplido un año, el proporcional ya cubre todo lo no disfrutado, para que quede claro).';
+                    }
+                    // Revisión del 25 y 26-nov-2026 (8 casos): con 2+ años de
+                    // antigüedad el bot calculaba sin preguntar por las
+                    // vacaciones de cada año anterior.
+                    if (!isset($calc['aviso_vacaciones_anteriores'])
+                        && (float)($in['dias_vacaciones_anteriores'] ?? 0) <= 0
+                        && (int)($calc['antiguedad_anios_completos'] ?? 0) >= 2
+                        && !ia_bot_pregunto_vacaciones_anteriores($mensajes)) {
+                        $calc['aviso_vacaciones_anteriores'] = 'OJO: esta persona lleva ' . (int)$calc['antiguedad_anios_completos'] . ' años cumplidos y todavía no le preguntaste por las vacaciones de los años anteriores. Antes de dar este cálculo como completo, pregúntale en este mismo mensaje: "¿tomaste completas tus vacaciones de cada año, o te quedaron días sin tomar? ¿cuántos y de qué años?". Si ya te lo dijo claramente (que sí las tomó todas), ignora este aviso. Si te dice que le quedaron días, vuelve a calcular pasando la SUMA en dias_vacaciones_anteriores (la herramienta descarta sola los prescritos).';
                     }
                     $contenido = json_encode($calc, JSON_UNESCAPED_UNICODE);
                     $usoCalculoLiquidacion = true;
@@ -2424,6 +2624,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ], JSON_UNESCAPED_UNICODE);
                 }
             } elseif ($bloque['name'] === 'calcular_plazo_demanda') {
+                $usoCalculoPlazo = true;
                 $plazo = calcular_plazo_demanda(
                     (string)($in['fecha_despido'] ?? ''),
                     trim((string)($in['fecha_solicitud_conciliacion'] ?? '')) ?: null,
@@ -2440,6 +2641,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ? json_encode($plazo, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Fecha de despido inválida o faltante.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'calcular_plazo_prestaciones') {
+                $usoCalculoPlazo = true;
                 $plazoPrestaciones = calcular_plazo_prestaciones(
                     (string)($in['fecha_baja'] ?? ''),
                     trim((string)($in['fecha_solicitud_conciliacion'] ?? '')) ?: null,
@@ -2457,7 +2659,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ? json_encode($salariosCaidos, JSON_UNESCAPED_UNICODE)
                     : json_encode(['error' => 'Fecha de despido o salario diario inválidos/faltantes.'], JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'ofrecer_horarios_asesoria') {
-                $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead);
+                $contenido = ia_resultado_ofrecer_horarios($pdo, $telefono, $lead, (string)($in['fecha_preferida'] ?? ''));
             } elseif ($bloque['name'] === 'confirmar_horario_asesoria') {
                 $contenido = ia_resultado_confirmar_horario($pdo, $telefono, $in, $lead);
             } elseif ($bloque['name'] === 'confirmar_compra_curso') {
@@ -2479,6 +2681,7 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             } elseif ($bloque['name'] === 'buscar_en_lft') {
                 $contenido = json_encode(lft_buscar_texto($pdo, (string)($in['tema'] ?? '')), JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'buscar_jurisprudencia') {
+                $usoBuscarJurisprudencia = true;
                 $contenido = json_encode(jurisprudencia_buscar_para_bot($pdo, (string)($in['terminos'] ?? '')), JSON_UNESCAPED_UNICODE);
             } elseif ($bloque['name'] === 'confirmar_compra_documento_calculo') {
                 $contenido = ia_resultado_confirmar_compra_documento_calculo($pdo, $telefono, !empty($in['para_otra_persona']));
@@ -2515,6 +2718,10 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                         'recordatorio' => 'Llamaste esta herramienta sin escribir tu respuesta de texto para la persona en este mismo turno. Ahora, en tu siguiente respuesta, escribe SOLO ese texto (sin llamar ninguna otra herramienta) — la persona todavía no ha recibido ninguna respuesta tuya.',
                     ], JSON_UNESCAPED_UNICODE)
                     : json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
+            }
+            $resDecod = json_decode((string)$contenido, true);
+            if (is_array($resDecod) && !empty($resDecod['ok']) && !empty($resDecod['link_pago']) && is_string($resDecod['link_pago'])) {
+                $linksPagoTurno[] = $resDecod['link_pago'];
             }
             $respaldoMontos .= ' ' . $contenido;
             $toolResults[] = [
@@ -2627,6 +2834,55 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
         $texto = 'El cálculo estimado siempre es gratis, no tiene ningún costo -- cuéntame tu caso (qué pasó, tu salario, las fechas) y te lo calculo aquí mismo. Lo único que sí tiene costo es la asesoría personalizada con el Lic. Rubén Buerhend, si más adelante quieres que revise tu caso a fondo.';
     }
 
+    // 4 candados nuevos de la revisión del 18-nov-2026 (35 de 146
+    // conversaciones marcadas, el día más alto desde el cambio a Sonnet
+    // 5.5) -- los 4 patrones ya estaban prohibidos EXPLÍCITAMENTE en el
+    // prompt (CRITERIOS DEL DESPACHO) y el bot los siguió violando, así
+    // que --igual que los candados de arriba-- se recortan aquí mismo en
+    // vez de confiar solo en que la IA recuerde la regla. A diferencia de
+    // los candados de pago/cita (que sustituyen TODO el mensaje por ser
+    // temas de alto riesgo), aquí solo se quita la ORACIÓN problemática
+    // con ia_texto_quitar_oraciones() -- el resto de la respuesta, que
+    // suele ser correcta, se manda igual.
+    if (ia_texto_convierte_meses_en_dias($texto)) {
+        $textoAntes = $texto;
+        $texto = ia_texto_quitar_oraciones($texto, '/\bson\s+\d{1,3}\s*d[ií]as\b/iu');
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [meses_a_dias_recortado] tel=$telefono | antes=\"" . $textoAntes . "\" | despues=\"" . $texto . "\"\n", FILE_APPEND);
+    }
+    if (!$usoCalculoPlazo && ia_texto_da_plazo_en_dias_sin_herramienta($texto)) {
+        $textoAntes = $texto;
+        $texto = ia_texto_quitar_oraciones($texto, '/\b(te\s+)?quedar[aá]n?\s*\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b|\bquedan\s*\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b|\bplazo\s+(de\s+)?\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b/iu');
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [plazo_dias_sin_herramienta_recortado] tel=$telefono | antes=\"" . $textoAntes . "\" | despues=\"" . $texto . "\"\n", FILE_APPEND);
+    }
+    if (!$usoBuscarJurisprudencia && ia_texto_cita_jurisprudencia_concreta($texto)) {
+        $textoAntes = $texto;
+        $texto = ia_texto_quitar_oraciones($texto, '/registro\s+digital\s*\d*|tesis\s+(aislada|de\s+jurisprudencia)|(suprema\s+corte|poder\s+judicial|tribunales?\s+colegiados?)\s+(de\s+\w+\s+)?ha[n]?\s+(resuelto|sostenido|establecido|determinado)/iu');
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [jurisprudencia_sin_herramienta_recortada] tel=$telefono | antes=\"" . $textoAntes . "\" | despues=\"" . $texto . "\"\n", FILE_APPEND);
+    }
+    if (ia_texto_afirma_exencion_isr($texto)) {
+        $textoAntes = $texto;
+        $texto = ia_texto_quitar_oraciones($texto, '/\d+\s*veces\s+(la\s+)?UMA|UMA\b.{0,60}exen|exent\w*.{0,60}\bUMA\b|(probable|probablemente|seguro|seguramente)[^.]{0,40}(quede|est[eé])[^.]{0,20}exent/iu');
+        file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+            . " | [isr_exencion_recortada] tel=$telefono | antes=\"" . $textoAntes . "\" | despues=\"" . $texto . "\"\n", FILE_APPEND);
+    }
+
+    // Caso real (26-nov-2026, Alma): confirmar_horario_asesoria apartó el
+    // horario y regresó el link, pero el bot escribió "Aquí está tu link de
+    // pago: $499 MXN" SIN la dirección. Ella esperó hora y media. Si una
+    // herramienta regresó un link de pago en este turno y el texto no lo
+    // trae, se agrega aquí mismo.
+    if ($linksPagoTurno) {
+        $textoAntes = $texto;
+        $texto = ia_texto_asegurar_links_pago($texto, $linksPagoTurno);
+        if ($texto !== $textoAntes) {
+            file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+                . " | [link_pago_agregado] tel=$telefono | antes=\"" . $textoAntes . "\"\n", FILE_APPEND);
+        }
+    }
+
     // Caso real (14-nov-2026): el bot escribió "voy a pedir que un abogado
     // del despacho revise tu caso directamente contigo" SIN llamar
     // escalar_a_humano -- nadie fue avisado, el bot no se pausó, al día
@@ -2662,6 +2918,21 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     }
 
     return ['texto' => $texto, 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente, 'uso_calculo' => $usoCalculoLiquidacion];
+}
+
+// Agrega al texto el/los link(s) de pago que regresaron las herramientas
+// si el bot no los escribió. Si el texto dice "link de pago:" sin dirección,
+// el link se pone justo ahí; si no, al final.
+function ia_texto_asegurar_links_pago(string $texto, array $links): string
+{
+    foreach (array_unique($links) as $link) {
+        if ($link === '' || strpos($texto, $link) !== false) {
+            continue;
+        }
+        $nuevo = preg_replace('/(link\s+de\s+pago)\s*:(?!\s*https?:)\s*/iu', '$1: ' . str_replace(['\\', '$'], ['\\\\', '\\$'], $link) . "\n\n", $texto, 1, $n);
+        $texto = ($n > 0 && is_string($nuevo)) ? $nuevo : rtrim($texto) . "\n\nTu link de pago: " . $link;
+    }
+    return $texto;
 }
 
 // true si el texto le promete a la persona que un abogado del despacho la
@@ -2888,6 +3159,138 @@ function ia_texto_niega_calculo_gratis(string $texto): bool
     ) === 1;
 }
 
+/**
+ * true si en algún mensaje del CLIENTE aparece que nunca tomó/disfrutó
+ * vacaciones -- caso real recurrente (coach de tenis, 17-nov-2026, y al
+ * menos 5 casos más en la revisión del 18-nov-2026): el bot calculaba
+ * solo el proporcional del periodo en curso sin pasar los días de años
+ * YA CUMPLIDOS a dias_vacaciones_anteriores. Se usa para avisarle a la
+ * IA justo cuando llama calcular_estimado_liquidacion sin ese dato, ver
+ * ia_responder_whatsapp() arriba.
+ */
+function ia_cliente_dijo_no_tomo_vacaciones(array $mensajes): bool
+{
+    foreach ($mensajes as $m) {
+        if (($m['role'] ?? '') !== 'user' || !is_string($m['content'] ?? null)) continue;
+        if (preg_match('/no\s+(he\s+|las\s+)?tom[eé]\s+(ning[uú]n\s*d[ií]a\s+de\s+)?vacacion|nunca\s+tom[eé]\s+vacacion|no\s+(he\s+)?disfrutad[oa]\s+(mis\s+|ninguna\s+)?vacacion|sin\s+tomar\s+(ninguna\s+)?vacacion|no\s+tengo\s+vacaciones\s+tomadas/iu', $m['content'])) return true;
+    }
+    return false;
+}
+
+/**
+ * true si en algún mensaje del BOT ya se preguntó por las vacaciones de
+ * años anteriores (cada año, años pasados) -- revisión del 25 y 26-nov-2026:
+ * en 8 conversaciones con 2+ años de antigüedad el bot solo preguntó por el
+ * periodo en curso o por el último aniversario.
+ */
+function ia_bot_pregunto_vacaciones_anteriores(array $mensajes): bool
+{
+    foreach ($mensajes as $m) {
+        if (($m['role'] ?? '') !== 'assistant' || !is_string($m['content'] ?? null)) continue;
+        if (preg_match('/vacaciones/iu', $m['content'])
+            && preg_match('/a[ñn]os?\s+anteriores|cada\s+a[ñn]o|a[ñn]os\s+pasados|todos\s+los\s+a[ñn]os|de\s+qu[eé]\s+a[ñn]os/iu', $m['content'])) return true;
+    }
+    return false;
+}
+
+/**
+ * Quita del texto cada "oración" (separada por punto/signo de
+ * puntuación) que haga match con $patron, dejando el resto del mensaje
+ * intacto -- a diferencia de los candados de pago/cita (que sustituyen
+ * TODO el mensaje por ser temas de alto riesgo), estos 4 candados nuevos
+ * de la revisión del 18-nov-2026 solo recortan la frase problemática,
+ * porque el resto de la respuesta del bot suele ser correcto. Si al
+ * quitar todo el texto se queda vacío, regresa el original sin tocar --
+ * mejor un error que se queda y se registra en el log, que un mensaje en
+ * blanco que deja al cliente sin respuesta.
+ */
+function ia_texto_quitar_oraciones(string $texto, string $patron): string
+{
+    // "Art. 52", "fracc. X", "No. 3": el punto de la abreviatura NO es fin de
+    // oración (caso real 25-nov-2026: quedó suelto "52), así que conviene
+    // revisarlo antes." al quitar la oración anterior).
+    $texto = preg_replace(['/\b(Arts?|arts?|fracc?|núm|Núm)\.\s+/u', '/\b(No)\.\s+(?=\d)/u'], "\$1.\x01", $texto);
+    $oraciones = preg_split('/(?<=[.!?])\s+/u', $texto, -1, PREG_SPLIT_NO_EMPTY);
+    $oraciones = array_map(fn($o) => str_replace("\x01", ' ', $o), $oraciones ?: []);
+    $texto = str_replace("\x01", ' ', $texto);
+    if (!$oraciones) return $texto;
+    $limpio = array_filter($oraciones, fn($o) => !preg_match($patron, $o));
+    $resultado = trim(implode(' ', $limpio));
+    return $resultado !== '' ? $resultado : $texto;
+}
+
+/**
+ * true si $texto da por hecho que un plazo legal de "meses" (Art. 518, 2
+ * meses) equivale a un número fijo de días ("Son 60 días") -- los meses
+ * se cuentan de calendario, no como un número fijo de días; esta regla
+ * YA estaba escrita en el prompt (18-nov-2026, caso del documento de
+ * $49) y el bot la siguió violando en la revisión del 18-nov-2026.
+ */
+function ia_texto_convierte_meses_en_dias(string $texto): bool
+{
+    // No exige que la palabra "meses" aparezca en ESTE mismo mensaje --
+    // en el caso real, el plazo de "2 meses" se había mencionado en un
+    // turno anterior de la conversación. Basta con la frase "Son N días"
+    // como oración propia (después de un punto) junto con contexto de
+    // plazo/demanda en el mismo mensaje.
+    if (!preg_match('/\.\s*Son\s+\d{1,3}\s*d[ií]as\.?/u', $texto)) return false;
+    return preg_match('/demand|tribunal|plazo|presentar/iu', $texto) === 1;
+}
+
+/**
+ * true si $texto da un número de días concreto de plazo para presentar
+ * la demanda/solicitud ("te quedan 56 días", "el plazo es de 24 días")
+ * -- solo tiene sentido llamarla cuando esta misma respuesta NO llamó
+ * calcular_plazo_demanda ni calcular_plazo_prestaciones, ver el caso
+ * real (18-nov-2026, varios con cifras contradictorias en el mismo
+ * mensaje) en ia_responder_whatsapp().
+ */
+function ia_texto_da_plazo_en_dias_sin_herramienta(string $texto): bool
+{
+    // Hasta 25 caracteres cualesquiera (sin cruzar punto) entre la palabra
+    // clave y el número de días -- cubre variantes como "plazo es de 24
+    // días" o "te quedarán *56 días*" sin exigir una redacción exacta.
+    return preg_match(
+        '/\bquedar[aá]n?\b[^.\n]{0,25}\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b'
+        . '|\bquedan\b[^.\n]{0,25}\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b'
+        . '|\bplazo\b[^.\n]{0,25}\*{0,2}\s*\d{1,3}\s*\*{0,2}\s*d[ií]as\b/iu',
+        $texto
+    ) === 1;
+}
+
+/**
+ * true si $texto cita una tesis/jurisprudencia concreta (registro, "tesis
+ * aislada", "el Poder Judicial/la Suprema Corte ha resuelto...") -- solo
+ * tiene sentido llamarla cuando esta misma respuesta NO llamó
+ * buscar_jurisprudencia, ver el caso real (18-nov-2026, registro digital
+ * inventado) en ia_responder_whatsapp().
+ */
+function ia_texto_cita_jurisprudencia_concreta(string $texto): bool
+{
+    return preg_match(
+        '/registro\s+digital\s*\d*'
+        . '|tesis\s+(aislada|de\s+jurisprudencia)'
+        . '|(suprema\s+corte|poder\s+judicial|tribunales?\s+colegiados?)\s+(de\s+\w+\s+)?ha[n]?\s+(resuelto|sostenido|establecido|determinado)/iu',
+        $texto
+    ) === 1;
+}
+
+/**
+ * true si $texto afirma cifras de exención de ISR (veces UMA, "buena
+ * parte quedará exenta") -- regla ya escrita en el prompt desde el
+ * 14-nov-2026, violada igual en la revisión del 18-nov-2026.
+ */
+function ia_texto_afirma_exencion_isr(string $texto): bool
+{
+    return preg_match(
+        '/\d+\s*veces\s+(la\s+)?UMA'
+        . '|UMA\b.{0,60}exen'
+        . '|exent\w*.{0,60}\bUMA\b'
+        . '|(probable|probablemente|seguro|seguramente)[^.]{0,40}(quede|est[eé])[^.]{0,20}exent/iu',
+        $texto
+    ) === 1;
+}
+
 // URL pública del webhook de Mercado Pago — a donde Mercado Pago avisa
 // cuando se confirma un pago. Debe coincidir con dónde vive el sistema.
 const MERCADOPAGO_WEBHOOK_URL = 'https://sistema.expertoslaborales.com/sistema/api/mercadopago_webhook.php';
@@ -2899,7 +3302,7 @@ const MERCADOPAGO_WEBHOOK_URL = 'https://sistema.expertoslaborales.com/sistema/a
  * AHÍ se registra el prospecto (no antes, con solo el interés) y se pausa
  * el bot — a partir de ahí un humano tiene que coordinar directo.
  */
-function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead): string
+function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead, string $fechaPreferida = ''): string
 {
     // Bug real detectado en producción: un cliente pagó y agendó su
     // asesoría, no se pudo completar la llamada (iba manejando, no podía
@@ -2936,7 +3339,10 @@ function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead)
         ], JSON_UNESCAPED_UNICODE);
     }
 
-    $horarios = citas_calcular_horarios_disponibles($pdo);
+    // 27-nov-2026 (ventas): antes se ofrecían los 5 PRIMEROS horarios libres,
+    // casi siempre todos del mismo día -- quien no podía ese día ("el jueves
+    // estoy en mi oficina", "no tengo ninguna de las 3") se iba sin apartar.
+    $horarios = ia_horarios_para_ofrecer(citas_calcular_horarios_disponibles($pdo, 12, 999999), $fechaPreferida);
     if (!$horarios) {
         ia_registrar_prospecto_atorado($pdo, $telefono, $lead, 'Mostró interés en la asesoría de pago pero no hay horarios disponibles en este momento.');
         return json_encode([
@@ -2944,7 +3350,49 @@ function ia_resultado_ofrecer_horarios(PDO $pdo, string $telefono, ?array $lead)
             'nota' => 'No hay horarios disponibles en este momento. Dile a la persona que el Lic. Rubén Buerhend la va a contactar directo para coordinar un horario -- aclara que la asesoría sigue teniendo el costo normal (se paga al agendar, esto NO es una llamada gratis), no le des ningún link de pago todavía ni le prometas un horario exacto.',
         ], JSON_UNESCAPED_UNICODE);
     }
-    return json_encode(['horarios' => $horarios], JSON_UNESCAPED_UNICODE);
+    $resp = ['horarios' => $horarios];
+    if ($fechaPreferida !== '' && ($horarios[0]['fecha'] ?? '') !== $fechaPreferida) {
+        $resp['nota'] = 'Ese día no hay horarios libres; estos son los del siguiente día con lugar. Díselo así y ofrécelos.';
+    }
+    return json_encode($resp, JSON_UNESCAPED_UNICODE);
+}
+
+/**
+ * Elige qué horarios ofrecer (máx. 5). Sin fecha preferida: repartidos,
+ * máximo 2 por día, para cubrir al menos 3 días distintos. Con fecha
+ * preferida: los de ese día (o del siguiente día con lugar).
+ */
+function ia_horarios_para_ofrecer(array $todos, string $fechaPreferida = ''): array
+{
+    if (!$todos) return [];
+    if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $fechaPreferida)) {
+        $desde = array_values(array_filter($todos, fn($h) => $h['fecha'] >= $fechaPreferida));
+        if ($desde) {
+            $dia = $desde[0]['fecha'];
+            return array_slice(array_values(array_filter($desde, fn($h) => $h['fecha'] === $dia)), 0, 5);
+        }
+        // Pidió un día fuera de la agenda (más de 12 días): se le dan los últimos disponibles.
+        $ultimo = end($todos)['fecha'];
+        return array_slice(array_values(array_filter($todos, fn($h) => $h['fecha'] === $ultimo)), 0, 5);
+    }
+    $porDia = [];
+    $elegidos = [];
+    foreach ($todos as $h) {
+        if (($porDia[$h['fecha']] ?? 0) >= 2) continue;
+        $porDia[$h['fecha']] = ($porDia[$h['fecha']] ?? 0) + 1;
+        $elegidos[] = $h;
+        if (count($elegidos) >= 5) break;
+    }
+    // Si hay pocos días con agenda, completa con los que sigan.
+    if (count($elegidos) < 5) {
+        foreach ($todos as $h) {
+            if (in_array($h, $elegidos, true)) continue;
+            $elegidos[] = $h;
+            if (count($elegidos) >= 5) break;
+        }
+        usort($elegidos, fn($a, $b) => strcmp($a['fecha'] . $a['hora_inicio'], $b['fecha'] . $b['hora_inicio']));
+    }
+    return $elegidos;
 }
 
 /**
@@ -3031,7 +3479,7 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         return json_encode([
             'ok' => false,
             'motivo' => 'Ese horario ya no está disponible.',
-            'horarios_alternativos' => array_slice($horariosVigentes, 0, 5),
+            'horarios_alternativos' => ia_horarios_para_ofrecer($horariosVigentes),
         ], JSON_UNESCAPED_UNICODE);
     }
 
@@ -3040,7 +3488,7 @@ function ia_resultado_confirmar_horario(PDO $pdo, string $telefono, array $in, ?
         return json_encode([
             'ok' => false,
             'motivo' => 'Ese horario ya no está disponible.',
-            'horarios_alternativos' => array_slice(citas_calcular_horarios_disponibles($pdo, 12, 999999), 0, 5),
+            'horarios_alternativos' => ia_horarios_para_ofrecer(citas_calcular_horarios_disponibles($pdo, 12, 999999)),
         ], JSON_UNESCAPED_UNICODE);
     }
 
@@ -4156,26 +4604,63 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
         . 'resolvió el Tribunal/Juzgado, qué ordenó, qué acredita, o qué pide. No repitas datos genéricos (nombre '
         . 'de archivo, categoría) que ya se conocen aparte -- concéntrate en el CONTENIDO real.'
         . "\n\n"
-        . 'PARTE 2 -- etapa sugerida: si este documento corresponde CLARAMENTE a una de estas etapas del '
-        . "vocabulario del sistema y esa etapa coincide con la \"Siguiente etapa esperada\" que te di (o es "
-        . "razonable que sea la que sigue), responde su clave exacta. Vocabulario completo: $vocabularioEtapas. "
-        . 'Si el documento es un trámite intermedio que no corresponde a ninguna de esas etapas (ej. solo admite '
-        . 'una prueba, da vista a la contraparte, notifica algo menor, es solo evidencia/pruebas sin relación con '
-        . 'el trámite), o si no estás seguro, responde (ninguna) -- NUNCA adivines ni fuerces una etapa que no '
-        . 'calza con claridad.'
+        . 'PARTE 2 -- eventos del trámite detectados: lee el documento COMPLETO (incluida cualquier constancia o '
+        . 'certificación que contenga, no solo el acuerdo/resolución principal) y busca CADA etapa de este '
+        . 'vocabulario que el documento represente con claridad -- puede haber MÁS DE UNA en el mismo documento '
+        . '(ej. una constancia que certifica tanto el emplazamiento como la contestación, cada una con su propia '
+        . 'fecha) -- repórtalas todas, no solo la primera o la más obvia, INCLUSO si alguna ya parece "vieja" o '
+        . 'superada por una etapa posterior que también detectes en el mismo documento -- nunca omitas una '
+        . 'confirmación real solo porque otra etapa más reciente también calce. Vocabulario completo (usa la CLAVE '
+        . 'EXACTA tal cual aparece aquí, nunca la abrevies -- ej. "contestacion_recibida", NUNCA solo '
+        . "\"contestacion\"): $vocabularioEtapas. "
+        . 'Para que una etapa cuente, debe o bien coincidir con la "Siguiente etapa esperada" que te di (o ser '
+        . 'razonable que sea la que sigue), o el documento debe CONFIRMAR explícitamente que ya ocurrió (ver reglas '
+        . 'abajo). Si el documento es un trámite intermedio que no corresponde a ninguna de esas etapas (ej. solo '
+        . 'admite una prueba, da vista a la contraparte, notifica algo menor), o no estás seguro, no la reportes -- '
+        . 'NUNCA adivines ni fuerces una etapa que no calza con claridad.'
+        . "\n"
+        . 'Para cada etapa que reportes, da también su fecha: SOLO si el documento menciona LITERALMENTE la fecha '
+        . 'en que el ACTO mismo ocurrió (cuándo se presentó/notificó/surtió efectos -- NO la fecha en que el '
+        . 'Tribunal/Secretario dictó o firmó el documento que lo certifica, si son distintas), dala en formato '
+        . 'YYYY-MM-DD; si no hay una fecha así de explícita, o tendrías que calcularla/inferirla, escribe '
+        . '(ninguna) -- NUNCA calcules ni inventes una fecha. Busca la fecha de CADA evento por separado, releyendo '
+        . 'el documento completo para ESE evento en particular -- no te quedes con "(ninguna)" solo porque ya '
+        . 'encontraste la fecha de otro evento más visible; la fecha de un evento puede venir en una TABLA (ej. '
+        . 'columnas "Notificación / Surtió efectos / Transcurrió término", donde "Notificación Personal [fecha]" es '
+        . 'la fecha en que se notificó/emplazó) en vez de en una oración narrativa -- cuenta igual de literal. Un '
+        . 'mismo evento puede aparecer mencionado DOS VECES de forma distinta en el mismo documento: una vez con su '
+        . 'fecha exacta (ej. en esa tabla de cómputo de plazo) y otra vez solo como referencia administrativa sin '
+        . 'fecha (ej. "se agrega a los autos la constancia de emplazamiento con folio SIGE 1234" -- un número de '
+        . 'folio NUNCA es una fecha). Si encuentras ambas menciones del mismo evento, usa SIEMPRE la que sí trae '
+        . 'fecha exacta -- NUNCA reportes (ninguna) solo porque la segunda mención (la del folio) no la tiene.'
+        . "\n"
+        . 'Regla de confirmación: una ORDEN o instrucción de que algo se haga a futuro ("se ordena emplazar", '
+        . '"concediéndole 15 días para contestar") NUNCA confirma por sí sola que el acto ya ocurrió -- solo indica '
+        . 'que se espera que ocurra; en ese caso, si de todos modos quieres reportar la etapa porque es razonable '
+        . 'que sea la siguiente, repórtala con fecha (ninguna).'
+        . "\n"
+        . 'IMPORTANTE sobre constancias/certificaciones del Secretario Instructor (muy comunes en el Portal '
+        . 'Federal, formato distinto a un "ACUERDO" con encabezado claro de resolución): a veces el documento es '
+        . 'una CERTIFICACIÓN que dice algo como "CERTIFICO: a) ... b) El escrito de contestación/réplica... se '
+        . 'presentó el [fecha]..." o "la notificación fue personal el [fecha]... surtió efectos..." -- esto SÍ es '
+        . 'una confirmación LITERAL válida con fecha, no la descartes solo porque no tiene la redacción de "el '
+        . 'Tribunal admite/ordena...". Estos documentos suelen terminar con un bloque largo de metadatos de firma '
+        . 'electrónica ("EVIDENCIA CRIPTOGRÁFICA", números de serie, hashes) -- ignora ese bloque por completo, la '
+        . 'fecha que importa siempre está en el cuerpo del texto, antes de ese bloque.'
+        . "\n"
+        . 'Por cada etapa que reportes, agrega una línea con este formato exacto: "EVENTO: <clave_etapa> | FECHA: '
+        . 'YYYY-MM-DD" o "EVENTO: <clave_etapa> | FECHA: (ninguna)" (puedes repetir esta línea tantas veces como '
+        . 'etapas distintas encuentres). Si no encuentras ninguna, escribe una sola línea "EVENTO: (ninguno)".'
         . "\n\n"
-        . 'PARTE 3 -- fecha mencionada: SOLO si el documento menciona LITERALMENTE una fecha asociada a la etapa '
-        . 'que sugeriste (ej. "se señala la audiencia para el día..."), dámela en formato YYYY-MM-DD. Si no hay '
-        . 'una fecha así de explícita, o tendrías que calcularla/inferirla, responde (ninguna) -- NUNCA calcules '
-        . 'ni inventes una fecha.'
-        . "\n\n"
-        . 'PARTE 4 -- categoría sugerida: el documento se guardó con la categoría "' . ($categoria ?: '(sin definir)') . '". '
+        . 'PARTE 3 -- categoría sugerida: el documento se guardó con la categoría "' . ($categoria ?: '(sin definir)') . '". '
         . "Si el CONTENIDO deja clarísimo que corresponde a otra categoría del vocabulario del sistema, responde esa "
         . "clave exacta. Vocabulario: $vocabularioCategorias. Si la categoría actual ya es razonable, o el contenido "
         . 'no deja una categoría obvia, responde (ninguna) -- NUNCA sugieras solo por parecido superficial.'
         . "\n\n"
         . "Responde EXACTAMENTE en este formato (las líneas en mayúsculas son literales):\n\n"
-        . "RESUMEN: [tu resumen aquí]\nETAPA: [clave exacta, o (ninguna)]\nFECHA: [YYYY-MM-DD, o (ninguna)]\nCATEGORIA: [clave exacta, o (ninguna)]";
+        . "RESUMEN: [tu resumen aquí]\nEVENTO: [clave exacta] | FECHA: [YYYY-MM-DD o (ninguna)]\n(repite la línea "
+        . "EVENTO si hay más de una etapa, o escribe una sola línea \"EVENTO: (ninguno)\")\nCATEGORIA: [clave "
+        . "exacta, o (ninguna)]";
 
     $contentBlocks = [];
     if ($esPdf) {
@@ -4239,16 +4724,59 @@ function ia_analizar_acuerdo_boletin(string $rutaArchivo, ?string $tipoMime, arr
     if ($texto === '') return null;
 
     $resumen = null;
-    $etapaSugerida = null;
-    $fechaMencionada = null;
     $categoriaSugerida = null;
     if (preg_match('/RESUMEN:\s*(.+?)(?:\n[A-Z]+:|$)/s', $texto, $m)) $resumen = trim($m[1]);
-    if (preg_match('/ETAPA:\s*([a-z_]+)/i', $texto, $m) && in_array($m[1], $ordenEtapas, true)) $etapaSugerida = $m[1];
-    if (preg_match('/FECHA:\s*(\d{4}-\d{2}-\d{2})/', $texto, $m)) $fechaMencionada = $m[1];
     if (preg_match('/CATEGORIA:\s*([a-z_]+)/i', $texto, $m) && in_array($m[1], $categoriasValidas, true) && $m[1] !== $categoria) $categoriaSugerida = $m[1];
 
+    // Uno o más "EVENTO: <clave_etapa> | FECHA: YYYY-MM-DD" (o "FECHA:
+    // (ninguna)" si la etapa calza pero no hay fecha literal) -- un mismo
+    // documento puede confirmar varios eventos distintos (ej. una
+    // constancia que certifica emplazamiento Y contestación a la vez, caso
+    // real Exp. 463/2026). Se descarta cualquier clave que no esté en el
+    // vocabulario y cualquier duplicado de la misma etapa (se queda con la
+    // primera que mencione, prefiriendo quedarse con una que sí traiga
+    // fecha si la hay).
+    //
+    // Confirmado real (20 nov 2026): la IA a veces abrevia la clave (dio
+    // "contestacion" en vez de "contestacion_recibida") y el match exacto
+    // la descartaba en silencio. Si la clave abreviada es inicio de
+    // EXACTAMENTE una sola clave real del vocabulario (nunca si hay 2+
+    // candidatas, ej. "conciliacion"/"demanda"/"audiencia" -- ahí sería
+    // ambiguo y se descarta igual que antes), se corrige sola.
+    $corregirClaveAbreviada = function (string $clave) use ($ordenEtapas): ?string {
+        if (in_array($clave, $ordenEtapas, true)) return $clave;
+        $candidatas = array_values(array_filter($ordenEtapas, fn($k) => str_starts_with($k, $clave . '_')));
+        return count($candidatas) === 1 ? $candidatas[0] : null;
+    };
+
+    $eventos = [];
+    if (preg_match_all('/EVENTO:\s*([a-z_]+)\s*\|\s*FECHA:\s*(\d{4}-\d{2}-\d{2}|\(ninguna\))/i', $texto, $ms, PREG_SET_ORDER)) {
+        foreach ($ms as $m) {
+            $etapaKey = $corregirClaveAbreviada(strtolower($m[1]));
+            if ($etapaKey === null) continue;
+            $fecha = strtolower($m[2]) === '(ninguna)' ? null : $m[2];
+            $yaEsta = false;
+            foreach ($eventos as &$ev) {
+                if ($ev['etapa'] === $etapaKey) {
+                    $yaEsta = true;
+                    if ($ev['fecha'] === null && $fecha !== null) $ev['fecha'] = $fecha;
+                    break;
+                }
+            }
+            unset($ev);
+            if ($yaEsta) continue;
+            $eventos[] = ['etapa' => $etapaKey, 'fecha' => $fecha];
+        }
+    }
+
     if ($resumen === null) return null;
-    return ['resumen' => $resumen, 'etapa_sugerida' => $etapaSugerida, 'fecha_mencionada' => $fechaMencionada, 'categoria_sugerida' => $categoriaSugerida];
+    return [
+        'resumen' => $resumen,
+        'etapa_sugerida' => $eventos[0]['etapa'] ?? null,
+        'fecha_mencionada' => $eventos[0]['fecha'] ?? null,
+        'eventos_adicionales' => array_slice($eventos, 1),
+        'categoria_sugerida' => $categoriaSugerida,
+    ];
 }
 
 // Supervisor por IA: dado un asunto ESTANCADO (ya detectado por
@@ -5208,12 +5736,14 @@ function ia_es_mensaje_automatico(string $texto): bool
     return preg_match(
         '/^\s*¡Hola!? (No quiero que se te vaya a pasar|Sigo al pendiente de tu caso)'
         . '|^\s*¡Hola de nuevo! Sigo por aquí'
+        . '|^\s*Hola, ¿cómo estás\? Quería darte seguimiento a tu caso laboral'
         . '|^\s*(¡Hola[^!]{0,60}!\s*)?¡?Tu pago (del curso .{0,120}?)?quedó confirmado'
         . '|Tu asesoría con el abogado es en 1 hora'
         . '|Te recordamos que nuestro horario de atención'
         . '|¡No se te vaya a ir tu horario!'
         . '|^\\W*PDF de cálculo de liquidación enviado'
-        . '|^\s*Por hoy ya platicamos bastante/u',
+        . '|^\s*Por hoy ya platicamos bastante'
+        . '|vi que te interesó el curso \*/u',
         $texto
     ) === 1;
 }
@@ -5239,7 +5769,7 @@ function ia_articulos_citados(string $texto): array
  * @param array $contextoPrevio mismas filas, de días anteriores (solo contexto)
  * @return array|null ['veredicto'=>'ok'|'revisar','gravedad'=>?string,'resumen'=>?string,'hallazgos'=>array] o null si falló
  */
-function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoPrevio = [], array $calculos = []): ?array
+function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoPrevio = [], array $calculos = [], array $citas = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) return null;
@@ -5294,6 +5824,17 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         $contenido .= "\n\n(Ese día la calculadora oficial NO registró ningún cálculo para este teléfono: si el bot dio montos en pesos de finiquito/indemnización ese día, salieron de un cálculo anterior o los hizo a mano.)";
     }
 
+    // 27-nov-2026 (prioridad del despacho: vender): estado real de la
+    // asesoría de este teléfono, para que el revisor sepa si la venta se
+    // cerró o se perdió.
+    if ($citas) {
+        $contenido .= "\n\nASESORÍAS DE ESTE TELÉFONO EN EL SISTEMA (estado real):\n"
+            . implode("\n", array_map(fn($c) => '- apartada ' . substr((string)$c['creado_en'], 0, 16) . ' para ' . $c['fecha'] . ' ' . substr((string)$c['hora'], 0, 5)
+                . ' | estado: ' . $c['estado'] . ($c['pagado_en'] ? ' | pagada ' . substr((string)$c['pagado_en'], 0, 16) : ''), $citas));
+    } else {
+        $contenido .= "\n\n(Este teléfono NO tiene ninguna asesoría apartada ni pagada en el sistema.)";
+    }
+
     $system = 'Eres el abogado supervisor (experto en derecho laboral mexicano, LFT vigente) de un despacho que usa un '
         . 'bot de WhatsApp para orientar a trabajadores y vender una asesoría telefónica de $499. Revisas lo que el BOT '
         . 'contestó en esta conversación para detectar errores que dañen al cliente o al despacho. Solo revisas los '
@@ -5316,6 +5857,7 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- La prima de antigüedad en un despido o separación por el patrón: procede sin importar los años de servicio y sea justificado o no (Art. 162 fracc. III); los 15 años solo se exigen en renuncia voluntaria.\n"
         . "- Que no conste que el bot usó una herramienta: no puedes ver sus herramientas; juzga solo si lo que dijo es correcto.\n"
         . "- El mensaje automático de fuera de horario (\"Te recordamos que nuestro horario de atención es...\"), los recordatorios de pago y las decisiones del ABOGADO humano: no son respuestas del bot.\n"
+        . "- Calcular con el salario mínimo cuando el salario reportado es menor (criterio del despacho: nadie puede ganar menos del mínimo) y pagar las vacaciones de años anteriores con el salario actual (criterio del despacho).\n"
         . "- Plazo dado como \"días que te quedarán al concluir la conciliación\": es el criterio del despacho (la solicitud pausa el plazo y luego sigue con los días que quedaban), sale de calcular_plazo_demanda.\n"
         . "- Citar el Art. 517 fracc. II para el plazo de un mes de la rescisión del trabajador: es correcto.\n"
         . "- Antes de marcar mal los periodos de vacaciones, cuenta los aniversarios desde la fecha de ingreso (ej. ingreso ago-2022: el aniversario de ago-2025 es el 3er año = 16 días y el de ago-2026 el 4o = 18). Si solo lleva un aniversario, preguntar por \"tu primer año\" es correcto.\n"
@@ -5349,17 +5891,34 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Dar solo el aguinaldo a quien sigue trabajando y solo preguntó por el aguinaldo.\n"
         . "- Un estimado de \"si te despidieran\" a quien todavía trabaja, si se dice en condicional.\n"
         . "- No mencionar si el despacho puede representarlo: el bot NO debe sacar el tema de la zona por su cuenta.\n"
+        . "- Dividir el salario semanal entre 7 cuando trabaja 4 días o más a la semana (Art. 89: \"se dividirá entre siete\"). Es el criterio del despacho; NO digas que debe dividirse entre los días trabajados.\n"
+        . "- No aplicar el Art. 53 fracc. IV / Art. 54 en un accidente o enfermedad DE TRABAJO: el Art. 54 es solo para incapacidad que viene de un riesgo NO profesional. Tampoco lo exijas por una enfermedad simple: el 53-IV pide una incapacidad que haga IMPOSIBLE el trabajo.\n"
+        . "- No plantear periodo de prueba cuando ya pasaron más de 30 días (Art. 39-A: máximo 30 días, o 180 solo en puestos de dirección o especializados, y debe constar por escrito).\n"
+        . "- Citar el Art. 56 para discriminación por condiciones de salud, embarazo, edad, etc.: su texto lo incluye. Solo es error citarlo para cambios de horario, jornada o puesto.\n"
+        . "- Decir que 3 faltas no son causa de despido: el Art. 47 fracc. X exige MÁS de tres faltas en 30 días.\n"
+        . "- Decir que no pagar el salario en la fecha acostumbrada encaja en el Art. 51 fracc. V: es su texto literal.\n"
+        . "- Que el bot no tome casos de trabajadores de gobiernos estatales, municipales o del Apartado B: el despacho SOLO lleva casos del Apartado A que se rigen por la LFT (confirmado por el despacho, 27-nov-2026).\n"
+        . "- Que el bot diga que las vacaciones de un aniversario siguen vigentes dentro de los 18 meses: es el criterio del sistema.\n"
         . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
         . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
+        . "VENTAS PERDIDAS (la prioridad del despacho es vender la asesoría de $499; márcalas con \"tipo\":\"venta\"). Marca SOLO si en esta conversación se perdió una venta por algo que hizo o dejó de hacer el BOT:\n"
+        . "- La persona tiene un caso laboral real (despido, finiquito, rescisión, adeudos), mostró interés o urgencia, y el bot nunca le ofreció la asesoría.\n"
+        . "- La persona dijo que sí quería la asesoría (o pidió horarios, o preguntó cómo pagar) y NO quedó con horario apartado (revisa las asesorías del sistema que se te dan).\n"
+        . "- La persona apartó horario y no pagó, y el bot no la ayudó a completar el pago cuando ella escribió.\n"
+        . "- La persona puso una objeción (\"está caro\", \"no tengo tarjeta\", \"no confío\", \"lo pienso\", \"¿es presencial?\") y el bot no la resolvió o la dejó ir sin una respuesta útil.\n"
+        . "- El bot alejó la venta: demasiadas preguntas antes de dar el estimado, mensajes larguísimos o confusos, contradicciones, o no contestó lo que la persona preguntó.\n"
+        . "NO marques como venta perdida: quien dijo claramente que no la quiere o no tiene dinero y el bot lo respetó; quien no tiene caso o no se le puede atender (Apartado B, gobierno estatal o municipal); quien ya pagó; quien dejó de contestar después de recibir la oferta (eso no es culpa del bot); la oferta hecha una sola vez de forma natural.\n"
+        . "En las ventas perdidas, \"correccion\" es qué debió decir o hacer el bot para cerrar la venta, en una o dos frases concretas.\n\n"
         . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"
         . 'Responde ÚNICAMENTE con un JSON válido, sin texto antes ni después, con esta forma: '
-        . '{"veredicto":"ok"|"revisar","gravedad":"alta"|"media"|"baja"|null,"resumen":"1 línea","hallazgos":[{"cita":"frase corta del bot","problema":"qué está mal y por qué","correccion":"qué debió decir"}]}. '
+        . '{"veredicto":"ok"|"revisar","gravedad":"alta"|"media"|"baja"|null,"resumen":"1 línea","hallazgos":[{"tipo":"legal"|"venta","cita":"frase corta del bot","problema":"qué está mal y por qué","correccion":"qué debió decir"}]}. '
+        . 'En una venta perdida, gravedad alta = la persona quería pagar y no pudo por culpa del bot; media = la venta se perdió por una objeción no resuelta o una oferta que nunca llegó. '
         . 'gravedad alta = puede causar daño real al cliente o al despacho (falsa expectativa de dinero, error legal de fondo, pago/cita inexistente); '
         . 'media = error legal menor o mala atención; baja = detalle. Si no hay errores reales: {"veredicto":"ok","gravedad":null,"resumen":"","hallazgos":[]}.';
 
     $payload = [
         'model' => IA_MODELO_REVISION_BOT,
-        'max_tokens' => 1500,
+        'max_tokens' => 2500,
         'thinking' => ['type' => 'disabled'],
         // Caché (17 nov 2026, para bajar el costo de la supervisión): las
         // instrucciones del revisor + los criterios del despacho son
@@ -5417,6 +5976,10 @@ function ia_parsear_revision_bot(string $texto): ?array
         if (preg_match('#^(n\s*/?\s*a\b|no aplica|no requiere|ninguna|sin corrección|aceptable)#iu', $c)) return false;
         return !preg_match('/no hay error|no es un error|no constituye (un )?(error|hallazgo)|no es error|sin hallazgo/iu', $pr);
     }));
+    foreach ($hallazgos as &$h) {
+        $h['tipo'] = (($h['tipo'] ?? '') === 'venta') ? 'venta' : 'legal';
+    }
+    unset($h);
     $veredicto = (($j['veredicto'] ?? '') === 'revisar' && $hallazgos) ? 'revisar' : 'ok';
     $gravedad = in_array($j['gravedad'] ?? null, ['alta', 'media', 'baja'], true) ? $j['gravedad'] : ($veredicto === 'revisar' ? 'media' : null);
     return [

@@ -2341,7 +2341,24 @@ function etapaLabelPorKey(key){
   return def ? def.label : key;
 }
 function avisoIaHTML(a){
-  if(!a.ia_resumen) return '';
+  if(!a.ia_resumen){
+    // Bug real reportado por el usuario (24 nov 2026, Exp. 388/2026,
+    // Acuerdos No. 7 y 8 del Tribunal Federal): el robot reportó el aviso
+    // pero no logró adjuntar el PDF (patrón ya documentado varias veces en
+    // CLAUDE.md -- descargas de PDF fallidas en el Portal Federal). Sin
+    // documento no hay nada que la IA pueda leer, así que
+    // cron_analizar_acuerdos_ia.php nunca llega a analizarlo ni a llenar
+    // ninguna etapa sola -- y la tarjeta se veía EXACTAMENTE igual que una
+    // ya procesada, así que un abogado le podía dar "Marcar revisado" sin
+    // darse cuenta de que faltaba el documento real. Ahora se avisa aquí
+    // mismo: el abogado puede subir el PDF a mano desde "Documentos"
+    // (categoría "Acuerdo (boletín)") -- cron_analizar_documentos_ia.php
+    // SÍ lo analiza con IA igual, sin necesitar que venga de un robot.
+    if(!a.documento_id && a.origen==='automatico'){
+      return `<div class="aviso-ia" style="color:var(--red);">⚠ El robot no pudo adjuntar el documento de este acuerdo -- consíguelo a mano en el portal de origen y súbelo en "Documentos" (categoría "Acuerdo (boletín)") para que la IA lo lea y actualice el expediente.</div>`;
+    }
+    return '';
+  }
   return `<div class="aviso-ia">🤖 ${escapeHTML(a.ia_resumen)}${a.ia_aplicado && a.ia_etapa_sugerida ? ` <span class="badge ok">✓ etapa actualizada sola: ${escapeHTML(etapaLabelPorKey(a.ia_etapa_sugerida))}</span>` : ''}</div>`;
 }
 function documentoIaHTML(d){
@@ -2468,6 +2485,7 @@ function botRevisionesHTML(){
         ${r.resumen ? `<div style="font-size:13px; margin-bottom:6px;">${escapeHTML(r.resumen)}</div>` : ''}
         <ul style="margin:0 0 10px 18px; padding:0; font-size:12.5px;">
           ${(r.hallazgos||[]).map(h=>`<li style="margin-bottom:6px;">
+            ${h.tipo==='venta' ? `<span class="badge warn" style="margin-bottom:3px; display:inline-block;">💰 Venta perdida</span>` : ''}
             ${h.cita ? `<div style="color:var(--gray);">Bot: “${escapeHTML(h.cita)}”</div>` : ''}
             <div><strong>Problema:</strong> ${escapeHTML(h.problema||'')}</div>
             ${h.correccion ? `<div><strong>Debió decir:</strong> ${escapeHTML(h.correccion)}</div>` : ''}
@@ -2488,6 +2506,22 @@ async function loadCredencialesPortales(){
     const d = await api('GET', 'credenciales_portales_listar.php');
     CREDENCIALES_PORTALES = d.usuarios;
   }catch(e){ CREDENCIALES_PORTALES = []; }
+}
+// Panel "Robots de monitoreo" (20 nov 2026) -- pedido explícito del
+// usuario tras descubrir a mano, con el Programador de tareas de Windows,
+// que 3 de los 5 robots llevaban sin correr por un archivo lanzador
+// faltante y nadie lo notó: "podemos poner algo en el sistema que nos
+// avise cuando fue la última vez que corrieron los robots". Cada robot
+// avisa solo al terminar (api/robot_heartbeat.php); este panel solo
+// muestra lo que ya quedó guardado -- el cron diario
+// (api/cron_verificar_robots.php) es el que de verdad avisa por push si
+// alguno se atrasa, sin que nadie tenga que entrar a revisar esto.
+let ROBOTS_HEARTBEATS = [];
+async function loadRobotsHeartbeats(){
+  try{
+    const d = await api('GET', 'robot_heartbeats_list.php');
+    ROBOTS_HEARTBEATS = d.data;
+  }catch(e){ ROBOTS_HEARTBEATS = []; }
 }
 // Se abrió el sistema desde el push de una pregunta nueva (ver
 // cron_generar_preguntas_supervisor.php) -- lleva a "Preguntas al
@@ -2998,6 +3032,7 @@ async function refreshBootstrap(){
     await loadGoogleCalendariosMapeo();
     await loadIaActividad();
     await loadCredencialesPortales();
+    await loadRobotsHeartbeats();
     await loadBotRevisiones();
   }
   await loadDiasInhabiles();
@@ -7677,6 +7712,24 @@ function equipoHTML(){
         </tr>`;
       }).join("")}
     </tbody></table>` : '<div class="empty">Sin abogados activos.</div>'}
+  </div></div>
+  <div class="panel"><div class="panel-body" style="padding:18px 24px;">
+    <div style="font-family:var(--serif); font-weight:700; font-size:15px; color:var(--ink); margin-bottom:8px;">Robots de monitoreo</div>
+    <div class="notice" style="margin-bottom:14px;">Cada robot (Federal, CDMX, Buzón CDMX, Edomex, Jurisprudencia) corre solo en la computadora del despacho -- aquí se ve la última vez que cada uno avisó al sistema que terminó. Si alguno lleva más tiempo del esperado sin avisar, también se manda un push diario al Administrador (sin tener que revisar esto a mano).</div>
+    ${ROBOTS_HEARTBEATS.length ? `
+    <table><thead><tr><th>Robot</th><th>Última corrida</th><th>Resultado</th></tr></thead><tbody>
+      ${ROBOTS_HEARTBEATS.map(r=>{
+        const fecha = r.ultima_corrida_en ? new Date(r.ultima_corrida_en.replace(' ','T')).toLocaleString('es-MX',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'nunca ha reportado';
+        const estadoBadge = r.vencido
+          ? `<span class="badge crit">✗ atrasado</span>`
+          : (r.ultimo_ok === false ? `<span class="badge warn">⚠ corrió con error</span>` : `<span class="badge ok">✓ al día</span>`);
+        return `<tr>
+          <td style="font-size:12.5px;">${escapeHTML(r.nombre)}</td>
+          <td style="font-size:12px; white-space:nowrap;">${fecha}</td>
+          <td style="font-size:12.5px;">${estadoBadge}${r.ultimo_resumen ? `<div style="font-size:11px; color:var(--gray); margin-top:2px;">${escapeHTML(r.ultimo_resumen)}</div>` : ''}</td>
+        </tr>`;
+      }).join("")}
+    </tbody></table>` : '<div class="empty">Sin datos todavía -- se llenan solos en la próxima corrida de cada robot.</div>'}
   </div></div>
   ${tribunalValidacionHTML()}
   <div class="panel"><div class="panel-body" style="padding:18px 24px;">

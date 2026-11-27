@@ -106,14 +106,26 @@ foreach ($calculos as $c) {
 
     $minutosSilencio = (int)((time() - strtotime($ultimoMsg['creado_en'])) / 60);
 
+    // Monto del cálculo real (24-nov-2026): el 12-13 nov se quitó la cifra
+    // de estos 2 mensajes porque el bug de "trabajador de confianza" (20
+    // días sumados de más en un despido) inflaba el monto guardado aquí --
+    // caso real: "podrías recuperar cerca de $571,486" a una clienta a la
+    // que le correspondía menos de la mitad. Ese bug ya se corrigió en la
+    // calculadora (12-nov), así que `monto_total` que se guarda desde
+    // entonces ya es la cifra correcta -- se vuelve a incluir aquí, mismo
+    // criterio que ya usa el cierre en vivo del bot ("ancla el precio
+    // contra ese monto", ver REGLA DURA de Lead 2 en ia_helpers.php). Caída
+    // real de ventas detectada el 24-nov-2026 (de ~3.8 a ~1.3 asesorías/día
+    // justo desde el 13-nov) -- quitar el monto le restó urgencia al
+    // seguimiento automático, sin que hiciera falta para corregir el bug
+    // original (el bug estaba en el CÁLCULO, no en mencionarlo).
+    $montoCalculo = (float)($c['monto_total'] ?? 0);
+    $montoFmt = $montoCalculo >= 1 ? ('$' . number_format($montoCalculo, 0, '.', ',')) : null;
 
     if ($c['primer_seguimiento_en'] === null && $minutosSilencio >= 180 && $minutosSilencio < 1200) {
-        // Sin montos ni "sin compromiso" (decisión del despacho, 12-13 nov
-        // 2026): la cifra del cálculo es un estimado y, repetida aquí como
-        // gancho de venta, generó falsas expectativas (caso real: "podrías
-        // recuperar cerca de $571,486" a una clienta a la que le
-        // correspondía menos de la mitad); y la asesoría tiene costo.
-        $mensaje = "¡Hola! Sigo al pendiente de tu caso. Si quieres que el Lic. Rubén Buerhend lo revise a fondo por teléfono (asesoría de 1 hora, \$499), te busco un horario. ¿Te interesa?";
+        $mensaje = $montoFmt !== null
+            ? "¡Hola! Sigo al pendiente de tu caso -- tu estimado es de aproximadamente $montoFmt. Si quieres que el Lic. Rubén Buerhend lo revise a fondo por teléfono (asesoría de 1 hora, \$499) y te diga exactamente cómo recuperarlo, te busco un horario. ¿Te interesa?"
+            : "¡Hola! Sigo al pendiente de tu caso. Si quieres que el Lic. Rubén Buerhend lo revise a fondo por teléfono (asesoría de 1 hora, \$499), te busco un horario. ¿Te interesa?";
         if (whatsapp_enviar($c['telefono'], $mensaje)) {
             $enviados1++;
             $pdo->prepare('UPDATE calculos_liquidacion SET primer_seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $c['id']]);
@@ -125,7 +137,13 @@ foreach ($calculos as $c) {
         // además de la asesoría, se menciona el documento membretado ($49)
         // como opción más barata, para quien de plano no quiere la llamada
         // pero sí se quedó con el dato de que tiene un caso real.
-        $mensaje = "¡Hola de nuevo! Sigo por aquí para cuando gustes. Si quieres que el Lic. Rubén Buerhend revise tu caso a fondo por teléfono, la asesoría cuesta \$499. Y si por ahora solo necesitas tu cálculo estimado por escrito, con membrete del despacho y los artículos de ley aplicados, ese documento cuesta \$49. Dime cuál prefieres y te mando el link de pago.";
+        // OJO: las 2 variantes deben empezar EXACTO con "¡Hola de nuevo! Sigo
+        // por aquí" -- es el prefijo literal que ia_es_mensaje_automatico()
+        // usa para que el revisor diario del bot NO evalúe este mensaje
+        // fijo como si fuera una respuesta nueva de la IA.
+        $mensaje = $montoFmt !== null
+            ? "¡Hola de nuevo! Sigo por aquí para cuando gustes -- tu estimado sigue siendo de aproximadamente $montoFmt. Si quieres que el Lic. Rubén Buerhend revise tu caso a fondo por teléfono, la asesoría cuesta \$499. Y si por ahora solo necesitas tu cálculo estimado por escrito, con membrete del despacho y los artículos de ley aplicados, ese documento cuesta \$49. Dime cuál prefieres y te mando el link de pago."
+            : "¡Hola de nuevo! Sigo por aquí para cuando gustes. Si quieres que el Lic. Rubén Buerhend revise tu caso a fondo por teléfono, la asesoría cuesta \$499. Y si por ahora solo necesitas tu cálculo estimado por escrito, con membrete del despacho y los artículos de ley aplicados, ese documento cuesta \$49. Dime cuál prefieres y te mando el link de pago.";
         if (whatsapp_enviar($c['telefono'], $mensaje)) {
             $enviados2++;
             $pdo->prepare('UPDATE calculos_liquidacion SET segundo_seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $c['id']]);

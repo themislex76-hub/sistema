@@ -62,4 +62,9 @@ $stmt->execute([
     ':categoria' => $categoria,
 ]);
 
+// Mismo motivo que documentos_upload.php: un acuerdo nuevo subido por un
+// robot es justo el tipo de novedad que el Informe Ejecutivo debe reflejar
+// -- sin este UPDATE, expedientes.actualizado_en nunca se movía con esto.
+$pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $expedienteId]);
+
 respond(['id' => (int)$pdo->lastInsertId()], 201);

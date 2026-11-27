@@ -37,12 +37,33 @@ $pdo = db();
 // un aviso ya existente, en cualquier estado, siempre cuenta como
 // duplicado.
 $existe = $pdo->prepare(
-    'SELECT id FROM avisos_boletin
+    'SELECT id, documento_id FROM avisos_boletin
      WHERE expediente_id = :eid AND fuente = :fuente AND resumen = :resumen
      LIMIT 1'
 );
 $existe->execute([':eid' => $expedienteId, ':fuente' => $fuente, ':resumen' => $resumen]);
-if ($existe->fetch()) {
+$existente = $existe->fetch();
+if ($existente) {
+    // Bug real reportado por el usuario (24 nov 2026, Exp. 388/2026): el
+    // robot pudo haber reportado este mismo aviso ANTES sin lograr
+    // descargar el PDF (documento_id quedó NULL) -- si ahora, en una
+    // corrida posterior (federal.js ya reintenta solo los PDF pendientes,
+    // sin límite de días), sí consigue el documento y vuelve a llamar este
+    // endpoint con el mismo resumen exacto, antes esto se descartaba como
+    // "duplicado" sin hacer nada -- el documento se perdía igual, aunque
+    // el robot sí lo hubiera logrado. Ahora, si el aviso ya existente
+    // sigue sin documento y esta llamada sí trae uno, se le adjunta.
+    if ($documentoId > 0 && empty($existente['documento_id'])) {
+        $pdo->prepare('UPDATE avisos_boletin SET documento_id = :doc WHERE id = :id')
+            ->execute([':doc' => $documentoId, ':id' => $existente['id']]);
+        // Mismo motivo que la 1a vez: un documento nuevo es justo el tipo
+        // de novedad que el Informe Ejecutivo debe reflejar, y
+        // cron_analizar_acuerdos_ia.php solo toma avisos con documento --
+        // sin este bump, el Informe Ejecutivo no se enteraría de que ahora
+        // sí hay algo que leer.
+        $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $expedienteId]);
+        respond(['ok' => true, 'duplicado' => true, 'documento_adjuntado' => true]);
+    }
     respond(['ok' => true, 'duplicado' => true]);
 }
 
@@ -57,6 +78,12 @@ $stmt->execute([
 ]);
 
 $avisoId = (int)$pdo->lastInsertId();
+
+// Mismo motivo que documentos_upload.php/documentos_subir_robot.php: un
+// aviso de boletín nuevo es justo el tipo de novedad que el Informe
+// Ejecutivo debe reflejar -- sin esto, actualizado_en nunca se movía
+// cuando un robot reportaba algo, así que el informe nunca se enteraba.
+$pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $expedienteId]);
 
 // Avisa por push al Administrador y al/los abogado(s) asignados al
 // expediente -- mismo criterio de "quién debe enterarse" que ya usa

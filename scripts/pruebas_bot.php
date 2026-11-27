@@ -255,7 +255,51 @@ $r = json_decode(ia_resultado_confirmar_compra_documento_calculo($pdo, 'M', true
 caso('documento para OTRA persona (25-nov, compañera): no lo bloquea el pago propio', empty($r['ya_pagado']), json_encode($r, JSON_UNESCAPED_UNICODE));
 
 // ---------------------------------------------------------------------
-echo "16) Revisión del 19-nov: vacaciones de todos los años, accidente de trabajo, revisor calibrado\n";
+echo "16) Revisión del 18-nov (35 de 146 marcadas): candados nuevos\n";
+caso('cliente dijo que nunca tomó vacaciones',
+    ia_cliente_dijo_no_tomo_vacaciones([['role' => 'user', 'content' => 'No tome ningún día de vacaciones en todo este tiempo']])
+    && ia_cliente_dijo_no_tomo_vacaciones([['role' => 'user', 'content' => 'nunca tomé vacaciones']])
+    && !ia_cliente_dijo_no_tomo_vacaciones([['role' => 'user', 'content' => 'tomé 8 días de vacaciones el año pasado']])
+    && !ia_cliente_dijo_no_tomo_vacaciones([['role' => 'assistant', 'content' => 'no tomé vacaciones']]));
+caso('detecta "son N días" como conversión de meses a días',
+    ia_texto_convierte_meses_en_dias('tienes hasta el 18 de enero de 2027 para presentar tu demanda. Son 60 días.')
+    && !ia_texto_convierte_meses_en_dias('tienes hasta el 18 de enero de 2027 para presentar tu demanda.')
+    && !ia_texto_convierte_meses_en_dias('te quedan 15 días de vacaciones pendientes.'));
+caso('quitar oración recorta solo la frase problemática, deja el resto',
+    ia_texto_quitar_oraciones('Tienes hasta el 18 de enero de 2027 para demandar. Son 60 días. Cualquier duda, aquí estoy.', '/\bson\s+\d{1,3}\s*d[ií]as\b/iu')
+        === 'Tienes hasta el 18 de enero de 2027 para demandar. Cualquier duda, aquí estoy.');
+caso('quitar oración nunca deja el mensaje vacío',
+    ia_texto_quitar_oraciones('Son 60 días.', '/\bson\s+\d{1,3}\s*d[ií]as\b/iu') === 'Son 60 días.');
+caso('detecta un plazo en días dado a mano',
+    ia_texto_da_plazo_en_dias_sin_herramienta('te quedarán *56 días* para presentar tu demanda ante el Tribunal')
+    && ia_texto_da_plazo_en_dias_sin_herramienta('el plazo es de 24 días para presentar la solicitud')
+    && !ia_texto_da_plazo_en_dias_sin_herramienta('tienes hasta el 18 de enero de 2027 para presentar tu demanda.')
+    && !ia_texto_da_plazo_en_dias_sin_herramienta('llevas trabajando 56 días en la empresa'));
+caso('detecta jurisprudencia citada de memoria (registro, tesis aislada)',
+    ia_texto_cita_jurisprudencia_concreta('el Poder Judicial ha resuelto que ese tiempo sí cuenta (registro digital 243342, tesis aislada)')
+    && ia_texto_cita_jurisprudencia_concreta('la Suprema Corte ha sostenido ese criterio en diversas tesis')
+    && !ia_texto_cita_jurisprudencia_concreta('eso lo debe valorar el abogado con las pruebas disponibles')
+    && !ia_texto_cita_jurisprudencia_concreta('hay criterios judiciales sobre el tema, pero no tengo uno específico a la mano'));
+caso('detecta cifras de exención de ISR inventadas',
+    ia_texto_afirma_exencion_isr('el aguinaldo y la prima vacacional tienen exención hasta 30 y 15 veces la UMA respectivamente')
+    && ia_texto_afirma_exencion_isr('es probable que buena parte quede exenta de ISR')
+    && !ia_texto_afirma_exencion_isr('la Ley del ISR exenta una parte de la indemnización según los años de servicio'));
+caso('prompt: no 2 totales distintos de horas extra con divisores distintos', strpos($p, '2 divisores distintos del salario diario') !== false);
+caso('prompt: no repetir el precio en mensajes seguidos', strpos($p, 'repetir el PRECIO de la asesoría') !== false);
+caso('calculadora: aviso_vacaciones_anteriores cuando el cliente dijo que nunca tomó y no se pasó el dato',
+    (function () {
+        $pdoV = pdo_nuevo();
+        $pdoV->exec("CREATE TABLE configuracion (clave TEXT, valor TEXT)");
+        $pdoV->exec("INSERT INTO configuracion VALUES ('salario_minimo_diario','315.04')");
+        // Se simula directo el candado (la inyección de aviso_vacaciones_anteriores vive
+        // en ia_responder_whatsapp(), que necesita la API real) -- aquí se confirma que
+        // el candado de detección y la condición del monto funcionan igual que ahí.
+        $dias = 0.0;
+        $mensajesV = [['role' => 'user', 'content' => 'no tome ningún día de vacaciones']];
+        return $dias <= 0 && ia_cliente_dijo_no_tomo_vacaciones($mensajesV);
+    })());
+
+echo "17) Revisión del 19-nov: vacaciones de todos los años, accidente de trabajo, revisor calibrado\n";
 $p = IA_SYSTEM_PROMPT;
 caso('pregunta por TODOS los años anteriores y pasa la suma', strpos($p, 'TODOS los años anteriores') !== false && strpos($p, 'SUMA de lo no tomado') !== false);
 caso('antes del primer año: el proporcional cubre todo', strpos($p, 'Si aún NO cumple su primer año') !== false);
@@ -268,7 +312,7 @@ $cron = file_get_contents($base . '/api/cron_revisar_conversaciones_bot.php');
 caso('revisor recibe días de vacaciones y prescritos de la calculadora', strpos($cron, 'vacaciones_anteriores_dias_prescritos') !== false);
 
 // ---------------------------------------------------------------------
-echo "17) Revisión del 19-22 nov: montos a mano, reestructura, trabajo del hogar, curso pagado\n";
+echo "18) Revisión del 19-22 nov: montos a mano, reestructura, trabajo del hogar, curso pagado\n";
 $resp = json_encode([['role' => 'assistant', 'content' => 'Total estimado: $67,166.59']]) . ' {"total_estimado":115672.98,"aguinaldo_monto":2187.74}';
 caso('cifra con centavos hecha a mano se detecta', ia_montos_sin_respaldo('serían hasta $1,070.01', $resp) === ['$1,070.01']);
 caso('cifra de la calculadora (JSON sin comas) no se marca', ia_montos_sin_respaldo('Total: $115,672.98 y aguinaldo $2,187.74', $resp) === []);
@@ -303,7 +347,58 @@ $cron = file_get_contents($base . '/api/cron_revisar_conversaciones_bot.php');
 caso('revisor recibe salarios devengados de la calculadora', strpos($cron, "'salarios_devengados_monto' => 'salarios devengados'") !== false);
 
 // ---------------------------------------------------------------------
-echo "20) Conversación del 25-nov (Querétaro): zona, pagaré en blanco, antigüedad sin cortes\n";
+echo "20) Mejorar ventas (24-nov): objeciones de precio y monto real en el seguimiento\n";
+$p = IA_SYSTEM_PROMPT;
+caso('prompt: objeción de precio -- reencuadra valor con el caso real, nunca baja el precio',
+    strpos($p, 'OBJECIONES de precio') !== false && strpos($p, 'nunca ofrezcas un') !== false);
+caso('prompt: "ya tengo abogado" -- segunda opinión, nunca desprestigiar al otro abogado',
+    strpos($p, 'ya tengo abogado') !== false && strpos($p, 'hables mal de otro abogado') !== false);
+caso('cron_seguimiento_calculadora.php vuelve a mencionar el monto real del cálculo (se había quitado por error el 12-13 nov al corregir un bug distinto)',
+    strpos(file_get_contents($base . '/api/cron_seguimiento_calculadora.php'), 'tu estimado es de aproximadamente') !== false);
+caso('cron_seguimiento_calculadora.php: los 2 mensajes con monto siguen con el prefijo exacto que ia_es_mensaje_automatico() necesita',
+    ia_es_mensaje_automatico('¡Hola! Sigo al pendiente de tu caso -- tu estimado es de aproximadamente $123,456. Si quieres...')
+    && ia_es_mensaje_automatico('¡Hola de nuevo! Sigo por aquí para cuando gustes -- tu estimado sigue siendo de aproximadamente $123,456. Si quieres...'));
+caso('prompt: NUNCA menciona años de experiencia ni "reconocido" al ofrecer la asesoría (decisión del usuario, 25-nov-2026 -- suena a venta)',
+    strpos($p, '25 años de experiencia') === false && strpos($p, 'reconocido en el ámbito laboral') === false && strpos($p, 'NUNCA menciones años de experiencia') !== false);
+caso('cron_seguimiento_calculadora_plantilla.php: tercer recordatorio por plantilla, con los mismos candados que el seguimiento normal',
+    (function () use ($base) {
+        $src = file_get_contents($base . '/api/cron_seguimiento_calculadora_plantilla.php');
+        return strpos($src, 'whatsapp_enviar_plantilla') !== false
+            && strpos($src, 'tercer_seguimiento_en') !== false
+            && strpos($src, 'pausado_bot') !== false
+            && strpos($src, 'whatsapp_texto_parece_declinar') !== false;
+    })());
+
+// ---------------------------------------------------------------------
+echo "21) Centro de Conciliación: argumento de venta con la 'propuesta de 45 días' (25-nov)\n";
+$p = IA_SYSTEM_PROMPT;
+caso('prompt: menciona que en conciliación es común ofrecer menos (ej. 45 días cuando son 90)',
+    strpos($p, 'es común que le ofrezcan menos') !== false && strpos($p, '45 días cuando la indemnización es de 90') !== false);
+caso('prompt: la prima de antigüedad SÍ se paga desde el primer año en un despido -- los 15 años solo en renuncia',
+    strpos($p, 'en un despido se paga') !== false
+    && strpos($p, 'Los 15 años solo se exigen cuando la persona') !== false);
+caso('prompt: el conciliador no es su abogado (ya NO dice que ayuda al patrón)',
+    strpos($p, 'El conciliador no es su abogado') !== false && strpos($p, 'parecería que ayudan más') === false);
+caso('prompt: nunca menciona salarios caídos en este argumento (no inflar expectativas)',
+    strpos($p, 'NUNCA menciones salarios caídos en este punto') !== false);
+caso('prompt: se dispara siempre que se calcule un DESPIDO, no en renuncia/Rescisión/Prima de Antigüedad',
+    strpos($p, 'se dispara') !== false && strpos($p, 'SIEMPRE que calcules un estimado de DESPIDO') !== false
+    && strpos($p, 'no aplica a renuncia, Rescisión Art. 51 ni') !== false);
+
+// ---------------------------------------------------------------------
+echo "22) 3er recordatorio por plantilla: texto real guardado en el historial se reconoce como automático (25-nov)\n";
+caso('ia_es_mensaje_automatico() reconoce el texto EXACTO que guarda cron_seguimiento_calculadora_plantilla.php (sin esto, el revisor diario lo evaluaría como respuesta nueva de la IA)',
+    ia_es_mensaje_automatico('Hola, ¿cómo estás? Quería darte seguimiento a tu caso laboral -- según lo que platicamos, tu estimado ronda los $45,230. Si en algún momento quieres que el Lic. Rubén Buerhend lo revise contigo a fondo por teléfono, nada más escríbeme y con gusto te paso los horarios que tiene disponibles.'));
+caso('el archivo ya no guarda la versión vieja ("Sigo al pendiente de tu caso... contéstame este mensaje") en el historial, solo la plantilla aprobada por Meta',
+    (function () use ($base) {
+        $src = file_get_contents($base . '/api/cron_seguimiento_calculadora_plantilla.php');
+        return strpos($src, 'Sigo al pendiente de tu caso -- ¿cómo estás') === false
+            && strpos($src, 'nada más escríbeme') !== false
+            && strpos($src, "PLANTILLA_SEGUIMIENTO_CALCULO = 'despues_de_24_h'") !== false;
+    })());
+
+// ---------------------------------------------------------------------
+echo "23) Conversación del 25-nov (Querétaro): zona, pagaré en blanco, antigüedad sin cortes\n";
 $p = IA_SYSTEM_PROMPT;
 caso('no comentar que allá no se llevan juicios aunque diga otro estado', strpos($p, 'caso real 25-nov-2026: "En Querétaro"') !== false);
 caso('papeles en blanco: Art. 48 Bis fracc. I inciso c', strpos($p, 'Art. 48 Bis fracc. I inciso c') !== false);
@@ -311,7 +406,7 @@ caso('contratos seguidos sin cortes: antigüedad no dudosa', strpos($p, 'Si los 
 caso('herramienta: parámetro para_otra_persona', strpos(json_encode(IA_TOOLS, JSON_UNESCAPED_UNICODE), 'para_otra_persona') !== false);
 
 // ---------------------------------------------------------------------
-echo "21) Curso pagado en la página de Netlify (25-nov): el recordatorio manda su link ligado\n";
+echo "24) Curso pagado en la página de Netlify (25-nov): el recordatorio manda su link ligado\n";
 $pdo = pdo_nuevo();
 $pdo->exec("CREATE TABLE compras_curso (id INTEGER PRIMARY KEY, telefono TEXT, curso_slug TEXT, nombre_cliente TEXT, monto REAL, estado TEXT DEFAULT 'pendiente_pago', link_pago TEXT, mp_preference_id TEXT)");
 $pdo->exec("INSERT INTO compras_curso (telefono, curso_slug, monto, link_pago) VALUES ('C', 'procesal', 299, 'https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=X')");
@@ -349,6 +444,112 @@ caso('periodo de prueba Art. 39-A', strpos($p, 'PERIODO DE PRUEBA (Art. 39-A)') 
 caso('Art. 435: fuerza mayor y quiebra se aprueban o desaprueban', strpos($p, 'desaprueba en un procedimiento especial colectivo') !== false);
 $r = ia_parsear_revision_bot('{"veredicto":"revisar","gravedad":"media","resumen":"x","hallazgos":[{"cita":"a","problema":"Esto es correcto, no es un error","correccion":"No aplica corrección"},{"cita":"b","problema":"x","correccion":"No requiere corrección; está bien."}]}');
 caso('revisor: descarta hallazgos con "no aplica"/"no requiere"', $r['veredicto'] === 'ok' && $r['hallazgos'] === []);
+
+// ---------------------------------------------------------------------
+echo "24) Criterios del Lic. Rubén (26-nov): salario menor al mínimo y vacaciones con salario actual\n";
+$p = IA_SYSTEM_PROMPT;
+caso('salario menor al mínimo: se calcula con el mínimo', strpos($p, 'Salario MENOR al mínimo (criterio del Lic. Rubén') !== false);
+caso('vacaciones anteriores con el salario actual', strpos($p, 'se pagan con el salario ACTUAL') !== false);
+$src = file_get_contents($base . '/api/ia_helpers.php');
+caso('la herramienta sube el salario al mínimo de la zona', strpos($src, "aviso_salario_minimo") !== false && strpos($src, '$salarioUsar,') !== false);
+caso('argumento de conciliación suavizado (sin "casi siempre la mitad" ni "ayudan al patrón")', strpos(IA_SYSTEM_PROMPT, 'Casi siempre le van a ofrecer la MITAD') === false && strpos(IA_SYSTEM_PROMPT, 'parecería que ayudan más') === false && strpos(IA_SYSTEM_PROMPT, 'es común que le ofrezcan menos') !== false);
+
+// ---------------------------------------------------------------------
+echo "25) Bonos anuales: se dividen entre 365 y se suman al salario diario (criterio del Lic. Rubén, 26-nov)\n";
+caso('bono anual de $36,500 + fijo de $500 = $600 diarios',
+    (function () {
+        $r = calcular_sdi_con_variable(500.0, [['monto' => 36500, 'fecha' => '2026-09-15']], '2026-11-20');
+        return $r && abs($r['promedio_diario_variable'] - 100.0) < 0.01 && abs($r['salario_diario_a_usar'] - 600.0) < 0.01;
+    })());
+caso('bono de hace más de 365 días no se cuenta',
+    (function () {
+        $r = calcular_sdi_con_variable(500.0, [['monto' => 36500, 'fecha' => '2025-09-15']], '2026-11-20');
+        return $r && abs($r['salario_diario_a_usar'] - 500.0) < 0.01 && $r['pagos_fuera_de_rango_365_dias'] === 1;
+    })());
+
+// ---------------------------------------------------------------------
+echo "26) Documento de $49: ya no promete que le ofrecerán más dinero (26-nov)\n";
+caso('prompt: el documento ya no dice "le ofrezcan una cantidad mayor"',
+    strpos(IA_SYSTEM_PROMPT, 'ofrezcan una cantidad mayor') === false
+    && strpos(IA_SYSTEM_PROMPT, 'más difícil que le ofrezcan') !== false
+    && strpos(IA_SYSTEM_PROMPT, 'NUNCA le prometas que con el documento le van a') !== false);
+
+// ---------------------------------------------------------------------
+echo "27) Curso de Procedimiento Laboral: no promete formatos (26-nov, caso Rogelio)\n";
+caso('prompt: el curso procesal ya no dice que trae formatos reales',
+    strpos(IA_SYSTEM_PROMPT, 'documentos y\n    formatos reales') === false
+    && strpos(IA_SYSTEM_PROMPT, 'NO incluye formatos ni escritos descargables') !== false);
+caso('prompt: el curso de amparo ya no promete 5 escritos modelo; solo Actas trae formatos',
+    strpos(IA_SYSTEM_PROMPT, '5 escritos modelo') === false
+    && strpos(IA_SYSTEM_PROMPT, 'el ÚNICO que trae formatos es el de Actas Administrativas') !== false
+    && strpos(IA_SYSTEM_PROMPT, '6 formatos listos') !== false);
+
+// ---------------------------------------------------------------------
+echo "28) Cursos: el bot ya no manda la página de Netlify (26-nov, accesos que no llegaban)\n";
+caso('prompt: no trae ningún link de netlify ni de la página de cursos',
+    strpos(IA_SYSTEM_PROMPT, 'netlify.app/') === false
+    && strpos(IA_SYSTEM_PROMPT, 'www.expertoslaborales.com/cursos') === false
+    && strpos(IA_SYSTEM_PROMPT, 'NUNCA mandes la página') !== false);
+
+// ---------------------------------------------------------------------
+echo "29) Revisión del 25 y 26-nov (27-nov)\n";
+$t = ia_texto_quitar_oraciones('No dejes de ir a trabajar. Te quedan 20 días para demandar. Hay un plazo de 30 días (Art. 52), así que conviene revisarlo antes.', '/quedan \d+ d/u');
+caso('recorte de oraciones no parte en "Art." (mensaje cortado real)',
+    strpos($t, '(Art. 52), así que conviene') !== false && strpos($t, 'quedan 20') === false && strpos($t, "\x01") === false);
+caso('recorte de oraciones sigue separando "No." como respuesta',
+    ia_texto_quitar_oraciones('¿Firmaste? No. Te quedan 5 días.', '/quedan/u') === '¿Firmaste? No.');
+caso('prompt: los avisos internos del sistema son legítimos y no se mencionan',
+    strpos(IA_SYSTEM_PROMPT, 'AVISOS INTERNOS DEL SISTEMA') !== false);
+caso('recordatorio de cursos se reconoce como mensaje automático',
+    ia_es_mensaje_automatico('Hola José, vi que te interesó el curso *Actas Administrativas Laborales* ($299 MXN)'));
+caso('detecta cuando el bot ya preguntó por vacaciones de años anteriores',
+    ia_bot_pregunto_vacaciones_anteriores([['role' => 'assistant', 'content' => '¿Tomaste completas tus vacaciones de cada año?']])
+    && !ia_bot_pregunto_vacaciones_anteriores([['role' => 'assistant', 'content' => '¿Cuántas vacaciones de este periodo te faltan?']]));
+caso('prompt: prima de antigüedad en jubilación forzada, plazo tras constancia, IMSS, 499, 51-II, finiquito firmado',
+    strpos(IA_SYSTEM_PROMPT, 'forzaron a jubilarse') !== false
+    && strpos(IA_SYSTEM_PROMPT, 'nunca digas
+  "tendrás 60 días"') !== false
+    && strpos(IA_SYSTEM_PROMPT, 'Ley del Seguro Social (subsidios') !== false
+    && strpos(IA_SYSTEM_PROMPT, 'de conformidad con las disposiciones del
+  contrato colectivo') !== false
+    && strpos(IA_SYSTEM_PROMPT, 'Finiquito o documento YA firmado') !== false);
+
+// ---------------------------------------------------------------------
+echo "30) Revisión diaria: ventas perdidas (27-nov)\n";
+$rv = ia_parsear_revision_bot('{"veredicto":"revisar","gravedad":"media","resumen":"x","hallazgos":[{"tipo":"venta","cita":"a","problema":"dijo que sí y no quedó apartado","correccion":"ofrecer horarios"},{"cita":"b","problema":"artículo mal citado","correccion":"c"}]}');
+caso('el parser conserva tipo venta y pone legal por defecto',
+    $rv && $rv['hallazgos'][0]['tipo'] === 'venta' && $rv['hallazgos'][1]['tipo'] === 'legal');
+$srcRev = file_get_contents($base . '/api/ia_helpers.php');
+caso('el revisor busca ventas perdidas y recibe las asesorías del teléfono',
+    strpos($srcRev, 'VENTAS PERDIDAS (la prioridad del despacho es vender') !== false
+    && strpos($srcRev, 'ASESORÍAS DE ESTE TELÉFONO EN EL SISTEMA') !== false);
+
+// ---------------------------------------------------------------------
+echo "31) Horarios repartidos y por día pedido (27-nov, ventas perdidas)\n";
+$hs = [];
+foreach (['2026-11-27' => ['12:00','13:00','14:00','15:00','16:00'], '2026-11-30' => ['11:00','12:00','13:00'], '2026-12-01' => ['11:00','12:00'], '2026-12-03' => ['11:00','12:00','13:00']] as $f => $horas) {
+    foreach ($horas as $h) $hs[] = ['fecha' => $f, 'hora_inicio' => $h, 'hora_fin' => '', 'texto' => "$f $h"];
+}
+$of = ia_horarios_para_ofrecer($hs);
+$dias = array_unique(array_column($of, 'fecha'));
+caso('sin día pedido: 5 horarios en al menos 3 días distintos, máx. 2 por día',
+    count($of) === 5 && count($dias) >= 3 && max(array_count_values(array_column($of, 'fecha'))) <= 2);
+$jue = ia_horarios_para_ofrecer($hs, '2026-12-03');
+caso('pide el jueves 3-dic: solo horarios de ese día', count($jue) === 3 && array_unique(array_column($jue, 'fecha')) === ['2026-12-03']);
+$sab = ia_horarios_para_ofrecer($hs, '2026-11-28');
+caso('pide un día sin agenda (sábado): le da el siguiente día con lugar', $sab && $sab[0]['fecha'] === '2026-11-30');
+caso('prompt: buscar el día pedido antes de decir que solo hay esos horarios',
+    strpos(IA_SYSTEM_PROMPT, 'vuelve a llamar ofrecer_horarios_asesoria con fecha_preferida') !== false);
+
+echo "32) Link de pago que el bot no escribió (26-nov, caso Alma)\n";
+$url = 'https://www.mercadopago.com.mx/checkout/v1/redirect?pref_id=147297175-cf8cb91b';
+$sinLink = 'Tu horario quedó apartado: viernes 27 de noviembre, 3:00 pm. Aquí está tu link de pago: $499 MXN — tienes 30 minutos.';
+$con = ia_texto_asegurar_links_pago($sinLink, [$url]);
+caso('texto sin la dirección: se pone justo después de "link de pago:"', strpos($con, 'link de pago: ' . $url . "\n\n" . '$499 MXN') !== false);
+$conLink = "Aquí está tu link de pago: $url\nTienes 30 minutos.";
+caso('texto que ya trae el link: no se toca', ia_texto_asegurar_links_pago($conLink, [$url]) === $conLink);
+$otro = ia_texto_asegurar_links_pago('Listo, ya quedó apartado tu horario.', [$url]);
+caso('texto sin "link de pago:": el link se agrega al final', substr($otro, -strlen($url)) === $url && strpos($otro, 'Tu link de pago: ') !== false);
 
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

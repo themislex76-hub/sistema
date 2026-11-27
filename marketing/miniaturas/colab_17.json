@@ -1,0 +1,24 @@
+{
+ "num": 17,
+ "img": "../fotos/colaboraciones/rescision_retratos.jpg",
+ "l1": "RESCISIÓN DE LA RELACIÓN LABORAL",
+ "l2": "Charla jurídica en vivo con el Lic. Juan Carlos García Campos",
+ "pill": "",
+ "chips": [
+  "¿Puedo irme y que me indemnicen?",
+  "¿Te bajaron el sueldo?"
+ ],
+ "izq": {
+  "n": "Mtro. Rubén Buerhend",
+  "s": "Expertos Laborales"
+ },
+ "der": {
+  "n": "Lic. Juan Carlos García Campos",
+  "s": "Vidajurisdiccional"
+ },
+ "bg": [
+  "#7a1a22",
+  "#4a0d14",
+  "#24060a"
+ ]
+}

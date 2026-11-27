@@ -81,6 +81,11 @@ foreach ($documentos as $doc) {
             ':aplicado' => $doc['aviso_ia_aplicado'],
             ':id' => $doc['id'],
         ]);
+        // El resumen copiado también es información nueva para el Informe
+        // Ejecutivo (lee expediente_documentos.ia_resumen) -- sin esto,
+        // un documento sin etapa que llenar nunca quedaba reflejado ahí
+        // (mismo hueco real que en cron_analizar_acuerdos_ia.php).
+        $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $doc['expediente_id']]);
         $copiados++;
         continue;
     }
@@ -101,7 +106,7 @@ foreach ($documentos as $doc) {
     $expediente = $expStmt->fetch();
     if (!$expediente) continue; // expediente borrado -- no debería pasar, pero no truena el lote por esto
 
-    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha FROM expediente_etapas WHERE expediente_id = :id');
+    $etapasStmt = $pdo->prepare('SELECT etapa_key, fecha, fecha_programada FROM expediente_etapas WHERE expediente_id = :id');
     $etapasStmt->execute([':id' => $doc['expediente_id']]);
     $etapas = $etapasStmt->fetchAll();
 
@@ -112,44 +117,30 @@ foreach ($documentos as $doc) {
         continue; // se reintenta en la siguiente corrida (ia_analizado_en se queda NULL)
     }
 
-    $aplicado = false;
-    // A diferencia del cron de boletín, aquí se exige una fecha mencionada
-    // LITERALMENTE en el documento -- nunca se usa la fecha de subida como
-    // respaldo (un documento se sube cuando sea, no necesariamente el
-    // mismo día de lo que acredita).
-    if ($resultado['etapa_sugerida'] && $resultado['fecha_mencionada']) {
-        $yaTieneFecha = false;
-        foreach ($etapas as $e) {
-            if ($e['etapa_key'] === $resultado['etapa_sugerida'] && !empty($e['fecha']) && $e['fecha'] !== '0000-00-00') {
-                $yaTieneFecha = true;
-                break;
-            }
-        }
-        // Confirmado real (10 nov 2026, en la auditoría integral): la IA
-        // puede atribuir una fecha real a la etapa EQUIVOCADA, rompiendo
-        // el orden cronológico del trámite. Mismo candado que en los
-        // demás mecanismos que llenan una etapa sola.
-        if (!$yaTieneFecha && !etapa_fecha_es_consistente($resultado['etapa_sugerida'], $resultado['fecha_mencionada'], $etapas)) {
-            log_historial(
-                $pdo, (int)$doc['expediente_id'], ['id' => null, 'nombre' => 'IA (lectura automática de documento)'],
-                'auditoria_ia_rechazo_' . $resultado['etapa_sugerida'], null,
-                "fecha sugerida {$resultado['fecha_mencionada']} (de '{$doc['nombre_archivo']}') rechazada por romper el orden cronológico con otras etapas ya registradas"
-            );
-            $yaTieneFecha = true; // reutiliza la misma rama de "no aplicar" de abajo
-        }
-        if (!$yaTieneFecha) {
-            $pdo->prepare(
-                'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha)
-                 VALUES (:eid, :key, :fecha)
-                 ON DUPLICATE KEY UPDATE fecha = VALUES(fecha)'
-            )->execute([':eid' => $doc['expediente_id'], ':key' => $resultado['etapa_sugerida'], ':fecha' => $resultado['fecha_mencionada']]);
+    // Un mismo documento puede confirmar VARIAS etapas a la vez (ej. una
+    // constancia del Secretario que certifica tanto el emplazamiento como
+    // la contestación, cada una con su propia fecha -- caso real 20 nov
+    // 2026, Exp. 463/2026, Anel Yadira Hernández Zaragoza) -- se procesan
+    // todas con el mismo candado (ia_aplicar_etapa_sugerida(), en
+    // api/expediente_helpers.php). A diferencia del cron de boletín, aquí
+    // se exige una fecha mencionada LITERALMENTE en el documento -- nunca
+    // se usa la fecha de subida como respaldo (un documento se sube
+    // cuando sea, no necesariamente el mismo día de lo que acredita).
+    $eventosDetectados = [];
+    if ($resultado['etapa_sugerida']) {
+        $eventosDetectados[] = ['etapa' => $resultado['etapa_sugerida'], 'fecha' => $resultado['fecha_mencionada']];
+    }
+    foreach (($resultado['eventos_adicionales'] ?? []) as $ev) {
+        $eventosDetectados[] = $ev;
+    }
 
-            log_historial(
-                $pdo, (int)$doc['expediente_id'], ['id' => null, 'nombre' => 'IA (lectura automática de documento)'],
-                'etapa_' . $resultado['etapa_sugerida'], null,
-                "fecha: {$resultado['fecha_mencionada']} (llenado automático a partir de '{$doc['nombre_archivo']}')"
-            );
-            $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $doc['expediente_id']]);
+    $aplicado = false;
+    $usuarioLog = ['id' => null, 'nombre' => 'IA (lectura automática de documento)'];
+    foreach ($eventosDetectados as $ev) {
+        if (ia_aplicar_etapa_sugerida(
+            $pdo, (int)$doc['expediente_id'], $ev['etapa'], $ev['fecha'],
+            null, $etapas, $usuarioLog, "a partir de '{$doc['nombre_archivo']}'"
+        )) {
             $aplicado = true;
             $aplicados++;
         }
@@ -177,6 +168,13 @@ foreach ($documentos as $doc) {
         ':id' => $doc['id'],
     ]);
     if ($categoriaSugerida) $sugerenciasCategoria++;
+
+    // Mismo bump que en cron_analizar_acuerdos_ia.php: el resumen en sí ya
+    // es novedad para el Informe Ejecutivo, aunque no se haya llenado
+    // ninguna etapa sola.
+    if (!$aplicado) {
+        $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $doc['expediente_id']]);
+    }
 }
 
 echo count($documentos) . " documento(s) en el lote, " . $analizados . " analizado(s) con IA, "

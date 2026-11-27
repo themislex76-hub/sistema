@@ -106,6 +106,23 @@ async function reportarAviso(expedienteId, resumen, fecha, documentoId) {
   }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
 }
 
+// Le avisa al sistema que este robot corrió (con éxito o con error) --
+// pedido explícito del usuario (20 nov 2026) tras descubrir que este
+// mismo robot llevaba sin correr en automático por un run_diario.bat
+// faltante y nadie lo notó. Nunca debe tronar el robot si esto falla
+// (ej. sin internet en ese momento) -- se atrapa y se sigue de largo.
+async function reportarHeartbeat(ok, resumen) {
+  try {
+    await axios.post(`${config.sistema.apiBase}/robot_heartbeat.php`, {
+      robot: 'federal',
+      ok: ok ? 1 : 0,
+      resumen: String(resumen || '').slice(0, 250),
+    }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
+  } catch (e) {
+    console.log('  (no se pudo avisar el heartbeat al sistema: ' + e.message + ')');
+  }
+}
+
 // Sube el PDF del acuerdo (ya descargado del portal) al mismo almacén de
 // documentos que usa cada expediente -- regresa el id del documento, o null
 // si algo falla (nunca debe tronar el reporte del aviso por esto).
@@ -267,7 +284,52 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
       const botonDescarga = frame.locator('i.fa-download, i.iconDescarga').first();
       const hayBoton = await botonDescarga.waitFor({ state: 'visible', timeout: 10000 }).then(() => true).catch(() => false);
       if (hayBoton) {
+        // Confirmado real (19 nov 2026, muchas corridas, ~20 documentos
+        // distintos): la petición real de descarga que dispara este clic
+        // (`.../wsFileManagerDownLoad/api/files/Download/<id>`) truena
+        // SIEMPRE con "net::ERR_ABORTED" del lado del navegador, a la vez
+        // que la consola muestra "table.autoFill is not a function" --
+        // probablemente un bug del propio JS del portal que cancela la
+        // petición antes de que llegue respuesta, no un rechazo real del
+        // servidor (nunca se vio un código de error HTTP, solo la
+        // cancelación). Se guarda esa URL exacta mientras se intenta el
+        // camino normal, para poder volver a pedirla DIRECTO si el camino
+        // normal no trae nada -- mismas cookies de la sesión (misma
+        // técnica que ya usa `context.request` en otras partes de este
+        // archivo), sin pasar por el JS roto que la cancela.
+        let urlDescargaIntentada = null;
+        const verUrlDescarga = (req) => {
+          if (/wsFileManagerDownLoad\/api\/files\/Download\//i.test(req.url())) urlDescargaIntentada = req.url();
+        };
+        page.on('request', verUrlDescarga);
         pdf = await intentarCapturarPdf(context, page, () => botonDescarga.click({ timeout: 5000 }).catch(() => {}));
+        page.off('request', verUrlDescarga);
+        if (!pdf) {
+          // Diagnóstico (19 nov 2026): con el ícono de descarga ya
+          // cargado del todo (ya no el spinner de antes), el patrón de
+          // falla cambió -- ya no se ve "net::ERR_ABORTED" en el log,
+          // así que hace falta confirmar si el clic de verdad disparó
+          // ALGUNA petición a esta URL o si no disparó nada en absoluto.
+          console.log(`    (diagnóstico: ${urlDescargaIntentada ? `sí se detectó una petición de descarga -- ${urlDescargaIntentada}` : 'NO se detectó ninguna petición de descarga tras el clic'})`);
+        }
+        if (!pdf && urlDescargaIntentada) {
+          // Candado real (19 nov 2026): sin un timeout explícito aquí, el
+          // robot se quedó COLGADO para siempre en una corrida real -- si
+          // el servidor no rechaza la petición sino que simplemente nunca
+          // contesta nada (en vez de abortarla, como hace el navegador),
+          // `context.request.get()` esperaba indefinidamente. 15s y se
+          // rinde, igual que el resto de los intentos de este archivo.
+          const r = await context.request.get(urlDescargaIntentada, { timeout: 15000 }).catch((e) => {
+            console.log(`    (reintento directo también falló: ${e.message})`);
+            return null;
+          });
+          const cuerpo = r ? await r.body().catch(() => null) : null;
+          if (r) console.log(`    (reintento directo respondió: status=${r.status()}, ${cuerpo ? cuerpo.length : 0} bytes, content-type=${r.headers()['content-type'] || '?'})`);
+          if (pdfEsValido(cuerpo)) {
+            pdf = cuerpo;
+            console.log('    (PDF recuperado reintentando la URL de descarga directo, sin pasar por el JS del portal)');
+          }
+        }
       } else {
         console.log('    AVISO: no se encontró el ícono de descarga (i.fa-download) dentro del iframe.');
       }
@@ -334,6 +396,34 @@ async function descargarPdfAcuerdo(context, page, celda, etiquetaDebug) {
   }
   await cerrarCualquierModalAbierto(page);
   return pdf;
+}
+
+// Envuelve descargarPdfAcuerdo() en varios intentos completos (24 nov
+// 2026, pedido explícito del usuario: "sería bueno que los robots hagan
+// más intentos para descargar los documentos y no trasladarle la
+// responsabilidad al abogado"). Cada intento vuelve a abrir el modal
+// desde cero (cerrando cualquier modal/backdrop que haya quedado a medio
+// camino del intento anterior) y espera un poco más cada vez, por si el
+// portal necesita "respirar" entre intentos -- mismo criterio que ya usa
+// el resto de este robot para los tropiezos conocidos del portal
+// (timeouts, overlays atorados). No reintenta recargando la página
+// completa del expediente a propósito -- eso obligaría a volver a
+// localizar la fila/celda desde cero y arriesgaría más que lo que
+// resuelve; si el problema es de la página completa (no solo del modal),
+// el acuerdo queda pendiente y se reintenta solo en la siguiente corrida
+// (ver pendientesPdf en procesarExpediente()).
+async function descargarPdfAcuerdoConReintentos(context, page, celda, etiquetaDebug, maxIntentos = 5) {
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    const pdf = await descargarPdfAcuerdo(context, page, celda, `${etiquetaDebug}_intento${intento}`);
+    if (pdf) return pdf;
+    if (intento < maxIntentos) {
+      console.log(`    (intento ${intento}/${maxIntentos} sin éxito para el PDF de ${etiquetaDebug} -- reintentando...)`);
+      await cerrarCualquierModalAbierto(page);
+      await page.waitForTimeout(2000 * intento);
+    }
+  }
+  console.log(`    AVISO: se agotaron los ${maxIntentos} intentos para el PDF de ${etiquetaDebug} -- queda pendiente para reintentarse en una corrida futura.`);
+  return null;
 }
 
 // Login confirmado que SÍ funciona (corrida real: "Login PJF OK") -- se
@@ -626,10 +716,125 @@ async function leerTablaPorEncabezados(tabla) {
   return filas;
 }
 
+// Lee una tabla DataTables completa, pasando de página en página si hace
+// falta -- no basta con "maximizarEntradasPorPagina()" sola: si la opción
+// más grande del "Mostrar X entradas" (ej. 100) sigue siendo menor que el
+// total de filas reales, la tabla igual se queda paginada. Se detecta el
+// botón "Siguiente" por el id que DataTables le pone siempre
+// (`<tablaId>_next`) y se avanza hasta que quede deshabilitado (clase
+// "disabled") o se deje de ver -- tope de 50 páginas por seguridad, para
+// nunca quedarse en un ciclo infinito si algo raro pasa con el portal.
+async function leerTodasLasFilasDataTable(page, tabla) {
+  await maximizarEntradasPorPagina(page, tabla);
+  let filas = await leerTablaPorEncabezados(tabla);
+  const tablaId = await tabla.getAttribute('id').catch(() => null);
+  if (!tablaId) return filas;
+  const siguiente = page.locator(`#${tablaId}_next`);
+  for (let i = 0; i < 50; i++) {
+    const hay = await siguiente.count().catch(() => 0);
+    if (!hay) break;
+    const clase = await siguiente.getAttribute('class').catch(() => '') || '';
+    if (clase.includes('disabled')) break;
+    await siguiente.click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    const nuevas = await leerTablaPorEncabezados(tabla);
+    if (!nuevas.length) break;
+    filas = filas.concat(nuevas);
+  }
+  return filas;
+}
+
 async function leerFilasVistaGlobal(page) {
   const tabla = page.locator('table').filter({ has: page.getByText('Número de expediente') }).first();
   await tabla.waitFor({ timeout: 15000 });
-  return leerTablaPorEncabezados(tabla);
+  // Confirmado real (19 nov 2026, captura del usuario): esta tabla SÍ pagina
+  // -- el expediente 463/2026 de Anel Yadira Hernández Zaragoza aparecía
+  // visible en el portal para la cuenta de Lindsay, pero el robot solo
+  // reportaba 10 expedientes en esa sesión (la primera página, default de
+  // DataTables) y nunca llegaba a verlo. A diferencia de la tabla de
+  // acuerdos de cada expediente (que sí llama maximizarEntradasPorPagina()
+  // antes de leer), esta lista principal nunca lo hacía -- corregido con
+  // `leerTodasLasFilasDataTable()`, que además de maximizar entradas por
+  // página también pasa de página en página por si el máximo disponible no
+  // alcanza a cubrir todo.
+  return leerTodasLasFilasDataTable(page, tabla);
+}
+
+// Busca EN VIVO, pasando de página en página si hace falta, la fila de
+// Vista Global cuyo "Número de expediente" coincide con el buscado, y
+// regresa esa fila recién leída (con su propio locator de celda, válido en
+// este momento).
+//
+// Causa real encontrada el 19 nov 2026, con una corrida real: una vez que
+// la cuenta de Lindsay tuvo expedientes repartidos en más de una página de
+// Vista Global, el robot procesó bien el primer expediente de la 2ª página
+// (300/2026) pero tronó con "locator.click: Timeout 30000ms exceeded" en
+// los 2 siguientes (296/2026, 388/2026) -- ambos más allá de la fila 10.
+// Razón: `leerTablaPorEncabezados()` regresa locators por POSICIÓN
+// (`tbody tr`.nth(i)), que Playwright nunca "congela" -- se vuelven a
+// resolver contra el DOM en vivo justo en el momento del clic, no en el
+// momento en que se leyó la tabla. Como esos locators se armaron leyendo
+// VARIAS páginas seguidas (ej. la fila 11 venía de la página 2, posición 1
+// dentro de ESA página), y la tabla de Vista Global vuelve a su estado por
+// default (10 filas, página 1) cada vez que se regresa de ver un
+// expediente, para cuando el bucle llegaba a la fila 11 esa posición ya no
+// existía en la página 1 -- el clic esperaba en vano una fila que nunca
+// iba a aparecer ahí. Por eso ya no se reusa ningún locator capturado antes
+// del bucle -- cada expediente se vuelve a buscar aquí, fresco, justo antes
+// de dar el clic.
+async function buscarFilaPorExpediente(page, numExpBuscado) {
+  const tabla = page.locator('table').filter({ has: page.getByText('Número de expediente') }).first();
+  await tabla.waitFor({ timeout: 15000 });
+  await maximizarEntradasPorPagina(page, tabla);
+  const tablaId = await tabla.getAttribute('id').catch(() => null);
+  const siguiente = tablaId ? page.locator(`#${tablaId}_next`) : null;
+  const buscado = normalizeExp(numExpBuscado);
+  for (let i = 0; i < 50; i++) {
+    const filasPagina = await leerTablaPorEncabezados(tabla);
+    const encontrada = filasPagina.find(f => normalizeExp((f['Número de expediente'] || {}).texto || '') === buscado);
+    if (encontrada) return encontrada;
+    if (!siguiente) break;
+    const hay = await siguiente.count().catch(() => 0);
+    if (!hay) break;
+    const clase = await siguiente.getAttribute('class').catch(() => '') || '';
+    if (clase.includes('disabled')) break;
+    await siguiente.click({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(700);
+  }
+  return null;
+}
+
+// Regresa de ver un expediente a la tabla de Vista Global, y CONFIRMA que
+// de verdad se llegó ahí antes de seguir -- no basta con que el clic en
+// "Regresar" no haya tronado.
+//
+// Causa real encontrada el 19 nov 2026, con una corrida real: tras abrir 4
+// acuerdos seguidos del expediente 296/2026 (cada uno con un intento de
+// descarga de PDF fallido, dejando en la consola "table.autoFill is not a
+// function" las 4 veces), el clic en "Regresar" ya no tronaba, pero la
+// tabla de Vista Global quedaba en un estado roto del lado del portal --
+// los 3 expedientes siguientes (388/2026, 463/2026, 501/2026, el propio
+// 463/2026 que motivó toda esta investigación entre ellos) ya no se volvían
+// a encontrar NUNCA, aunque seguían apareciendo en la lista de "Números
+// vistos" de esa misma cuenta. Por eso ya no basta con que "Regresar" no
+// haya lanzado un error -- se confirma que la tabla de Vista Global
+// de verdad está ahí (con un timeout corto) antes de seguir; si no, se cae
+// al respaldo de recargar desde cero y volver a entrar al submenú completo.
+async function regresarAVistaGlobal(page) {
+  const regreso = await clickTextoVisible(page, 'Regresar', false).catch(() => false);
+  if (regreso) {
+    const ok = await page.locator('table').filter({ has: page.getByText('Número de expediente') }).first()
+      .waitFor({ timeout: 8000 }).then(() => true).catch(() => false);
+    if (ok) return true;
+  }
+  await cerrarCualquierModalAbierto(page);
+  // Respaldo: si no hay botón "Regresar" visible, o si lo hubo pero la
+  // tabla de Vista Global no quedó en buen estado, se vuelve a entrar al
+  // menú desde cero.
+  await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
+  await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false).catch(() => false);
+  await page.waitForTimeout(500);
+  return await clickTextoVisible(page, 'Vista Global', false).catch(() => false);
 }
 
 // Busca en la fila la celda que tenga el botón para ver/descargar el
@@ -659,13 +864,72 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
     return 0;
   }
   const tabla = page.locator('table').filter({ has: page.getByText('Fecha de Acuerdo') }).first();
-  await maximizarEntradasPorPagina(page, tabla);
-  const filas = await leerTablaPorEncabezados(tabla);
+  // Mismo candado que leerFilasVistaGlobal() (19 nov 2026): maximizar
+  // entradas por página no basta si un expediente acumula más acuerdos que
+  // el máximo disponible en el selector -- se pasa de página también aquí.
+  const filas = await leerTodasLasFilasDataTable(page, tabla);
 
+  // (24 nov 2026) estado[key] guardaba solo un número (el "No." de acuerdo
+  // más alto ya visto) -- una vez que un acuerdo se reportaba, el robot
+  // NUNCA volvía a mirarlo, aunque el PDF no se hubiera podido descargar
+  // (caso real: Exp. 388/2026, Acuerdo No. 7 y 8, el PDF nunca se adjuntó
+  // y nadie lo iba a reintentar jamás). Ahora estado[key] guarda un objeto
+  // {maxNo, pendientesPdf} -- compatible con el formato viejo (un número
+  // suelto se interpreta como maxNo con pendientesPdf vacío).
   const key = normalizeExp(numeroExpediente);
-  const ultimoVisto = estado[key] || 0;
+  let entry = estado[key];
+  if (typeof entry !== 'object' || entry === null) entry = { maxNo: entry || 0, pendientesPdf: [] };
+  if (!Array.isArray(entry.pendientesPdf)) entry.pendientesPdf = [];
+  const ultimoVisto = entry.maxNo || 0;
   let maxNo = ultimoVisto;
   let reportados = 0;
+
+  // Paso 1: reintentar los PDF que quedaron pendientes de corridas
+  // anteriores (acuerdos ya reportados, sin documento todavía) -- antes de
+  // procesar acuerdos nuevos, usando la misma tabla que ya se acaba de leer
+  // completa para este expediente. Si el acuerdo ya no aparece en la tabla
+  // (caso raro, ej. se reorganizó la paginación), se deja pendiente para
+  // la siguiente corrida -- sin límite de tiempo, el costo de reintentar es
+  // bajo y nunca se cierra la puerta a que se recupere solo.
+  if (entry.pendientesPdf.length) {
+    const siguenPendientes = [];
+    for (const pend of entry.pendientesPdf) {
+      const filaPend = filas.find((f) => parseInt((f['No.'] || {}).texto || '', 10) === pend.no);
+      if (!filaPend) { siguenPendientes.push(pend); continue; }
+      let pdfRecuperado = null;
+      try {
+        const celdaPend = celdaBotonDocumento(filaPend);
+        pdfRecuperado = celdaPend
+          ? await descargarPdfAcuerdoConReintentos(context, page, celdaPend, `${sanitizarParaArchivo(key)}_${pend.no}_retry`)
+          : null;
+      } catch (e) {
+        console.log(`    (reintento del PDF pendiente No. ${pend.no} del expediente ${numeroExpediente} falló: ${e.message})`);
+      }
+      await cerrarCualquierModalAbierto(page);
+      if (pdfRecuperado) {
+        const documentoId = await subirPdfAlSistema(
+          pdfRecuperado, match.id, `Acuerdo_No_${pend.no}_Exp_${numeroExpediente.replace(/\//g, '-')}.pdf`,
+          esAmparo ? 'acuerdo_amparo' : 'acuerdo'
+        );
+        if (documentoId) {
+          // Mismo resumen con el que se reportó la primera vez -- avisos_
+          // ingest.php lo reconoce como el mismo aviso ya existente y le
+          // adjunta este documento en vez de tratarlo como duplicado (ver
+          // arreglo del 24 nov 2026 ahí mismo).
+          await reportarAviso(match.id, pend.resumen, pend.fechaIso, documentoId);
+          console.log(`    PDF recuperado en esta corrida para el acuerdo No. ${pend.no} del expediente ${numeroExpediente} (ya se había reportado antes sin documento).`);
+          reportados++;
+          continue;
+        }
+      }
+      siguenPendientes.push(pend);
+    }
+    entry.pendientesPdf = siguenPendientes;
+  }
+
+  // Paso 2: acuerdos nuevos (mismo flujo de siempre, con 5 intentos por
+  // PDF en vez de 1, y guardando en pendientesPdf lo que de verdad no se
+  // pudo bajar esta vez).
   for (const fila of filas) {
     const no = parseInt((fila['No.'] || {}).texto || '', 10);
     if (!no || no <= ultimoVisto) continue;
@@ -673,11 +937,13 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
     const fechaPublicacion = (fila['Fecha de Publicación'] || {}).texto || '';
     const resumen = `Acuerdo${esAmparo ? ' de amparo' : ''} No. ${no} del expediente ${numeroExpediente}, de fecha ${fechaAcuerdo || '(sin fecha)'}`
       + (fechaPublicacion ? `, publicado el ${fechaPublicacion}.` : '.');
+    const fechaIso = parseFechaMX(fechaPublicacion || fechaAcuerdo);
 
     let documentoId = null;
+    let pdf = null;
     try {
       const celda = celdaBotonDocumento(fila);
-      const pdf = celda ? await descargarPdfAcuerdo(context, page, celda, `${sanitizarParaArchivo(key)}_${no}`) : null;
+      pdf = celda ? await descargarPdfAcuerdoConReintentos(context, page, celda, `${sanitizarParaArchivo(key)}_${no}`) : null;
       if (pdf) {
         documentoId = await subirPdfAlSistema(
           pdf, match.id, `Acuerdo_No_${no}_Exp_${numeroExpediente.replace(/\//g, '-')}.pdf`,
@@ -702,12 +968,19 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
         .waitFor({ timeout: 10000 }).catch(() => {});
     }
 
-    await reportarAviso(match.id, resumen, parseFechaMX(fechaPublicacion || fechaAcuerdo), documentoId);
+    await reportarAviso(match.id, resumen, fechaIso, documentoId);
     reportados++;
     console.log(`    Aviso reportado: expediente ${numeroExpediente}, acuerdo No. ${no}.`);
     if (no > maxNo) maxNo = no;
+    if (!pdf) {
+      // No se logró el PDF ni con los 5 intentos de esta corrida -- queda
+      // pendiente para reintentarse solo, sin límite de tiempo, en
+      // cualquier corrida futura (ver Paso 1).
+      entry.pendientesPdf.push({ no, resumen, fechaIso });
+    }
   }
-  estado[key] = maxNo;
+  entry.maxNo = maxNo;
+  estado[key] = entry;
   return reportados;
 }
 
@@ -744,7 +1017,23 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
   page.on('response', (resp) => { if (resp.status() >= 400) console.log(`    [respuesta con error ${resp.status()}] ${resp.url()}`); });
   let reportados = 0;
   try {
-    await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' });
+    // Confirmado real varias veces en este portal (ver CLAUDE.md): un
+    // "Timeout 30000ms exceeded" navegando aquí, sin relación con nada que
+    // el robot haga, es un simple tropiezo de red -- pero como ésta es la
+    // PRIMERA navegación de la sesión, sin ningún reintento se perdía toda
+    // la sesión completa de la cuenta (incluyendo, una vez, la que SÍ ve
+    // el 463/2026) por un solo tropiezo. 2 intentos más antes de rendirse.
+    let navegoOk = false;
+    for (let intento = 0; intento < 3 && !navegoOk; intento++) {
+      try {
+        await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle', timeout: 30000 });
+        navegoOk = true;
+      } catch (e) {
+        if (intento === 2) throw e;
+        console.log(`    AVISO: tropiezo de red navegando al portal (intento ${intento + 1}/3: ${e.message}) -- reintentando...`);
+        await page.waitForTimeout(3000);
+      }
+    }
     await cerrarModalSiAparece(page, etiquetaDebug);
     // De respaldo, por si quedó huérfano el fondo oscuro del modal que se
     // acaba de cerrar (confirmado real: pasó en las 2 cuentas de la misma
@@ -821,7 +1110,30 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
       return 0;
     }
     await page.waitForTimeout(500);
-    const entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false);
+    // Confirmado real (19 nov 2026): este clic puede tronar igual que el
+    // de "Consulta de Expediente Electrónico" de arriba (mismo tipo de
+    // error: "locator.click: Timeout 30000ms exceeded", click visible/
+    // habilitado/estable pero sin completarse -- probablemente un fondo/
+    // overlay que reaparece justo al hacer clic). Antes este clic no tenía
+    // NINGÚN reintento (a diferencia del de arriba, que sí) -- un solo
+    // tropiezo tiraba la sesión completa sin revisar ningún expediente.
+    // Mismo patrón de 3 intentos que ya usa el menú de arriba.
+    let entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false, 8000).catch(() => false);
+    if (!entroVistaGlobal) {
+      await cerrarCualquierModalAbierto(page);
+      entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false, 8000).catch(() => false);
+    }
+    if (!entroVistaGlobal) {
+      // Último recurso: recargar desde cero y volver a entrar al submenú
+      // completo, por si quedó algo atorado que la limpieza de modales no
+      // cubre.
+      await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
+      await cerrarModalSiAparece(page, etiquetaDebug);
+      await cerrarCualquierModalAbierto(page);
+      await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false).catch(() => false);
+      await page.waitForTimeout(500);
+      entroVistaGlobal = await clickTextoVisible(page, 'Vista Global', false).catch(() => false);
+    }
     if (!entroVistaGlobal) {
       console.log('  AVISO: no se encontró "Vista Global" dentro del submenú -- el portal pudo cambiar otra vez.');
       await page.screenshot({ path: path.join(__dirname, `debug_error_${etiquetaDebug}.png`), fullPage: true, timeout: 90000 }).catch(() => {});
@@ -843,13 +1155,26 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
       return 0;
     }
     console.log(`  ${filas.length} expediente(s) visibles en el portal para esta cuenta.`);
+    // Diagnóstico (19 nov 2026): sin esto no hay forma de saber, por el
+    // log, si un expediente monitoreado específico salió en esta página o
+    // no -- el "continue" de abajo cuando no hay match es silencioso.
+    console.log(`    Números vistos en esta página: ${filas.map(f => (f['Número de expediente'] || {}).texto || '?').join(', ') || '(ninguno)'}`);
 
     for (const fila of filas) {
       const numExp = (fila['Número de expediente'] || {}).texto || '';
       const match = porNumero.get(normalizeExp(numExp));
       if (!match) continue;
 
-      const botonVer = (fila['Ver Expediente Electrónico'] || {}).celda;
+      // Se vuelve a buscar esta fila EN VIVO en vez de reusar el locator
+      // que trajo `filas` (ver el comentario de `buscarFilaPorExpediente()`
+      // -- un locator por posición ya no sirve después de que la tabla
+      // pasó de página/regresó de ver otro expediente).
+      const filaViva = await buscarFilaPorExpediente(page, numExp).catch(() => null);
+      if (!filaViva) {
+        console.log(`    AVISO: no se volvió a encontrar el expediente ${numExp} en Vista Global al intentar abrirlo -- se omite esta vez.`);
+        continue;
+      }
+      const botonVer = (filaViva['Ver Expediente Electrónico'] || {}).celda;
       if (!botonVer) continue;
       const boton = botonVer.locator('button, a, [role="button"]').first();
       try {
@@ -861,20 +1186,7 @@ async function revisarSesion(cuenta, sesion, porNumero, estado, browser) {
       }
 
       // Regresa a la vista global para poder abrir el siguiente expediente.
-      // Si algo (ej. un modal que quedó atorado) truena aquí, no debe
-      // tirar TODO el resto de los expedientes de esta cuenta -- se limpia
-      // y se cae al respaldo de volver a entrar desde cero.
-      const regreso = await clickTextoVisible(page, 'Regresar', false).catch(() => false);
-      if (!regreso) {
-        await cerrarCualquierModalAbierto(page);
-        // Respaldo: si no hay botón "Regresar" visible, se vuelve a entrar
-        // al menú desde cero.
-        await page.goto(`${PJF_BASE}/Home/OpcionesFirel`, { waitUntil: 'networkidle' }).catch(() => {});
-        await clickTextoVisible(page, textoFlexible('Consulta de Expediente Electrónico'), false).catch(() => false);
-        await page.waitForTimeout(500);
-        await clickTextoVisible(page, 'Vista Global', false).catch(() => false);
-      }
-      await leerFilasVistaGlobal(page).catch(() => {});
+      await regresarAVistaGlobal(page);
     }
   } finally {
     await context.close();
@@ -910,7 +1222,7 @@ async function main() {
   console.log(`${cuentas.length} cuenta(s) del Portal Federal guardada(s).`);
   if (!cuentas.length) {
     console.log('Nadie ha guardado su cuenta del Portal Federal en "Mi cuenta" todavía.');
-    return;
+    return 'sin cuentas guardadas -- nada que revisar';
   }
 
   const estado = cargarProcesados();
@@ -929,9 +1241,13 @@ async function main() {
     await browser.close();
   }
   console.log(`Listo. ${totalReportados} aviso(s) nuevo(s) reportado(s) en total.`);
+  return `${totalReportados} aviso(s) nuevo(s)`;
 }
 
-main().catch(err => {
-  console.error('Error en checker Federal:', err.message);
-  process.exit(1);
-});
+main()
+  .then(resumen => reportarHeartbeat(true, resumen))
+  .catch(async err => {
+    console.error('Error en checker Federal:', err.message);
+    await reportarHeartbeat(false, 'Error: ' + err.message);
+    process.exit(1);
+  });

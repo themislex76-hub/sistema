@@ -142,6 +142,54 @@ foreach ($candidatos as $c) {
         }
         if ($yaTieneFecha) continue;
 
+        $usuarioLog = ['id' => null, 'nombre' => 'IA (auditoría integral)'];
+
+        // Confirmado real (19 nov 2026): un acuerdo real señaló una
+        // audiencia FUTURA (11 de enero de 2027) y por poco se guardaba
+        // como "ya celebrada" -- imposible por definición. Nunca se
+        // aplica a "fecha"; se redirige a "fecha agendada" si la etapa lo
+        // soporta, o se rechaza (no tiene sentido revisar orden
+        // cronológico de algo que todavía no pasa).
+        if (etapa_fecha_es_futura($s['fecha'])) {
+            if (in_array($s['etapa_key'], ETAPA_CALENDARIO_KEYS, true)) {
+                $yaProgramada = null;
+                foreach ($etapas as $e) {
+                    if ($e['etapa_key'] === $s['etapa_key'] && !empty($e['fecha_programada']) && $e['fecha_programada'] !== '0000-00-00') {
+                        $yaProgramada = $e['fecha_programada'];
+                        break;
+                    }
+                }
+                if ($yaProgramada === null || $yaProgramada === $s['fecha']) {
+                    $pdo->prepare(
+                        'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha_programada)
+                         VALUES (:eid, :key, :fecha)
+                         ON DUPLICATE KEY UPDATE fecha_programada = VALUES(fecha_programada)'
+                    )->execute([':eid' => $c['id'], ':key' => $s['etapa_key'], ':fecha' => $s['fecha']]);
+                    log_historial(
+                        $pdo, (int)$c['id'], $usuarioLog,
+                        'etapa_' . $s['etapa_key'], null,
+                        "fecha agendada: {$s['fecha']} (llenado automático por auditoría integral)"
+                    );
+                    $etapas[] = ['etapa_key' => $s['etapa_key'], 'fecha' => null, 'fecha_programada' => $s['fecha']];
+                    $huboFill = true;
+                    $aplicados++;
+                } else {
+                    log_historial(
+                        $pdo, (int)$c['id'], $usuarioLog,
+                        'auditoria_ia_rechazo_' . $s['etapa_key'], null,
+                        "fecha agendada {$s['fecha']} no se aplicó: la etapa ya tenía una fecha agendada distinta ($yaProgramada) -- posible conflicto, requiere revisión"
+                    );
+                }
+            } else {
+                log_historial(
+                    $pdo, (int)$c['id'], $usuarioLog,
+                    'auditoria_ia_rechazo_' . $s['etapa_key'], null,
+                    "fecha futura {$s['fecha']} no se aplicó: esta etapa no tiene concepto de \"fecha agendada\", nunca se marca como celebrada con una fecha que todavía no llega -- se deja pendiente"
+                );
+            }
+            continue;
+        }
+
         // Confirmado real (10 nov 2026): la IA puso "Objeciones y réplica"
         // con una fecha ANTERIOR a "Contestación de demanda recibida" --
         // imposible por ley (Art. 873-B LFT). Vio una fecha real en el

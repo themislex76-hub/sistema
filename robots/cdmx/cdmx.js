@@ -271,6 +271,23 @@ async function subirTextoBoletinAlSistema(expedienteId, tribunal, resumen, fecha
   }
 }
 
+// Le avisa al sistema que este robot corrió (con éxito o con error) --
+// pedido explícito del usuario (20 nov 2026) tras descubrir que este
+// mismo robot llevaba sin correr en automático por un run_diario.bat
+// faltante y nadie lo notó. Nunca debe tronar el robot si esto falla
+// (ej. sin internet en ese momento) -- se atrapa y se sigue de largo.
+async function reportarHeartbeat(ok, resumen) {
+  try {
+    await axios.post(config.sistema.apiBase + '/robot_heartbeat.php', {
+      robot: 'cdmx',
+      ok: ok ? 1 : 0,
+      resumen: String(resumen || '').slice(0, 250),
+    }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
+  } catch (e) {
+    console.log('  (no se pudo avisar el heartbeat al sistema: ' + e.message + ')');
+  }
+}
+
 async function main() {
   console.log(new Date().toISOString(), 'Iniciando revision CDMX...');
 
@@ -341,9 +358,13 @@ async function main() {
   }
   guardarProcesados(procesados);
   console.log('Listo. ' + reportados + ' aviso(s) nuevo(s) reportado(s).');
+  return reportados + ' aviso(s) nuevo(s)';
 }
 
-main().catch(err => {
-  console.error('Error en checker CDMX:', err.message);
-  process.exit(1);
-});
+main()
+  .then(resumen => reportarHeartbeat(true, resumen))
+  .catch(async err => {
+    console.error('Error en checker CDMX:', err.message);
+    await reportarHeartbeat(false, 'Error: ' + err.message);
+    process.exit(1);
+  });

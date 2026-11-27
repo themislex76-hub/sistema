@@ -58,4 +58,9 @@ $stmt->execute([
     ':uid' => $user['id'],
 ]);
 
+// Sin esto, subir un documento nuevo (ej. una constancia o un escrito) no
+// avisaba al Informe Ejecutivo que había algo que leer -- mismo bug ya
+// corregido en expedientes_add_nota.php (13 nov 2026), aquí seguía abierto.
+$pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $expedienteId]);
+
 respond(['id' => (int)$pdo->lastInsertId()]);

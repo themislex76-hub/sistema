@@ -132,6 +132,105 @@ function motivo_sugiere_fecha_calculada(string $motivo): bool
     return false;
 }
 
+// Confirmado real (19 nov 2026): un acuerdo real señaló la audiencia
+// preliminar para una fecha FUTURA (11 de enero de 2027) y un mecanismo
+// automático la guardó en "fecha" (Fecha en que se celebró) -- imposible,
+// una fecha futura nunca es una confirmación de que algo YA ocurrió. Los
+// mecanismos que llenan una etapa sola a partir de un acuerdo/documento
+// usan esta función como candado: si la fecha es futura, NUNCA se aplica
+// a "fecha" -- si la etapa soporta "Fecha agendada"
+// (ETAPA_CALENDARIO_KEYS en api/ia_helpers.php), se redirige ahí en vez
+// (mismo campo/candado de "no sobrescribir una fecha agendada distinta
+// ya capturada" que ya usa cron_leer_google_calendar.php); si no la
+// soporta, se rechaza por completo y la etapa se queda libre/pendiente.
+function etapa_fecha_es_futura(string $fecha): bool
+{
+    return $fecha > date('Y-m-d');
+}
+
+// Compartida por cron_analizar_acuerdos_ia.php y cron_analizar_documentos_ia.php
+// (20 nov 2026) -- antes cada uno repetía esta misma lógica a mano (candado de
+// "ya tiene fecha" + etapa_fecha_es_futura() + etapa_fecha_es_consistente() +
+// log_historial + bump de actualizado_en). Se extrajo aquí para que un mismo
+// documento pueda aplicar VARIAS etapas sin duplicar el bloque completo por
+// cada una -- caso real: Exp. 463/2026 (Anel Yadira Hernández Zaragoza), una
+// sola constancia del Secretario certificaba TANTO el emplazamiento como la
+// contestación, cada una con su propia fecha, y el sistema solo alcanzaba a
+// aplicar la primera. Devuelve true solo si de verdad se aplicó algo (y ya
+// bumpeó actualizado_en); false si se rechazó o no había nada que hacer --
+// nunca sobrescribe una fecha que la etapa ya tenía.
+function ia_aplicar_etapa_sugerida(
+    PDO $pdo, int $expedienteId, string $etapaKey, ?string $fechaMencionada,
+    ?string $fechaRespaldo, array $etapas, array $usuarioLog, string $origenLog
+): bool {
+    foreach ($etapas as $e) {
+        if ($e['etapa_key'] === $etapaKey && !empty($e['fecha']) && $e['fecha'] !== '0000-00-00') {
+            return false; // ya tiene fecha -- nunca se sobrescribe
+        }
+    }
+
+    $fechaEtapa = $fechaMencionada ?: $fechaRespaldo;
+    if (!$fechaEtapa) return false;
+
+    if (etapa_fecha_es_futura($fechaEtapa)) {
+        if (!in_array($etapaKey, ETAPA_CALENDARIO_KEYS, true)) {
+            log_historial(
+                $pdo, $expedienteId, $usuarioLog,
+                'auditoria_ia_rechazo_' . $etapaKey, null,
+                "fecha futura $fechaEtapa ($origenLog) no se aplicó: esta etapa no tiene concepto de \"fecha agendada\", nunca se marca como celebrada con una fecha que todavía no llega -- se deja pendiente"
+            );
+            return false;
+        }
+        $yaProgramada = null;
+        foreach ($etapas as $e) {
+            if ($e['etapa_key'] === $etapaKey && !empty($e['fecha_programada']) && $e['fecha_programada'] !== '0000-00-00') {
+                $yaProgramada = $e['fecha_programada'];
+                break;
+            }
+        }
+        if ($yaProgramada !== null && $yaProgramada !== $fechaEtapa) {
+            log_historial(
+                $pdo, $expedienteId, $usuarioLog,
+                'auditoria_ia_rechazo_' . $etapaKey, null,
+                "fecha agendada $fechaEtapa ($origenLog) no se aplicó: la etapa ya tenía una fecha agendada distinta ($yaProgramada) -- posible conflicto, requiere revisión"
+            );
+            return false;
+        }
+        $pdo->prepare(
+            'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha_programada)
+             VALUES (:eid, :key, :fecha)
+             ON DUPLICATE KEY UPDATE fecha_programada = VALUES(fecha_programada)'
+        )->execute([':eid' => $expedienteId, ':key' => $etapaKey, ':fecha' => $fechaEtapa]);
+        log_historial(
+            $pdo, $expedienteId, $usuarioLog,
+            'etapa_' . $etapaKey, null, "fecha agendada: $fechaEtapa (llenado automático $origenLog)"
+        );
+        $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $expedienteId]);
+        return true;
+    }
+
+    if (!etapa_fecha_es_consistente($etapaKey, $fechaEtapa, $etapas)) {
+        log_historial(
+            $pdo, $expedienteId, $usuarioLog,
+            'auditoria_ia_rechazo_' . $etapaKey, null,
+            "fecha sugerida $fechaEtapa rechazada por romper el orden cronológico con otras etapas ya registradas"
+        );
+        return false;
+    }
+
+    $pdo->prepare(
+        'INSERT INTO expediente_etapas (expediente_id, etapa_key, fecha)
+         VALUES (:eid, :key, :fecha)
+         ON DUPLICATE KEY UPDATE fecha = VALUES(fecha)'
+    )->execute([':eid' => $expedienteId, ':key' => $etapaKey, ':fecha' => $fechaEtapa]);
+    log_historial(
+        $pdo, $expedienteId, $usuarioLog,
+        'etapa_' . $etapaKey, null, "fecha: $fechaEtapa (llenado automático $origenLog)"
+    );
+    $pdo->prepare('UPDATE expedientes SET actualizado_en = NOW() WHERE id = :id')->execute([':id' => $expedienteId]);
+    return true;
+}
+
 // Panel "Posibles irregularidades" (12 nov 2026) -- a diferencia de
 // etapa_fecha_es_consistente() (que solo revisa una fecha NUEVA candidata
 // contra las ya registradas, usada por los 5 mecanismos de llenado

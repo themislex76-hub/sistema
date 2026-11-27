@@ -135,6 +135,23 @@ async function reportarAviso(expedienteId, resumen, fecha, documentoId) {
   }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
 }
 
+// Le avisa al sistema que este robot corrió (con éxito o con error) --
+// pedido explícito del usuario (20 nov 2026) tras descubrir que otros 2
+// robots llevaban sin correr en automático por un run_diario.bat faltante
+// y nadie lo notó. Nunca debe tronar el robot si esto falla (ej. sin
+// internet en ese momento) -- se atrapa y se sigue de largo.
+async function reportarHeartbeat(ok, resumen) {
+  try {
+    await axios.post(`${config.sistema.apiBase}/robot_heartbeat.php`, {
+      robot: 'cdmx_buzon',
+      ok: ok ? 1 : 0,
+      resumen: String(resumen || '').slice(0, 250),
+    }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
+  } catch (e) {
+    console.log('  (no se pudo avisar el heartbeat al sistema: ' + e.message + ')');
+  }
+}
+
 // Mismo problema ya documentado en los otros robots: un texto puede existir
 // duplicado en el DOM, o aparecer un instante después de lo que isVisible()
 // cree -- se espera de verdad a que exista al menos un candidato visible.
@@ -181,6 +198,25 @@ async function descargarPdfDesdeLink(context, page, locatorLink) {
   return null;
 }
 
+// Envuelve descargarPdfDesdeLink() en varios intentos completos (24 nov
+// 2026, pedido explícito del usuario: "que el robot haga más intentos
+// para descargar los documentos y no trasladarle la responsabilidad al
+// abogado" -- mismo criterio ya aplicado en federal.js el mismo día).
+// Espera creciente entre cada intento, por si el portal necesita
+// "respirar".
+async function descargarPdfConReintentos(context, page, locatorLink, etiquetaDebug, maxIntentos = 5) {
+  for (let intento = 1; intento <= maxIntentos; intento++) {
+    const pdf = await descargarPdfDesdeLink(context, page, locatorLink);
+    if (pdfEsValido(pdf)) return pdf;
+    if (intento < maxIntentos) {
+      console.log(`      (intento ${intento}/${maxIntentos} sin éxito para el PDF de ${etiquetaDebug} -- reintentando...)`);
+      await page.waitForTimeout(2000 * intento);
+    }
+  }
+  console.log(`      AVISO: se agotaron los ${maxIntentos} intentos para el PDF de ${etiquetaDebug} -- queda pendiente para reintentarse en una corrida futura.`);
+  return null;
+}
+
 // "LISTA DE BUZONES": cada fila trae el expediente (tribunal + número),
 // las partes, y el link "Ver Acuerdos". Se ubica cada link "Ver Acuerdos"
 // y se sube por el DOM hasta la fila (<tr>) que lo contiene, para sacar el
@@ -211,8 +247,13 @@ async function leerFilasBuzones(page) {
 // class="page-link"> con nombre de accesibilidad en INGLÉS aunque el resto
 // de la pantalla esté en español: "Next" para ›, "Last" para ». Se usa
 // el rol de accesibilidad directo, sin adivinar posición.
-async function avanzarPagina(page) {
-  const textoPagina = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => null);
+// `scope` es `page` por default (lista "LISTA DE BUZONES"), pero también
+// acepta un Locator acotado (ver localizarModalAcuerdos()) para paginar
+// DENTRO de un modal sin confundirse con la paginación de la lista que
+// queda detrás -- Playwright permite encadenar getByText()/getByRole()
+// sobre un Locator igual que sobre la page completa.
+async function avanzarPagina(page, scope = page) {
+  const textoPagina = await scope.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => null);
   if (!textoPagina) {
     console.log('      [paginación] no se encontró el texto "Página X de Y" -- no se puede avanzar.');
     return false;
@@ -235,9 +276,9 @@ async function avanzarPagina(page) {
   // clic no tira error -- el elemento existe y es clicable -- pero el
   // texto "Página X de Y" no cambia). En vez de apostarle a uno solo, se
   // prueban todos los visibles en orden hasta que alguno sí tenga efecto.
-  const candidatos = page.getByRole('link', { name: 'Next', exact: true });
+  const candidatos = scope.getByRole('link', { name: 'Next', exact: true });
   const nCandidatos = await candidatos.count();
-  console.log(`      [paginación] "${textoPagina}" -- ${nCandidatos} enlace(s) "Next" en el DOM.`);
+  console.log(`      [paginación] "${textoPagina}" -- ${nCandidatos} enlace(s) "Next" en el DOM${scope !== page ? ' (acotado al modal)' : ''}.`);
   if (!nCandidatos) {
     console.log('      [paginación] no se encontró ningún enlace con nombre de accesibilidad "Next".');
     return false;
@@ -259,7 +300,7 @@ async function avanzarPagina(page) {
     let textoPaginaDespues = textoPagina;
     for (let intento = 0; intento < 6; intento++) {
       await page.waitForTimeout(600);
-      textoPaginaDespues = await page.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => textoPagina);
+      textoPaginaDespues = await scope.getByText(/Página \d+ de \d+/i).first().innerText().catch(() => textoPagina);
       if (textoPaginaDespues !== textoPagina) break;
     }
     if (textoPaginaDespues !== textoPagina) {
@@ -271,6 +312,35 @@ async function avanzarPagina(page) {
 
   console.log('      [paginación] ningún candidato "Next" avanzó de página de verdad.');
   return false;
+}
+
+// El modal "LISTA DE ACUERDOS" se abre ENCIMA de "LISTA DE BUZONES" -- si
+// ese modal también pagina (mismo bug de fondo ya encontrado y corregido
+// en el robot Federal: una tabla anidada que nunca se paginaba, truncando
+// expedientes con muchos acuerdos a la primera página), buscar "Página X
+// de Y" en TODA la página podría encontrar por error el paginador de la
+// lista de ATRÁS en vez del propio modal. Se intenta acotar la búsqueda al
+// contenedor real del modal (clase ".modal"/rol "dialog", típico de
+// Bootstrap -- el mismo framework que ya se confirmó real en el robot
+// Federal para sus propios modales); si no se encuentra ninguno así, se
+// sube por los ancestros del título "LISTA DE ACUERDOS" hasta dar con uno
+// que también contenga al menos un "Ver acuerdo" (el contenedor real, sin
+// saber su clase exacta). Si ninguna de las 2 formas encuentra nada, se
+// regresa null y el llamador cae de regreso a buscar en toda la página
+// (mismo riesgo de antes, pero mejor que no intentar paginar nada).
+async function localizarModalAcuerdos(page) {
+  const titulo = page.getByText(/LISTA DE ACUERDOS/i).first();
+  for (const selector of ['.modal', '[role="dialog"]']) {
+    const candidato = page.locator(selector).filter({ has: titulo });
+    const hay = await candidato.count().catch(() => 0);
+    if (hay) return candidato.first();
+  }
+  for (let nivel = 1; nivel <= 8; nivel++) {
+    const ancestro = titulo.locator(`xpath=ancestor::*[${nivel}]`);
+    const tieneAcuerdos = await ancestro.locator('text=/Ver acuerdo/i').count().catch(() => 0);
+    if (tieneAcuerdos > 0) return ancestro;
+  }
+  return null;
 }
 
 async function procesarCuenta(cuenta, porNumero, estado, browser) {
@@ -291,7 +361,23 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     await dialog.accept().catch(() => {});
   });
   let reportados = 0;
-  const vistos = estado[cuenta.cdmx_buzon_usuario] || {};
+  // (24 nov 2026) `estado[cuenta...]` guardaba solo un objeto plano
+  // {acuerdoId: true} -- una vez reportado un acuerdo, nunca se volvía a
+  // mirar, aunque el PDF no se hubiera podido descargar. Ahora guarda
+  // {vistos, pendientesPdf} -- compatible con el formato viejo (un objeto
+  // plano sin la clave "vistos" se interpreta como el propio `vistos`,
+  // con `pendientesPdf` vacío). Un acuerdo en `pendientesPdf` se vuelve a
+  // reintentar en corridas futuras (el expediente se vuelve a abrir y su
+  // lista de acuerdos se vuelve a leer completa cada vez, así que no hace
+  // falta guardar nada más que el id).
+  const estadoPrevio = estado[cuenta.cdmx_buzon_usuario];
+  const tieneFormatoNuevo = estadoPrevio && typeof estadoPrevio === 'object'
+    && Object.prototype.hasOwnProperty.call(estadoPrevio, 'vistos');
+  const vistos = tieneFormatoNuevo ? (estadoPrevio.vistos || {}) : (estadoPrevio || {});
+  const pendientesPdf = new Set(tieneFormatoNuevo && Array.isArray(estadoPrevio.pendientesPdf) ? estadoPrevio.pendientesPdf : []);
+  const persistirEstadoCuenta = () => {
+    estado[cuenta.cdmx_buzon_usuario] = { vistos, pendientesPdf: Array.from(pendientesPdf) };
+  };
 
   try {
     const campoUsuario = page.locator('input[type="email"], input[type="text"]').first();
@@ -350,6 +436,23 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       const entroPorBoton = await clickTextoVisible(page, 'ENTRAR', false, 10000);
       if (!entroPorBoton) await campoPassword.press('Enter').catch(() => {});
       await page.waitForLoadState('networkidle', { timeout: 20000 }).catch(() => {});
+
+      // Confirmado real (19 nov 2026): el aviso de "sesión activa" puede
+      // tardar en aparecer MÁS de los 2500ms que ya se esperaban arriba --
+      // en una corrida real, el diagnóstico de ANTES de llenar el formulario
+      // dio "false" las 5 veces seguidas, y aun así la captura final (tras
+      // agotar los 5 intentos) mostró el aviso bloqueado con los campos
+      // vacíos -- se reveló DESPUÉS de enviar usuario/contraseña, no antes.
+      // Se revisa otra vez aquí, justo después de enviar el login, antes de
+      // darse por vencido buscando el menú (si está bloqueado, el menú
+      // nunca va a aparecer por más que se espere).
+      const bloqueadoTrasLogin = await clickTextoVisible(page, 'Romper sesión', false, 6000);
+      if (bloqueadoTrasLogin) {
+        console.log('  [login] el aviso de sesión activa apareció DESPUÉS de enviar el login -- se rompió, recargando antes de reintentar.');
+        await page.waitForTimeout(3000);
+        await page.goto(BASE, { waitUntil: 'networkidle', timeout: 30000 }).catch(() => {});
+        continue;
+      }
 
       // Confirmado real (10 nov 2026): saltar directo con page.goto() a la
       // URL de "Consulta de expedientes" a veces pierde la sesión recién
@@ -429,59 +532,94 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
           continue;
         }
 
-        // Confirmado real (10 nov 2026): el modal "LISTA DE ACUERDOS" puede
-        // mostrarse con su título antes de que la tabla de acuerdos termine
-        // de cargar sus filas (misma carrera que ya se vio en la lista
-        // principal "LISTA DE BUZONES") -- contar los links "Ver acuerdo"
-        // de inmediato dio 0 aunque el expediente sí tenía un acuerdo real
-        // (confirmado con captura). Se espera a que el número de filas se
-        // quede estable entre lecturas antes de confiar en el conteo.
-        await page.waitForTimeout(1200);
-        let nAcuerdos = await page.locator('text=/Ver acuerdo/i').count();
-        for (let intento = 0; intento < 6; intento++) {
-          await page.waitForTimeout(700);
-          const nSiguiente = await page.locator('text=/Ver acuerdo/i').count();
-          if (nSiguiente === nAcuerdos) break;
-          nAcuerdos = nSiguiente;
+        // Acota la paginación de acuerdos al modal mismo (si se encuentra
+        // su contenedor) -- evita confundirse con la paginación de "LISTA
+        // DE BUZONES" que sigue en el DOM detrás del modal.
+        const modalAcuerdos = await localizarModalAcuerdos(page);
+        if (!modalAcuerdos) {
+          console.log('      [paginación acuerdos] no se pudo acotar el contenedor del modal -- se busca "Página X de Y" en toda la página (mismo riesgo de siempre).');
         }
-        console.log(`      ${nAcuerdos} acuerdo(s) en la lista de este expediente.`);
-        const filasAcuerdo = page.locator('text=/Ver acuerdo/i');
-        for (let i = 0; i < nAcuerdos; i++) {
-          const linkVerAcuerdo = filasAcuerdo.nth(i);
-          const filaAcuerdo = linkVerAcuerdo.locator('xpath=ancestor::tr[1]');
-          const textoFilaAcuerdo = await filaAcuerdo.innerText().catch(() => '');
-          const matchId = /(\d+\/\d{4}-\d+)/.exec(textoFilaAcuerdo);
-          const matchFecha = /(\d{4}-\d{2}-\d{2})/.exec(textoFilaAcuerdo);
-          if (!matchId) continue;
-          const acuerdoId = matchId[1];
-          const fechaPublicacion = matchFecha ? matchFecha[1] : null;
+        const scopeAcuerdos = modalAcuerdos || page;
 
-          if (vistos[acuerdoId]) continue; // ya reportado en una corrida anterior
+        let paginaAcuerdos = 1;
+        let seguirAcuerdos = true;
+        while (seguirAcuerdos) {
+          // Confirmado real (10 nov 2026): el modal "LISTA DE ACUERDOS" puede
+          // mostrarse con su título antes de que la tabla de acuerdos termine
+          // de cargar sus filas (misma carrera que ya se vio en la lista
+          // principal "LISTA DE BUZONES") -- contar los links "Ver acuerdo"
+          // de inmediato dio 0 aunque el expediente sí tenía un acuerdo real
+          // (confirmado con captura). Se espera a que el número de filas se
+          // quede estable entre lecturas antes de confiar en el conteo.
+          await page.waitForTimeout(1200);
+          let nAcuerdos = await page.locator('text=/Ver acuerdo/i').count();
+          for (let intento = 0; intento < 6; intento++) {
+            await page.waitForTimeout(700);
+            const nSiguiente = await page.locator('text=/Ver acuerdo/i').count();
+            if (nSiguiente === nAcuerdos) break;
+            nAcuerdos = nSiguiente;
+          }
+          console.log(`      Página ${paginaAcuerdos} de acuerdos: ${nAcuerdos} fila(s).`);
+          const filasAcuerdo = page.locator('text=/Ver acuerdo/i');
+          for (let i = 0; i < nAcuerdos; i++) {
+            const linkVerAcuerdo = filasAcuerdo.nth(i);
+            const filaAcuerdo = linkVerAcuerdo.locator('xpath=ancestor::tr[1]');
+            const textoFilaAcuerdo = await filaAcuerdo.innerText().catch(() => '');
+            const matchId = /(\d+\/\d{4}-\d+)/.exec(textoFilaAcuerdo);
+            const matchFecha = /(\d{4}-\d{2}-\d{2})/.exec(textoFilaAcuerdo);
+            if (!matchId) continue;
+            const acuerdoId = matchId[1];
+            const fechaPublicacion = matchFecha ? matchFecha[1] : null;
 
-          console.log(`      Acuerdo nuevo: ${acuerdoId} (${fechaPublicacion || 'sin fecha'})`);
-          const pdfBuffer = await descargarPdfDesdeLink(context, page, linkVerAcuerdo);
-          let documentoId = null;
-          if (pdfEsValido(pdfBuffer)) {
-            documentoId = await subirPdfAlSistema(pdfBuffer, expedienteSistema.id, `Acuerdo_${sanitizarParaArchivo(acuerdoId)}.pdf`);
-          } else {
-            console.log('      (no se pudo descargar un PDF válido para este acuerdo -- se reporta el aviso sin documento adjunto)');
+            const esReintentoPendiente = pendientesPdf.has(acuerdoId);
+            if (vistos[acuerdoId] && !esReintentoPendiente) continue; // ya resuelto del todo en una corrida anterior
+
+            console.log(esReintentoPendiente
+              ? `      Reintentando PDF pendiente: ${acuerdoId} (${fechaPublicacion || 'sin fecha'})`
+              : `      Acuerdo nuevo: ${acuerdoId} (${fechaPublicacion || 'sin fecha'})`);
+            const pdfBuffer = await descargarPdfConReintentos(context, page, linkVerAcuerdo, `acuerdo ${acuerdoId}`);
+            let documentoId = null;
+            if (pdfEsValido(pdfBuffer)) {
+              documentoId = await subirPdfAlSistema(pdfBuffer, expedienteSistema.id, `Acuerdo_${sanitizarParaArchivo(acuerdoId)}.pdf`);
+            } else {
+              console.log('      (no se pudo descargar un PDF válido para este acuerdo -- se reporta el aviso sin documento adjunto)');
+            }
+
+            try {
+              // Mismo resumen siempre (se deriva solo del acuerdoId/número
+              // de expediente) -- en un reintento de una corrida futura,
+              // avisos_ingest.php reconoce este mismo aviso ya existente y
+              // le adjunta el documento en vez de tratarlo como duplicado
+              // (ver arreglo del 24 nov 2026 ahí mismo).
+              await reportarAviso(
+                expedienteSistema.id,
+                `Acuerdo ${acuerdoId} del expediente ${expedienteSistema.exp || fila.expTexto}.`,
+                fechaPublicacion,
+                documentoId
+              );
+              reportados++;
+              if (esReintentoPendiente && documentoId) {
+                console.log(`      PDF recuperado en esta corrida para el acuerdo ${acuerdoId} (ya se había reportado antes sin documento).`);
+              }
+            } catch (e) {
+              console.log(`      (no se pudo reportar el aviso: ${e.message})`);
+            }
+
+            vistos[acuerdoId] = true;
+            // (24 nov 2026) sin límite de tiempo para reintentar -- el
+            // costo de revisar un pendiente en cada corrida es bajo y
+            // nunca se cierra la puerta a que se recupere solo.
+            if (documentoId) {
+              pendientesPdf.delete(acuerdoId);
+            } else {
+              pendientesPdf.add(acuerdoId);
+            }
+            persistirEstadoCuenta();
+            guardarProcesados(estado); // se guarda en cada acuerdo, no solo al final -- mismo criterio que edomex_correo.js
           }
 
-          try {
-            await reportarAviso(
-              expedienteSistema.id,
-              `Acuerdo ${acuerdoId} del expediente ${expedienteSistema.exp || fila.expTexto}.`,
-              fechaPublicacion,
-              documentoId
-            );
-            reportados++;
-          } catch (e) {
-            console.log(`      (no se pudo reportar el aviso: ${e.message})`);
-          }
-
-          vistos[acuerdoId] = true;
-          estado[cuenta.cdmx_buzon_usuario] = vistos;
-          guardarProcesados(estado); // se guarda en cada acuerdo, no solo al final -- mismo criterio que edomex_correo.js
+          seguirAcuerdos = await avanzarPagina(page, scopeAcuerdos);
+          if (seguirAcuerdos) paginaAcuerdos++;
         }
 
         // Cierra el modal antes de seguir con el siguiente expediente de
@@ -497,6 +635,32 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
     console.log(`  Error con la cuenta de ${cuenta.nombre}: ${e.message}`);
     await page.screenshot({ path: path.join(__dirname, `debug_error_${sanitizarParaArchivo(cuenta.cdmx_buzon_usuario)}.png`), fullPage: true }).catch(() => {});
   } finally {
+    // Pedido explícito del usuario (19 nov 2026): el portal solo permite UNA
+    // sesión activa por cuenta -- si el robot no cierra sesión al terminar,
+    // la abogada dueña de la cuenta no puede entrar desde otro dispositivo
+    // hasta que esa sesión expire sola del lado del servidor (cerrar el
+    // navegador de Playwright, como ya hacía `context.close()` de abajo, NO
+    // cierra esa sesión -- mismo motivo de fondo que "Romper sesión" al
+    // INICIO del login, ver más arriba). Se intenta cerrar sesión con
+    // "Salir" (confirmado real por captura: visible en el menú de la cuenta,
+    // junto a "Cambiar contraseña") antes de cerrar el navegador --
+    // best-effort, nunca se trata como error si no se encuentra (el
+    // navegador se cierra igual, la sesión solo tarda más en expirar sola).
+    let salioSesion = await clickTextoVisible(page, 'Salir', false, 5000);
+    if (!salioSesion) {
+      // "Salir" puede estar escondido dentro de un menú que se abre al
+      // dar clic en el correo/ícono de la cuenta -- se intenta abrir ese
+      // menú primero.
+      await clickTextoVisible(page, cuenta.cdmx_buzon_usuario, false, 5000);
+      salioSesion = await clickTextoVisible(page, 'Salir', false, 5000);
+    }
+    if (salioSesion) {
+      await page.waitForTimeout(1500); // margen para que el portal procese el cierre de sesión del lado del servidor
+      console.log('  Sesión cerrada en el portal al terminar -- la cuenta queda libre para otros dispositivos.');
+    } else {
+      console.log('  AVISO: no se encontró "Salir" para cerrar la sesión -- revisa debug_sesion_abierta_<cuenta>.png. La cuenta puede seguir bloqueada para otros dispositivos hasta que la sesión expire sola.');
+      await page.screenshot({ path: path.join(__dirname, `debug_sesion_abierta_${sanitizarParaArchivo(cuenta.cdmx_buzon_usuario)}.png`), fullPage: true }).catch(() => {});
+    }
     await context.close();
   }
   console.log(`  ${reportados} aviso(s) nuevo(s) para esta cuenta.`);
@@ -526,7 +690,7 @@ async function main() {
   console.log(`${cuentas.length} cuenta(s) del Buzón Electrónico Laboral guardada(s).`);
   if (!cuentas.length) {
     console.log('Nadie ha guardado su cuenta del Buzón Electrónico Laboral en "Mi cuenta" -- nada que revisar.');
-    return;
+    return 'sin cuentas guardadas -- nada que revisar';
   }
 
   const estado = cargarProcesados();
@@ -542,9 +706,13 @@ async function main() {
   await browser.close();
 
   console.log(`Listo. ${totalReportados} aviso(s) nuevo(s) reportado(s) en total.`);
+  return `${totalReportados} aviso(s) nuevo(s)`;
 }
 
-main().catch(err => {
-  console.error('Error en el robot del Buzón Electrónico Laboral (CDMX):', err.message);
-  process.exit(1);
-});
+main()
+  .then(resumen => reportarHeartbeat(true, resumen))
+  .catch(async err => {
+    console.error('Error en el robot del Buzón Electrónico Laboral (CDMX):', err.message);
+    await reportarHeartbeat(false, 'Error: ' + err.message);
+    process.exit(1);
+  });
