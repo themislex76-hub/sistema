@@ -2409,6 +2409,9 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     $usoBuscarJurisprudencia = false;
     $yaInsistioAnuncio = false;
     $yaInsistioMontos = false;
+    // Links de pago que regresaron las herramientas en este turno (ver el
+    // candado de ia_texto_asegurar_links_pago más abajo).
+    $linksPagoTurno = [];
     // Cifras con centavos que el bot puede repetir sin haberlas calculado
     // a mano: las que ya aparecen en la conversación, en los cálculos de la
     // calculadora de los últimos 30 días y en los resultados de las
@@ -2716,6 +2719,10 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     ], JSON_UNESCAPED_UNICODE)
                     : json_encode(['ok' => true], JSON_UNESCAPED_UNICODE);
             }
+            $resDecod = json_decode((string)$contenido, true);
+            if (is_array($resDecod) && !empty($resDecod['ok']) && !empty($resDecod['link_pago']) && is_string($resDecod['link_pago'])) {
+                $linksPagoTurno[] = $resDecod['link_pago'];
+            }
             $respaldoMontos .= ' ' . $contenido;
             $toolResults[] = [
                 'type' => 'tool_result',
@@ -2862,6 +2869,20 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
             . " | [isr_exencion_recortada] tel=$telefono | antes=\"" . $textoAntes . "\" | despues=\"" . $texto . "\"\n", FILE_APPEND);
     }
 
+    // Caso real (26-nov-2026, Alma): confirmar_horario_asesoria apartó el
+    // horario y regresó el link, pero el bot escribió "Aquí está tu link de
+    // pago: $499 MXN" SIN la dirección. Ella esperó hora y media. Si una
+    // herramienta regresó un link de pago en este turno y el texto no lo
+    // trae, se agrega aquí mismo.
+    if ($linksPagoTurno) {
+        $textoAntes = $texto;
+        $texto = ia_texto_asegurar_links_pago($texto, $linksPagoTurno);
+        if ($texto !== $textoAntes) {
+            file_put_contents(__DIR__ . '/ia_debug.log', date('c')
+                . " | [link_pago_agregado] tel=$telefono | antes=\"" . $textoAntes . "\"\n", FILE_APPEND);
+        }
+    }
+
     // Caso real (14-nov-2026): el bot escribió "voy a pedir que un abogado
     // del despacho revise tu caso directamente contigo" SIN llamar
     // escalar_a_humano -- nadie fue avisado, el bot no se pausó, al día
@@ -2897,6 +2918,21 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
     }
 
     return ['texto' => $texto, 'lead' => $lead, 'pdf_calculo' => $pdfCalculoPendiente, 'uso_calculo' => $usoCalculoLiquidacion];
+}
+
+// Agrega al texto el/los link(s) de pago que regresaron las herramientas
+// si el bot no los escribió. Si el texto dice "link de pago:" sin dirección,
+// el link se pone justo ahí; si no, al final.
+function ia_texto_asegurar_links_pago(string $texto, array $links): string
+{
+    foreach (array_unique($links) as $link) {
+        if ($link === '' || strpos($texto, $link) !== false) {
+            continue;
+        }
+        $nuevo = preg_replace('/(link\s+de\s+pago)\s*:(?!\s*https?:)\s*/iu', '$1: ' . str_replace(['\\', '$'], ['\\\\', '\\$'], $link) . "\n\n", $texto, 1, $n);
+        $texto = ($n > 0 && is_string($nuevo)) ? $nuevo : rtrim($texto) . "\n\nTu link de pago: " . $link;
+    }
+    return $texto;
 }
 
 // true si el texto le promete a la persona que un abogado del despacho la
