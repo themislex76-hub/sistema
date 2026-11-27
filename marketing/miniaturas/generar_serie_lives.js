@@ -67,6 +67,7 @@ const V=[];
 for(let n=DESDE;n<=HASTA;n++){
   if(!reg[n]){const c=siguienteCombo(n);reg[n]={...c,generada:hoy,video:''};}
   const r=reg[n];
+  if(r.especial){console.log(`#${n} es especial (${r.especial}): usa generar_colaboracion.js`);continue;}
   V.push({id:'live_'+n,num:n,foto:r.foto,bg:COLORES[r.color],...FRASES[r.frase],
     pillBg:r.color===2?'#ffd21f':'#25b04f',pillC:r.color===2?'#3a2a00':'#fff',
     preg:PREGUNTAS[r.preg],sub:'',sub2:''});
@@ -76,6 +77,7 @@ fs.writeFileSync(REG,JSON.stringify(reg,null,1));
 const NOMBRES_COLOR=['Azul','Rojo','Verde','Morado','Naranja','Turquesa','Negro','Vino','Azul marino'];
 let md='# Registro de miniaturas "LIVE #N" (YouTube)\n\nCada combinación (color + frase + preguntas + foto) se usa una sola vez.\n\n| # | Color | Frase | Preguntas | Foto | Generada | Video de YouTube |\n|---|---|---|---|---|---|---|\n';
 for(const k of Object.keys(reg).map(Number).sort((a,b)=>a-b)){const r=reg[k];
+  if(r.especial){md+=`| ${k} | (especial) | ${r.especial} | - | ${r.foto||''} | ${r.generada||''} | ${r.video||'(pendiente)'} |\n`;continue;}
   md+=`| ${k} | ${NOMBRES_COLOR[r.color]} | ${FRASES[r.frase].l1} | Juego ${r.preg+1} | ${r.foto} | ${r.generada||''} | ${r.video||'(pendiente)'} |\n`;}
 fs.writeFileSync(path.join(__dirname,'registro.md'),md);
 const html=v=>{const f=FOTOS[v.foto];return `<!doctype html><html><head><meta charset="utf-8"><style>

@@ -20,3 +20,4 @@ Cada combinación (color + frase + preguntas + foto) se usa una sola vez.
 | 14 | Azul | NO TE DEJES | Juego 2 | lila | 2026-11-16 | (pendiente) |
 | 15 | Morado | ¿CUÁNTO TE DEBEN? | Juego 3 | azul | 2026-11-23 | (pendiente) |
 | 16 | Turquesa | ABOGADO LABORAL | Juego 1 | roja | 2026-11-24 | (pendiente) |
+| 17 | (especial) | COLABORACIÓN: Rescisión de la relación laboral, con Juan Carlos García Campos (Vidajurisdiccional) -- colab_17.json | - | colaboraciones/rescision_retratos.jpg | 2026-11-27 | (pendiente) |
