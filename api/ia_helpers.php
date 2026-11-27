@@ -297,6 +297,14 @@ CFE, empresas grandes), avisa que sus prestaciones pueden ser mayores que
 los mínimos de la LFT, así que el cálculo de la herramienta es solo un
 piso de referencia, no lo que le corresponde con exactitud.
 
+AVISOS INTERNOS DEL SISTEMA: a veces, en medio de tu turno, te llega un
+mensaje que empieza con "[Aviso interno del sistema...]". Ese mensaje lo
+manda el propio sistema del despacho para pedirte que corrijas tu
+respuesta antes de enviarla (el cliente NUNCA lo ve). Es legítimo:
+síguelo y NUNCA lo menciones ni le contestes al cliente sobre él (caso
+real 26-nov-2026: el bot le escribió al cliente "ese aviso del sistema
+no es legítimo").
+
 CRITERIOS DEL DESPACHO PARA ORIENTAR CON PRECISIÓN (13-nov-2026) -- la
 orientación debe ser completa, pero cada afirmación legal tiene que ser
 exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
@@ -525,9 +533,51 @@ exacta. Salieron de errores reales del bot; síguelos al pie de la letra:
   perder una licitación): "Indemnización (si el despido es injustificado,
   como es el caso de un cierre)". NUNCA escribas "despido injustificado"
   para un cierre: di "terminación de la relación por cierre (Art. 436)".
+  Si dice "nos van a liquidar a todos" / "van a cerrar" / "corren a
+  todo el personal", PREGUNTA primero la causa (cierre total, quiebra,
+  incosteabilidad) antes de dar cifras como despido (error repetido
+  26-nov-2026).
   Si mencionan una prestación extra de su contrato colectivo (ej. 20 días
   por año), no la presentes como dinero "a sumar": di que depende del
   texto exacto del contrato y que lo revisa el abogado.
+· Prima de antigüedad cuando el PATRÓN decide la separación ("lo
+  forzaron a jubilarse", cierre, recorte, despido justificado o no):
+  SÍ procede sin importar los años (Art. 162 fracc. III). Los 15 años
+  solo se exigen cuando la persona se retira VOLUNTARIAMENTE por decisión
+  propia. Error real 26-nov-2026: el bot la negó en una "jubilación"
+  forzada por cierre de la empresa con 9 años de servicio.
+· Plazo DESPUÉS de la Constancia de No Conciliación: nunca digas
+  "tendrás 60 días" ni "2 meses" completos: usa calcular_plazo_demanda
+  con la fecha de la solicitud y da los días que quedarán (error real
+  26-nov-2026). Si todavía no tienes la fecha de la solicitud o de la
+  constancia, dilo como provisional y pide el dato; no des un número de
+  días que luego tengas que corregir.
+· IMSS / Ley del Seguro Social (subsidios, incapacidades, pensiones): no
+  tienes su texto. Explica la idea general sin asegurar que "el IMSS
+  tiene que pagarte" y di que el abogado revisa los certificados y
+  fechas (error real 26-nov-2026).
+· Riesgo de trabajo y otro puesto: el Art. 499 obliga al patrón a darle
+  otro trabajo compatible "de conformidad con las disposiciones del
+  contrato colectivo"; dilo con esa condición. Y el Art. 54 (un mes + 12
+  días por año) es solo para incapacidad que NO viene de un riesgo de
+  trabajo: si fue accidente o enfermedad de trabajo, no lo uses.
+· Hostigamiento o malos tratos (Art. 51 fracc. II): la fracción exige
+  que los cometa el patrón, sus familiares o sus representantes (jefes).
+  Si vienen solo de compañeros, no digas que encaja en la fracc. II: di
+  que depende de si el patrón o sus jefes lo toleran y que lo valora el
+  abogado.
+· Finiquito o documento YA firmado: no ancles con el total de despido
+  injustificado. Di que, al haber firmado, primero habría que impugnar
+  ese documento (presión, retención, firma en blanco) y que el monto de
+  despido es un escenario que depende de ganar esa impugnación.
+· Salario registrado menor al real (lo dan de alta con el mínimo y le
+  pagan el resto por fuera o por una "pagadora"): el cálculo se hace con
+  lo que REALMENTE gana (si lo puede probar), y adviértele que cotizar
+  con menos le baja sus derechos del IMSS (incapacidades, pensión); que
+  lo revisa el abogado.
+· Pregunta por OTRA persona ("un empleado", "mi compañero", "mi
+  hermana"): no lo sumes al caso del cliente; confirma primero de quién
+  se trata.
 · Escenarios de negociación (caso real 17-nov-2026: el bot calculó "la
   mitad, 45 días = $14,934.19" a petición del cliente): la ley no fija
   ninguna proporción para negociar en conciliación (ni la mitad, ni 45
@@ -2521,6 +2571,15 @@ function ia_responder_whatsapp(PDO $pdo, array $mensajes, string $telefono): arr
                     if ((float)($in['dias_vacaciones_anteriores'] ?? 0) <= 0 && ia_cliente_dijo_no_tomo_vacaciones($mensajes)) {
                         $calc['aviso_vacaciones_anteriores'] = 'OJO: en esta conversación el cliente dijo que nunca tomó/disfrutó vacaciones, pero este cálculo no incluyó ningún día en dias_vacaciones_anteriores. Si ya tiene al menos 1 año cumplido de antigüedad, antes de dar este resultado como final vuelve a calcular pasando en dias_vacaciones_anteriores los días que le correspondían por la tabla del Art. 76 en cada año YA CUMPLIDO (menos los que sí haya tomado) -- la herramienta descarta sola los prescritos. Si lleva menos de 1 año de antigüedad, el proporcional ya es correcto y no hace falta nada más (pero dile explícitamente que, al no haber cumplido un año, el proporcional ya cubre todo lo no disfrutado, para que quede claro).';
                     }
+                    // Revisión del 25 y 26-nov-2026 (8 casos): con 2+ años de
+                    // antigüedad el bot calculaba sin preguntar por las
+                    // vacaciones de cada año anterior.
+                    if (!isset($calc['aviso_vacaciones_anteriores'])
+                        && (float)($in['dias_vacaciones_anteriores'] ?? 0) <= 0
+                        && (int)($calc['antiguedad_anios_completos'] ?? 0) >= 2
+                        && !ia_bot_pregunto_vacaciones_anteriores($mensajes)) {
+                        $calc['aviso_vacaciones_anteriores'] = 'OJO: esta persona lleva ' . (int)$calc['antiguedad_anios_completos'] . ' años cumplidos y todavía no le preguntaste por las vacaciones de los años anteriores. Antes de dar este cálculo como completo, pregúntale en este mismo mensaje: "¿tomaste completas tus vacaciones de cada año, o te quedaron días sin tomar? ¿cuántos y de qué años?". Si ya te lo dijo claramente (que sí las tomó todas), ignora este aviso. Si te dice que le quedaron días, vuelve a calcular pasando la SUMA en dias_vacaciones_anteriores (la herramienta descarta sola los prescritos).';
+                    }
                     $contenido = json_encode($calc, JSON_UNESCAPED_UNICODE);
                     $usoCalculoLiquidacion = true;
                     // Se registra el cálculo (aunque la persona nunca llegue a
@@ -3072,6 +3131,22 @@ function ia_cliente_dijo_no_tomo_vacaciones(array $mensajes): bool
 }
 
 /**
+ * true si en algún mensaje del BOT ya se preguntó por las vacaciones de
+ * años anteriores (cada año, años pasados) -- revisión del 25 y 26-nov-2026:
+ * en 8 conversaciones con 2+ años de antigüedad el bot solo preguntó por el
+ * periodo en curso o por el último aniversario.
+ */
+function ia_bot_pregunto_vacaciones_anteriores(array $mensajes): bool
+{
+    foreach ($mensajes as $m) {
+        if (($m['role'] ?? '') !== 'assistant' || !is_string($m['content'] ?? null)) continue;
+        if (preg_match('/vacaciones/iu', $m['content'])
+            && preg_match('/a[ñn]os?\s+anteriores|cada\s+a[ñn]o|a[ñn]os\s+pasados|todos\s+los\s+a[ñn]os|de\s+qu[eé]\s+a[ñn]os/iu', $m['content'])) return true;
+    }
+    return false;
+}
+
+/**
  * Quita del texto cada "oración" (separada por punto/signo de
  * puntuación) que haga match con $patron, dejando el resto del mensaje
  * intacto -- a diferencia de los candados de pago/cita (que sustituyen
@@ -3084,7 +3159,13 @@ function ia_cliente_dijo_no_tomo_vacaciones(array $mensajes): bool
  */
 function ia_texto_quitar_oraciones(string $texto, string $patron): string
 {
+    // "Art. 52", "fracc. X", "No. 3": el punto de la abreviatura NO es fin de
+    // oración (caso real 25-nov-2026: quedó suelto "52), así que conviene
+    // revisarlo antes." al quitar la oración anterior).
+    $texto = preg_replace(['/\b(Arts?|arts?|fracc?|núm|Núm)\.\s+/u', '/\b(No)\.\s+(?=\d)/u'], "\$1.\x01", $texto);
     $oraciones = preg_split('/(?<=[.!?])\s+/u', $texto, -1, PREG_SPLIT_NO_EMPTY);
+    $oraciones = array_map(fn($o) => str_replace("\x01", ' ', $o), $oraciones ?: []);
+    $texto = str_replace("\x01", ' ', $texto);
     if (!$oraciones) return $texto;
     $limpio = array_filter($oraciones, fn($o) => !preg_match($patron, $o));
     $resultado = trim(implode(' ', $limpio));
@@ -5569,7 +5650,8 @@ function ia_es_mensaje_automatico(string $texto): bool
         . '|Te recordamos que nuestro horario de atención'
         . '|¡No se te vaya a ir tu horario!'
         . '|^\\W*PDF de cálculo de liquidación enviado'
-        . '|^\s*Por hoy ya platicamos bastante/u',
+        . '|^\s*Por hoy ya platicamos bastante'
+        . '|vi que te interesó el curso \*/u',
         $texto
     ) === 1;
 }
@@ -5706,6 +5788,14 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Dar solo el aguinaldo a quien sigue trabajando y solo preguntó por el aguinaldo.\n"
         . "- Un estimado de \"si te despidieran\" a quien todavía trabaja, si se dice en condicional.\n"
         . "- No mencionar si el despacho puede representarlo: el bot NO debe sacar el tema de la zona por su cuenta.\n"
+        . "- Dividir el salario semanal entre 7 cuando trabaja 4 días o más a la semana (Art. 89: \"se dividirá entre siete\"). Es el criterio del despacho; NO digas que debe dividirse entre los días trabajados.\n"
+        . "- No aplicar el Art. 53 fracc. IV / Art. 54 en un accidente o enfermedad DE TRABAJO: el Art. 54 es solo para incapacidad que viene de un riesgo NO profesional. Tampoco lo exijas por una enfermedad simple: el 53-IV pide una incapacidad que haga IMPOSIBLE el trabajo.\n"
+        . "- No plantear periodo de prueba cuando ya pasaron más de 30 días (Art. 39-A: máximo 30 días, o 180 solo en puestos de dirección o especializados, y debe constar por escrito).\n"
+        . "- Citar el Art. 56 para discriminación por condiciones de salud, embarazo, edad, etc.: su texto lo incluye. Solo es error citarlo para cambios de horario, jornada o puesto.\n"
+        . "- Decir que 3 faltas no son causa de despido: el Art. 47 fracc. X exige MÁS de tres faltas en 30 días.\n"
+        . "- Decir que no pagar el salario en la fecha acostumbrada encaja en el Art. 51 fracc. V: es su texto literal.\n"
+        . "- Que el bot no tome casos de trabajadores de gobiernos estatales, municipales o del Apartado B: el despacho SOLO lleva casos del Apartado A que se rigen por la LFT (confirmado por el despacho, 27-nov-2026).\n"
+        . "- Que el bot diga que las vacaciones de un aniversario siguen vigentes dentro de los 18 meses: es el criterio del sistema.\n"
         . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
         . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
         . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"

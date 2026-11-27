@@ -55,10 +55,20 @@ if (!dentro_de_horario_atencion()) {
 // -- si por algún motivo no les llegaron (ej. fuera de horario toda la
 // ventana de 24h), este sigue siendo su único contacto de seguimiento.
 $stmt = $pdo->query(
-    "SELECT * FROM calculos_liquidacion
-     WHERE tercer_seguimiento_en IS NULL
-       AND creado_en < NOW() - INTERVAL 24 HOUR
-       AND creado_en >= NOW() - INTERVAL 7 DAY"
+    // UNA sola fila por teléfono (su cálculo más reciente) y nunca a un
+    // teléfono que ya lo recibió por otro de sus cálculos (26-nov-2026: a una
+    // clienta con 4 cálculos le llegó la plantilla 4 veces en el mismo minuto).
+    "SELECT cl.* FROM calculos_liquidacion cl
+     JOIN (
+         SELECT telefono, MAX(id) AS ultimo_id FROM calculos_liquidacion
+         GROUP BY telefono
+     ) u ON u.ultimo_id = cl.id
+     WHERE cl.creado_en < NOW() - INTERVAL 24 HOUR
+       AND cl.creado_en >= NOW() - INTERVAL 7 DAY
+       AND NOT EXISTS (
+           SELECT 1 FROM calculos_liquidacion c2
+           WHERE c2.telefono = cl.telefono AND c2.tercer_seguimiento_en IS NOT NULL
+       )"
 );
 $calculos = $stmt->fetchAll();
 
@@ -115,7 +125,7 @@ foreach ($calculos as $c) {
     // reintentar lo mismo cada día sin arreglar la causa no sirve de
     // nada. Un error real de red/token sí va al log de siempre dentro de
     // whatsapp_enviar_plantilla().
-    $pdo->prepare('UPDATE calculos_liquidacion SET tercer_seguimiento_en = NOW() WHERE id = :id')->execute([':id' => $c['id']]);
+    $pdo->prepare('UPDATE calculos_liquidacion SET tercer_seguimiento_en = NOW() WHERE telefono = :t AND tercer_seguimiento_en IS NULL')->execute([':t' => $c['telefono']]);
     if ($enviado) {
         $enviados++;
         $ins = $pdo->prepare("INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')");
