@@ -2485,6 +2485,7 @@ function botRevisionesHTML(){
         ${r.resumen ? `<div style="font-size:13px; margin-bottom:6px;">${escapeHTML(r.resumen)}</div>` : ''}
         <ul style="margin:0 0 10px 18px; padding:0; font-size:12.5px;">
           ${(r.hallazgos||[]).map(h=>`<li style="margin-bottom:6px;">
+            ${h.tipo==='venta' ? `<span class="badge warn" style="margin-bottom:3px; display:inline-block;">💰 Venta perdida</span>` : ''}
             ${h.cita ? `<div style="color:var(--gray);">Bot: “${escapeHTML(h.cita)}”</div>` : ''}
             <div><strong>Problema:</strong> ${escapeHTML(h.problema||'')}</div>
             ${h.correccion ? `<div><strong>Debió decir:</strong> ${escapeHTML(h.correccion)}</div>` : ''}

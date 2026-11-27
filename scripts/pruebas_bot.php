@@ -514,5 +514,15 @@ caso('prompt: prima de antigüedad en jubilación forzada, plazo tras constancia
   contrato colectivo') !== false
     && strpos(IA_SYSTEM_PROMPT, 'Finiquito o documento YA firmado') !== false);
 
+// ---------------------------------------------------------------------
+echo "30) Revisión diaria: ventas perdidas (27-nov)\n";
+$rv = ia_parsear_revision_bot('{"veredicto":"revisar","gravedad":"media","resumen":"x","hallazgos":[{"tipo":"venta","cita":"a","problema":"dijo que sí y no quedó apartado","correccion":"ofrecer horarios"},{"cita":"b","problema":"artículo mal citado","correccion":"c"}]}');
+caso('el parser conserva tipo venta y pone legal por defecto',
+    $rv && $rv['hallazgos'][0]['tipo'] === 'venta' && $rv['hallazgos'][1]['tipo'] === 'legal');
+$srcRev = file_get_contents($base . '/api/ia_helpers.php');
+caso('el revisor busca ventas perdidas y recibe las asesorías del teléfono',
+    strpos($srcRev, 'VENTAS PERDIDAS (la prioridad del despacho es vender') !== false
+    && strpos($srcRev, 'ASESORÍAS DE ESTE TELÉFONO EN EL SISTEMA') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

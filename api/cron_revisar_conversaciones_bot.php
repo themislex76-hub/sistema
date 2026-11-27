@@ -93,6 +93,11 @@ $guardar = $pdo->prepare(
      VALUES (:t, :f, :v, :g, :r, :h)'
 );
 
+$stmtCitas = $pdo->prepare(
+    "SELECT creado_en, fecha, hora_inicio AS hora, estado, pagado_en FROM citas_asesoria
+     WHERE telefono = :t ORDER BY id DESC LIMIT 5"
+);
+
 $revisadas = 0; $conProblema = 0; $fallidas = 0; $saltadas = 0; $altas = [];
 foreach ($telefonos as $tel) {
     if ($revisadas + $fallidas >= REVISION_BOT_LOTE) break;
@@ -114,7 +119,16 @@ foreach ($telefonos as $tel) {
         $calculos = [];
     }
 
-    $res = ia_revisar_conversacion_bot($pdo, $mensajes, $previos, $calculos);
+    // 27-nov-2026: asesorías del teléfono, para detectar ventas perdidas.
+    $citas = [];
+    try {
+        $stmtCitas->execute([':t' => $tel]);
+        $citas = $stmtCitas->fetchAll();
+    } catch (Throwable $e) {
+        $citas = [];
+    }
+
+    $res = ia_revisar_conversacion_bot($pdo, $mensajes, $previos, $calculos, $citas);
     if ($res === null) { $fallidas++; continue; }
 
     $guardar->execute([

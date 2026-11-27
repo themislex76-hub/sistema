@@ -4780,3 +4780,10 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
 - **Revisor calibrado** (falsas alarmas verificadas con el texto de la LFT): ÷7 del Art. 89, Art. 54 en riesgo de trabajo, 39-A máximo 30 días, Art. 56 sí incluye condiciones de salud, 47-X exige MÁS de 3 faltas, 51-V literal, vacaciones dentro de 18 meses.
 - **Confirmado por el usuario (27-nov)**: el despacho SOLO lleva casos del Apartado A que se rigen por la LFT; rechazar trabajadores de gobiernos estatales/municipales es correcto.
 - 172 casos en `scripts/pruebas_bot.php`. Rama "Bot" fusionada antes de tocar `ia_helpers.php`.
+
+## La revisión diaria del bot ahora también busca VENTAS PERDIDAS (27 nov 2026, conversación "chats", `app.js?v=165`)
+- Pedido del usuario: "lo que debemos priorizar es la venta, todo lo que hacemos es para vender".
+- `ia_revisar_conversacion_bot()` recibe un 5º parámetro `$citas` (asesorías del teléfono en `citas_asesoria`, últimas 5, con estado y `pagado_en`; las junta `cron_revisar_conversaciones_bot.php`) y el prompt tiene un bloque VENTAS PERDIDAS: caso real sin oferta, dijo que sí y no quedó apartado, apartó y no pagó sin ayuda del bot, objeción no resuelta, bot que alejó la venta. NO marca: quien declinó, sin caso/Apartado B, ya pagó, dejó de contestar tras la oferta.
+- Cada hallazgo trae `tipo` (`legal` | `venta`); `ia_parsear_revision_bot()` lo normaliza (por defecto `legal`). El panel de Equipo muestra la insignia "💰 Venta perdida". `max_tokens` del revisor 1500 → 2500.
+- OJO al leer el % de marcadas de `bot_revisiones`: desde el 28-nov incluye ventas perdidas, no solo errores legales (no se puede comparar directo con días anteriores).
+- 174 casos en `scripts/pruebas_bot.php`. `app.js?v=165`, `sw.js v89`.

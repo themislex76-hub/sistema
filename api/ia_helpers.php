@@ -5677,7 +5677,7 @@ function ia_articulos_citados(string $texto): array
  * @param array $contextoPrevio mismas filas, de días anteriores (solo contexto)
  * @return array|null ['veredicto'=>'ok'|'revisar','gravedad'=>?string,'resumen'=>?string,'hallazgos'=>array] o null si falló
  */
-function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoPrevio = [], array $calculos = []): ?array
+function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoPrevio = [], array $calculos = [], array $citas = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) return null;
@@ -5730,6 +5730,17 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
                 . ($c['detalle'] ? ' | ' . $c['detalle'] : ''), $calculos));
     } else {
         $contenido .= "\n\n(Ese día la calculadora oficial NO registró ningún cálculo para este teléfono: si el bot dio montos en pesos de finiquito/indemnización ese día, salieron de un cálculo anterior o los hizo a mano.)";
+    }
+
+    // 27-nov-2026 (prioridad del despacho: vender): estado real de la
+    // asesoría de este teléfono, para que el revisor sepa si la venta se
+    // cerró o se perdió.
+    if ($citas) {
+        $contenido .= "\n\nASESORÍAS DE ESTE TELÉFONO EN EL SISTEMA (estado real):\n"
+            . implode("\n", array_map(fn($c) => '- apartada ' . substr((string)$c['creado_en'], 0, 16) . ' para ' . $c['fecha'] . ' ' . substr((string)$c['hora'], 0, 5)
+                . ' | estado: ' . $c['estado'] . ($c['pagado_en'] ? ' | pagada ' . substr((string)$c['pagado_en'], 0, 16) : ''), $citas));
+    } else {
+        $contenido .= "\n\n(Este teléfono NO tiene ninguna asesoría apartada ni pagada en el sistema.)";
     }
 
     $system = 'Eres el abogado supervisor (experto en derecho laboral mexicano, LFT vigente) de un despacho que usa un '
@@ -5798,15 +5809,24 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- Que el bot diga que las vacaciones de un aniversario siguen vigentes dentro de los 18 meses: es el criterio del sistema.\n"
         . "- Estilo menor, información correcta aunque incompleta sin consecuencia, ni que el bot cobre la asesoría.\n"
         . "Si al analizar algo concluyes que en realidad no es error, NO lo incluyas en hallazgos.\n\n"
+        . "VENTAS PERDIDAS (la prioridad del despacho es vender la asesoría de $499; márcalas con \"tipo\":\"venta\"). Marca SOLO si en esta conversación se perdió una venta por algo que hizo o dejó de hacer el BOT:\n"
+        . "- La persona tiene un caso laboral real (despido, finiquito, rescisión, adeudos), mostró interés o urgencia, y el bot nunca le ofreció la asesoría.\n"
+        . "- La persona dijo que sí quería la asesoría (o pidió horarios, o preguntó cómo pagar) y NO quedó con horario apartado (revisa las asesorías del sistema que se te dan).\n"
+        . "- La persona apartó horario y no pagó, y el bot no la ayudó a completar el pago cuando ella escribió.\n"
+        . "- La persona puso una objeción (\"está caro\", \"no tengo tarjeta\", \"no confío\", \"lo pienso\", \"¿es presencial?\") y el bot no la resolvió o la dejó ir sin una respuesta útil.\n"
+        . "- El bot alejó la venta: demasiadas preguntas antes de dar el estimado, mensajes larguísimos o confusos, contradicciones, o no contestó lo que la persona preguntó.\n"
+        . "NO marques como venta perdida: quien dijo claramente que no la quiere o no tiene dinero y el bot lo respetó; quien no tiene caso o no se le puede atender (Apartado B, gobierno estatal o municipal); quien ya pagó; quien dejó de contestar después de recibir la oferta (eso no es culpa del bot); la oferta hecha una sola vez de forma natural.\n"
+        . "En las ventas perdidas, \"correccion\" es qué debió decir o hacer el bot para cerrar la venta, en una o dos frases concretas.\n\n"
         . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"
         . 'Responde ÚNICAMENTE con un JSON válido, sin texto antes ni después, con esta forma: '
-        . '{"veredicto":"ok"|"revisar","gravedad":"alta"|"media"|"baja"|null,"resumen":"1 línea","hallazgos":[{"cita":"frase corta del bot","problema":"qué está mal y por qué","correccion":"qué debió decir"}]}. '
+        . '{"veredicto":"ok"|"revisar","gravedad":"alta"|"media"|"baja"|null,"resumen":"1 línea","hallazgos":[{"tipo":"legal"|"venta","cita":"frase corta del bot","problema":"qué está mal y por qué","correccion":"qué debió decir"}]}. '
+        . 'En una venta perdida, gravedad alta = la persona quería pagar y no pudo por culpa del bot; media = la venta se perdió por una objeción no resuelta o una oferta que nunca llegó. '
         . 'gravedad alta = puede causar daño real al cliente o al despacho (falsa expectativa de dinero, error legal de fondo, pago/cita inexistente); '
         . 'media = error legal menor o mala atención; baja = detalle. Si no hay errores reales: {"veredicto":"ok","gravedad":null,"resumen":"","hallazgos":[]}.';
 
     $payload = [
         'model' => IA_MODELO_REVISION_BOT,
-        'max_tokens' => 1500,
+        'max_tokens' => 2500,
         'thinking' => ['type' => 'disabled'],
         // Caché (17 nov 2026, para bajar el costo de la supervisión): las
         // instrucciones del revisor + los criterios del despacho son
@@ -5864,6 +5884,10 @@ function ia_parsear_revision_bot(string $texto): ?array
         if (preg_match('#^(n\s*/?\s*a\b|no aplica|no requiere|ninguna|sin corrección|aceptable)#iu', $c)) return false;
         return !preg_match('/no hay error|no es un error|no constituye (un )?(error|hallazgo)|no es error|sin hallazgo/iu', $pr);
     }));
+    foreach ($hallazgos as &$h) {
+        $h['tipo'] = (($h['tipo'] ?? '') === 'venta') ? 'venta' : 'legal';
+    }
+    unset($h);
     $veredicto = (($j['veredicto'] ?? '') === 'revisar' && $hallazgos) ? 'revisar' : 'ok';
     $gravedad = in_array($j['gravedad'] ?? null, ['alta', 'media', 'baja'], true) ? $j['gravedad'] : ($veredicto === 'revisar' ? 'media' : null);
     return [
