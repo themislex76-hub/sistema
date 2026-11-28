@@ -551,5 +551,25 @@ caso('texto que ya trae el link: no se toca', ia_texto_asegurar_links_pago($conL
 $otro = ia_texto_asegurar_links_pago('Listo, ya quedó apartado tu horario.', [$url]);
 caso('texto sin "link de pago:": el link se agrega al final', substr($otro, -strlen($url)) === $url && strpos($otro, 'Tu link de pago: ') !== false);
 
+echo "33) Promoción de cursos: compra 1 y te regalamos los otros 2 (28-nov)\n";
+$regaloPara = [];
+foreach (['procesal', 'amparo', 'actas'] as $slug) $regaloPara[$slug] = cursos_regalo_texto($slug);
+$archivoServidor = is_file($base . '/api/cursos_regalo_accesos.php');
+if ($archivoServidor) {
+    caso('regalo de Procedimiento: trae Amparo y Actas, no Procedimiento',
+        strpos($regaloPara['procesal'], 'silver-bubblegum') !== false && strpos($regaloPara['procesal'], 'regal-lollipop') !== false && strpos($regaloPara['procesal'], 'thriving-madeleine') === false);
+    caso('regalo de Amparo: trae Procedimiento y Actas', strpos($regaloPara['amparo'], 'thriving-madeleine') !== false && strpos($regaloPara['amparo'], 'regal-lollipop') !== false && strpos($regaloPara['amparo'], 'silver-bubblegum') === false);
+    caso('regalo de Actas: trae Procedimiento y Amparo', strpos($regaloPara['actas'], 'thriving-madeleine') !== false && strpos($regaloPara['actas'], 'silver-bubblegum') !== false && strpos($regaloPara['actas'], 'regal-lollipop') === false);
+    caso('ningún acceso de regalo lleva un correo dentro', !preg_match('/dGhlbWlz|@/', implode(' ', $regaloPara)));
+}
+caso('las llaves de regalo NO van en GitHub (.gitignore)', strpos(file_get_contents($base . '/.gitignore'), 'api/cursos_regalo_accesos.php') !== false);
+$wh = file_get_contents($base . '/api/mercadopago_webhook.php');
+caso('al confirmarse el pago se mandan los regalos, y si faltan se avisa al abogado', strpos($wh, 'cursos_regalo_texto') !== false && strpos($wh, 'URGENTE: mandar a mano los 2 cursos de regalo') !== false);
+caso('el mensaje de pago de curso sigue contando como automático', ia_es_mensaje_automatico("¡Hola Ana! Tu pago del curso *Actas Administrativas Laborales* quedó confirmado. 🎉"));
+caso('prompt: la promoción está y no se vende como "por tiempo limitado"', strpos(IA_SYSTEM_PROMPT, 'PROMOCIÓN VIGENTE') !== false && strpos(IA_SYSTEM_PROMPT, 'NO es por tiempo limitado') !== false);
+caso('prompt: no aplica a compras anteriores al 28-nov', strpos(IA_SYSTEM_PROMPT, 'no aplica a compras') !== false);
+caso('revisión diaria: también marca ventas de cursos perdidas', strpos(file_get_contents($base . '/api/ia_helpers.php'), 'COMPRAS DE CURSOS DE ESTE TELÉFONO') !== false
+    && strpos(file_get_contents($base . '/api/cron_revisar_conversaciones_bot.php'), '$stmtCursos') !== false);
+
 echo "\n" . ($fallas ? "❌ $fallas de $total casos FALLARON -- no mandes el cambio así." : "✅ Los $total casos pasan.") . "\n";
 exit($fallas ? 1 : 0);

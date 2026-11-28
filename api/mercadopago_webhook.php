@@ -82,7 +82,22 @@ function mp_webhook_procesar_curso(PDO $pdo, array $pago, string $paymentId, str
         $accesoLink .= '&producto=' . urlencode($info['producto_externo']);
     }
     $saludo = $compra['nombre_cliente'] ? "¡Hola {$compra['nombre_cliente']}!" : '¡Hola!';
-    $mensaje = "{$saludo} Tu pago del curso *{$info['titulo']}* quedó confirmado. 🎉\n\nAquí está tu acceso (de por vida, entra las veces que quieras):\n{$accesoLink}\n\nCualquier duda sobre el contenido, aquí mismo nos puedes escribir.";
+    $mensaje = "{$saludo} Tu pago del curso *{$info['titulo']}* quedó confirmado. 🎉\n\nAquí está tu acceso (de por vida, entra las veces que quieras):\n{$accesoLink}";
+
+    // Promoción 28-nov-2026: compra 1 y se le regalan los otros 2. Si
+    // faltan los accesos en el servidor, el cliente recibe su curso y se
+    // avisa al abogado para que le mande los 2 de regalo a mano.
+    $faltanRegalos = false;
+    if (CURSOS_PROMO_REGALO_ACTIVA) {
+        $regalo = cursos_regalo_texto((string)$compra['curso_slug']);
+        if ($regalo !== null) {
+            $mensaje .= "\n\n" . $regalo . "\n\nGuarda este mensaje.";
+        } else {
+            $faltanRegalos = true;
+            $mensaje .= "\n\n🎁 Y de regalo te llevas los otros 2 cursos: en unos minutos te mando sus accesos por aquí.";
+        }
+    }
+    $mensaje .= "\n\nCualquier duda sobre el contenido, aquí mismo nos puedes escribir.";
 
     whatsapp_enviar($compra['telefono'], $mensaje);
     $ins = $pdo->prepare(
@@ -96,6 +111,14 @@ function mp_webhook_procesar_curso(PDO $pdo, array $pago, string $paymentId, str
         ($compra['nombre_cliente'] ?: $compra['telefono']) . " compró \"{$info['titulo']}\" (\${$compra['monto']} MXN) — ya se le mandó el acceso por WhatsApp.",
         '/sistema/?abrir=' . urlencode($compra['telefono'])
     );
+    if ($faltanRegalos) {
+        push_notificar_prospecto(
+            $pdo, null,
+            'URGENTE: mandar a mano los 2 cursos de regalo',
+            ($compra['nombre_cliente'] ?: $compra['telefono']) . ' pagó un curso, pero falta api/cursos_regalo_accesos.php en el servidor. Mándale tú los accesos de los otros 2 cursos.',
+            '/sistema/?abrir=' . urlencode($compra['telefono'])
+        );
+    }
 }
 
 /**
