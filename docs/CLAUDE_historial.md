@@ -4800,3 +4800,15 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
 
 ## Compactación (27 nov 2026, conversación "chats")
 - Este archivo era el CLAUDE.md completo hasta el 27-nov (363 KB, ~160 mil tokens que cargaban las 4 conversaciones en cada mensaje). Se movió aquí y el CLAUDE.md nuevo quedó como resumen de lo vigente (~17 KB). Las secciones nuevas con detalle se agregan al final de este archivo.
+
+## Cursos: promoción "compra 1 y te regalamos los otros 2" (28 nov 2026, conversación "cursos")
+- Datos (60 días): 66 con interés registrado, 63 links, 25 pagos ($8,175); ~4 de cada 10 que reciben el link pagan.
+  Procedimiento = 21 de 25 ventas. Interés por semana bajando (12 la sem. 44; 5/7/1 las últimas).
+- Se propuso paquete de los 3 a $399; el Lic. prefirió regalar los otros 2. Se le explicó el punto de equilibrio
+  (6 de cada 10) y se acordó probar 3 semanas. No es retroactiva (decisión del Lic.).
+- Las páginas de Netlify verifican que el pago sea de su curso, por eso los regalos son llaves fijas de pagos ya
+  aprobados: Procedimiento y Amparo (pagos del Lic.) y Actas (compra 12 de compras_curso, 7-oct; el Lic. la probó
+  en incógnito: abre y no muestra datos del cliente). La llave que genera la página de Actas trae el correo del
+  comprador en Base64, por eso no se usó la del Lic.
+- Revisión diaria: recibe las compras de cursos del teléfono y marca ventas de cursos perdidas.
+- Desde este entorno no se pudo abrir netlify.app (red bloqueada): el Lic. debe probar las 3 ligas en incógnito.

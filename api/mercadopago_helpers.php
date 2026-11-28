@@ -70,34 +70,29 @@ const CURSOS_CATALOGO = [
         'acceso_param' => 'llave',
         'producto_externo' => null,
     ],
-    // 28-nov-2026 (decisión del Lic.): paquete de los 3 cursos a $399. Las
-    // páginas de Netlify verifican que el pago sea de SU curso, así que un
-    // pago de paquete no les sirve: al confirmarse se mandan 3 accesos fijos
-    // (llaves de pagos ya aprobados) que viven SOLO en el servidor, en
-    // api/cursos_paquete_accesos.php (no va a GitHub, el repositorio es
-    // público). Ver cursos_paquete_accesos().
-    'paquete' => [
-        'titulo' => 'Paquete de 3 cursos de Expertos Laborales',
-        'precio' => 399.00,
-        'sitio' => null,
-        'acceso_param' => null,
-        'producto_externo' => null,
-    ],
 ];
 
+// 28-nov-2026 (decisión del Lic.): PROMOCIÓN "compra 1 y te regalamos los
+// otros 2". Solo para quien pague desde el 28-nov (no es retroactiva). Las
+// páginas de Netlify verifican que el pago sea de SU curso, así que los 2
+// cursos de regalo se dan con accesos fijos (llaves de pagos ya aprobados)
+// que viven SOLO en el servidor, en api/cursos_regalo_accesos.php (no va a
+// GitHub: el repositorio es público). Para apagar la promoción: false.
+const CURSOS_PROMO_REGALO_ACTIVA = true;
+
 /**
- * Los 3 links de acceso del paquete, o null si el archivo del servidor no
- * existe o está incompleto (entonces el bot no vende el paquete).
- * El archivo define CURSOS_PAQUETE_ACCESOS = ['procesal' => url, 'amparo' => url, 'actas' => url].
+ * Los 3 accesos fijos de regalo, o null si el archivo del servidor no
+ * existe o está incompleto. El archivo define
+ * CURSOS_REGALO_ACCESOS = ['procesal' => url, 'amparo' => url, 'actas' => url].
  */
-function cursos_paquete_accesos(): ?array
+function cursos_regalo_accesos(): ?array
 {
-    $archivo = __DIR__ . '/cursos_paquete_accesos.php';
-    if (!defined('CURSOS_PAQUETE_ACCESOS') && is_file($archivo)) {
+    $archivo = __DIR__ . '/cursos_regalo_accesos.php';
+    if (!defined('CURSOS_REGALO_ACCESOS') && is_file($archivo)) {
         require_once $archivo;
     }
-    if (!defined('CURSOS_PAQUETE_ACCESOS')) return null;
-    $a = CURSOS_PAQUETE_ACCESOS;
+    if (!defined('CURSOS_REGALO_ACCESOS')) return null;
+    $a = CURSOS_REGALO_ACCESOS;
     foreach (['procesal', 'amparo', 'actas'] as $slug) {
         if (empty($a[$slug]) || !preg_match('#^https://#', (string)$a[$slug])) return null;
     }
@@ -105,19 +100,19 @@ function cursos_paquete_accesos(): ?array
 }
 
 /**
- * Mensaje de WhatsApp con los 3 accesos del paquete (o null si faltan).
+ * Texto con los 2 cursos de regalo para quien compró $slugComprado, o null
+ * si faltan los accesos del servidor.
  */
-function cursos_paquete_mensaje_accesos(?string $nombre): ?string
+function cursos_regalo_texto(string $slugComprado): ?string
 {
-    $a = cursos_paquete_accesos();
+    $a = cursos_regalo_accesos();
     if ($a === null) return null;
-    $saludo = $nombre ? "¡Hola {$nombre}!" : '¡Hola!';
-    return "{$saludo} Tu pago quedó confirmado: ya tienes el *Paquete de los 3 cursos*. 🎉\n\n"
-        . "Aquí están tus accesos (de por vida, entra las veces que quieras):\n\n"
-        . "📘 *Nuevo Procedimiento Laboral Mexicano*\n{$a['procesal']}\n\n"
-        . "📗 *El Juicio de Amparo en Materia del Trabajo*\n{$a['amparo']}\n\n"
-        . "📙 *Actas Administrativas Laborales*\n{$a['actas']}\n\n"
-        . "Guarda este mensaje. Cualquier duda sobre el contenido, aquí mismo nos puedes escribir.";
+    $txt = "🎁 *Y de regalo, tus otros 2 cursos:*";
+    foreach (['procesal', 'amparo', 'actas'] as $slug) {
+        if ($slug === $slugComprado) continue;
+        $txt .= "\n\n*" . CURSOS_CATALOGO[$slug]['titulo'] . "*\n" . $a[$slug];
+    }
+    return $txt;
 }
 
 /**

@@ -127,7 +127,9 @@ foreach ($prospectos as $p) {
         $linkPago = curso_link_pago_ligado($pdo, $p['telefono'], $info['slug'], $p['nombre'] ?: null, $webhook);
     }
     if ($info && $linkPago) {
-        $texto = "{$saludo}, vi que te interesó el curso *{$p['curso_interes']}* (\${$info['precio']} MXN, acceso de por vida). Sigue disponible -- aquí tienes tu link de pago: {$linkPago}\n\nEn cuanto se confirme el pago, el acceso te llega automáticamente por este mismo chat. Cualquier duda, aquí ando. 🙂";
+        // Promoción 28-nov-2026: compra 1 y se le regalan los otros 2.
+        $promo = CURSOS_PROMO_REGALO_ACTIVA ? "\n\n🎁 Y con ese mismo pago te regalamos los otros 2 cursos: pagas uno y te llevas los 3." : '';
+        $texto = "{$saludo}, vi que te interesó el curso *{$p['curso_interes']}* (\${$info['precio']} MXN, acceso de por vida). Sigue disponible -- aquí tienes tu link de pago: {$linkPago}{$promo}\n\nEn cuanto se confirme el pago, el acceso te llega automáticamente por este mismo chat. Cualquier duda, aquí ando. 🙂";
     } elseif ($info) {
         $texto = "{$saludo}, vi que te interesó el curso *{$p['curso_interes']}* (\${$info['precio']} MXN, acceso de por vida). Sigue disponible -- si quieres tu link de pago, contéstame aquí y te lo mando. 🙂";
     } else {
