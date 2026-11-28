@@ -4832,3 +4832,7 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
 - Si el endpoint falla, cada robot sigue con su memoria local de siempre.
 - Ojo (no arreglado): en Edomex dos notificaciones del MISMO expediente generan el mismo resumen, y
   `avisos_ingest.php` trata la segunda como duplicada (su PDF sí se sube a Documentos, pero no hay aviso nuevo).
+- Corrección (28-nov, mismo día): el robot Federal bajó 3 copias de 3 PDF (501/2026 No. 2, 463/2026 No. 5,
+  114/2026 amparo 1146/2026 No. 3) porque cada cuenta del portal que veía el expediente volvía a sumar el
+  pendiente del servidor. Ahora se quita de `PENDIENTES_SERVIDOR` en cuanto se recupera. El Lic. borró las
+  copias 177-182 con SQL. 1146/2026 sí es el amparo del 114/2026 (confirmado).

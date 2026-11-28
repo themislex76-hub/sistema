@@ -956,6 +956,14 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
           // adjunta este documento en vez de tratarlo como duplicado (ver
           // arreglo del 24 nov 2026 ahí mismo).
           await reportarAviso(match.id, pend.resumen, pend.fechaIso, documentoId);
+          // (28 nov 2026) Se quita también de la lista del sistema: si no, la
+          // siguiente cuenta que ve este mismo expediente lo volvía a bajar
+          // (caso real: 3 copias del Acuerdo No. 2 del Exp. 501/2026).
+          const delServidor = PENDIENTES_SERVIDOR.get(key);
+          if (delServidor) {
+            const resto = delServidor.filter((x) => !(x.no === pend.no && x.esAmparo === !!esAmparo));
+            if (resto.length) PENDIENTES_SERVIDOR.set(key, resto); else PENDIENTES_SERVIDOR.delete(key);
+          }
           console.log(`    PDF recuperado en esta corrida para el acuerdo No. ${pend.no} del expediente ${numeroExpediente} (ya se había reportado antes sin documento).`);
           reportados++;
           continue;
