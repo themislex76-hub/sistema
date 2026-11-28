@@ -204,7 +204,7 @@ Google Calendar: una cuenta compartida (themislex76) con un sub-calendario por a
 - Bitácora de gasto de IA: https://claude.ai/code/artifact/fdbe25d4-5fba-41f8-a0d3-f389dfb8cb61
 
 ## 9. Pendientes abiertos
-- Robots (28-nov): ya subidos. Federal quedó en 0 avisos sin PDF (antes 15: 114/2026 No. 1-14 y 501/2026 No. 2).
+- Robots (28-nov): ya subidos (incluye `federal.js` corregido contra PDF repetidos por varias cuentas). Federal quedó en 0 avisos sin PDF (antes 15: 114/2026 No. 1-14 y 501/2026 No. 2).
   Falta: Edomex 780/2026 (1 aviso, se recupera en la corrida de Edomex) y el aviso de Boletín CDMX del
   114/2026 ("Sindicato de Bomberos...", 05-ago), que es texto y no tiene PDF: el Lic. decide si lo descarta.
 - Cursos (28-nov): medir la promoción cada semana con el SQL de cursos (link_generado vs pagaron; antes
