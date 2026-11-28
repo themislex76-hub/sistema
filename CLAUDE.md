@@ -202,9 +202,9 @@ Google Calendar: una cuenta compartida (themislex76) con un sub-calendario por a
 ## 9. Pendientes abiertos
 - Cursos (28-nov): medir la promoción cada semana con el SQL de cursos (link_generado vs pagaron; antes
   ~4 de cada 10, 66 interesados y 25 ventas en 60 días). El problema principal es que llega poca gente
-  (~7 por semana), no el precio. Arreglar en las páginas de Netlify (código en la PC del Lic., pedir el zip):
-  el correo de Procedimiento dice "Documentos reales del juicio laboral" (no trae formatos) y el de Amparo
-  manda a otro WhatsApp (55 7991 3025); la llave de Actas de Netlify trae el correo del comprador en Base64.
+  (~7 por semana), no el precio. Prioridad baja (todo se vende por WhatsApp; las páginas de Netlify no están
+  publicadas en ningún lado, confirmado 28-nov): el correo que manda la página de Procedimiento dice "Documentos
+  reales del juicio laboral" y el de Amparo manda a otro WhatsApp (55 7991 3025).
 - Ventas: medir la recuperación con el SQL diario y los hallazgos "💰 Venta perdida" (28-nov en adelante).
   Si no sube, revisar el tono cauteloso y el cierre del prompt (con OK del usuario).
 - 28-nov: decidir si la revisión diaria baja a muestra. ~14-dic: comparar ventas del documento $49.
