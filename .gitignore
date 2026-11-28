@@ -18,3 +18,4 @@ robots/*/node_modules/
 robots/*/procesados_*.json
 robots/*/*.log
 entregas/
+api/cursos_regalo_accesos.php
