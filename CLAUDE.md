@@ -52,6 +52,9 @@ La historia detallada va al final de `docs/CLAUDE_historial.md`.**
   dio de alta. Para ver el error real: `display_errors` temporal solo en ese script.
 - Un robot dejó de avisar → revisar que exista su `run_diario.bat` en la carpeta local y
   `schtasks /query /tn "<nombre>" /v /fo list` ("Último resultado" 0 = bien).
+- Un cron da HTTP 500 sin `error_log` → abrir `api/diag_cron_acuerdos.php` (solo en el servidor, sin llave, el Lic.
+  decidió dejarlo así 28-nov): corre `cron_analizar_acuerdos_ia.php` mostrando el error y la línea. Para otro cron,
+  hacer una copia igual cambiando el `require`.
 - MySQL del servidor NO soporta funciones de ventana (`LAG() OVER`).
 - Con `PDO::ATTR_EMULATE_PREPARES=false` no se puede repetir el mismo placeholder (`:aid` dos veces).
 - UPDATE a un ENUM con warning "Datos truncados" = falta el ALTER que agrega el valor.
@@ -205,7 +208,7 @@ Google Calendar: una cuenta compartida (themislex76) con un sub-calendario por a
 
 ## 9. Pendientes abiertos
 - IA de acuerdos/documentos (28-nov): caída del 19 al 28-nov por `expediente_helpers.php` viejo en el servidor.
-  Ya subido y probado (15 leídos, 2 etapas llenadas, 0 fallidos). Confirmar que borró `api/diag_cron_acuerdos.php`.
+  Ya subido y probado (21 leídos, 0 fallidos).
 - Robots (28-nov): ya subidos (incluye `federal.js` corregido contra PDF repetidos por varias cuentas). Federal quedó en 0 avisos sin PDF (antes 15: 114/2026 No. 1-14 y 501/2026 No. 2).
   Falta: Edomex 780/2026 (1 aviso, se recupera en la corrida de Edomex) y el aviso de Boletín CDMX del
   114/2026 ("Sindicato de Bomberos...", 05-ago), que es texto y no tiene PDF: el Lic. decide si lo descarta.
