@@ -4836,3 +4836,12 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
   114/2026 amparo 1146/2026 No. 3) porque cada cuenta del portal que veía el expediente volvía a sumar el
   pendiente del servidor. Ahora se quita de `PENDIENTES_SERVIDOR` en cuanto se recupera. El Lic. borró las
   copias 177-182 con SQL. 1146/2026 sí es el amparo del 114/2026 (confirmado).
+
+## La IA no leía acuerdos ni documentos desde el 19-nov (28 nov 2026)
+- 21 avisos con PDF sin leer; `MAX(ia_analizado_en)` = 2026-11-19 00:15. Abrir el cron daba HTTP 500 sin
+  `error_log`. Con un archivo temporal (`api/diag_cron_acuerdos.php`, envuelve el cron con display_errors,
+  nunca se commiteó) salió: "Call to undefined function ia_aplicar_etapa_sugerida()" en
+  `cron_analizar_acuerdos_ia.php` línea 105. Esa función llegó con dde7fea (20-nov) en
+  `expediente_helpers.php`, pero en el servidor solo se subieron los crons, no ese archivo. Mismo caso
+  de la sección 4 ("archivo PHP viejo en el servidor"). Arreglo: subir el `expediente_helpers.php` actual.
+- Ojo: cada corrida fallida pagaba la lectura IA de un acuerdo y luego tronaba sin guardar.
