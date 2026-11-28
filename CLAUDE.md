@@ -29,7 +29,7 @@ La historia detallada va al final de `docs/CLAUDE_historial.md`.**
   (hoy `app.js?v=165`, `sw.js ela-shell-v89`). Manda los 3 archivos.
 - Base de datos: dar el SQL; él lo corre en phpMyAdmin. **Última migración corrida: 075
   (`calculos_liquidacion.tercer_seguimiento_en`, 25 nov 2026). Siguiente libre: 076.**
-- Pruebas: `php scripts/pruebas_bot.php` antes de mandar CUALQUIER cambio del bot (191 casos hoy).
+- Pruebas: `php scripts/pruebas_bot.php` antes de mandar CUALQUIER cambio del bot (187 casos hoy).
   `node scripts/verificar_tags.js` si tocas `mergeTags()`, `calcularJornada()`, Rescisión Art. 51
   o tags de demanda.
 - Crons: viven en Ferozo → Tareas programadas. "Lo probé a mano" NO es "está dado de alta"; si un
@@ -186,6 +186,10 @@ Google Calendar: una cuenta compartida (themislex76) con un sub-calendario por a
 - Edomex correo (Carbonio, sin IMAP): scroll completo de la bandeja en cada corrida, guarda todos los
   ids vistos, el PDF llega en `.zip` (`adm-zip`).
 - Un aviso sin documento se marca en rojo en la tarjeta para que el abogado suba el PDF a mano.
+- **Avisos sin PDF (28-nov):** Federal, Buzón CDMX y Edomex correo piden al arrancar
+  `api/robot_avisos_sin_pdf.php` (avisos `automatico` sin `documento_id`, no descartados) y los reintentan,
+  incluidos los anteriores al arreglo del 24-nov. Ese endpoint también pega solo el PDF que ya estaba en
+  Documentos con el nombre del robot (Federal/Buzón). Log: "Avisos sin PDF según el sistema: N".
 - Pendiente del usuario: dar de alta 2a corrida de Federal (13:00) y Edomex (15:00) en schtasks.
 
 ## 8. Negocio y marketing (conversación "negocio")
@@ -200,6 +204,9 @@ Google Calendar: una cuenta compartida (themislex76) con un sub-calendario por a
 - Bitácora de gasto de IA: https://claude.ai/code/artifact/fdbe25d4-5fba-41f8-a0d3-f389dfb8cb61
 
 ## 9. Pendientes abiertos
+- Robots (28-nov): ya subidos (incluye `federal.js` corregido contra PDF repetidos por varias cuentas). Federal quedó en 0 avisos sin PDF (antes 15: 114/2026 No. 1-14 y 501/2026 No. 2).
+  Falta: Edomex 780/2026 (1 aviso, se recupera en la corrida de Edomex) y el aviso de Boletín CDMX del
+  114/2026 ("Sindicato de Bomberos...", 05-ago), que es texto y no tiene PDF: el Lic. decide si lo descarta.
 - Cursos (28-nov): medir la promoción cada semana con el SQL de cursos (link_generado vs pagaron; antes
   ~4 de cada 10, 66 interesados y 25 ventas en 60 días). El problema principal es que llega poca gente
   (~7 por semana), no el precio. Prioridad baja (todo se vende por WhatsApp; las páginas de Netlify no están

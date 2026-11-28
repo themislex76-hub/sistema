@@ -4812,3 +4812,27 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
   comprador en Base64, por eso no se usó la del Lic.
 - Revisión diaria: recibe las compras de cursos del teléfono y marca ventas de cursos perdidas.
 - Desde este entorno no se pudo abrir netlify.app (red bloqueada); el Lic. probó las 3 ligas en incógnito el 28-nov: funcionan.
+
+
+## Avisos viejos sin PDF: los 3 robots ahora preguntan al sistema qué falta (28 nov 2026, conversación "fervent-cori")
+- Caso: Exp. 501/2026 (Federal), Acuerdo No. 2 encontrado el 19-nov sin PDF; Acuerdo No. 1 con aviso sin
+  documento aunque el PDF del robot (`Acuerdo_No_1_Exp_501-2026.pdf`) sí estaba en Documentos.
+- Causa: el arreglo del 24-nov (`pendientesPdf` en el JSON local de cada robot) solo recordaba fallos
+  posteriores; los anteriores ya estaban marcados como vistos y nunca se reintentaban. Y antes del 24-nov
+  `avisos_ingest.php` no pegaba un PDF que llegaba en una corrida posterior.
+- Arreglo (OK del Lic., "para los 3 robots"): nuevo `api/robot_avisos_sin_pdf.php?fuente=...` (llave de
+  robot). Devuelve avisos `origen='automatico'`, `documento_id IS NULL`, `estado<>'descartado'`. Antes de
+  devolverlos, pega el PDF huérfano si existe con el nombre exacto del robot (Federal
+  `Acuerdo_No_N_Exp_X-AAAA.pdf`, Buzón `Acuerdo_NNN-AAAA-N.pdf`; Edomex no se puede porque el nombre lleva
+  el id del correo) y bumpea `expedientes.actualizado_en`.
+- Federal: los pendientes del servidor se suman a `entry.pendientesPdf` (por número de expediente y
+  laboral/amparo) con el resumen exacto de la base. Buzón: `acuerdoId -> resumen`; cuenta como reintento.
+  Edomex: `expediente_id -> Set(resumen)`; mientras haya pendientes, los correos ya vistos se vuelven a
+  leer (más lenta la corrida) y si el resumen coincide se reintenta el PDF.
+- Si el endpoint falla, cada robot sigue con su memoria local de siempre.
+- Ojo (no arreglado): en Edomex dos notificaciones del MISMO expediente generan el mismo resumen, y
+  `avisos_ingest.php` trata la segunda como duplicada (su PDF sí se sube a Documentos, pero no hay aviso nuevo).
+- Corrección (28-nov, mismo día): el robot Federal bajó 3 copias de 3 PDF (501/2026 No. 2, 463/2026 No. 5,
+  114/2026 amparo 1146/2026 No. 3) porque cada cuenta del portal que veía el expediente volvía a sumar el
+  pendiente del servidor. Ahora se quita de `PENDIENTES_SERVIDOR` en cuanto se recupera. El Lic. borró las
+  copias 177-182 con SQL. 1146/2026 sí es el amparo del 114/2026 (confirmado).
