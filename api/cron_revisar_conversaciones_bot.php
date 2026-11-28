@@ -93,6 +93,11 @@ $guardar = $pdo->prepare(
      VALUES (:t, :f, :v, :g, :r, :h)'
 );
 
+$stmtCursos = $pdo->prepare(
+    "SELECT curso_slug, creado_en, estado, pagado_en FROM compras_curso
+     WHERE telefono = :t ORDER BY id DESC LIMIT 5"
+);
+
 $stmtCitas = $pdo->prepare(
     "SELECT creado_en, fecha, hora_inicio AS hora, estado, pagado_en FROM citas_asesoria
      WHERE telefono = :t ORDER BY id DESC LIMIT 5"
@@ -128,7 +133,16 @@ foreach ($telefonos as $tel) {
         $citas = [];
     }
 
-    $res = ia_revisar_conversacion_bot($pdo, $mensajes, $previos, $calculos, $citas);
+    // 28-nov-2026: compras de cursos, para detectar ventas de cursos perdidas.
+    $cursos = [];
+    try {
+        $stmtCursos->execute([':t' => $tel]);
+        $cursos = $stmtCursos->fetchAll();
+    } catch (Throwable $e) {
+        $cursos = [];
+    }
+
+    $res = ia_revisar_conversacion_bot($pdo, $mensajes, $previos, $calculos, $citas, $cursos);
     if ($res === null) { $fallidas++; continue; }
 
     $guardar->execute([

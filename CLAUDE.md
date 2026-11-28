@@ -29,7 +29,7 @@ La historia detallada va al final de `docs/CLAUDE_historial.md`.**
   (hoy `app.js?v=165`, `sw.js ela-shell-v89`). Manda los 3 archivos.
 - Base de datos: dar el SQL; él lo corre en phpMyAdmin. **Última migración corrida: 075
   (`calculos_liquidacion.tercer_seguimiento_en`, 25 nov 2026). Siguiente libre: 076.**
-- Pruebas: `php scripts/pruebas_bot.php` antes de mandar CUALQUIER cambio del bot (181 casos hoy).
+- Pruebas: `php scripts/pruebas_bot.php` antes de mandar CUALQUIER cambio del bot (191 casos hoy).
   `node scripts/verificar_tags.js` si tocas `mergeTags()`, `calcularJornada()`, Rescisión Art. 51
   o tags de demanda.
 - Crons: viven en Ferozo → Tareas programadas. "Lo probé a mano" NO es "está dado de alta"; si un
@@ -77,6 +77,12 @@ Del 17 al 26-nov se probó Sonnet 5.5 con razonamiento y coincidió con la caíd
   `confirmar_compra_curso`. Procesal y Amparo NO traen formatos; solo Actas Administrativas (6 formatos).
   Quien paga en Netlify no recibe acceso automático: se manda a mano
   (`https://thriving-madeleine-5fe918.netlify.app/?llave=<id del pago>&pago=ok`).
+- **Promoción de cursos (desde 28-nov-2026, decisión del Lic.)**: compra 1 ($299) y se le regalan los
+  otros 2. NO retroactiva. Los regalos son accesos fijos en `api/cursos_regalo_accesos.php` (SOLO en el
+  servidor, en .gitignore; el repo es público). Si falta ese archivo, el cliente recibe su curso y al
+  abogado le llega push URGENTE para mandarle los 2 a mano. Apagar: `CURSOS_PROMO_REGALO_ACTIVA = false`
+  en `mercadopago_helpers.php`. Prueba de 3 semanas: si pagan menos de 6 de cada 10 que reciben link,
+  cambiar al paquete de los 3 a $399 (idea del Lic., commit 9c76331 como borrador).
 - El despacho SÍ asesora empresas/patrones.
 
 **Criterios del despacho ya decididos (no reabrir sin el Lic.)**
@@ -189,9 +195,16 @@ Google Calendar: una cuenta compartida (themislex76) con un sub-calendario por a
 - Miniaturas de YouTube: `cd marketing/miniaturas && node generar_serie_lives.js "$(pwd)" N`, anotar el
   video en `registro.json`. Mostrarle hojas de opciones (frases/colores) en vez de adivinar.
   Colaboraciones: `generar_colaboracion.js`. Fotos en `marketing/fotos/`.
+  Nombre: "Mtro. Rubén Buerhend" (sin t final; desde el LIVE #18, confirmado 27-nov). Las #1-#16 ya
+  subidas dicen "Lic.": redibujar una de esas ya no sale idéntica.
 - Bitácora de gasto de IA: https://claude.ai/code/artifact/fdbe25d4-5fba-41f8-a0d3-f389dfb8cb61
 
 ## 9. Pendientes abiertos
+- Cursos (28-nov): medir la promoción cada semana con el SQL de cursos (link_generado vs pagaron; antes
+  ~4 de cada 10, 66 interesados y 25 ventas en 60 días). El problema principal es que llega poca gente
+  (~7 por semana), no el precio. Prioridad baja (todo se vende por WhatsApp; las páginas de Netlify no están
+  publicadas en ningún lado, confirmado 28-nov): el correo que manda la página de Procedimiento dice "Documentos
+  reales del juicio laboral" y el de Amparo manda a otro WhatsApp (55 7991 3025).
 - Ventas: medir la recuperación con el SQL diario y los hallazgos "💰 Venta perdida" (28-nov en adelante).
   Si no sube, revisar el tono cauteloso y el cierre del prompt (con OK del usuario).
 - 28-nov: decidir si la revisión diaria baja a muestra. ~14-dic: comparar ventas del documento $49.

@@ -104,7 +104,7 @@ body{width:1280px;height:720px;overflow:hidden;font-family:'Inter Display','Inte
 <div class="foto"><img src="${f.src}">${f.tapaDerecha?'<div style="position:absolute;right:0;top:0;bottom:0;width:70px;background:linear-gradient(to right,transparent,#0b1620 70%)"></div>':''}</div><img class="logo" src="logo_despacho.png">
 <div class="vivo"><i></i>${v.num?"LIVE #"+v.num:"EN VIVO"}</div>
 <div class="txt"><div class="l1" id="l1">${v.l1}</div><div class="l2" id="l2">${v.l2}</div><div class="pill" id="pill">${v.pill}</div>${v.preg?`<div class="chips">${v.preg.map(q=>`<span>${q}</span>`).join("")}</div>`:`<div class="sub">${v.sub}<span>${v.sub2}</span></div>`}</div>
-<div class="nombre">Lic. Rubén Buerhend<span>Abogado laboralista</span></div>
+<div class="nombre">Mtro. Rubén Buerhend<span>Abogado laboralista</span></div>
 <div class="bar"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="30" fill="#25b04f"/><path d="M14 52l3.5-11A19 19 0 1 1 25 48z" fill="#fff"/><path d="M24.5 21.5c.7-.7 2-.6 2.6.3l2.2 3.6c.4.7.3 1.6-.3 2.2l-1.4 1.3c1.3 2.8 3.5 5 6.3 6.3l1.3-1.4c.6-.6 1.5-.7 2.2-.3l3.6 2.2c.9.6 1 1.9.3 2.6l-1.6 1.6c-1.4 1.4-3.6 1.8-5.4.9-5.2-2.6-9.4-6.8-12-12-.9-1.8-.5-4 .9-5.4z" fill="#25b04f"/></svg><div class="t">ORIENTACIÓN GRATIS POR WHATSAPP</div><div class="n">56 5273 6263</div></div>
 <script>
 function fit(id,max,min,maxW,maxH){const e=document.getElementById(id);let s=max;e.style.fontSize=s+'px';
