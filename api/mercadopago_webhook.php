@@ -70,6 +70,33 @@ function mp_webhook_procesar_curso(PDO $pdo, array $pago, string $paymentId, str
     $upd->execute([':pago_id' => $paymentId, ':id' => $compraId]);
     if ($upd->rowCount() === 0) return;
 
+    // Paquete de los 3 cursos (28-nov-2026): se mandan los 3 accesos fijos
+    // del servidor. Si faltara el archivo, se avisa al abogado para que los
+    // mande a mano (el pago ya quedó confirmado).
+    if ($compra['curso_slug'] === 'paquete') {
+        $mensaje = cursos_paquete_mensaje_accesos($compra['nombre_cliente'] ?: null);
+        if ($mensaje === null) {
+            $saludo = $compra['nombre_cliente'] ? "¡Hola {$compra['nombre_cliente']}!" : '¡Hola!';
+            $mensaje = "{$saludo} Tu pago quedó confirmado: ya tienes el *Paquete de los 3 cursos*. 🎉\n\nEn unos minutos te mando por aquí tus 3 accesos.";
+            push_notificar_prospecto(
+                $pdo, null,
+                'URGENTE: mandar accesos del paquete a mano',
+                ($compra['nombre_cliente'] ?: $compra['telefono']) . ' pagó el paquete de 3 cursos, pero falta api/cursos_paquete_accesos.php en el servidor. Mándale los 3 accesos tú.',
+                '/sistema/?abrir=' . urlencode($compra['telefono'])
+            );
+        }
+        whatsapp_enviar($compra['telefono'], $mensaje);
+        $pdo->prepare("INSERT INTO whatsapp_conversaciones (telefono, direccion, texto, respondido_por) VALUES (:t, 'saliente', :texto, 'ia')")
+            ->execute([':t' => $compra['telefono'], ':texto' => $mensaje]);
+        push_notificar_prospecto(
+            $pdo, null,
+            '¡Venta de paquete de cursos confirmada!',
+            ($compra['nombre_cliente'] ?: $compra['telefono']) . " compró el paquete de 3 cursos (\${$compra['monto']} MXN).",
+            '/sistema/?abrir=' . urlencode($compra['telefono'])
+        );
+        return;
+    }
+
     // Algunos sitios de curso (ver 'producto_externo' en CURSOS_CATALOGO)
     // verifican el pago contra un identificador de producto fijo propio --
     // unos lo leen de metadata.producto (ya se manda al crear la

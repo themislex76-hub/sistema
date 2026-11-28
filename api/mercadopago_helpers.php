@@ -70,7 +70,55 @@ const CURSOS_CATALOGO = [
         'acceso_param' => 'llave',
         'producto_externo' => null,
     ],
+    // 28-nov-2026 (decisión del Lic.): paquete de los 3 cursos a $399. Las
+    // páginas de Netlify verifican que el pago sea de SU curso, así que un
+    // pago de paquete no les sirve: al confirmarse se mandan 3 accesos fijos
+    // (llaves de pagos ya aprobados) que viven SOLO en el servidor, en
+    // api/cursos_paquete_accesos.php (no va a GitHub, el repositorio es
+    // público). Ver cursos_paquete_accesos().
+    'paquete' => [
+        'titulo' => 'Paquete de 3 cursos de Expertos Laborales',
+        'precio' => 399.00,
+        'sitio' => null,
+        'acceso_param' => null,
+        'producto_externo' => null,
+    ],
 ];
+
+/**
+ * Los 3 links de acceso del paquete, o null si el archivo del servidor no
+ * existe o está incompleto (entonces el bot no vende el paquete).
+ * El archivo define CURSOS_PAQUETE_ACCESOS = ['procesal' => url, 'amparo' => url, 'actas' => url].
+ */
+function cursos_paquete_accesos(): ?array
+{
+    $archivo = __DIR__ . '/cursos_paquete_accesos.php';
+    if (!defined('CURSOS_PAQUETE_ACCESOS') && is_file($archivo)) {
+        require_once $archivo;
+    }
+    if (!defined('CURSOS_PAQUETE_ACCESOS')) return null;
+    $a = CURSOS_PAQUETE_ACCESOS;
+    foreach (['procesal', 'amparo', 'actas'] as $slug) {
+        if (empty($a[$slug]) || !preg_match('#^https://#', (string)$a[$slug])) return null;
+    }
+    return $a;
+}
+
+/**
+ * Mensaje de WhatsApp con los 3 accesos del paquete (o null si faltan).
+ */
+function cursos_paquete_mensaje_accesos(?string $nombre): ?string
+{
+    $a = cursos_paquete_accesos();
+    if ($a === null) return null;
+    $saludo = $nombre ? "¡Hola {$nombre}!" : '¡Hola!';
+    return "{$saludo} Tu pago quedó confirmado: ya tienes el *Paquete de los 3 cursos*. 🎉\n\n"
+        . "Aquí están tus accesos (de por vida, entra las veces que quieras):\n\n"
+        . "📘 *Nuevo Procedimiento Laboral Mexicano*\n{$a['procesal']}\n\n"
+        . "📗 *El Juicio de Amparo en Materia del Trabajo*\n{$a['amparo']}\n\n"
+        . "📙 *Actas Administrativas Laborales*\n{$a['actas']}\n\n"
+        . "Guarda este mensaje. Cualquier duda sobre el contenido, aquí mismo nos puedes escribir.";
+}
 
 /**
  * Carga el Access Token desde mercadopago_credentials.php si ya existe en
