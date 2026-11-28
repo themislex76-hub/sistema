@@ -4845,3 +4845,26 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
   `expediente_helpers.php`, pero en el servidor solo se subieron los crons, no ese archivo. Mismo caso
   de la sección 4 ("archivo PHP viejo en el servidor"). Arreglo: subir el `expediente_helpers.php` actual.
 - Ojo: cada corrida fallida pagaba la lectura IA de un acuerdo y luego tronaba sin guardar.
+- El Lic. borró `diag_cron_acuerdos.php` del servidor (28-nov). Código para recrearlo si hace falta
+  (cambiar el `require` al cron que falle):
+```php
+<?php
+// TEMPORAL (28 nov 2026): muestra en pantalla el error real de
+// cron_analizar_acuerdos_ia.php (da HTTP 500 sin mensaje). Borrar del
+// servidor en cuanto se vea el error. No cambia nada del cron original.
+ini_set('display_errors', '1');
+error_reporting(E_ALL);
+header('Content-Type: text/plain; charset=utf-8');
+$inicio = microtime(true);
+register_shutdown_function(function () use ($inicio) {
+    $e = error_get_last();
+    echo "\n\n--- Diagnóstico ---\nSegundos: " . round(microtime(true) - $inicio, 1) . "\n";
+    if ($e) echo "Último error: {$e['message']}\nArchivo: {$e['file']} línea {$e['line']}\n";
+    else echo "Sin error fatal.\n";
+});
+try {
+    require __DIR__ . '/cron_analizar_acuerdos_ia.php';
+} catch (Throwable $t) {
+    echo "\nEXCEPCIÓN: " . get_class($t) . ': ' . $t->getMessage() . "\nArchivo: " . $t->getFile() . ' línea ' . $t->getLine() . "\n";
+}
+```

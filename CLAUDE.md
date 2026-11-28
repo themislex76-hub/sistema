@@ -52,9 +52,8 @@ La historia detallada va al final de `docs/CLAUDE_historial.md`.**
   dio de alta. Para ver el error real: `display_errors` temporal solo en ese script.
 - Un robot dejó de avisar → revisar que exista su `run_diario.bat` en la carpeta local y
   `schtasks /query /tn "<nombre>" /v /fo list` ("Último resultado" 0 = bien).
-- Un cron da HTTP 500 sin `error_log` → abrir `api/diag_cron_acuerdos.php` (solo en el servidor, sin llave, el Lic.
-  decidió dejarlo así 28-nov): corre `cron_analizar_acuerdos_ia.php` mostrando el error y la línea. Para otro cron,
-  hacer una copia igual cambiando el `require`.
+- Un cron da HTTP 500 sin `error_log` → subir un archivo temporal que lo envuelva con display_errors
+  (código en `docs/CLAUDE_historial.md`, 28-nov), abrirlo, ver el error y borrarlo del servidor.
 - MySQL del servidor NO soporta funciones de ventana (`LAG() OVER`).
 - Con `PDO::ATTR_EMULATE_PREPARES=false` no se puede repetir el mismo placeholder (`:aid` dos veces).
 - UPDATE a un ENUM con warning "Datos truncados" = falta el ALTER que agrega el valor.
