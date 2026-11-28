@@ -170,6 +170,36 @@ async function reportarAviso(expedienteId, resumen, fecha, documentoId) {
   }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
 }
 
+// (28 nov 2026) Avisos que este robot reportó alguna vez SIN PDF, según la
+// BASE (no según procesados_edomex_correo.json, que solo recuerda los
+// fallos posteriores al 24-nov). El resumen de Edomex no trae el id del
+// correo, así que se guarda por expediente: expediente_id -> Set(resumen).
+// Con esta lista, los correos ya vistos de esos expedientes se vuelven a
+// leer para intentar bajar su PDF. Si el sistema no contesta, se sigue con
+// la memoria local de siempre.
+let PENDIENTES_SERVIDOR = new Map();
+async function cargarPendientesDelServidor() {
+  try {
+    const res = await axios.get(`${config.sistema.apiBase}/robot_avisos_sin_pdf.php`, {
+      params: { fuente: 'edomex_local' },
+      headers: { 'X-Robot-Key': config.sistema.robotKey },
+    });
+    const datos = res.data.data || {};
+    const mapa = new Map();
+    let total = 0;
+    for (const p of datos.pendientes || []) {
+      if (!/^Notificación electrónica Edomex/.test(p.resumen || '')) continue;
+      if (!mapa.has(p.expediente_id)) mapa.set(p.expediente_id, new Set());
+      mapa.get(p.expediente_id).add(p.resumen);
+      total++;
+    }
+    PENDIENTES_SERVIDOR = mapa;
+    console.log(`Avisos sin PDF según el sistema: ${total} por reintentar.`);
+  } catch (e) {
+    console.log('  (no se pudo pedir al sistema la lista de avisos sin PDF: ' + e.message + ' -- se sigue solo con la memoria local)');
+  }
+}
+
 // Le avisa al sistema que este robot corrió (con éxito o con error) --
 // pedido explícito del usuario (20 nov 2026) tras descubrir que otros 2
 // robots llevaban sin correr en automático por un run_diario.bat faltante
@@ -398,7 +428,11 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
         continue;
       }
       const esReintentoPendiente = pendientesPdf.has(idConversacion);
-      if (yaProcesados.has(idConversacion) && !esReintentoPendiente) {
+      // (28 nov 2026) Correo ya visto, pero el sistema tiene avisos sin PDF
+      // de Edomex: se vuelve a leer solo para ver si es uno de esos.
+      const revisarContraServidor = yaProcesados.has(idConversacion) && !esReintentoPendiente
+        && PENDIENTES_SERVIDOR.size > 0;
+      if (yaProcesados.has(idConversacion) && !esReintentoPendiente && !revisarContraServidor) {
         // Ya se vio este id antes y ya quedó resuelto (con documento, o
         // sin expediente monitoreado que coincida) -- en esta misma
         // corrida (el locator `filas` confirmado real que hace match más
@@ -417,6 +451,7 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       persistirEstadoCuenta();
 
       const texto = await leerTextoCompleto(page, 'EXPEDIENTE');
+      if (!texto && revisarContraServidor) continue;
       if (!texto) {
         console.log(`    AVISO: no se encontró el texto "EXPEDIENTE" en el correo ${idConversacion} (¿viene en un iframe con otro formato?) -- se omite.`);
         await page.screenshot({ path: path.join(__dirname, `debug_correo_${idConversacion}.png`), fullPage: true }).catch(() => {});
@@ -428,6 +463,13 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
       const demandado = extraerCampo(texto, 'Demandado');
       const juzgado = extraerCampo(texto, 'Juzgado');
       const match = porNumero.get(normalizeExp(expedienteTexto));
+      const resumen = `Notificación electrónica Edomex -- expediente ${expedienteTexto}`
+        + (juzgado ? `, ${juzgado}` : '') + `. Actor: ${actor || '(sin dato)'}. Demandado: ${demandado || '(sin dato)'}.`;
+      if (revisarContraServidor) {
+        const pend = match ? PENDIENTES_SERVIDOR.get(match.id) : null;
+        if (!pend || !pend.has(resumen)) continue; // ya visto y sin nada pendiente -- igual que siempre
+        console.log(`    Reintentando PDF pendiente según el sistema: expediente ${expedienteTexto} (correo ${idConversacion}).`);
+      }
       if (!match) {
         console.log(`    Correo ${idConversacion}: expediente "${expedienteTexto}" no está en los monitoreados -- se omite.`);
         pendientesPdf.delete(idConversacion); // ya no aplica -- no tiene caso seguir reintentándolo
@@ -453,20 +495,20 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
         // adelante vuelve a dar el mismo texto/liga de siempre).
         if (documentoId) {
           pendientesPdf.delete(idConversacion);
+          const pend = PENDIENTES_SERVIDOR.get(match.id);
+          if (pend) { pend.delete(resumen); if (!pend.size) PENDIENTES_SERVIDOR.delete(match.id); }
         } else {
           pendientesPdf.add(idConversacion);
         }
         persistirEstadoCuenta();
 
-        const resumen = `Notificación electrónica Edomex -- expediente ${expedienteTexto}`
-          + (juzgado ? `, ${juzgado}` : '') + `. Actor: ${actor || '(sin dato)'}. Demandado: ${demandado || '(sin dato)'}.`;
         // Mismo resumen cada vez (se deriva siempre del mismo texto del
         // correo) -- en un reintento de una corrida futura, avisos_
         // ingest.php reconoce este mismo aviso ya existente y le adjunta
         // el documento en vez de tratarlo como duplicado (ver arreglo del
         // 24 nov 2026 ahí mismo).
         await reportarAviso(match.id, resumen, new Date().toISOString().slice(0, 10), documentoId);
-        if (esReintentoPendiente && documentoId) {
+        if ((esReintentoPendiente || revisarContraServidor) && documentoId) {
           console.log(`    PDF recuperado en esta corrida para el correo ${idConversacion} (ya se había reportado antes sin documento).`);
         }
         reportados++;
@@ -505,6 +547,7 @@ async function main() {
   }
 
   const estado = cargarProcesados();
+  await cargarPendientesDelServidor();
   const browser = await chromium.launch({ headless: true });
   let totalReportados = 0;
   for (const cuenta of cuentas) {

@@ -72,6 +72,49 @@ const CURSOS_CATALOGO = [
     ],
 ];
 
+// 28-nov-2026 (decisión del Lic.): PROMOCIÓN "compra 1 y te regalamos los
+// otros 2". Solo para quien pague desde el 28-nov (no es retroactiva). Las
+// páginas de Netlify verifican que el pago sea de SU curso, así que los 2
+// cursos de regalo se dan con accesos fijos (llaves de pagos ya aprobados)
+// que viven SOLO en el servidor, en api/cursos_regalo_accesos.php (no va a
+// GitHub: el repositorio es público). Para apagar la promoción: false.
+const CURSOS_PROMO_REGALO_ACTIVA = true;
+
+/**
+ * Los 3 accesos fijos de regalo, o null si el archivo del servidor no
+ * existe o está incompleto. El archivo define
+ * CURSOS_REGALO_ACCESOS = ['procesal' => url, 'amparo' => url, 'actas' => url].
+ */
+function cursos_regalo_accesos(): ?array
+{
+    $archivo = __DIR__ . '/cursos_regalo_accesos.php';
+    if (!defined('CURSOS_REGALO_ACCESOS') && is_file($archivo)) {
+        require_once $archivo;
+    }
+    if (!defined('CURSOS_REGALO_ACCESOS')) return null;
+    $a = CURSOS_REGALO_ACCESOS;
+    foreach (['procesal', 'amparo', 'actas'] as $slug) {
+        if (empty($a[$slug]) || !preg_match('#^https://#', (string)$a[$slug])) return null;
+    }
+    return $a;
+}
+
+/**
+ * Texto con los 2 cursos de regalo para quien compró $slugComprado, o null
+ * si faltan los accesos del servidor.
+ */
+function cursos_regalo_texto(string $slugComprado): ?string
+{
+    $a = cursos_regalo_accesos();
+    if ($a === null) return null;
+    $txt = "🎁 *Y de regalo, tus otros 2 cursos:*";
+    foreach (['procesal', 'amparo', 'actas'] as $slug) {
+        if ($slug === $slugComprado) continue;
+        $txt .= "\n\n*" . CURSOS_CATALOGO[$slug]['titulo'] . "*\n" . $a[$slug];
+    }
+    return $txt;
+}
+
 /**
  * Carga el Access Token desde mercadopago_credentials.php si ya existe en
  * el servidor, o null si todavía no se ha configurado — para que, antes

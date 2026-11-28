@@ -1154,6 +1154,21 @@ memoria — es la fuente más común de errores):
     rescisión, con 5 casos prácticos resueltos desde ambos lados (patrón y
     trabajador) para que sepas qué esperar del otro lado también. Acceso
     de por vida, lectura interactiva.
+  · PROMOCIÓN VIGENTE (decisión del despacho, 28-nov-2026): al comprar
+    CUALQUIERA de los 3 cursos ($299) se le REGALAN los otros 2. Paga uno
+    solo y se lleva los 3; los 3 accesos le llegan juntos por aquí en
+    cuanto se confirma el pago. Menciónala SIEMPRE que ofrezcas o expliques
+    un curso, en una frase clara (ej. "y ahorita, al comprar cualquiera de
+    los 3, te regalamos los otros 2: pagas $299 y te llevas los 3"). Úsala
+    para cerrar: si duda entre dos cursos, dile que no tiene que escoger.
+    Quien compra igual escoge UNO (el que más le interesa) para
+    confirmar_compra_curso; los otros 2 se mandan solos de regalo. Con la
+    promoción también se lleva Actas, que sí trae los 6 formatos (los otros
+    2 cursos siguen sin formatos). NO es por tiempo limitado: nunca digas
+    "solo hoy", "últimos días" ni nada parecido. Solo aplica a pagos desde
+    el 28-nov-2026: si alguien que compró antes pide los otros 2, explícale
+    con amabilidad que es una promoción nueva y que no aplica a compras
+    anteriores.
   · REGLA DURA sobre el pago: en cuanto la persona muestre intención REAL
     de comprar un curso específico (dijo que sí, pidió el link de pago, o
     ya se lo recomendaste y lo aceptó explícitamente), usa
@@ -3595,7 +3610,8 @@ function ia_resultado_confirmar_compra_curso(PDO $pdo, string $telefono, string 
         'link_pago' => $pref['init_point'],
         'curso' => $info['titulo'],
         'monto' => $info['precio'],
-        'instruccion' => 'Manda este link de pago tal cual -- en cuanto pague, el acceso al curso se le manda automáticamente por aquí mismo, no hace falta que tú hagas nada más ni que revises su correo.',
+        'instruccion' => 'Manda este link de pago tal cual -- en cuanto pague, el acceso al curso se le manda automáticamente por aquí mismo, no hace falta que tú hagas nada más ni que revises su correo.'
+            . (CURSOS_PROMO_REGALO_ACTIVA ? ' Recuérdale en una frase la promoción: con este pago también le llegan de regalo los otros 2 cursos.' : ''),
     ], JSON_UNESCAPED_UNICODE);
 }
 
@@ -5769,7 +5785,7 @@ function ia_articulos_citados(string $texto): array
  * @param array $contextoPrevio mismas filas, de días anteriores (solo contexto)
  * @return array|null ['veredicto'=>'ok'|'revisar','gravedad'=>?string,'resumen'=>?string,'hallazgos'=>array] o null si falló
  */
-function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoPrevio = [], array $calculos = [], array $citas = []): ?array
+function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoPrevio = [], array $calculos = [], array $citas = [], array $cursos = []): ?array
 {
     $credentialsFile = __DIR__ . '/anthropic_credentials.php';
     if (!file_exists($credentialsFile)) return null;
@@ -5833,6 +5849,12 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
                 . ' | estado: ' . $c['estado'] . ($c['pagado_en'] ? ' | pagada ' . substr((string)$c['pagado_en'], 0, 16) : ''), $citas));
     } else {
         $contenido .= "\n\n(Este teléfono NO tiene ninguna asesoría apartada ni pagada en el sistema.)";
+    }
+    // 28-nov-2026: compras de cursos, para detectar ventas de cursos perdidas.
+    if ($cursos) {
+        $contenido .= "\n\nCOMPRAS DE CURSOS DE ESTE TELÉFONO (estado real):\n"
+            . implode("\n", array_map(fn($c) => '- ' . $c['curso_slug'] . ' | link creado ' . substr((string)$c['creado_en'], 0, 16)
+                . ' | estado: ' . $c['estado'] . ($c['pagado_en'] ? ' | pagado ' . substr((string)$c['pagado_en'], 0, 16) : ''), $cursos));
     }
 
     $system = 'Eres el abogado supervisor (experto en derecho laboral mexicano, LFT vigente) de un despacho que usa un '
@@ -5907,6 +5929,7 @@ function ia_revisar_conversacion_bot(PDO $pdo, array $mensajes, array $contextoP
         . "- La persona apartó horario y no pagó, y el bot no la ayudó a completar el pago cuando ella escribió.\n"
         . "- La persona puso una objeción (\"está caro\", \"no tengo tarjeta\", \"no confío\", \"lo pienso\", \"¿es presencial?\") y el bot no la resolvió o la dejó ir sin una respuesta útil.\n"
         . "- El bot alejó la venta: demasiadas preguntas antes de dar el estimado, mensajes larguísimos o confusos, contradicciones, o no contestó lo que la persona preguntó.\n"
+        . "- CURSOS ($299; promoción: al comprar uno se regalan los otros 2): la persona es estudiante de derecho, pasante o abogado (aunque lo diga de pasada) o preguntó por cursos, y el bot no le ofreció los cursos o no le mencionó la promoción; o dijo que quería un curso y el bot no le mandó el link de pago (revisa las compras de cursos que se te dan); o el bot le mandó una página de Netlify en vez del link de pago.\n"
         . "NO marques como venta perdida: quien dijo claramente que no la quiere o no tiene dinero y el bot lo respetó; quien no tiene caso o no se le puede atender (Apartado B, gobierno estatal o municipal); quien ya pagó; quien dejó de contestar después de recibir la oferta (eso no es culpa del bot); la oferta hecha una sola vez de forma natural.\n"
         . "En las ventas perdidas, \"correccion\" es qué debió decir o hacer el bot para cerrar la venta, en una o dos frases concretas.\n\n"
         . "Criterios vigentes del despacho que el bot debe seguir:\n" . ia_criterios_despacho_texto() . "\n\n"
