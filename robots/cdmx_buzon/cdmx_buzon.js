@@ -135,6 +135,33 @@ async function reportarAviso(expedienteId, resumen, fecha, documentoId) {
   }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
 }
 
+// (28 nov 2026) Avisos que este robot reportó alguna vez SIN PDF, según la
+// BASE (no según procesados_cdmx_buzon.json, que solo recuerda los fallos
+// posteriores al 24-nov). Mapa: acuerdoId -> resumen exacto de la base.
+// Solo se toman los del Buzón ("Acuerdo NNN/AAAA-N del expediente ..."); los
+// del robot de Boletín CDMX usan la misma fuente pero otro formato. Si el
+// sistema no contesta, se sigue con la memoria local de siempre.
+let PENDIENTES_SERVIDOR = new Map();
+async function cargarPendientesDelServidor() {
+  try {
+    const res = await axios.get(`${config.sistema.apiBase}/robot_avisos_sin_pdf.php`, {
+      params: { fuente: 'cdmx_local' },
+      headers: { 'X-Robot-Key': config.sistema.robotKey },
+    });
+    const datos = res.data.data || {};
+    const mapa = new Map();
+    for (const p of datos.pendientes || []) {
+      const m = /^Acuerdo (\d+\/\d{4}-\d+) del expediente /.exec(p.resumen || '');
+      if (m) mapa.set(m[1], p.resumen);
+    }
+    PENDIENTES_SERVIDOR = mapa;
+    console.log(`Avisos sin PDF según el sistema: ${mapa.size} por reintentar`
+      + (datos.pegados_ya_existentes ? ` (+${datos.pegados_ya_existentes} que ya estaban en Documentos y se pegaron solos).` : '.'));
+  } catch (e) {
+    console.log('  (no se pudo pedir al sistema la lista de avisos sin PDF: ' + e.message + ' -- se sigue solo con la memoria local)');
+  }
+}
+
 // Le avisa al sistema que este robot corrió (con éxito o con error) --
 // pedido explícito del usuario (20 nov 2026) tras descubrir que otros 2
 // robots llevaban sin correr en automático por un run_diario.bat faltante
@@ -571,7 +598,7 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
             const acuerdoId = matchId[1];
             const fechaPublicacion = matchFecha ? matchFecha[1] : null;
 
-            const esReintentoPendiente = pendientesPdf.has(acuerdoId);
+            const esReintentoPendiente = pendientesPdf.has(acuerdoId) || PENDIENTES_SERVIDOR.has(acuerdoId);
             if (vistos[acuerdoId] && !esReintentoPendiente) continue; // ya resuelto del todo en una corrida anterior
 
             console.log(esReintentoPendiente
@@ -593,7 +620,9 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
               // (ver arreglo del 24 nov 2026 ahí mismo).
               await reportarAviso(
                 expedienteSistema.id,
-                `Acuerdo ${acuerdoId} del expediente ${expedienteSistema.exp || fila.expTexto}.`,
+                // (28 nov 2026) Si es un pendiente del sistema, el resumen
+                // exacto de la base (por si el número capturado cambió).
+                PENDIENTES_SERVIDOR.get(acuerdoId) || `Acuerdo ${acuerdoId} del expediente ${expedienteSistema.exp || fila.expTexto}.`,
                 fechaPublicacion,
                 documentoId
               );
@@ -611,6 +640,7 @@ async function procesarCuenta(cuenta, porNumero, estado, browser) {
             // nunca se cierra la puerta a que se recupere solo.
             if (documentoId) {
               pendientesPdf.delete(acuerdoId);
+              PENDIENTES_SERVIDOR.delete(acuerdoId);
             } else {
               pendientesPdf.add(acuerdoId);
             }
@@ -694,6 +724,7 @@ async function main() {
   }
 
   const estado = cargarProcesados();
+  await cargarPendientesDelServidor();
   const browser = await chromium.launch({ headless: true });
   let totalReportados = 0;
   for (const cuenta of cuentas) {

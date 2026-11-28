@@ -106,6 +106,37 @@ async function reportarAviso(expedienteId, resumen, fecha, documentoId) {
   }, { headers: { 'X-Robot-Key': config.sistema.robotKey } });
 }
 
+// (28 nov 2026) Avisos que este robot reportó alguna vez SIN PDF, según la
+// BASE (no según procesados_federal.json). La memoria local solo guarda los
+// fallos posteriores al 24-nov; los anteriores (ej. Exp. 501/2026, Acuerdo
+// No. 2) nunca se volvían a intentar. Mapa: expediente normalizado ->
+// [{no, resumen, fechaIso, esAmparo}]. Si el sistema no contesta, se sigue
+// con la memoria local de siempre.
+let PENDIENTES_SERVIDOR = new Map();
+async function cargarPendientesDelServidor() {
+  try {
+    const res = await axios.get(`${config.sistema.apiBase}/robot_avisos_sin_pdf.php`, {
+      params: { fuente: 'federal_laboral' },
+      headers: { 'X-Robot-Key': config.sistema.robotKey },
+    });
+    const datos = res.data.data || {};
+    const mapa = new Map();
+    for (const p of datos.pendientes || []) {
+      const m = /^Acuerdo( de amparo)? No\. (\d+) del expediente (.+?), de fecha/.exec(p.resumen || '');
+      if (!m) continue;
+      const key = normalizeExp(m[3]);
+      if (!mapa.has(key)) mapa.set(key, []);
+      mapa.get(key).push({ no: parseInt(m[2], 10), resumen: p.resumen, fechaIso: p.fecha_publicacion || null, esAmparo: !!m[1] });
+    }
+    PENDIENTES_SERVIDOR = mapa;
+    const total = Array.from(mapa.values()).reduce((n, l) => n + l.length, 0);
+    console.log(`Avisos sin PDF según el sistema: ${total} por reintentar`
+      + (datos.pegados_ya_existentes ? ` (+${datos.pegados_ya_existentes} que ya estaban en Documentos y se pegaron solos).` : '.'));
+  } catch (e) {
+    console.log('  (no se pudo pedir al sistema la lista de avisos sin PDF: ' + e.message + ' -- se sigue solo con la memoria local)');
+  }
+}
+
 // Le avisa al sistema que este robot corrió (con éxito o con error) --
 // pedido explícito del usuario (20 nov 2026) tras descubrir que este
 // mismo robot llevaba sin correr en automático por un run_diario.bat
@@ -880,6 +911,14 @@ async function procesarExpediente(context, page, numeroExpediente, match, estado
   let entry = estado[key];
   if (typeof entry !== 'object' || entry === null) entry = { maxNo: entry || 0, pendientesPdf: [] };
   if (!Array.isArray(entry.pendientesPdf)) entry.pendientesPdf = [];
+  // (28 nov 2026) Se suman los pendientes que el SISTEMA sabe que no tienen
+  // PDF (incluye los anteriores al arreglo del 24-nov), con el resumen
+  // exacto de la base para que avisos_ingest.php los reconozca.
+  for (const p of PENDIENTES_SERVIDOR.get(key) || []) {
+    if (p.esAmparo !== !!esAmparo) continue;
+    if (entry.pendientesPdf.some((x) => x.no === p.no)) continue;
+    entry.pendientesPdf.push({ no: p.no, resumen: p.resumen, fechaIso: p.fechaIso });
+  }
   const ultimoVisto = entry.maxNo || 0;
   let maxNo = ultimoVisto;
   let reportados = 0;
@@ -1226,6 +1265,7 @@ async function main() {
   }
 
   const estado = cargarProcesados();
+  await cargarPendientesDelServidor();
   const browser = await chromium.launch({ headless: true });
   let totalReportados = 0;
   try {
