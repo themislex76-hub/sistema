@@ -4811,4 +4811,4 @@ saberlo era entrar a la computadora del despacho y revisar `schtasks` a mano.
   en incógnito: abre y no muestra datos del cliente). La llave que genera la página de Actas trae el correo del
   comprador en Base64, por eso no se usó la del Lic.
 - Revisión diaria: recibe las compras de cursos del teléfono y marca ventas de cursos perdidas.
-- Desde este entorno no se pudo abrir netlify.app (red bloqueada): el Lic. debe probar las 3 ligas en incógnito.
+- Desde este entorno no se pudo abrir netlify.app (red bloqueada); el Lic. probó las 3 ligas en incógnito el 28-nov: funcionan.
